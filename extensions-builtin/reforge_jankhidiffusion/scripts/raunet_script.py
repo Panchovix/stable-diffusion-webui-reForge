@@ -23,6 +23,7 @@ class RAUNetScript(scripts.Script):
 
     def ui(self, *args, **kwargs):
         with gr.Accordion(open=False, label=self.title()):
+            enabled = gr.Checkbox(label="Enabled", value=False)
             gr.HTML("<p><i>Make sure to use only either the simple or the advanced version.</i></p>")
             with gr.Tab("RAUNet Simple"):
                 gr.Markdown("Simplified RAUNet for easier setup. Helps avoid artifacts at high resolutions.")
@@ -107,7 +108,7 @@ class RAUNetScript(scripts.Script):
             outputs=[mswmsa_input_blocks, mswmsa_middle_blocks, mswmsa_output_blocks]
         )
 
-        return (raunet_simple_enabled, raunet_simple_model_type, res_mode, simple_upscale_mode, simple_ca_upscale_mode,
+        return (enabled,raunet_simple_enabled, raunet_simple_model_type, res_mode, simple_upscale_mode, simple_ca_upscale_mode,
                 raunet_enabled, raunet_model_type, input_blocks, output_blocks, time_mode, start_time, end_time, 
                 two_stage_upscale, upscale_mode, ca_start_time, ca_end_time, ca_input_blocks, ca_output_blocks, ca_upscale_mode,
                 mswmsa_simple_enabled, mswmsa_simple_model_type,
@@ -115,13 +116,23 @@ class RAUNetScript(scripts.Script):
                 mswmsa_time_mode, mswmsa_start_time, mswmsa_end_time)
 
     def process_before_every_sampling(self, p, *script_args, **kwargs):
-        (raunet_simple_enabled, raunet_simple_model_type, res_mode, simple_upscale_mode, simple_ca_upscale_mode,
+        (enabled,raunet_simple_enabled, raunet_simple_model_type, res_mode, simple_upscale_mode, simple_ca_upscale_mode,
         raunet_enabled, raunet_model_type, input_blocks, output_blocks, time_mode, start_time, end_time, 
         two_stage_upscale, upscale_mode, ca_start_time, ca_end_time, ca_input_blocks, ca_output_blocks, ca_upscale_mode,
         mswmsa_simple_enabled, mswmsa_simple_model_type,
         mswmsa_enabled, mswmsa_model_type, mswmsa_input_blocks, mswmsa_middle_blocks, mswmsa_output_blocks, 
         mswmsa_time_mode, mswmsa_start_time, mswmsa_end_time) = script_args
 
+        if not enabled:
+            # Apply RAUNet patch with enabled=False to reset any modifications
+            unet = opApplyRAUNet.patch(False, unet, "", "", "", 0, 0, False, "", 0, 0, "", "", "")[0]
+            p.extra_generation_params.update(dict(raunet_enabled=False, raunet_simple_enabled=False))
+
+            # Apply MSW-MSA patch with empty block settings to reset any modifications
+            unet = opApplyMSWMSA.patch(unet, "", "", "", mswmsa_time_mode, 0, 0)[0]
+            p.extra_generation_params.update(dict(mswmsa_enabled=False, mswmsa_simple_enabled=False))
+            return
+        
         # Always start with a fresh clone of the original unet
         unet = p.sd_model.forge_objects.unet.clone()
 

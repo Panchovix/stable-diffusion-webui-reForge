@@ -20,6 +20,7 @@ class AutomaticCFGScript(scripts.Script):
 
     def ui(self, *args, **kwargs):
         with gr.Accordion(open=False, label=self.title()):
+            enabled = gr.Checkbox(label="Enabled", value=False)
             with gr.Tab("Simple CFG"):
                 simple_cfg_enabled = gr.Checkbox(label="Enable Simple CFG", value=False)
                 hard_mode = gr.Checkbox(label="Hard Mode", value=True)
@@ -55,7 +56,7 @@ class AutomaticCFGScript(scripts.Script):
                 latent_intensity_rescale_sigma_start = gr.Slider(label="Latent Intensity Rescale Sigma Start", minimum=0.0, maximum=10000.0, step=0.1, value=1000.0)
                 latent_intensity_rescale_sigma_end = gr.Slider(label="Latent Intensity Rescale Sigma End", minimum=0.0, maximum=10000.0, step=0.1, value=5.0)
 
-        return (simple_cfg_enabled, hard_mode, boost, 
+        return (enabled,simple_cfg_enabled, hard_mode, boost, 
             dynamic_cfg_enabled, boost_dynamic, negative_strength,
             warp_drive_enabled, uncond_sigma_start, uncond_sigma_end, fake_uncond_sigma_end,
             preset_enabled, preset_name, use_uncond_sigma_end_from_preset, preset_uncond_sigma_end, preset_automatic_cfg,
@@ -64,7 +65,7 @@ class AutomaticCFGScript(scripts.Script):
             latent_intensity_rescale_sigma_start, latent_intensity_rescale_sigma_end)
 
     def process_before_every_sampling(self, p, *script_args, **kwargs):
-        (simple_cfg_enabled, hard_mode, boost, 
+        (enabled,simple_cfg_enabled, hard_mode, boost, 
         dynamic_cfg_enabled, boost_dynamic, negative_strength,
         warp_drive_enabled, uncond_sigma_start, uncond_sigma_end, fake_uncond_sigma_end,
         preset_enabled, preset_name, use_uncond_sigma_end_from_preset, preset_uncond_sigma_end, preset_automatic_cfg,
@@ -72,6 +73,9 @@ class AutomaticCFGScript(scripts.Script):
         latent_intensity_rescale, latent_intensity_rescale_method, latent_intensity_rescale_cfg,
         latent_intensity_rescale_sigma_start, latent_intensity_rescale_sigma_end) = script_args
 
+        if not enabled:
+            return
+        
         unet = p.sd_model.forge_objects.unet
 
         def wrap_pre_cfg_function(func):
