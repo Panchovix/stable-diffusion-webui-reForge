@@ -365,52 +365,19 @@ class SkipWritingToConfig:
 
 
 def check_fp8(model):
-    if model is None:
-        return None
-    if devices.get_optimal_device_name() == "mps":
-        enable_fp8 = False
-    elif shared.opts.fp8_storage == "Enable":
-        enable_fp8 = True
-    elif getattr(model, "is_sdxl", False) and shared.opts.fp8_storage == "Enable for SDXL":
-        enable_fp8 = True
-    else:
-        enable_fp8 = False
-    return enable_fp8
+    pass
 
 
 def set_model_type(model, state_dict):
-    model.is_sd1 = False
-    model.is_sd2 = False
-    model.is_sdxl = False
-    model.is_ssd = False
-    model.is_sd3 = False
-
-    if "model.diffusion_model.x_embedder.proj.weight" in state_dict:
-        model.is_sd3 = True
-        model.model_type = ModelType.SD3
-    elif hasattr(model, 'conditioner'):
-        model.is_sdxl = True
-
-        if 'model.diffusion_model.middle_block.1.transformer_blocks.0.attn1.to_q.weight' not in state_dict.keys():
-            model.is_ssd = True
-            model.model_type = ModelType.SSD
-        else:
-            model.model_type = ModelType.SDXL
-    elif hasattr(model.cond_stage_model, 'model'):
-        model.is_sd2 = True
-        model.model_type = ModelType.SD2
-    else:
-        model.is_sd1 = True
-        model.model_type = ModelType.SD1
+    pass
 
 
 def set_model_fields(model):
-    if not hasattr(model, 'latent_channels'):
-        model.latent_channels = 4
+    pass
 
 
 def load_model_weights(model, checkpoint_info: CheckpointInfo, state_dict, timer):
-    return
+    pass
 
 
 def enable_midas_autodownload():
@@ -595,6 +562,8 @@ def load_model(checkpoint_info=None, already_loaded_state_dict=None):
     sd_model = forge_loader(state_dict)
     timer.record("forge model load")
 
+    sd_model.extra_generation_params = {}
+    sd_model.comments = []
     sd_model.sd_checkpoint_info = checkpoint_info
     sd_model.filename = checkpoint_info.filename
     sd_model.sd_model_hash = checkpoint_info.calculate_shorthash()
