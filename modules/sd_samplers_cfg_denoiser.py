@@ -59,6 +59,9 @@ class CFGDenoiser(torch.nn.Module):
         self.model_wrap = None
         self.p = None
 
+        self.need_last_noise_uncond = False
+        self.last_noise_uncond = None
+
         # Backward Compatibility
         self.mask_before_denoising = False
 
@@ -150,7 +153,7 @@ class CFGDenoiser(torch.nn.Module):
 
         return cond, uncond
 
-    def forward(self, x, sigma, uncond, cond, cond_scale, s_min_uncond, image_cond, model_options=None):
+    def forward(self, x, sigma, uncond, cond, cond_scale, s_min_uncond, image_cond):
         if state.interrupted or state.skipped:
             raise sd_samplers_common.InterruptedException
 
@@ -176,23 +179,13 @@ class CFGDenoiser(torch.nn.Module):
             noisy_initial_latent = self.init_latent + sigma[:, None, None, None] * torch.randn_like(self.init_latent).to(self.init_latent)
             x = x * self.nmask + noisy_initial_latent * self.mask
 
-        if model_options is not None and "sampler_post_cfg_function" in model_options:
-            post_cfg_functions = model_options["sampler_post_cfg_function"]
-        else:
-            post_cfg_functions = []
-
         denoiser_params = CFGDenoiserParams(x, image_cond, sigma, state.sampling_step, state.sampling_steps, cond, uncond, self)
         cfg_denoiser_callback(denoiser_params)
 
-        x_out = sampling_function(self, denoiser_params=denoiser_params, cond_scale=cond_scale, cond_composition=cond_composition)
+        denoised, cond_pred, uncond_pred = sampling_function(self, denoiser_params=denoiser_params, cond_scale=cond_scale, cond_composition=cond_composition)
 
-        if model_options and model_options.get("disable_cfg1_optimization", False):
-            denoised = self.combine_denoised(x_out, cond_composition, uncond, cond_scale, sigma, x, cond)
-        else:
-            denoised = self.combine_denoised(x_out, cond_composition, uncond, cond_scale, sigma, x, cond)
-
-        for post_cfg_function in post_cfg_functions:
-            denoised = post_cfg_function({"denoised": denoised, "uncond_denoised": x_out[-uncond.shape[0]:]})
+        if self.need_last_noise_uncond:
+            self.last_noise_uncond = (x - uncond_pred) / sigma[:, None, None, None]
 
         if self.mask is not None:
             blended_latent = denoised * self.nmask + self.init_latent * self.mask
