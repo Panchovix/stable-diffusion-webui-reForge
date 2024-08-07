@@ -431,7 +431,6 @@ div.toprow-compact-tools{
 }
 
 #quicksettings > div, #quicksettings > fieldset{
-    max-width: 36em;
     width: fit-content;
     flex: 0 1 fit-content;
     padding: 0;
@@ -439,7 +438,8 @@ div.toprow-compact-tools{
     box-shadow: none;
     background: none;
 }
-#quicksettings > div.gradio-dropdown{
+
+#quicksettings > div.model_selection{
     min-width: 24em !important;
 }
 
