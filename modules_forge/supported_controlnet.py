@@ -6,8 +6,7 @@ from huggingface_guess.utils import unet_to_diffusers
 from backend import memory_management
 from backend.operations import using_forge_operations
 from backend.nn.cnets import cldm
-from backend.patcher.controlnet import ControlLora, ControlNet, load_t2i_adapter
-from modules_forge.controlnet import apply_controlnet_advanced
+from backend.patcher.controlnet import ControlLora, ControlNet, load_t2i_adapter, apply_controlnet_advanced
 from modules_forge.shared import add_supported_control_model
 
 
@@ -116,8 +115,8 @@ class ControlNetPatcher(ControlModelPatcher):
         controlnet_config.pop("out_channels")
         controlnet_config["hint_channels"] = controlnet_data["{}input_hint_block.0.weight".format(prefix)].shape[1]
 
-        with using_forge_operations():
-            control_model = cldm.ControlNet(**controlnet_config)
+        with using_forge_operations(dtype=unet_dtype):
+            control_model = cldm.ControlNet(**controlnet_config).to(dtype=unet_dtype)
 
         if pth:
             if 'difference' in controlnet_data:
