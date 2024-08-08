@@ -25,7 +25,8 @@ class T5TextProcessingEngine:
 
         self.emphasis = emphasis.get_current_option(emphasis_name)()
         self.min_length = min_length
-        self.id_end = self.tokenizer('')["input_ids"][0]
+        self.id_end = 1
+        self.id_pad = 0
 
         vocab = self.tokenizer.get_vocab()
 
@@ -57,10 +58,9 @@ class T5TextProcessingEngine:
         return tokenized
 
     def encode_with_transformers(self, tokens):
-        tokens = tokens.to(memory_management.get_torch_device())
-        device = memory_management.get_torch_device()
-        dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float32
-        self.text_encoder.shared.to(device=device, dtype=dtype)
+        device = memory_management.text_encoder_device()
+        tokens = tokens.to(device)
+        self.text_encoder.shared.to(device=device, dtype=torch.float32)
 
         z = self.text_encoder(
             input_ids=tokens,
@@ -81,14 +81,16 @@ class T5TextProcessingEngine:
             nonlocal token_count
             nonlocal chunk
 
-            token_count += len(chunk.tokens)
-            to_add = self.min_length - len(chunk.tokens) - 1
-            if to_add > 0:
-                chunk.tokens += [self.id_end] * to_add
-                chunk.multipliers += [1.0] * to_add
-
             chunk.tokens = chunk.tokens + [self.id_end]
             chunk.multipliers = chunk.multipliers + [1.0]
+            current_chunk_length = len(chunk.tokens)
+
+            token_count += current_chunk_length
+            remaining_count = self.min_length - current_chunk_length
+
+            if remaining_count > 0:
+                chunk.tokens += [self.id_pad] * remaining_count
+                chunk.multipliers += [1.0] * remaining_count
 
             chunks.append(chunk)
             chunk = PromptChunk()

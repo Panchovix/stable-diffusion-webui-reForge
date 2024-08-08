@@ -307,7 +307,11 @@ def create_ui():
 
                     elif category == "cfg":
                         with gr.Row():
+                            from backend.args import args
+                            distilled_cfg_scale = gr.Slider(minimum=0.0, maximum=30.0, step=0.5, label='Distilled CFG Scale', value=3.5, elem_id="txt2img_distilled_cfg_scale", visible=args.i_am_lllyasviel)
+                        with gr.Row():
                             cfg_scale = gr.Slider(minimum=1.0, maximum=30.0, step=0.5, label='CFG Scale', value=7.0, elem_id="txt2img_cfg_scale")
+                            cfg_scale.change(lambda x: gr.update(interactive=(x != 1)), inputs=[cfg_scale], outputs=[toprow.negative_prompt], queue=False, show_progress=False)
 
                     elif category == "checkboxes":
                         with FormRow(elem_classes="checkboxes-row", variant="compact"):
@@ -393,6 +397,7 @@ def create_ui():
                 batch_count,
                 batch_size,
                 cfg_scale,
+                distilled_cfg_scale,
                 height,
                 width,
                 enable_hr,
@@ -456,6 +461,7 @@ def create_ui():
                 PasteField(toprow.prompt, "Prompt", api="prompt"),
                 PasteField(toprow.negative_prompt, "Negative prompt", api="negative_prompt"),
                 PasteField(cfg_scale, "CFG scale", api="cfg_scale"),
+                PasteField(distilled_cfg_scale, "Distilled CFG Scale", api="distilled_cfg_scale"),
                 PasteField(width, "Size-1", api="width"),
                 PasteField(height, "Size-2", api="height"),
                 PasteField(batch_size, "Batch size", api="batch_size"),
@@ -482,17 +488,6 @@ def create_ui():
             ))
 
             steps = scripts.scripts_txt2img.script('Sampler').steps
-
-            txt2img_preview_params = [
-                toprow.prompt,
-                toprow.negative_prompt,
-                steps,
-                scripts.scripts_txt2img.script('Sampler').sampler_name,
-                cfg_scale,
-                scripts.scripts_txt2img.script('Seed').seed,
-                width,
-                height,
-            ]
 
             toprow.ui_styles.dropdown.change(fn=wrap_queued_call(update_token_counter), inputs=[toprow.prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.token_counter])
             toprow.ui_styles.dropdown.change(fn=wrap_queued_call(update_negative_prompt_token_counter), inputs=[toprow.negative_prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.negative_token_counter])
@@ -654,8 +649,12 @@ def create_ui():
 
                     elif category == "cfg":
                         with gr.Row():
+                            from backend.args import args as backend_args
+                            distilled_cfg_scale = gr.Slider(minimum=0.0, maximum=30.0, step=0.5, label='Distilled CFG Scale', value=3.5, elem_id="img2img_distilled_cfg_scale", visible=backend_args.i_am_lllyasviel)
+                        with gr.Row():
                             cfg_scale = gr.Slider(minimum=1.0, maximum=30.0, step=0.5, label='CFG Scale', value=7.0, elem_id="img2img_cfg_scale")
                             image_cfg_scale = gr.Slider(minimum=0, maximum=3.0, step=0.05, label='Image CFG Scale', value=1.5, elem_id="img2img_image_cfg_scale", visible=False)
+                            cfg_scale.change(lambda x: gr.update(interactive=(x != 1)), inputs=[cfg_scale], outputs=[toprow.negative_prompt], queue=False, show_progress=False)
 
                     elif category == "checkboxes":
                         with FormRow(elem_classes="checkboxes-row", variant="compact"):
@@ -734,6 +733,7 @@ def create_ui():
                 batch_count,
                 batch_size,
                 cfg_scale,
+                distilled_cfg_scale,
                 image_cfg_scale,
                 denoising_strength,
                 selected_scale_tab,
@@ -830,6 +830,7 @@ def create_ui():
                 (toprow.prompt, "Prompt"),
                 (toprow.negative_prompt, "Negative prompt"),
                 (cfg_scale, "CFG scale"),
+                (distilled_cfg_scale, "Distilled CFG Scale"),
                 (image_cfg_scale, "Image CFG scale"),
                 (width, "Size-1"),
                 (height, "Size-2"),

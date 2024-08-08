@@ -136,6 +136,7 @@ class StableDiffusionProcessing:
     n_iter: int = 1
     steps: int = 50
     cfg_scale: float = 7.0
+    distilled_cfg_scale: float = 3.5
     width: int = 512
     height: int = 512
     restore_faces: bool = None
@@ -475,15 +476,20 @@ class StableDiffusionProcessing:
         return cache[1]
 
     def setup_conds(self):
-        prompts = prompt_parser.SdConditioning(self.prompts, width=self.width, height=self.height)
-        negative_prompts = prompt_parser.SdConditioning(self.negative_prompts, width=self.width, height=self.height, is_negative_prompt=True)
+        prompts = prompt_parser.SdConditioning(self.prompts, width=self.width, height=self.height, distilled_cfg_scale=self.distilled_cfg_scale)
+        negative_prompts = prompt_parser.SdConditioning(self.negative_prompts, width=self.width, height=self.height, is_negative_prompt=True, distilled_cfg_scale=self.distilled_cfg_scale)
 
         sampler_config = sd_samplers.find_sampler_config(self.sampler_name)
         total_steps = sampler_config.total_steps(self.steps) if sampler_config else self.steps
         self.step_multiplier = total_steps // self.steps
         self.firstpass_steps = total_steps
 
-        self.uc = self.get_conds_with_caching(prompt_parser.get_learned_conditioning, negative_prompts, total_steps, [self.cached_uc], self.extra_network_data)
+        if self.cfg_scale == 1:
+            self.uc = None
+            print('Skipping unconditional conditioning when CFG = 1. Negative Prompts are ignored.')
+        else:
+            self.uc = self.get_conds_with_caching(prompt_parser.get_learned_conditioning, negative_prompts, total_steps, [self.cached_uc], self.extra_network_data)
+
         self.c = self.get_conds_with_caching(prompt_parser.get_multicond_learned_conditioning, prompts, total_steps, [self.cached_c], self.extra_network_data)
 
     def get_conds(self):
@@ -716,7 +722,13 @@ def create_infotext(p, all_prompts, all_seeds, all_subseeds, comments=None, iter
         "Steps": p.steps,
         "Sampler": p.sampler_name,
         "Schedule type": p.scheduler,
-        "CFG scale": p.cfg_scale,
+        "CFG scale": p.cfg_scale
+    }
+
+    if p.sd_model.use_distilled_cfg_scale:
+        generation_params['Distilled CFG Scale'] = p.distilled_cfg_scale
+
+    generation_params.update({
         "Image CFG scale": getattr(p, 'image_cfg_scale', None),
         "Seed": p.all_seeds[0] if use_main_prompt else all_seeds[index],
         "Face restoration": opts.face_restoration_model if p.restore_faces else None,
@@ -742,7 +754,7 @@ def create_infotext(p, all_prompts, all_seeds, all_subseeds, comments=None, iter
         **p.extra_generation_params,
         "Version": program_version() if opts.add_version_to_infotext else None,
         "User": p.user if opts.add_user_name_to_info else None,
-    }
+    })
 
     for key, value in generation_params.items():
         try:

@@ -66,6 +66,8 @@ class Flux(ForgeDiffusionEngine):
         self.forge_objects_original = self.forge_objects.shallow_copy()
         self.forge_objects_after_applying_lora = self.forge_objects.shallow_copy()
 
+        self.use_distilled_cfg_scale = True
+
         # WebUI Legacy
         self.first_stage_model = vae.first_stage_model
 
@@ -78,10 +80,13 @@ class Flux(ForgeDiffusionEngine):
         cond_l, pooled_l = self.text_processing_engine_l(prompt)
         cond_t5 = self.text_processing_engine_t5(prompt)
 
+        distilled_cfg_scale = getattr(prompt, 'distilled_cfg_scale', 3.5) or 3.5
+        print(f'distilled_cfg_scale = {distilled_cfg_scale}')
+
         cond = dict(
             crossattn=cond_t5,
             vector=pooled_l,
-            guidance=torch.FloatTensor([3.5] * len(prompt))
+            guidance=torch.FloatTensor([distilled_cfg_scale] * len(prompt))
         )
 
         return cond
