@@ -1,6 +1,7 @@
 import logging
 import gradio as gr
 from modules import scripts
+from modules.shared import opts
 from ldm_patched.modules import model_sampling
 from advanced_model_sampling.nodes_model_advanced import (
     ModelSamplingDiscrete, ModelSamplingContinuousEDM, ModelSamplingContinuousV,
@@ -119,6 +120,8 @@ class AdvancedModelSamplingScript(scripts.Script):
         unet = p.sd_model.forge_objects.unet.clone()
 
         if self.sampling_mode == "Discrete":
+            if self.discrete_zsnr and opts.sd_noise_schedule == "Zero Terminal SNR":  # Do not apply twice
+                self.discrete_zsnr = False
             unet = ModelSamplingDiscrete().patch(unet, self.discrete_sampling, self.discrete_zsnr)[0]
         elif self.sampling_mode == "Continuous EDM":
             unet = ModelSamplingContinuousEDM().patch(unet, self.continuous_edm_sampling, self.continuous_edm_sigma_max, self.continuous_edm_sigma_min)[0]
