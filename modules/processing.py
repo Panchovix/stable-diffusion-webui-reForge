@@ -962,7 +962,7 @@ if opts.sd_processing == "reForge OG":
                 sd_models.apply_alpha_schedule_override(p.sd_model, p)
 
                 sigmas_backup = None
-                if opts.sd_noise_schedule == "Zero Terminal SNR" and p is not None:
+                if (opts.sd_noise_schedule == "Zero Terminal SNR" or (hasattr(p.sd_model, 'ztsnr') and p.sd_model.ztsnr)) and p is not None:
                     p.extra_generation_params['Noise Schedule'] = opts.sd_noise_schedule
                     sigmas_backup = p.sd_model.forge_objects.unet.model.model_sampling.sigmas
                     p.sd_model.forge_objects.unet.model.model_sampling.set_sigmas(rescale_zero_terminal_snr_sigmas(p.sd_model.forge_objects.unet.model.model_sampling.sigmas))
@@ -2803,7 +2803,7 @@ elif opts.sd_processing == "reForge A1111":
                 sd_models.apply_alpha_schedule_override(p.sd_model, p)
 
                 sigmas_backup = None
-                if opts.sd_noise_schedule == "Zero Terminal SNR" and p is not None:
+                if (opts.sd_noise_schedule == "Zero Terminal SNR" or (hasattr(p.sd_model, 'ztsnr') and p.sd_model.ztsnr)) and p is not None:
                     p.extra_generation_params['Noise Schedule'] = opts.sd_noise_schedule
                     sigmas_backup = p.sd_model.forge_objects.unet.model.model_sampling.sigmas
                     p.sd_model.forge_objects.unet.model.model_sampling.set_sigmas(rescale_zero_terminal_snr_sigmas(p.sd_model.forge_objects.unet.model.model_sampling.sigmas))

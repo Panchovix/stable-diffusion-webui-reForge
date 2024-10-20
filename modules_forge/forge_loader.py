@@ -171,6 +171,7 @@ def load_state_dict_guess_config(sd, output_vae=True, output_clip=True, output_c
 @torch.no_grad()
 def load_model_for_a1111(timer, checkpoint_info=None, state_dict=None):
     is_sd3 = 'model.diffusion_model.x_embedder.proj.weight' in state_dict
+    ztsnr = 'ztsnr' in state_dict
     timer.record("forge solving config")
     
     if not is_sd3:
@@ -258,6 +259,8 @@ def load_model_for_a1111(timer, checkpoint_info=None, state_dict=None):
     if getattr(sd_model, 'parameterization', None) == 'v':
         sd_model.forge_objects.unet.model.model_sampling = model_sampling(sd_model.forge_objects.unet.model.model_config, ModelType.V_PREDICTION)
     
+    sd_model.ztsnr = ztsnr
+
     sd_model.is_sd3 = is_sd3
     sd_model.latent_channels = 16 if is_sd3 else 4
     sd_model.is_sdxl = conditioner is not None and not is_sd3
