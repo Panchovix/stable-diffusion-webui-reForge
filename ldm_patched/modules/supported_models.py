@@ -219,6 +219,8 @@ class SDXL(supported_models_base.BASE):
 
         state_dict = utils.state_dict_key_replace(state_dict, keys_to_replace)
         state_dict = utils.clip_text_transformers_convert(state_dict, "clip_g.", "clip_g.transformer.")
+        if 'clip_g.text_projection' not in state_dict and 'clip_g.transformer.text_projection.weight' in state_dict:
+            state_dict["clip_g.text_projection"] = state_dict.pop("clip_g.transformer.text_projection.weight").transpose(0, 1)
         return state_dict
 
     def process_clip_state_dict_for_saving(self, state_dict):
