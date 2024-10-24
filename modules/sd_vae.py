@@ -3,6 +3,7 @@ import collections
 from dataclasses import dataclass
 
 from modules import paths, shared, devices, script_callbacks, sd_models, extra_networks, lowvram, sd_hijack, hashes
+from ldm_patched.modules import diffusers_convert
 
 import glob
 from copy import deepcopy
@@ -188,6 +189,8 @@ def resolve_vae(checkpoint_file) -> VaeResolution:
 def load_vae_dict(filename, map_location):
     vae_ckpt = sd_models.read_state_dict(filename, map_location=map_location)
     vae_dict_1 = {k: v for k, v in vae_ckpt.items() if k[0:4] != "loss" and k not in vae_ignore_keys}
+    if 'decoder.up_blocks.0.resnets.0.norm1.weight' in vae_dict_1.keys(): #diffusers format
+        vae_dict_1 = diffusers_convert.convert_vae_state_dict(vae_dict_1)
     return vae_dict_1
 
 
