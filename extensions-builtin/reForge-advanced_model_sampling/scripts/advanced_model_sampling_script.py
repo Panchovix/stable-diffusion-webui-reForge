@@ -12,8 +12,8 @@ class AdvancedModelSamplingScript(scripts.Script):
     def __init__(self):
         self.enabled = False
         self.sampling_mode = "Discrete"
-        self.discrete_sampling = "eps"
-        self.discrete_zsnr = False
+        self.discrete_sampling = "v_prediction"
+        self.discrete_zsnr = True
         self.continuous_edm_sampling = "v_prediction"
         self.continuous_edm_sigma_max = 120.0
         self.continuous_edm_sigma_min = 0.002
