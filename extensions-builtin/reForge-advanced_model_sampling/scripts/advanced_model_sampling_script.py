@@ -47,7 +47,7 @@ class AdvancedModelSamplingScript(scripts.Script):
                 value=self.sampling_mode
             )
 
-            with gr.Group() as discrete_group:
+            with gr.Group(visible=True) as discrete_group:
                 discrete_sampling = gr.Radio(
                     ["eps", "v_prediction", "lcm", "x0"],
                     label="Discrete Sampling Type",
@@ -55,7 +55,7 @@ class AdvancedModelSamplingScript(scripts.Script):
                 )
                 discrete_zsnr = gr.Checkbox(label="Zero SNR", value=self.discrete_zsnr)
 
-            with gr.Group() as continuous_edm_group:
+            with gr.Group(visible=False) as continuous_edm_group:
                 continuous_edm_sampling = gr.Radio(
                     ["v_prediction", "edm_playground_v2.5", "eps"],
                     label="Continuous EDM Sampling Type",
@@ -64,20 +64,20 @@ class AdvancedModelSamplingScript(scripts.Script):
                 continuous_edm_sigma_max = gr.Slider(label="Sigma Max", minimum=0.0, maximum=1000.0, step=0.001, value=self.continuous_edm_sigma_max)
                 continuous_edm_sigma_min = gr.Slider(label="Sigma Min", minimum=0.0, maximum=1000.0, step=0.001, value=self.continuous_edm_sigma_min)
 
-            with gr.Group() as continuous_v_group:
+            with gr.Group(visible=False) as continuous_v_group:
                 continuous_v_sigma_max = gr.Slider(label="Sigma Max", minimum=0.0, maximum=1000.0, step=0.001, value=self.continuous_v_sigma_max)
                 continuous_v_sigma_min = gr.Slider(label="Sigma Min", minimum=0.0, maximum=1000.0, step=0.001, value=self.continuous_v_sigma_min)
 
-            with gr.Group() as stable_cascade_group:
+            with gr.Group(visible=False) as stable_cascade_group:
                 stable_cascade_shift = gr.Slider(label="Shift", minimum=0.0, maximum=100.0, step=0.01, value=self.stable_cascade_shift)
 
-            with gr.Group() as sd3_group:
+            with gr.Group(visible=False) as sd3_group:
                 sd3_shift = gr.Slider(label="Shift", minimum=0.0, maximum=100.0, step=0.01, value=self.sd3_shift)
 
-            with gr.Group() as aura_flow_group:
+            with gr.Group(visible=False) as aura_flow_group:
                 aura_flow_shift = gr.Slider(label="Shift", minimum=0.0, maximum=100.0, step=0.01, value=self.aura_flow_shift)
 
-            with gr.Group() as flux_group:
+            with gr.Group(visible=False) as flux_group:
                 flux_max_shift = gr.Slider(label="Max Shift", minimum=0.0, maximum=100.0, step=0.01, value=self.flux_max_shift)
                 flux_base_shift = gr.Slider(label="Base Shift", minimum=0.0, maximum=100.0, step=0.01, value=self.flux_base_shift)
                 flux_width = gr.Slider(label="Width", minimum=16, maximum=8192, step=8, value=self.flux_width)
