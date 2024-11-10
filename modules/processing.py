@@ -958,7 +958,7 @@ if opts.sd_processing == "reForge OG":
                 if p.n_iter > 1:
                     shared.state.job = f"Batch {n+1} out of {p.n_iter}"
 
-                advanced_model_sampling_script = next((x for x in p.scripts.alwayson_scripts if x.name == 'advanced model sampling for reforge'), None)
+                advanced_model_sampling_script = next((x for x in p.scripts.alwayson_scripts if x.name == 'advanced model sampling for reforge (backported)'), None)
                 force_apply_ztsnr = (
                     advanced_model_sampling_script is not None
                     and p.script_args[advanced_model_sampling_script.args_from:advanced_model_sampling_script.args_to][0]
@@ -2812,7 +2812,7 @@ elif opts.sd_processing == "reForge A1111":
                 if p.n_iter > 1:
                     shared.state.job = f"Batch {n+1} out of {p.n_iter}"
 
-                advanced_model_sampling_script = next((x for x in p.scripts.alwayson_scripts if x.name == 'advanced model sampling for reforge'), None)
+                advanced_model_sampling_script = next((x for x in p.scripts.alwayson_scripts if x.name == 'advanced model sampling for reforge (backported)'), None)
                 force_apply_ztsnr = (
                     advanced_model_sampling_script is not None
                     and p.script_args[advanced_model_sampling_script.args_from:advanced_model_sampling_script.args_to][0]

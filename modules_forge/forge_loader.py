@@ -133,6 +133,9 @@ def load_checkpoint_guess_config(sd, output_vae=True, output_clip=True, output_c
 
 @torch.no_grad()
 def load_model_for_a1111(timer, checkpoint_info=None, state_dict=None):
+    ztsnr = False
+    if state_dict:
+        ztsnr = 'ztsnr' in state_dict
     a1111_config_filename = find_checkpoint_config(state_dict, checkpoint_info)
     a1111_config = OmegaConf.load(a1111_config_filename)
     timer.record("forge solving config")
@@ -224,6 +227,7 @@ def load_model_for_a1111(timer, checkpoint_info=None, state_dict=None):
         sd_model.forge_objects.unet.model.model_sampling = model_sampling(sd_model.forge_objects.unet.model.model_config, ModelType.V_PREDICTION)
 
     sd_model.is_sd3 = False
+    sd_model.ztsnr = ztsnr
     sd_model.latent_channels = 4
     sd_model.is_sdxl = conditioner is not None
     sd_model.is_sdxl_inpaint = sd_model.is_sdxl and forge_objects.unet.model.diffusion_model.in_channels == 9
