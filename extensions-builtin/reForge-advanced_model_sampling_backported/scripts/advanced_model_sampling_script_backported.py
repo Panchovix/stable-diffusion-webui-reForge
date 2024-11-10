@@ -7,7 +7,7 @@ class AdvancedModelSamplingScript(scripts.Script):
         self.enabled = False
         self.sampling_mode = "Discrete"
         self.discrete_sampling = "v_prediction"
-        self.discrete_zsnr = True
+        self.discrete_zsnr = True  # FIXME: This produces incorrect results when disabled. Need to investigate.
         self.continuous_edm_sampling = "v_prediction"
         self.continuous_edm_sigma_max = 120.0
         self.continuous_edm_sigma_min = 0.002
