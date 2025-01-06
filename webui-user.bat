@@ -9,7 +9,7 @@ set COMMANDLINE_ARGS=
 @REM set A1111_HOME=Your A1111 checkout dir
 @REM
 @REM set VENV_DIR=%A1111_HOME%\\venv
-@REM set COMMANDLINE_ARGS=%COMMANDLINE_ARGS% ^
+@REM set COMMANDLINE_ARGS=%COMMANDLINE_ARGS% ^--disable-nan-check
 @REM  --ckpt-dir %A1111_HOME%\\models\\Stable-diffusion ^
 @REM  --hypernetwork-dir %A1111_HOME%\\models\\hypernetworks ^
 @REM  --embeddings-dir %A1111_HOME%\\embeddings ^
