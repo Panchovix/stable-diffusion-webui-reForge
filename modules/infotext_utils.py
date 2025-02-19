@@ -188,8 +188,12 @@ def connect_paste_params_buttons():
 def send_image_and_dimensions(x):
     if isinstance(x, Image.Image):
         img = x
+        if img.mode == 'RGBA':
+            img = img.convert('RGB')
     else:
         img = image_from_url_text(x)
+        if img is not None and img.mode == 'RGBA':
+            img = img.convert('RGB')
 
     if shared.opts.send_size and isinstance(img, Image.Image):
         w = img.width
