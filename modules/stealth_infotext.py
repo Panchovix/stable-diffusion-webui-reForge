@@ -15,7 +15,7 @@ def add_stealth_pnginfo(params: ImageSaveParams):
     add_data(params, str(stealth_pnginfo_option), True)
 
 def prepare_data(params, mode='Alpha', compressed=True):
-    signature = f"stealth_{'png' if mode == 'alpha' else 'rgb'}{'info' if not compressed else 'comp'}"
+    signature = f"stealth_{'png' if mode == 'Alpha' else 'rgb'}{'info' if not compressed else 'comp'}"
     binary_signature = ''.join(format(byte, '08b') for byte in signature.encode('utf-8'))
     param = params.encode('utf-8') if not compressed else gzip.compress(bytes(params, 'utf-8'))
     binary_param = ''.join(format(byte, '08b') for byte in param)
