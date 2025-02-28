@@ -180,13 +180,21 @@ gr.Box = gr.Group
 
 def patched_url_ok(url: str) -> bool:
     # Retry for longer i guess.
+    print("Testing URL:",url)
     import httpx, time
+    
+    start_slice = time.monotonic()
     try:
         for _ in range(5*60):
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore")
-                r = httpx.head(url, timeout=3, verify=False)
+                try:
+                    r = httpx.head(url, timeout=3, verify=False)
+                except httpx.ReadTimeout:
+                    time.sleep(0.500)
+                    continue
             if r.status_code in (200, 401, 302):  # 401 or 302 if auth is set
+                print(f"Gradio url_ok reported: {round(time.monotonic() - start_slice,ndigits=2)}s to OK")
                 return True
             time.sleep(0.500)
     except (ConnectionError, httpx.ConnectError):
