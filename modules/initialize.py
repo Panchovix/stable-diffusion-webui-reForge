@@ -5,9 +5,6 @@ import sys
 import warnings
 import os
 
-from threading import Thread
-
-from modules import gradio_extensions
 from modules.timer import startup_timer
 
 
@@ -51,7 +48,12 @@ def imports():
     shared_init.initialize()
     startup_timer.record("initialize shared")
 
-    from modules import processing, ui  # noqa: F401
+    # XXX: Import of gradio_extensions here to ensure that hijacks are applied correctly.
+    # I have no idea why, I don't want to know why but...
+    # This apparently fixes `sd-webui-infinite-image-browsing`'s
+    # AttributeError: Cannot call change outside of a gradio.Blocks context.
+    # - Ristellise
+    from modules import processing, gradio_extensions, ui  # noqa: F401
     startup_timer.record("other imports")
 
 
