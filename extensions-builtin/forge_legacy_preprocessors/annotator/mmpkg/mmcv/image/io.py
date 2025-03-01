@@ -5,8 +5,12 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-from cv2 import (IMREAD_COLOR, IMREAD_GRAYSCALE, IMREAD_IGNORE_ORIENTATION,
-                 IMREAD_UNCHANGED)
+from cv2 import (
+    IMREAD_COLOR,
+    IMREAD_GRAYSCALE,
+    IMREAD_IGNORE_ORIENTATION,
+    IMREAD_UNCHANGED,
+)
 
 from annotator.mmpkg.mmcv.utils import check_file_exist, is_str, mkdir_or_exist
 
@@ -26,18 +30,17 @@ except ImportError:
     tifffile = None
 
 jpeg = None
-supported_backends = ['cv2', 'turbojpeg', 'pillow', 'tifffile']
+supported_backends = ["cv2", "turbojpeg", "pillow", "tifffile"]
 
 imread_flags = {
-    'color': IMREAD_COLOR,
-    'grayscale': IMREAD_GRAYSCALE,
-    'unchanged': IMREAD_UNCHANGED,
-    'color_ignore_orientation': IMREAD_IGNORE_ORIENTATION | IMREAD_COLOR,
-    'grayscale_ignore_orientation':
-    IMREAD_IGNORE_ORIENTATION | IMREAD_GRAYSCALE
+    "color": IMREAD_COLOR,
+    "grayscale": IMREAD_GRAYSCALE,
+    "unchanged": IMREAD_UNCHANGED,
+    "color_ignore_orientation": IMREAD_IGNORE_ORIENTATION | IMREAD_COLOR,
+    "grayscale_ignore_orientation": IMREAD_IGNORE_ORIENTATION | IMREAD_GRAYSCALE,
 }
 
-imread_backend = 'cv2'
+imread_backend = "cv2"
 
 
 def use_backend(backend):
@@ -52,37 +55,37 @@ def use_backend(backend):
     assert backend in supported_backends
     global imread_backend
     imread_backend = backend
-    if imread_backend == 'turbojpeg':
+    if imread_backend == "turbojpeg":
         if TurboJPEG is None:
-            raise ImportError('`PyTurboJPEG` is not installed')
+            raise ImportError("`PyTurboJPEG` is not installed")
         global jpeg
         if jpeg is None:
             jpeg = TurboJPEG()
-    elif imread_backend == 'pillow':
+    elif imread_backend == "pillow":
         if Image is None:
-            raise ImportError('`Pillow` is not installed')
-    elif imread_backend == 'tifffile':
+            raise ImportError("`Pillow` is not installed")
+    elif imread_backend == "tifffile":
         if tifffile is None:
-            raise ImportError('`tifffile` is not installed')
+            raise ImportError("`tifffile` is not installed")
 
 
-def _jpegflag(flag='color', channel_order='bgr'):
+def _jpegflag(flag="color", channel_order="bgr"):
     channel_order = channel_order.lower()
-    if channel_order not in ['rgb', 'bgr']:
+    if channel_order not in ["rgb", "bgr"]:
         raise ValueError('channel order must be either "rgb" or "bgr"')
 
-    if flag == 'color':
-        if channel_order == 'bgr':
+    if flag == "color":
+        if channel_order == "bgr":
             return TJPF_BGR
-        elif channel_order == 'rgb':
+        elif channel_order == "rgb":
             return TJCS_RGB
-    elif flag == 'grayscale':
+    elif flag == "grayscale":
         return TJPF_GRAY
     else:
         raise ValueError('flag must be "color" or "grayscale"')
 
 
-def _pillow2array(img, flag='color', channel_order='bgr'):
+def _pillow2array(img, flag="color", channel_order="bgr"):
     """Convert a pillow image to numpy array.
 
     Args:
@@ -97,47 +100,48 @@ def _pillow2array(img, flag='color', channel_order='bgr'):
         np.ndarray: The converted numpy array
     """
     channel_order = channel_order.lower()
-    if channel_order not in ['rgb', 'bgr']:
+    if channel_order not in ["rgb", "bgr"]:
         raise ValueError('channel order must be either "rgb" or "bgr"')
 
-    if flag == 'unchanged':
+    if flag == "unchanged":
         array = np.array(img)
         if array.ndim >= 3 and array.shape[2] >= 3:  # color image
             array[:, :, :3] = array[:, :, (2, 1, 0)]  # RGB to BGR
     else:
         # Handle exif orientation tag
-        if flag in ['color', 'grayscale']:
+        if flag in ["color", "grayscale"]:
             img = ImageOps.exif_transpose(img)
         # If the image mode is not 'RGB', convert it to 'RGB' first.
-        if img.mode != 'RGB':
-            if img.mode != 'LA':
+        if img.mode != "RGB":
+            if img.mode != "LA":
                 # Most formats except 'LA' can be directly converted to RGB
-                img = img.convert('RGB')
+                img = img.convert("RGB")
             else:
                 # When the mode is 'LA', the default conversion will fill in
                 #  the canvas with black, which sometimes shadows black objects
                 #  in the foreground.
                 #
                 # Therefore, a random color (124, 117, 104) is used for canvas
-                img_rgba = img.convert('RGBA')
-                img = Image.new('RGB', img_rgba.size, (124, 117, 104))
+                img_rgba = img.convert("RGBA")
+                img = Image.new("RGB", img_rgba.size, (124, 117, 104))
                 img.paste(img_rgba, mask=img_rgba.split()[3])  # 3 is alpha
-        if flag in ['color', 'color_ignore_orientation']:
+        if flag in ["color", "color_ignore_orientation"]:
             array = np.array(img)
-            if channel_order != 'rgb':
+            if channel_order != "rgb":
                 array = array[:, :, ::-1]  # RGB to BGR
-        elif flag in ['grayscale', 'grayscale_ignore_orientation']:
-            img = img.convert('L')
+        elif flag in ["grayscale", "grayscale_ignore_orientation"]:
+            img = img.convert("L")
             array = np.array(img)
         else:
             raise ValueError(
                 'flag must be "color", "grayscale", "unchanged", '
                 f'"color_ignore_orientation" or "grayscale_ignore_orientation"'
-                f' but got {flag}')
+                f" but got {flag}"
+            )
     return array
 
 
-def imread(img_or_path, flag='color', channel_order='bgr', backend=None):
+def imread(img_or_path, flag="color", channel_order="bgr", backend=None):
     """Read an image.
 
     Args:
@@ -165,42 +169,41 @@ def imread(img_or_path, flag='color', channel_order='bgr', backend=None):
     if backend is None:
         backend = imread_backend
     if backend not in supported_backends:
-        raise ValueError(f'backend: {backend} is not supported. Supported '
-                         "backends are 'cv2', 'turbojpeg', 'pillow'")
+        raise ValueError(
+            f"backend: {backend} is not supported. Supported "
+            "backends are 'cv2', 'turbojpeg', 'pillow'"
+        )
     if isinstance(img_or_path, Path):
         img_or_path = str(img_or_path)
 
     if isinstance(img_or_path, np.ndarray):
         return img_or_path
     elif is_str(img_or_path):
-        check_file_exist(img_or_path,
-                         f'img file does not exist: {img_or_path}')
-        if backend == 'turbojpeg':
-            with open(img_or_path, 'rb') as in_file:
-                img = jpeg.decode(in_file.read(),
-                                  _jpegflag(flag, channel_order))
+        check_file_exist(img_or_path, f"img file does not exist: {img_or_path}")
+        if backend == "turbojpeg":
+            with open(img_or_path, "rb") as in_file:
+                img = jpeg.decode(in_file.read(), _jpegflag(flag, channel_order))
                 if img.shape[-1] == 1:
                     img = img[:, :, 0]
             return img
-        elif backend == 'pillow':
+        elif backend == "pillow":
             img = Image.open(img_or_path)
             img = _pillow2array(img, flag, channel_order)
             return img
-        elif backend == 'tifffile':
+        elif backend == "tifffile":
             img = tifffile.imread(img_or_path)
             return img
         else:
             flag = imread_flags[flag] if is_str(flag) else flag
             img = cv2.imread(img_or_path, flag)
-            if flag == IMREAD_COLOR and channel_order == 'rgb':
+            if flag == IMREAD_COLOR and channel_order == "rgb":
                 cv2.cvtColor(img, cv2.COLOR_BGR2RGB, img)
             return img
     else:
-        raise TypeError('"img" must be a numpy array or a str or '
-                        'a pathlib.Path object')
+        raise TypeError('"img" must be a numpy array or a str or a pathlib.Path object')
 
 
-def imfrombytes(content, flag='color', channel_order='bgr', backend=None):
+def imfrombytes(content, flag="color", channel_order="bgr", backend=None):
     """Read an image from bytes.
 
     Args:
@@ -218,14 +221,16 @@ def imfrombytes(content, flag='color', channel_order='bgr', backend=None):
     if backend is None:
         backend = imread_backend
     if backend not in supported_backends:
-        raise ValueError(f'backend: {backend} is not supported. Supported '
-                         "backends are 'cv2', 'turbojpeg', 'pillow'")
-    if backend == 'turbojpeg':
+        raise ValueError(
+            f"backend: {backend} is not supported. Supported "
+            "backends are 'cv2', 'turbojpeg', 'pillow'"
+        )
+    if backend == "turbojpeg":
         img = jpeg.decode(content, _jpegflag(flag, channel_order))
         if img.shape[-1] == 1:
             img = img[:, :, 0]
         return img
-    elif backend == 'pillow':
+    elif backend == "pillow":
         buff = io.BytesIO(content)
         img = Image.open(buff)
         img = _pillow2array(img, flag, channel_order)
@@ -234,7 +239,7 @@ def imfrombytes(content, flag='color', channel_order='bgr', backend=None):
         img_np = np.frombuffer(content, np.uint8)
         flag = imread_flags[flag] if is_str(flag) else flag
         img = cv2.imdecode(img_np, flag)
-        if flag == IMREAD_COLOR and channel_order == 'rgb':
+        if flag == IMREAD_COLOR and channel_order == "rgb":
             cv2.cvtColor(img, cv2.COLOR_BGR2RGB, img)
         return img
 

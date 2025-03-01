@@ -52,7 +52,7 @@ def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
     assert embed_dim % 2 == 0
     omega = np.arange(embed_dim // 2, dtype=np.float)
     omega /= embed_dim / 2.0
-    omega = 1.0 / 10000 ** omega  # (D/2,)
+    omega = 1.0 / 10000**omega  # (D/2,)
 
     pos = pos.reshape(-1)  # (M,)
     out = np.einsum("m,d->md", pos, omega)  # (M, D/2), outer product
@@ -81,7 +81,7 @@ def interpolate_pos_embed(model, checkpoint_model, pos_embed_key):
         # height (== width) for the checkpoint position embedding
         orig_size = int((pos_embed_checkpoint.shape[-2] - num_extra_tokens) ** 0.5)
         # height (== width) for the new position embedding
-        new_size = int(num_patches ** 0.5)
+        new_size = int(num_patches**0.5)
         # class_token and dist_token are kept unchanged
         if orig_size != new_size:
             print(
@@ -115,7 +115,10 @@ def interpolate_pos_embed_online(
         -1, orig_size[0], orig_size[1], embedding_size
     ).permute(0, 3, 1, 2)
     pos_tokens = torch.nn.functional.interpolate(
-        pos_tokens, size=new_size, mode="bicubic", align_corners=False,
+        pos_tokens,
+        size=new_size,
+        mode="bicubic",
+        align_corners=False,
     )
     pos_tokens = pos_tokens.permute(0, 2, 3, 1).flatten(1, 2)
     new_pos_embed = torch.cat((extra_tokens, pos_tokens), dim=1)

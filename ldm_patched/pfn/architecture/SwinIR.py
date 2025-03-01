@@ -255,9 +255,9 @@ class SwinTransformerBlock(nn.Module):
             # if window size is larger than input resolution, we don't partition windows
             self.shift_size = 0
             self.window_size = min(self.input_resolution)
-        assert (
-            0 <= self.shift_size < self.window_size
-        ), "shift_size must in 0-window_size"
+        assert 0 <= self.shift_size < self.window_size, (
+            "shift_size must in 0-window_size"
+        )
 
         self.norm1 = norm_layer(dim)
         self.attn = WindowAttention(
@@ -756,7 +756,7 @@ class Upsample(nn.Sequential):
             m.append(nn.PixelShuffle(3))
         else:
             raise ValueError(
-                f"scale {scale} is not supported. " "Supported scales: 2^n and 3."
+                f"scale {scale} is not supported. Supported scales: 2^n and 3."
             )
         super(Upsample, self).__init__(*m)
 
@@ -878,7 +878,9 @@ class SwinIR(nn.Module):
         if "conv_first.1.weight" in self.state:
             self.state["conv_first.weight"] = self.state.pop("conv_first.1.weight")
             self.state["conv_first.bias"] = self.state.pop("conv_first.1.bias")
-            self.start_unshuffle = round(math.sqrt(self.state["conv_first.weight"].shape[1] // 3))
+            self.start_unshuffle = round(
+                math.sqrt(self.state["conv_first.weight"].shape[1] // 3)
+            )
 
         num_in_ch = self.state["conv_first.weight"].shape[1]
         in_chans = num_in_ch
@@ -1057,7 +1059,9 @@ class SwinIR(nn.Module):
                 drop=drop_rate,
                 attn_drop=attn_drop_rate,
                 drop_path=dpr[
-                    sum(depths[:i_layer]) : sum(depths[: i_layer + 1])  # type: ignore
+                    sum(depths[:i_layer]) : sum(
+                        depths[: i_layer + 1]
+                    )  # type: ignore
                 ],  # no impact on SR results
                 norm_layer=norm_layer,
                 downsample=None,
@@ -1199,8 +1203,20 @@ class SwinIR(nn.Module):
                     )
                 )
             elif self.upscale == 8:
-                x = self.lrelu(self.conv_up2(torch.nn.functional.interpolate(x, scale_factor=2, mode='nearest')))
-                x = self.lrelu(self.conv_up3(torch.nn.functional.interpolate(x, scale_factor=2, mode='nearest')))
+                x = self.lrelu(
+                    self.conv_up2(
+                        torch.nn.functional.interpolate(
+                            x, scale_factor=2, mode="nearest"
+                        )
+                    )
+                )
+                x = self.lrelu(
+                    self.conv_up3(
+                        torch.nn.functional.interpolate(
+                            x, scale_factor=2, mode="nearest"
+                        )
+                    )
+                )
             x = self.conv_last(self.lrelu(self.conv_hr(x)))
         else:
             # for image denoising and JPEG compression artifact reduction

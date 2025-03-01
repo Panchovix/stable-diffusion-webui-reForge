@@ -26,8 +26,9 @@ class VisualizationDemo(object):
         self.metadata = MetadataCatalog.get(
             cfg.DATASETS.TEST[0] if len(cfg.DATASETS.TEST) else "__unused"
         )
-        if 'cityscapes_fine_sem_seg_val' in cfg.DATASETS.TEST[0]:
+        if "cityscapes_fine_sem_seg_val" in cfg.DATASETS.TEST[0]:
             from cityscapesscripts.helpers.labels import labels
+
             stuff_colors = [k.color for k in labels if k.trainId != 255]
             self.metadata = self.metadata.set(stuff_colors=stuff_colors)
         self.cpu_device = torch.device("cpu")
@@ -53,45 +54,51 @@ class VisualizationDemo(object):
         # Convert image from OpenCV BGR format to Matplotlib RGB format.
         image = image[:, :, ::-1]
         vis_output = {}
-        
-        if task == 'panoptic':
+
+        if task == "panoptic":
             visualizer = Visualizer(image, metadata=self.metadata, instance_mode=0)
             predictions = self.predictor(image, "panoptic")
             panoptic_seg, segments_info = predictions["panoptic_seg"]
-            vis_output['panoptic'] = visualizer.draw_panoptic_seg_predictions(
-            panoptic_seg.to(self.cpu_device), segments_info, alpha=1
-        )
+            vis_output["panoptic"] = visualizer.draw_panoptic_seg_predictions(
+                panoptic_seg.to(self.cpu_device), segments_info, alpha=1
+            )
 
             # visualizer = Visualizer(image, metadata=self.metadata, instance_mode=0)
             # vis_output['pan_gt'] = visualizer.draw_panoptic_seg(
             #     pan_gt[0].to(self.cpu_device), pan_gt[1], alpha=1
             # )
 
-        if task == 'panoptic' or task == 'semantic':
+        if task == "panoptic" or task == "semantic":
             visualizer = Visualizer(image, metadata=self.metadata, instance_mode=1)
             predictions = self.predictor(image, "semantic")
-            vis_output['semantic'] = visualizer.draw_sem_seg(
+            vis_output["semantic"] = visualizer.draw_sem_seg(
                 predictions["sem_seg"].argmax(dim=0).to(self.cpu_device), alpha=1
             )
-            
+
             # visualizer = Visualizer(image, metadata=self.metadata, instance_mode=1)
             # vis_output['gt_sem'] = visualizer.draw_sem_seg(
             #     sem_gt.to(self.cpu_device), alpha=1
             # )
 
-        if task == 'panoptic' or task == 'instance':
+        if task == "panoptic" or task == "instance":
             visualizer = Visualizer(image, metadata=self.metadata, instance_mode=2)
             predictions = self.predictor(image, "instance")
             instances = predictions["instances"].to(self.cpu_device)
-            vis_output['instance'] = visualizer.draw_instance_predictions(predictions=instances, alpha=1)
+            vis_output["instance"] = visualizer.draw_instance_predictions(
+                predictions=instances, alpha=1
+            )
 
-            if 'boxes' in predictions:
-                boxes, labels, scores  = predictions["boxes"]
-                visualizer = Visualizer(image, False, metadata=self.metadata, instance_mode=0)
-                vis_output['boxes'] = visualizer.draw_box_predictions(
-                        boxes.to(self.cpu_device), labels.to(self.cpu_device), scores.to(self.cpu_device))
-            
-            
+            if "boxes" in predictions:
+                boxes, labels, scores = predictions["boxes"]
+                visualizer = Visualizer(
+                    image, False, metadata=self.metadata, instance_mode=0
+                )
+                vis_output["boxes"] = visualizer.draw_box_predictions(
+                    boxes.to(self.cpu_device),
+                    labels.to(self.cpu_device),
+                    scores.to(self.cpu_device),
+                )
+
             # visualizer = Visualizer(image, metadata=self.metadata, instance_mode=2)
             # vis_output['ins_gt'] = visualizer.draw_instance_predictions(predictions=ins_gt.to(self.cpu_device), alpha=1)
         # vis_output['input'] = visualizer.get_image(image)

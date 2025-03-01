@@ -61,9 +61,11 @@ class DepthAnythingDetector:
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB) / 255.0
         image = transform({"image": image})["image"]
         image = torch.from_numpy(image).unsqueeze(0).to(self.device)
+
         @torch.no_grad()
         def predict_depth(model, image):
             return model(image)
+
         depth = predict_depth(self.model, image)
         depth = F.interpolate(
             depth[None], (h, w), mode="bilinear", align_corners=False

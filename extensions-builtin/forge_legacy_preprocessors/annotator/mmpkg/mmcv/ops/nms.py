@@ -6,25 +6,22 @@ import torch
 from annotator.mmpkg.mmcv.utils import deprecated_api_warning
 from ..utils import ext_loader
 
-ext_module = ext_loader.load_ext(
-    '_ext', ['nms', 'softnms', 'nms_match', 'nms_rotated'])
+ext_module = ext_loader.load_ext("_ext", ["nms", "softnms", "nms_match", "nms_rotated"])
 
 
 # This function is modified from: https://github.com/pytorch/vision/
 class NMSop(torch.autograd.Function):
-
     @staticmethod
-    def forward(ctx, bboxes, scores, iou_threshold, offset, score_threshold,
-                max_num):
+    def forward(ctx, bboxes, scores, iou_threshold, offset, score_threshold, max_num):
         is_filtering_by_score = score_threshold > 0
         if is_filtering_by_score:
             valid_mask = scores > score_threshold
             bboxes, scores = bboxes[valid_mask], scores[valid_mask]
-            valid_inds = torch.nonzero(
-                valid_mask, as_tuple=False).squeeze(dim=1)
+            valid_inds = torch.nonzero(valid_mask, as_tuple=False).squeeze(dim=1)
 
         inds = ext_module.nms(
-            bboxes, scores, iou_threshold=float(iou_threshold), offset=offset)
+            bboxes, scores, iou_threshold=float(iou_threshold), offset=offset
+        )
 
         if max_num > 0:
             inds = inds[:max_num]
@@ -33,19 +30,20 @@ class NMSop(torch.autograd.Function):
         return inds
 
     @staticmethod
-    def symbolic(g, bboxes, scores, iou_threshold, offset, score_threshold,
-                 max_num):
+    def symbolic(g, bboxes, scores, iou_threshold, offset, score_threshold, max_num):
         from ..onnx import is_custom_op_loaded
+
         has_custom_op = is_custom_op_loaded()
         # TensorRT nms plugin is aligned with original nms in ONNXRuntime
-        is_trt_backend = os.environ.get('ONNX_BACKEND') == 'MMCVTensorRT'
+        is_trt_backend = os.environ.get("ONNX_BACKEND") == "MMCVTensorRT"
         if has_custom_op and (not is_trt_backend):
             return g.op(
-                'mmcv::NonMaxSuppression',
+                "mmcv::NonMaxSuppression",
                 bboxes,
                 scores,
                 iou_threshold_f=float(iou_threshold),
-                offset_i=int(offset))
+                offset_i=int(offset),
+            )
         else:
             from torch.onnx.symbolic_opset9 import select, squeeze, unsqueeze
             from ..onnx.onnx_utils.symbolic_helper import _size_helper
@@ -55,36 +53,42 @@ class NMSop(torch.autograd.Function):
 
             if max_num > 0:
                 max_num = g.op(
-                    'Constant',
-                    value_t=torch.tensor(max_num, dtype=torch.long))
+                    "Constant", value_t=torch.tensor(max_num, dtype=torch.long)
+                )
             else:
-                dim = g.op('Constant', value_t=torch.tensor(0))
+                dim = g.op("Constant", value_t=torch.tensor(0))
                 max_num = _size_helper(g, bboxes, dim)
             max_output_per_class = max_num
             iou_threshold = g.op(
-                'Constant',
-                value_t=torch.tensor([iou_threshold], dtype=torch.float))
+                "Constant", value_t=torch.tensor([iou_threshold], dtype=torch.float)
+            )
             score_threshold = g.op(
-                'Constant',
-                value_t=torch.tensor([score_threshold], dtype=torch.float))
-            nms_out = g.op('NonMaxSuppression', boxes, scores,
-                           max_output_per_class, iou_threshold,
-                           score_threshold)
+                "Constant", value_t=torch.tensor([score_threshold], dtype=torch.float)
+            )
+            nms_out = g.op(
+                "NonMaxSuppression",
+                boxes,
+                scores,
+                max_output_per_class,
+                iou_threshold,
+                score_threshold,
+            )
             return squeeze(
                 g,
                 select(
-                    g, nms_out, 1,
-                    g.op(
-                        'Constant',
-                        value_t=torch.tensor([2], dtype=torch.long))), 1)
+                    g,
+                    nms_out,
+                    1,
+                    g.op("Constant", value_t=torch.tensor([2], dtype=torch.long)),
+                ),
+                1,
+            )
 
 
 class SoftNMSop(torch.autograd.Function):
-
     @staticmethod
-    def forward(ctx, boxes, scores, iou_threshold, sigma, min_score, method,
-                offset):
-        dets = boxes.new_empty((boxes.size(0), 5), device='cpu')
+    def forward(ctx, boxes, scores, iou_threshold, sigma, min_score, method, offset):
+        dets = boxes.new_empty((boxes.size(0), 5), device="cpu")
         inds = ext_module.softnms(
             boxes.cpu(),
             scores.cpu(),
@@ -93,16 +97,17 @@ class SoftNMSop(torch.autograd.Function):
             sigma=float(sigma),
             min_score=float(min_score),
             method=int(method),
-            offset=int(offset))
+            offset=int(offset),
+        )
         return dets, inds
 
     @staticmethod
-    def symbolic(g, boxes, scores, iou_threshold, sigma, min_score, method,
-                 offset):
+    def symbolic(g, boxes, scores, iou_threshold, sigma, min_score, method, offset):
         from packaging import version
-        assert version.parse(torch.__version__) >= version.parse('1.7.0')
+
+        assert version.parse(torch.__version__) >= version.parse("1.7.0")
         nms_out = g.op(
-            'mmcv::SoftNonMaxSuppression',
+            "mmcv::SoftNonMaxSuppression",
             boxes,
             scores,
             iou_threshold_f=float(iou_threshold),
@@ -110,11 +115,12 @@ class SoftNMSop(torch.autograd.Function):
             min_score_f=float(min_score),
             method_i=int(method),
             offset_i=int(offset),
-            outputs=2)
+            outputs=2,
+        )
         return nms_out
 
 
-@deprecated_api_warning({'iou_thr': 'iou_threshold'})
+@deprecated_api_warning({"iou_thr": "iou_threshold"})
 def nms(boxes, scores, iou_threshold, offset=0, score_threshold=0, max_num=-1):
     """Dispatch to either CPU or GPU NMS implementations.
 
@@ -160,16 +166,14 @@ def nms(boxes, scores, iou_threshold, offset=0, score_threshold=0, max_num=-1):
     assert boxes.size(0) == scores.size(0)
     assert offset in (0, 1)
 
-    if torch.__version__ == 'parrots':
+    if torch.__version__ == "parrots":
         indata_list = [boxes, scores]
-        indata_dict = {
-            'iou_threshold': float(iou_threshold),
-            'offset': int(offset)
-        }
+        indata_dict = {"iou_threshold": float(iou_threshold), "offset": int(offset)}
         inds = ext_module.nms(*indata_list, **indata_dict)
     else:
-        inds = NMSop.apply(boxes, scores, iou_threshold, offset,
-                           score_threshold, max_num)
+        inds = NMSop.apply(
+            boxes, scores, iou_threshold, offset, score_threshold, max_num
+        )
     dets = torch.cat((boxes[inds], scores[inds].reshape(-1, 1)), dim=1)
     if is_numpy:
         dets = dets.cpu().numpy()
@@ -177,14 +181,16 @@ def nms(boxes, scores, iou_threshold, offset=0, score_threshold=0, max_num=-1):
     return dets, inds
 
 
-@deprecated_api_warning({'iou_thr': 'iou_threshold'})
-def soft_nms(boxes,
-             scores,
-             iou_threshold=0.3,
-             sigma=0.5,
-             min_score=1e-3,
-             method='linear',
-             offset=0):
+@deprecated_api_warning({"iou_thr": "iou_threshold"})
+def soft_nms(
+    boxes,
+    scores,
+    iou_threshold=0.3,
+    sigma=0.5,
+    min_score=1e-3,
+    method="linear",
+    offset=0,
+):
     """Dispatch to only CPU Soft NMS implementations.
 
     The input can be either a torch tensor or numpy array.
@@ -227,27 +233,32 @@ def soft_nms(boxes,
     assert boxes.size(1) == 4
     assert boxes.size(0) == scores.size(0)
     assert offset in (0, 1)
-    method_dict = {'naive': 0, 'linear': 1, 'gaussian': 2}
+    method_dict = {"naive": 0, "linear": 1, "gaussian": 2}
     assert method in method_dict.keys()
 
-    if torch.__version__ == 'parrots':
-        dets = boxes.new_empty((boxes.size(0), 5), device='cpu')
+    if torch.__version__ == "parrots":
+        dets = boxes.new_empty((boxes.size(0), 5), device="cpu")
         indata_list = [boxes.cpu(), scores.cpu(), dets.cpu()]
         indata_dict = {
-            'iou_threshold': float(iou_threshold),
-            'sigma': float(sigma),
-            'min_score': min_score,
-            'method': method_dict[method],
-            'offset': int(offset)
+            "iou_threshold": float(iou_threshold),
+            "sigma": float(sigma),
+            "min_score": min_score,
+            "method": method_dict[method],
+            "offset": int(offset),
         }
         inds = ext_module.softnms(*indata_list, **indata_dict)
     else:
-        dets, inds = SoftNMSop.apply(boxes.cpu(), scores.cpu(),
-                                     float(iou_threshold), float(sigma),
-                                     float(min_score), method_dict[method],
-                                     int(offset))
+        dets, inds = SoftNMSop.apply(
+            boxes.cpu(),
+            scores.cpu(),
+            float(iou_threshold),
+            float(sigma),
+            float(min_score),
+            method_dict[method],
+            int(offset),
+        )
 
-    dets = dets[:inds.size(0)]
+    dets = dets[: inds.size(0)]
 
     if is_numpy:
         dets = dets.cpu().numpy()
@@ -290,7 +301,7 @@ def batched_nms(boxes, scores, idxs, nms_cfg, class_agnostic=False):
         tuple: kept dets and indice.
     """
     nms_cfg_ = nms_cfg.copy()
-    class_agnostic = nms_cfg_.pop('class_agnostic', class_agnostic)
+    class_agnostic = nms_cfg_.pop("class_agnostic", class_agnostic)
     if class_agnostic:
         boxes_for_nms = boxes
     else:
@@ -298,10 +309,10 @@ def batched_nms(boxes, scores, idxs, nms_cfg, class_agnostic=False):
         offsets = idxs.to(boxes) * (max_coordinate + torch.tensor(1).to(boxes))
         boxes_for_nms = boxes + offsets[:, None]
 
-    nms_type = nms_cfg_.pop('type', 'nms')
+    nms_type = nms_cfg_.pop("type", "nms")
     nms_op = eval(nms_type)
 
-    split_thr = nms_cfg_.pop('split_thr', 10000)
+    split_thr = nms_cfg_.pop("split_thr", 10000)
     # Won't split to multiple nms nodes when exporting to onnx
     if boxes_for_nms.shape[0] < split_thr or torch.onnx.is_in_onnx_export():
         dets, keep = nms_op(boxes_for_nms, scores, **nms_cfg_)
@@ -313,7 +324,7 @@ def batched_nms(boxes, scores, idxs, nms_cfg, class_agnostic=False):
         # Some type of nms would reweight the score, such as SoftNMS
         scores = dets[:, 4]
     else:
-        max_num = nms_cfg_.pop('max_num', -1)
+        max_num = nms_cfg_.pop("max_num", -1)
         total_mask = scores.new_zeros(scores.size(), dtype=torch.bool)
         # Some type of nms would reweight the score, such as SoftNMS
         scores_after_nms = scores.new_zeros(scores.size())
@@ -355,16 +366,17 @@ def nms_match(dets, iou_threshold):
     if dets.shape[0] == 0:
         matched = []
     else:
-        assert dets.shape[-1] == 5, 'inputs dets.shape should be (N, 5), ' \
-                                    f'but get {dets.shape}'
+        assert dets.shape[-1] == 5, (
+            f"inputs dets.shape should be (N, 5), but get {dets.shape}"
+        )
         if isinstance(dets, torch.Tensor):
             dets_t = dets.detach().cpu()
         else:
             dets_t = torch.from_numpy(dets)
         indata_list = [dets_t]
-        indata_dict = {'iou_threshold': float(iou_threshold)}
+        indata_dict = {"iou_threshold": float(iou_threshold)}
         matched = ext_module.nms_match(*indata_list, **indata_dict)
-        if torch.__version__ == 'parrots':
+        if torch.__version__ == "parrots":
             matched = matched.tolist()
 
     if isinstance(dets, torch.Tensor):
@@ -401,17 +413,18 @@ def nms_rotated(dets, scores, iou_threshold, labels=None):
     _, order = scores.sort(0, descending=True)
     dets_sorted = dets_wl.index_select(0, order)
 
-    if torch.__version__ == 'parrots':
+    if torch.__version__ == "parrots":
         keep_inds = ext_module.nms_rotated(
             dets_wl,
             scores,
             order,
             dets_sorted,
             iou_threshold=iou_threshold,
-            multi_label=multi_label)
+            multi_label=multi_label,
+        )
     else:
-        keep_inds = ext_module.nms_rotated(dets_wl, scores, order, dets_sorted,
-                                           iou_threshold, multi_label)
-    dets = torch.cat((dets[keep_inds], scores[keep_inds].reshape(-1, 1)),
-                     dim=1)
+        keep_inds = ext_module.nms_rotated(
+            dets_wl, scores, order, dets_sorted, iou_threshold, multi_label
+        )
+    dets = torch.cat((dets[keep_inds], scores[keep_inds].reshape(-1, 1)), dim=1)
     return dets, keep_inds

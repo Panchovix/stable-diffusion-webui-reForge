@@ -18,7 +18,15 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def load_models(model_path: str, model_url: str = None, command_path: str = None, ext_filter=None, download_name=None, ext_blacklist=None, hash_prefix=None) -> list:
+def load_models(
+    model_path: str,
+    model_url: str = None,
+    command_path: str = None,
+    ext_filter=None,
+    download_name=None,
+    ext_blacklist=None,
+    hash_prefix=None,
+) -> list:
     """
     A one-and done loader to try finding the desired models in specified directories.
 
@@ -36,7 +44,9 @@ def load_models(model_path: str, model_url: str = None, command_path: str = None
         places = []
 
         if command_path is not None and command_path != model_path:
-            pretrained_path = os.path.join(command_path, 'experiments/pretrained_models')
+            pretrained_path = os.path.join(
+                command_path, "experiments/pretrained_models"
+            )
             if os.path.exists(pretrained_path):
                 print(f"Appending path: {pretrained_path}")
                 places.append(pretrained_path)
@@ -50,14 +60,23 @@ def load_models(model_path: str, model_url: str = None, command_path: str = None
                 if os.path.islink(full_path) and not os.path.exists(full_path):
                     print(f"Skipping broken symlink: {full_path}")
                     continue
-                if ext_blacklist is not None and any(full_path.endswith(x) for x in ext_blacklist):
+                if ext_blacklist is not None and any(
+                    full_path.endswith(x) for x in ext_blacklist
+                ):
                     continue
                 if full_path not in output:
                     output.append(full_path)
 
         if model_url is not None and len(output) == 0:
             if download_name is not None:
-                output.append(load_file_from_url(model_url, model_dir=places[0], file_name=download_name, hash_prefix=hash_prefix))
+                output.append(
+                    load_file_from_url(
+                        model_url,
+                        model_dir=places[0],
+                        file_name=download_name,
+                        hash_prefix=hash_prefix,
+                    )
+                )
             else:
                 output.append(model_url)
 
@@ -113,8 +132,11 @@ def load_upscalers():
     shared.sd_upscalers = sorted(
         data,
         # Special case for UpscalerNone keeps it at the beginning of the list.
-        key=lambda x: x.name.lower() if not isinstance(x.scaler, (UpscalerNone, UpscalerLanczos, UpscalerNearest)) else ""
+        key=lambda x: x.name.lower()
+        if not isinstance(x.scaler, (UpscalerNone, UpscalerLanczos, UpscalerNearest))
+        else "",
     )
+
 
 # None: not loaded, False: failed to load, True: loaded
 _spandrel_extra_init_state = None
@@ -131,6 +153,7 @@ def _init_spandrel_extra_archs() -> None:
     try:
         import spandrel
         import spandrel_extra_arches
+
         spandrel.MAIN_REGISTRY.add(*spandrel_extra_arches.EXTRA_REGISTRY)
         _spandrel_extra_init_state = True
     except Exception:
@@ -149,6 +172,7 @@ def load_spandrel_model(
     global _spandrel_extra_init_state
 
     import spandrel
+
     _init_spandrel_extra_archs()
 
     model_descriptor = spandrel.ModelLoader(device=device).load_from_file(str(path))
@@ -163,12 +187,18 @@ def load_spandrel_model(
             model_descriptor.model.half()
             half = True
         else:
-            logger.info("Model %s does not support half precision, ignoring --half", path)
+            logger.info(
+                "Model %s does not support half precision, ignoring --half", path
+            )
     if dtype:
         model_descriptor.model.to(dtype=dtype)
     model_descriptor.model.eval()
     logger.debug(
         "Loaded %s from %s (device=%s, half=%s, dtype=%s)",
-        arch, path, device, half, dtype,
+        arch,
+        path,
+        device,
+        half,
+        dtype,
     )
     return model_descriptor

@@ -6,7 +6,8 @@ from torch.autograd import Function
 from ..utils import ext_loader
 
 ext_module = ext_loader.load_ext(
-    '_ext', ['three_interpolate_forward', 'three_interpolate_backward'])
+    "_ext", ["three_interpolate_forward", "three_interpolate_backward"]
+)
 
 
 class ThreeInterpolate(Function):
@@ -17,8 +18,9 @@ class ThreeInterpolate(Function):
     """
 
     @staticmethod
-    def forward(ctx, features: torch.Tensor, indices: torch.Tensor,
-                weight: torch.Tensor) -> torch.Tensor:
+    def forward(
+        ctx, features: torch.Tensor, indices: torch.Tensor, weight: torch.Tensor
+    ) -> torch.Tensor:
         """
         Args:
             features (Tensor): (B, C, M) Features descriptors to be
@@ -40,7 +42,8 @@ class ThreeInterpolate(Function):
         output = torch.cuda.FloatTensor(B, c, n)
 
         ext_module.three_interpolate_forward(
-            features, indices, weight, output, b=B, c=c, m=m, n=n)
+            features, indices, weight, output, b=B, c=c, m=m, n=n
+        )
         return output
 
     @staticmethod
@@ -61,7 +64,8 @@ class ThreeInterpolate(Function):
         grad_out_data = grad_out.data.contiguous()
 
         ext_module.three_interpolate_backward(
-            grad_out_data, idx, weight, grad_features.data, b=B, c=c, n=n, m=m)
+            grad_out_data, idx, weight, grad_features.data, b=B, c=c, n=n, m=m
+        )
         return grad_features, None, None
 
 

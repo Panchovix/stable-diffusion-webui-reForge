@@ -35,16 +35,16 @@ class UpscalerHAT(Upscaler):
             filename = path
         return modelloader.load_spandrel_model(
             filename,
-            device=('cpu' if devices.device_hat.type == 'mps' else None),
+            device=("cpu" if devices.device_hat.type == "mps" else None),
             prefer_half=(not cmd_opts.no_half and not cmd_opts.upcast_sampling),
-            expected_architecture='HAT',
+            expected_architecture="HAT",
         )
 
 
 def hat_upscale(model, img):
-        return upscale_with_model(
-            model,
-            img,
-            tile_size=opts.HAT_tile,
-            tile_overlap=opts.HAT_tile_overlap,
-        )
+    return upscale_with_model(
+        model,
+        img,
+        tile_size=opts.HAT_tile,
+        tile_overlap=opts.HAT_tile_overlap,
+    )

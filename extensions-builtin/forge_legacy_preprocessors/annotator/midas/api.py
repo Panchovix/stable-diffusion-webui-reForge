@@ -54,15 +54,21 @@ def load_midas_transform(model_type):
     elif model_type == "midas_v21":
         net_w, net_h = 384, 384
         resize_mode = "upper_bound"
-        normalization = NormalizeImage(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        normalization = NormalizeImage(
+            mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+        )
 
     elif model_type == "midas_v21_small":
         net_w, net_h = 256, 256
         resize_mode = "upper_bound"
-        normalization = NormalizeImage(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        normalization = NormalizeImage(
+            mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+        )
 
     else:
-        assert False, f"model_type '{model_type}' not implemented, use: --model_type large"
+        assert False, (
+            f"model_type '{model_type}' not implemented, use: --model_type large"
+        )
 
     transform = Compose(
         [
@@ -103,8 +109,9 @@ def load_model(model_type):
             model_path = old_model_path
         elif not os.path.exists(model_path):
             from modules.modelloader import load_file_from_url
+
             load_file_from_url(remote_model_path, model_dir=base_model_path)
-        
+
         model = DPTDepthModel(
             path=model_path,
             backbone="vitb_rn50_384",
@@ -123,8 +130,14 @@ def load_model(model_type):
         )
 
     elif model_type == "midas_v21_small":
-        model = MidasNet_small(model_path, features=64, backbone="efficientnet_lite3", exportable=True,
-                               non_negative=True, blocks={'expand': True})
+        model = MidasNet_small(
+            model_path,
+            features=64,
+            backbone="efficientnet_lite3",
+            exportable=True,
+            non_negative=True,
+            blocks={"expand": True},
+        )
         net_w, net_h = 256, 256
         resize_mode = "upper_bound"
         normalization = NormalizeImage(
@@ -155,11 +168,7 @@ def load_model(model_type):
 
 
 class MiDaSInference(nn.Module):
-    MODEL_TYPES_TORCH_HUB = [
-        "DPT_Large",
-        "DPT_Hybrid",
-        "MiDaS_small"
-    ]
+    MODEL_TYPES_TORCH_HUB = ["DPT_Large", "DPT_Hybrid", "MiDaS_small"]
     MODEL_TYPES_ISL = [
         "dpt_large",
         "dpt_hybrid",
@@ -169,7 +178,7 @@ class MiDaSInference(nn.Module):
 
     def __init__(self, model_type):
         super().__init__()
-        assert (model_type in self.MODEL_TYPES_ISL)
+        assert model_type in self.MODEL_TYPES_ISL
         model, _ = load_model(model_type)
         self.model = model
         self.model.train = disabled_train
@@ -178,4 +187,3 @@ class MiDaSInference(nn.Module):
         with torch.no_grad():
             prediction = self.model(x)
         return prediction
-

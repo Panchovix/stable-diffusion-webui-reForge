@@ -40,6 +40,7 @@ _PREDEFINED_SPLITS_COCO_PANOPTIC = {
     ),
 }
 
+
 def load_coco_instance_json(json_file, image_root, dataset_name=None):
     from annotator.oneformer.pycocotools.coco import COCO
 
@@ -48,7 +49,9 @@ def load_coco_instance_json(json_file, image_root, dataset_name=None):
     with contextlib.redirect_stdout(io.StringIO()):
         coco_api = COCO(json_file)
     if timer.seconds() > 1:
-        logger.info("Loading {} takes {:.2f} seconds.".format(json_file, timer.seconds()))
+        logger.info(
+            "Loading {} takes {:.2f} seconds.".format(json_file, timer.seconds())
+        )
 
     id_map = None
     if dataset_name is not None:
@@ -117,12 +120,14 @@ Category ids in annotations are not in [1, #categories]! We'll apply a mapping f
         # However the ratio of buggy annotations there is tiny and does not affect accuracy.
         # Therefore we explicitly white-list them.
         ann_ids = [ann["id"] for anns_per_image in anns for ann in anns_per_image]
-        assert len(set(ann_ids)) == len(ann_ids), "Annotation ids in '{}' are not unique!".format(
-            json_file
+        assert len(set(ann_ids)) == len(ann_ids), (
+            "Annotation ids in '{}' are not unique!".format(json_file)
         )
 
     imgs_anns = list(zip(imgs, anns))
-    logger.info("Loaded {} images in COCO format from {}".format(len(imgs_anns), json_file))
+    logger.info(
+        "Loaded {} images in COCO format from {}".format(len(imgs_anns), json_file)
+    )
 
     dataset_dicts = {}
 
@@ -130,7 +135,7 @@ Category ids in annotations are not in [1, #categories]! We'll apply a mapping f
 
     num_instances_without_valid_segmentation = 0
 
-    for (img_dict, anno_dict_list) in imgs_anns:
+    for img_dict, anno_dict_list in imgs_anns:
         record = {}
         record["file_name"] = os.path.join(image_root, img_dict["file_name"])
         record["height"] = img_dict["height"]
@@ -148,7 +153,9 @@ Category ids in annotations are not in [1, #categories]! We'll apply a mapping f
             # can trigger this assertion.
             assert anno["image_id"] == image_id
 
-            assert anno.get("ignore", 0) == 0, '"ignore" in COCO json file is not supported.'
+            assert anno.get("ignore", 0) == 0, (
+                '"ignore" in COCO json file is not supported.'
+            )
 
             obj = {key: anno[key] for key in ann_keys if key in anno}
             if "bbox" in obj and len(obj["bbox"]) == 0:
@@ -165,7 +172,9 @@ Category ids in annotations are not in [1, #categories]! We'll apply a mapping f
                         segm = mask_util.frPyObjects(segm, *segm["size"])
                 else:
                     # filter out invalid polygons (< 3 points)
-                    segm = [poly for poly in segm if len(poly) % 2 == 0 and len(poly) >= 6]
+                    segm = [
+                        poly for poly in segm if len(poly) % 2 == 0 and len(poly) >= 6
+                    ]
                     if len(segm) == 0:
                         num_instances_without_valid_segmentation += 1
                         continue  # ignore this instance
@@ -205,6 +214,7 @@ Category ids in annotations are not in [1, #categories]! We'll apply a mapping f
             "check https://detectron2.readthedocs.io/en/latest/tutorials/datasets.html carefully"
         )
     return dataset_dicts
+
 
 def get_metadata():
     meta = {}
@@ -250,7 +260,9 @@ def get_metadata():
     return meta
 
 
-def load_coco_panoptic_json(json_file, instances_json, instances_name, image_dir, gt_dir, semseg_dir, meta):
+def load_coco_panoptic_json(
+    json_file, instances_json, instances_name, image_dir, gt_dir, semseg_dir, meta
+):
     """
     Args:
         image_dir (str): path to the raw dataset. e.g., "~/coco/train2017".
@@ -276,9 +288,11 @@ def load_coco_panoptic_json(json_file, instances_json, instances_name, image_dir
 
     with PathManager.open(json_file) as f:
         json_info = json.load(f)
-    
-    instance_data_dicts = load_coco_instance_json(instances_json, image_dir.replace("panoptic_", ""), instances_name)
-    
+
+    instance_data_dicts = load_coco_instance_json(
+        instances_json, image_dir.replace("panoptic_", ""), instances_name
+    )
+
     ret = []
     for ann in json_info["annotations"]:
         image_id = int(ann["image_id"])
@@ -286,7 +300,9 @@ def load_coco_panoptic_json(json_file, instances_json, instances_name, image_dir
         # different extension, and images have extension ".jpg" for COCO. Need
         # to make image extension a user-provided argument if we extend this
         # function to support other COCO-like datasets.
-        image_file = os.path.join(image_dir, os.path.splitext(ann["file_name"])[0] + ".jpg")
+        image_file = os.path.join(
+            image_dir, os.path.splitext(ann["file_name"])[0] + ".jpg"
+        )
         label_file = os.path.join(gt_dir, ann["file_name"])
         sem_label_file = os.path.join(semseg_dir, ann["file_name"])
         segments_info = [_convert_category_id(x, meta) for x in ann["segments_info"]]
@@ -308,7 +324,14 @@ def load_coco_panoptic_json(json_file, instances_json, instances_name, image_dir
 
 
 def register_coco_panoptic_annos_sem_seg(
-    name, metadata, image_root, panoptic_root, panoptic_json, sem_seg_root, instances_json, instances_name,
+    name,
+    metadata,
+    image_root,
+    panoptic_root,
+    panoptic_json,
+    sem_seg_root,
+    instances_json,
+    instances_name,
 ):
     panoptic_name = name
     delattr(MetadataCatalog.get(panoptic_name), "thing_classes")
@@ -323,7 +346,15 @@ def register_coco_panoptic_annos_sem_seg(
     semantic_name = name + "_with_sem_seg"
     DatasetCatalog.register(
         semantic_name,
-        lambda: load_coco_panoptic_json(panoptic_json, instances_json, instances_name, image_root, panoptic_root, sem_seg_root, metadata),
+        lambda: load_coco_panoptic_json(
+            panoptic_json,
+            instances_json,
+            instances_name,
+            image_root,
+            panoptic_root,
+            sem_seg_root,
+            metadata,
+        ),
     )
     MetadataCatalog.get(semantic_name).set(
         sem_seg_root=sem_seg_root,
@@ -343,13 +374,12 @@ def register_all_coco_panoptic_annos_sem_seg(root):
         prefix,
         (panoptic_root, panoptic_json, semantic_root),
     ) in _PREDEFINED_SPLITS_COCO_PANOPTIC.items():
-
         prefix_instances = prefix[: -len("_panoptic")]
         instances_meta = MetadataCatalog.get(prefix_instances)
         image_root, instances_json = instances_meta.image_root, instances_meta.json_file
 
-        if 'val' in instances_json:
-            instances_json = instances_json.replace('instances_', 'panoptic2instances_')
+        if "val" in instances_json:
+            instances_json = instances_json.replace("instances_", "panoptic2instances_")
 
         register_coco_panoptic_annos_sem_seg(
             prefix,

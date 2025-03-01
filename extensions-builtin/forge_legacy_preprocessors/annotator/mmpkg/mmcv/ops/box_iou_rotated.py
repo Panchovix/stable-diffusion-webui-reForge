@@ -1,10 +1,10 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 from ..utils import ext_loader
 
-ext_module = ext_loader.load_ext('_ext', ['box_iou_rotated'])
+ext_module = ext_loader.load_ext("_ext", ["box_iou_rotated"])
 
 
-def box_iou_rotated(bboxes1, bboxes2, mode='iou', aligned=False):
+def box_iou_rotated(bboxes1, bboxes2, mode="iou", aligned=False):
     """Return intersection-over-union (Jaccard index) of boxes.
 
     Both sets of boxes are expected to be in
@@ -27,8 +27,8 @@ def box_iou_rotated(bboxes1, bboxes2, mode='iou', aligned=False):
     Returns:
         ious(Tensor): shape (N, M) if aligned == False else shape (N,)
     """
-    assert mode in ['iou', 'iof']
-    mode_dict = {'iou': 0, 'iof': 1}
+    assert mode in ["iou", "iof"]
+    mode_dict = {"iou": 0, "iof": 1}
     mode_flag = mode_dict[mode]
     rows = bboxes1.size(0)
     cols = bboxes2.size(0)
@@ -39,7 +39,8 @@ def box_iou_rotated(bboxes1, bboxes2, mode='iou', aligned=False):
     bboxes1 = bboxes1.contiguous()
     bboxes2 = bboxes2.contiguous()
     ext_module.box_iou_rotated(
-        bboxes1, bboxes2, ious, mode_flag=mode_flag, aligned=aligned)
+        bboxes1, bboxes2, ious, mode_flag=mode_flag, aligned=aligned
+    )
     if not aligned:
         ious = ious.view(rows, cols)
     return ious

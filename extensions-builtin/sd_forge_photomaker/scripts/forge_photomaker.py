@@ -2,7 +2,10 @@ from modules_forge.supported_preprocessor import Preprocessor, PreprocessorParam
 from modules_forge.shared import add_supported_preprocessor
 from modules_forge.shared import add_supported_control_model
 from modules_forge.supported_controlnet import ControlModelPatcher
-from ldm_patched.contrib.external_photomaker import PhotoMakerEncode, PhotoMakerIDEncoder
+from ldm_patched.contrib.external_photomaker import (
+    PhotoMakerEncode,
+    PhotoMakerIDEncoder,
+)
 
 
 opPhotoMakerEncode = PhotoMakerEncode().apply_photomaker
@@ -12,17 +15,19 @@ class PreprocessorClipvisionForPhotomaker(Preprocessor):
     def __init__(self, name):
         super().__init__()
         self.name = name
-        self.tags = ['PhotoMaker']
-        self.model_filename_filters = ['PhotoMaker', 'Photo_Maker', 'Photo-Maker']
+        self.tags = ["PhotoMaker"]
+        self.model_filename_filters = ["PhotoMaker", "Photo_Maker", "Photo-Maker"]
         self.sorting_priority = 20
         self.slider_resolution = PreprocessorParameter(visible=False)
         self.corp_image_with_a1111_mask_when_in_img2img_inpaint_tab = False
         self.show_control_mode = False
 
 
-add_supported_preprocessor(PreprocessorClipvisionForPhotomaker(
-    name='ClipVision (Photomaker)',
-))
+add_supported_preprocessor(
+    PreprocessorClipvisionForPhotomaker(
+        name="ClipVision (Photomaker)",
+    )
+)
 
 
 class PhotomakerPatcher(ControlModelPatcher):
@@ -48,15 +53,21 @@ class PhotomakerPatcher(ControlModelPatcher):
         clip = process.sd_model.forge_objects.clip
         text = process.prompts[0]
 
-        cond_modified = opPhotoMakerEncode(photomaker=self.model, image=cond.movedim(1, -1), clip=clip, text=text)[0]
-        cond_modified = unet.encode_conds_after_clip(conds=cond_modified, noise=kwargs['x'])[0]
+        cond_modified = opPhotoMakerEncode(
+            photomaker=self.model, image=cond.movedim(1, -1), clip=clip, text=text
+        )[0]
+        cond_modified = unet.encode_conds_after_clip(
+            conds=cond_modified, noise=kwargs["x"]
+        )[0]
 
-        def conditioning_modifier(model, x, timestep, uncond, cond, cond_scale, model_options, seed):
+        def conditioning_modifier(
+            model, x, timestep, uncond, cond, cond_scale, model_options, seed
+        ):
             cond = cond.copy()
             for c in cond:
-                c['pooled_output'] = cond_modified['pooled_output']
-                c['cross_attn'] = cond_modified['cross_attn']
-                c['model_conds'].update(cond_modified['model_conds'])
+                c["pooled_output"] = cond_modified["pooled_output"]
+                c["cross_attn"] = cond_modified["cross_attn"]
+                c["model_conds"].update(cond_modified["model_conds"])
             return model, x, timestep, uncond, cond, cond_scale, model_options, seed
 
         unet.add_conditioning_modifier(conditioning_modifier)

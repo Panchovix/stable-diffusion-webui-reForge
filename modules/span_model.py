@@ -33,16 +33,16 @@ class UpscalerSPAN(Upscaler):
             filename = path
         return modelloader.load_spandrel_model(
             filename,
-            device=('cpu' if devices.device_span.type == 'mps' else None),
+            device=("cpu" if devices.device_span.type == "mps" else None),
             prefer_half=(not cmd_opts.no_half and not cmd_opts.upcast_sampling),
-            expected_architecture='SPAN',
+            expected_architecture="SPAN",
         )
 
 
 def span_upscale(model, img):
-        return upscale_with_model(
-            model,
-            img,
-            tile_size=opts.SPAN_tile,
-            tile_overlap=opts.SPAN_tile_overlap,
-        )
+    return upscale_with_model(
+        model,
+        img,
+        tile_size=opts.SPAN_tile,
+        tile_overlap=opts.SPAN_tile_overlap,
+    )

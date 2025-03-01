@@ -14,7 +14,7 @@ def imconvert(img, src, dst):
     Returns:
         ndarray: The converted image.
     """
-    code = getattr(cv2, f'COLOR_{src.upper()}2{dst.upper()}')
+    code = getattr(cv2, f"COLOR_{src.upper()}2{dst.upper()}")
     out_img = cv2.cvtColor(img, code)
     return out_img
 
@@ -102,10 +102,11 @@ def _convert_input_type_range(img):
     if img_type == np.float32:
         pass
     elif img_type == np.uint8:
-        img /= 255.
+        img /= 255.0
     else:
-        raise TypeError('The img type should be np.float32 or np.uint8, '
-                        f'but got {img_type}')
+        raise TypeError(
+            f"The img type should be np.float32 or np.uint8, but got {img_type}"
+        )
     return img
 
 
@@ -131,12 +132,13 @@ def _convert_output_type_range(img, dst_type):
         (ndarray): The converted image with desired type and range.
     """
     if dst_type not in (np.uint8, np.float32):
-        raise TypeError('The dst_type should be np.float32 or np.uint8, '
-                        f'but got {dst_type}')
+        raise TypeError(
+            f"The dst_type should be np.float32 or np.uint8, but got {dst_type}"
+        )
     if dst_type == np.uint8:
         img = img.round()
     else:
-        img /= 255.
+        img /= 255.0
     return img.astype(dst_type)
 
 
@@ -168,8 +170,13 @@ def rgb2ycbcr(img, y_only=False):
         out_img = np.dot(img, [65.481, 128.553, 24.966]) + 16.0
     else:
         out_img = np.matmul(
-            img, [[65.481, -37.797, 112.0], [128.553, -74.203, -93.786],
-                  [24.966, 112.0, -18.214]]) + [16, 128, 128]
+            img,
+            [
+                [65.481, -37.797, 112.0],
+                [128.553, -74.203, -93.786],
+                [24.966, 112.0, -18.214],
+            ],
+        ) + [16, 128, 128]
     out_img = _convert_output_type_range(out_img, img_type)
     return out_img
 
@@ -202,8 +209,13 @@ def bgr2ycbcr(img, y_only=False):
         out_img = np.dot(img, [24.966, 128.553, 65.481]) + 16.0
     else:
         out_img = np.matmul(
-            img, [[24.966, 112.0, -18.214], [128.553, -74.203, -93.786],
-                  [65.481, -37.797, 112.0]]) + [16, 128, 128]
+            img,
+            [
+                [24.966, 112.0, -18.214],
+                [128.553, -74.203, -93.786],
+                [65.481, -37.797, 112.0],
+            ],
+        ) + [16, 128, 128]
     out_img = _convert_output_type_range(out_img, img_type)
     return out_img
 
@@ -231,11 +243,14 @@ def ycbcr2rgb(img):
     """
     img_type = img.dtype
     img = _convert_input_type_range(img) * 255
-    out_img = np.matmul(img, [[0.00456621, 0.00456621, 0.00456621],
-                              [0, -0.00153632, 0.00791071],
-                              [0.00625893, -0.00318811, 0]]) * 255.0 + [
-                                  -222.921, 135.576, -276.836
-                              ]
+    out_img = np.matmul(
+        img,
+        [
+            [0.00456621, 0.00456621, 0.00456621],
+            [0, -0.00153632, 0.00791071],
+            [0.00625893, -0.00318811, 0],
+        ],
+    ) * 255.0 + [-222.921, 135.576, -276.836]
     out_img = _convert_output_type_range(out_img, img_type)
     return out_img
 
@@ -263,18 +278,20 @@ def ycbcr2bgr(img):
     """
     img_type = img.dtype
     img = _convert_input_type_range(img) * 255
-    out_img = np.matmul(img, [[0.00456621, 0.00456621, 0.00456621],
-                              [0.00791071, -0.00153632, 0],
-                              [0, -0.00318811, 0.00625893]]) * 255.0 + [
-                                  -276.836, 135.576, -222.921
-                              ]
+    out_img = np.matmul(
+        img,
+        [
+            [0.00456621, 0.00456621, 0.00456621],
+            [0.00791071, -0.00153632, 0],
+            [0, -0.00318811, 0.00625893],
+        ],
+    ) * 255.0 + [-276.836, 135.576, -222.921]
     out_img = _convert_output_type_range(out_img, img_type)
     return out_img
 
 
 def convert_color_factory(src, dst):
-
-    code = getattr(cv2, f'COLOR_{src.upper()}2{dst.upper()}')
+    code = getattr(cv2, f"COLOR_{src.upper()}2{dst.upper()}")
 
     def convert_color(img):
         out_img = cv2.cvtColor(img, code)
@@ -293,14 +310,14 @@ def convert_color_factory(src, dst):
     return convert_color
 
 
-bgr2rgb = convert_color_factory('bgr', 'rgb')
+bgr2rgb = convert_color_factory("bgr", "rgb")
 
-rgb2bgr = convert_color_factory('rgb', 'bgr')
+rgb2bgr = convert_color_factory("rgb", "bgr")
 
-bgr2hsv = convert_color_factory('bgr', 'hsv')
+bgr2hsv = convert_color_factory("bgr", "hsv")
 
-hsv2bgr = convert_color_factory('hsv', 'bgr')
+hsv2bgr = convert_color_factory("hsv", "bgr")
 
-bgr2hls = convert_color_factory('bgr', 'hls')
+bgr2hls = convert_color_factory("bgr", "hls")
 
-hls2bgr = convert_color_factory('hls', 'bgr')
+hls2bgr = convert_color_factory("hls", "bgr")

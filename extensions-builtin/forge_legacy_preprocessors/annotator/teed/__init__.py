@@ -1,6 +1,7 @@
 """
 Hello, welcome on board,
 """
+
 from __future__ import print_function
 
 import os
@@ -12,8 +13,9 @@ import torch
 from annotator.teed.ted import TED  # TEED architecture
 from einops import rearrange
 from modules import devices
-from annotator.util import load_model,safe_step
+from annotator.util import load_model, safe_step
 from annotator.annotator_path import models_path
+
 
 class TEEDDector:
     """https://github.com/xavysp/TEED"""
@@ -37,16 +39,17 @@ class TEEDDector:
             self.model.cpu()
 
     def __call__(self, image: np.ndarray, safe_steps: int = 2) -> np.ndarray:
-
         self.model.to(self.device)
 
         H, W, _ = image.shape
         with torch.no_grad():
             image_teed = torch.from_numpy(image.copy()).float().to(self.device)
-            image_teed = rearrange(image_teed, 'h w c -> 1 c h w')
+            image_teed = rearrange(image_teed, "h w c -> 1 c h w")
             edges = self.model(image_teed)
             edges = [e.detach().cpu().numpy().astype(np.float32)[0, 0] for e in edges]
-            edges = [cv2.resize(e, (W, H), interpolation=cv2.INTER_LINEAR) for e in edges]
+            edges = [
+                cv2.resize(e, (W, H), interpolation=cv2.INTER_LINEAR) for e in edges
+            ]
             edges = np.stack(edges, axis=2)
             edge = 1 / (1 + np.exp(-np.mean(edges, axis=2).astype(np.float64)))
             if safe_steps != 0:

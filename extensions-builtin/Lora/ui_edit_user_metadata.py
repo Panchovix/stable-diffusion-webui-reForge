@@ -22,7 +22,7 @@ def build_tags(metadata):
     tags = {}
 
     ss_tag_frequency = metadata.get("ss_tag_frequency", {})
-    if ss_tag_frequency is not None and hasattr(ss_tag_frequency, 'items'):
+    if ss_tag_frequency is not None and hasattr(ss_tag_frequency, "items"):
         for _, tags_dict in ss_tag_frequency.items():
             for tag, tag_count in tags_dict.items():
                 tag = tag.strip()
@@ -56,7 +56,16 @@ class LoraUserMetadataEditor(ui_extra_networks_user_metadata.UserMetadataEditor)
         self.slider_preferred_weight = None
         self.edit_notes = None
 
-    def save_lora_user_metadata(self, name, desc, sd_version, activation_text, preferred_weight, negative_text, notes):
+    def save_lora_user_metadata(
+        self,
+        name,
+        desc,
+        sd_version,
+        activation_text,
+        preferred_weight,
+        negative_text,
+        notes,
+    ):
         user_metadata = self.get_user_metadata(name)
         user_metadata["description"] = desc
         user_metadata["sd version"] = sd_version
@@ -73,10 +82,10 @@ class LoraUserMetadataEditor(ui_extra_networks_user_metadata.UserMetadataEditor)
         metadata = item.get("metadata") or {}
 
         keys = {
-            'ss_output_name': "Output name:",
-            'ss_sd_model_name': "Model:",
-            'ss_clip_skip': "Clip skip:",
-            'ss_network_module': "Kohya module:",
+            "ss_output_name": "Output name:",
+            "ss_sd_model_name": "Model:",
+            "ss_clip_skip": "Clip skip:",
+            "ss_network_module": "Kohya module:",
         }
 
         for key, label in keys.items():
@@ -84,26 +93,42 @@ class LoraUserMetadataEditor(ui_extra_networks_user_metadata.UserMetadataEditor)
             if value is not None and str(value) != "None":
                 table.append((label, html.escape(value)))
 
-        ss_training_started_at = metadata.get('ss_training_started_at')
+        ss_training_started_at = metadata.get("ss_training_started_at")
         if ss_training_started_at:
-            table.append(("Date trained:", datetime.datetime.utcfromtimestamp(float(ss_training_started_at)).strftime('%Y-%m-%d %H:%M')))
+            table.append(
+                (
+                    "Date trained:",
+                    datetime.datetime.utcfromtimestamp(
+                        float(ss_training_started_at)
+                    ).strftime("%Y-%m-%d %H:%M"),
+                )
+            )
 
         ss_bucket_info = metadata.get("ss_bucket_info")
         if ss_bucket_info and "buckets" in ss_bucket_info:
             resolutions = {}
             for _, bucket in ss_bucket_info["buckets"].items():
                 resolution = bucket["resolution"]
-                resolution = f'{resolution[1]}x{resolution[0]}'
+                resolution = f"{resolution[1]}x{resolution[0]}"
 
-                resolutions[resolution] = resolutions.get(resolution, 0) + int(bucket["count"])
+                resolutions[resolution] = resolutions.get(resolution, 0) + int(
+                    bucket["count"]
+                )
 
-            resolutions_list = sorted(resolutions.keys(), key=resolutions.get, reverse=True)
+            resolutions_list = sorted(
+                resolutions.keys(), key=resolutions.get, reverse=True
+            )
             resolutions_text = html.escape(", ".join(resolutions_list[0:4]))
             if len(resolutions) > 4:
                 resolutions_text += ", ..."
                 resolutions_text = f"<span title='{html.escape(', '.join(resolutions_list))}'>{resolutions_text}</span>"
 
-            table.append(('Resolutions:' if len(resolutions_list) > 1 else 'Resolution:', resolutions_text))
+            table.append(
+                (
+                    "Resolutions:" if len(resolutions_list) > 1 else "Resolution:",
+                    resolutions_text,
+                )
+            )
 
         image_count = 0
         for _, params in metadata.get("ss_dataset_dirs", {}).items():
@@ -127,12 +152,17 @@ class LoraUserMetadataEditor(ui_extra_networks_user_metadata.UserMetadataEditor)
         return [
             *values[0:5],
             item.get("sd_version", "Unknown"),
-            gr.HighlightedText.update(value=gradio_tags, visible=True if tags else False),
-            user_metadata.get('activation text', ''),
-            float(user_metadata.get('preferred weight', 0.0)),
-            user_metadata.get('negative text', ''),
+            gr.HighlightedText.update(
+                value=gradio_tags, visible=True if tags else False
+            ),
+            user_metadata.get("activation text", ""),
+            float(user_metadata.get("preferred weight", 0.0)),
+            user_metadata.get("negative text", ""),
             gr.update(visible=True if tags else False),
-            gr.update(value=self.generate_random_prompt_from_tags(tags), visible=True if tags else False),
+            gr.update(
+                value=self.generate_random_prompt_from_tags(tags),
+                visible=True if tags else False,
+            ),
         ]
 
     def generate_random_prompt(self, name):
@@ -152,33 +182,54 @@ class LoraUserMetadataEditor(ui_extra_networks_user_metadata.UserMetadataEditor)
             v = random.random() * max_count
             if count > v:
                 for x in "({[]})":
-                    tag = tag.replace(x, '\\' + x)
+                    tag = tag.replace(x, "\\" + x)
                 res.append(tag)
 
         return ", ".join(sorted(res))
 
     def create_extra_default_items_in_left_column(self):
-
         # this would be a lot better as gr.Radio but I can't make it work
-        self.select_sd_version = gr.Dropdown(['SD1', 'SD2', 'SDXL', 'Unknown'], value='Unknown', label='Stable Diffusion version', interactive=True)
+        self.select_sd_version = gr.Dropdown(
+            ["SD1", "SD2", "SDXL", "Unknown"],
+            value="Unknown",
+            label="Stable Diffusion version",
+            interactive=True,
+        )
 
     def create_editor(self):
         self.create_default_editor_elems()
 
         self.taginfo = gr.HighlightedText(label="Training dataset tags")
-        self.edit_activation_text = gr.Text(label='Activation text', info="Will be added to prompt along with Lora")
-        self.slider_preferred_weight = gr.Slider(label='Preferred weight', info="Set to 0 to disable", minimum=0.0, maximum=2.0, step=0.01)
-        self.edit_negative_text = gr.Text(label='Negative prompt', info="Will be added to negative prompts")
+        self.edit_activation_text = gr.Text(
+            label="Activation text", info="Will be added to prompt along with Lora"
+        )
+        self.slider_preferred_weight = gr.Slider(
+            label="Preferred weight",
+            info="Set to 0 to disable",
+            minimum=0.0,
+            maximum=2.0,
+            step=0.01,
+        )
+        self.edit_negative_text = gr.Text(
+            label="Negative prompt", info="Will be added to negative prompts"
+        )
         with gr.Row() as row_random_prompt:
             with gr.Column(scale=8):
-                random_prompt = gr.Textbox(label='Random prompt', lines=4, max_lines=4, interactive=False)
+                random_prompt = gr.Textbox(
+                    label="Random prompt", lines=4, max_lines=4, interactive=False
+                )
 
             with gr.Column(scale=1, min_width=120):
-                generate_random_prompt = gr.Button('Generate', size="lg", scale=1)
+                generate_random_prompt = gr.Button("Generate", size="lg", scale=1)
 
-        self.edit_notes = gr.TextArea(label='Notes', lines=4)
+        self.edit_notes = gr.TextArea(label="Notes", lines=4)
 
-        generate_random_prompt.click(fn=self.generate_random_prompt, inputs=[self.edit_name_input], outputs=[random_prompt], show_progress=False)
+        generate_random_prompt.click(
+            fn=self.generate_random_prompt,
+            inputs=[self.edit_name_input],
+            outputs=[random_prompt],
+            show_progress=False,
+        )
 
         def select_tag(activation_text, evt: gr.SelectData):
             tag = evt.value[0]
@@ -190,7 +241,12 @@ class LoraUserMetadataEditor(ui_extra_networks_user_metadata.UserMetadataEditor)
 
             return activation_text + ", " + tag if activation_text else tag
 
-        self.taginfo.select(fn=select_tag, inputs=[self.edit_activation_text], outputs=[self.edit_activation_text], show_progress=False)
+        self.taginfo.select(
+            fn=select_tag,
+            inputs=[self.edit_activation_text],
+            outputs=[self.edit_activation_text],
+            show_progress=False,
+        )
 
         self.create_default_buttons()
 
@@ -209,9 +265,11 @@ class LoraUserMetadataEditor(ui_extra_networks_user_metadata.UserMetadataEditor)
             random_prompt,
         ]
 
-        self.button_edit\
-            .click(fn=self.put_values_into_components, inputs=[self.edit_name_input], outputs=viewed_components)\
-            .then(fn=lambda: gr.update(visible=True), inputs=[], outputs=[self.box])
+        self.button_edit.click(
+            fn=self.put_values_into_components,
+            inputs=[self.edit_name_input],
+            outputs=viewed_components,
+        ).then(fn=lambda: gr.update(visible=True), inputs=[], outputs=[self.box])
 
         edited_components = [
             self.edit_description,
@@ -222,5 +280,6 @@ class LoraUserMetadataEditor(ui_extra_networks_user_metadata.UserMetadataEditor)
             self.edit_notes,
         ]
 
-
-        self.setup_save_handler(self.button_save, self.save_lora_user_metadata, edited_components)
+        self.setup_save_handler(
+            self.button_save, self.save_lora_user_metadata, edited_components
+        )

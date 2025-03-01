@@ -15,8 +15,10 @@ logger = logging.getLogger(__name__)
 
 class UpscalerSwinIR(Upscaler):
     def __init__(self, dirname):
-        self._cached_model = None           # keep the model when SWIN_torch_compile is on to prevent re-compile every runs
-        self._cached_model_config = None    # to clear '_cached_model' when changing model (v1/v2) or settings
+        self._cached_model = None  # keep the model when SWIN_torch_compile is on to prevent re-compile every runs
+        self._cached_model_config = (
+            None  # to clear '_cached_model' when changing model (v1/v2) or settings
+        )
         self.name = "SwinIR"
         self.model_url = SWINIR_MODEL_URL
         self.model_name = "SwinIR 4x"
@@ -76,23 +78,52 @@ class UpscalerSwinIR(Upscaler):
             prefer_half=(devices.dtype == torch.float16),
             expected_architecture="SwinIR",
         )
-        if getattr(shared.opts, 'SWIN_torch_compile', False):
+        if getattr(shared.opts, "SWIN_torch_compile", False):
             try:
                 model_descriptor.model.compile()
             except Exception:
-                logger.warning("Failed to compile SwinIR model, fallback to JIT", exc_info=True)
+                logger.warning(
+                    "Failed to compile SwinIR model, fallback to JIT", exc_info=True
+                )
         return model_descriptor
 
     def _get_device(self):
-        return devices.get_device_for('swinir')
+        return devices.get_device_for("swinir")
 
 
 def on_ui_settings():
     import gradio as gr
 
-    shared.opts.add_option("SWIN_tile", shared.OptionInfo(192, "Tile size for all SwinIR.", gr.Slider, {"minimum": 16, "maximum": 512, "step": 16}, section=('upscaling', "Upscaling")))
-    shared.opts.add_option("SWIN_tile_overlap", shared.OptionInfo(8, "Tile overlap, in pixels for SwinIR. Low values = visible seam.", gr.Slider, {"minimum": 0, "maximum": 48, "step": 1}, section=('upscaling', "Upscaling")))
-    shared.opts.add_option("SWIN_torch_compile", shared.OptionInfo(False, "Use torch.compile to accelerate SwinIR.", gr.Checkbox, {"interactive": True}, section=('upscaling', "Upscaling")).info("Takes longer on first run"))
+    shared.opts.add_option(
+        "SWIN_tile",
+        shared.OptionInfo(
+            192,
+            "Tile size for all SwinIR.",
+            gr.Slider,
+            {"minimum": 16, "maximum": 512, "step": 16},
+            section=("upscaling", "Upscaling"),
+        ),
+    )
+    shared.opts.add_option(
+        "SWIN_tile_overlap",
+        shared.OptionInfo(
+            8,
+            "Tile overlap, in pixels for SwinIR. Low values = visible seam.",
+            gr.Slider,
+            {"minimum": 0, "maximum": 48, "step": 1},
+            section=("upscaling", "Upscaling"),
+        ),
+    )
+    shared.opts.add_option(
+        "SWIN_torch_compile",
+        shared.OptionInfo(
+            False,
+            "Use torch.compile to accelerate SwinIR.",
+            gr.Checkbox,
+            {"interactive": True},
+            section=("upscaling", "Upscaling"),
+        ).info("Takes longer on first run"),
+    )
 
 
 script_callbacks.on_ui_settings(on_ui_settings)

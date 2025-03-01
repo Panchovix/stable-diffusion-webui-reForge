@@ -3,7 +3,10 @@ import math
 from typing import List
 import torch
 
-from annotator.oneformer.detectron2.solver.lr_scheduler import LRScheduler, _get_warmup_factor_at_iter
+from annotator.oneformer.detectron2.solver.lr_scheduler import (
+    LRScheduler,
+    _get_warmup_factor_at_iter,
+)
 
 # NOTE: PyTorch's LR scheduler interface uses names that assume the LR changes
 # only on epoch boundaries. We typically use iteration based schedules instead.
@@ -53,7 +56,9 @@ class WarmupPolyLR(LRScheduler):
             ):
                 return [base_lr * self.constant_ending for base_lr in self.base_lrs]
         return [
-            base_lr * warmup_factor * math.pow((1.0 - self.last_epoch / self.max_iters), self.power)
+            base_lr
+            * warmup_factor
+            * math.pow((1.0 - self.last_epoch / self.max_iters), self.power)
             for base_lr in self.base_lrs
         ]
 

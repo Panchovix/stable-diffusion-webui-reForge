@@ -18,14 +18,19 @@ class ZoeDetector:
         self.device = devices.get_device_for("controlnet")
 
     def load_model(self):
-        remote_model_path = "https://huggingface.co/lllyasviel/Annotators/resolve/main/ZoeD_M12_N.pt"
+        remote_model_path = (
+            "https://huggingface.co/lllyasviel/Annotators/resolve/main/ZoeD_M12_N.pt"
+        )
         modelpath = os.path.join(self.model_dir, "ZoeD_M12_N.pt")
         if not os.path.exists(modelpath):
             from modules.modelloader import load_file_from_url
+
             load_file_from_url(remote_model_path, model_dir=self.model_dir)
         conf = get_config("zoedepth", "infer")
         model = ZoeDepth.build_from_config(conf)
-        model.load_state_dict(torch.load(modelpath, map_location=model.device)['model'], strict=False)
+        model.load_state_dict(
+            torch.load(modelpath, map_location=model.device)["model"], strict=False
+        )
         model.eval()
         self.model = model.to(self.device)
 
@@ -43,7 +48,7 @@ class ZoeDetector:
         with torch.no_grad():
             image_depth = torch.from_numpy(image_depth).float().to(self.device)
             image_depth = image_depth / 255.0
-            image_depth = rearrange(image_depth, 'h w c -> 1 c h w')
+            image_depth = rearrange(image_depth, "h w c -> 1 c h w")
             depth = self.model.infer(image_depth)
 
             depth = depth[0, 0].cpu().numpy()

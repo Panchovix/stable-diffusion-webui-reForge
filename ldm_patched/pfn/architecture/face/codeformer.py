@@ -4,6 +4,7 @@ VQGAN code, adapted from the original created by the Unleashing Transformers aut
 https://github.com/samb-t/unleashing-transformers/blob/master/models/vqgan.py
 This verison of the arch specifically was gathered from an old version of GFPGAN. If this is a problem, please contact me.
 """
+
 import math
 from typing import Optional
 
@@ -550,15 +551,27 @@ class ResBlock(nn.Module):
         self.out_channels = in_channels if out_channels is None else out_channels
         self.norm1 = normalize(in_channels)
         self.conv1 = nn.Conv2d(
-            in_channels, out_channels, kernel_size=3, stride=1, padding=1  # type: ignore
+            in_channels,
+            out_channels,
+            kernel_size=3,
+            stride=1,
+            padding=1,  # type: ignore
         )
         self.norm2 = normalize(out_channels)
         self.conv2 = nn.Conv2d(
-            out_channels, out_channels, kernel_size=3, stride=1, padding=1  # type: ignore
+            out_channels,
+            out_channels,
+            kernel_size=3,
+            stride=1,
+            padding=1,  # type: ignore
         )
         if self.in_channels != self.out_channels:
             self.conv_out = nn.Conv2d(
-                in_channels, out_channels, kernel_size=1, stride=1, padding=0  # type: ignore
+                in_channels,
+                out_channels,
+                kernel_size=1,
+                stride=1,
+                padding=0,  # type: ignore
             )
 
     def forward(self, x_in):
@@ -762,7 +775,8 @@ class CodeFormer(VQAutoEncoder):
         soft_one_hot = F.softmax(logits, dim=2)
         _, top_idx = torch.topk(soft_one_hot, 1, dim=2)
         quant_feat = self.quantize.get_codebook_feat(
-            top_idx, shape=[x.shape[0], 16, 16, 256]  # type: ignore
+            top_idx,
+            shape=[x.shape[0], 16, 16, 256],  # type: ignore
         )
         # preserve gradients
         # quant_feat = lq_feat + (quant_feat - lq_feat).detach()

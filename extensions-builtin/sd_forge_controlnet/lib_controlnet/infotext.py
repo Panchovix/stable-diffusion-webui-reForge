@@ -107,7 +107,9 @@ class Infotext(object):
                     if field == "image":
                         continue
                     if value is None:
-                        logger.debug(f"InfoText: Skipping {field} because value is None.")
+                        logger.debug(
+                            f"InfoText: Skipping {field} because value is None."
+                        )
                         continue
 
                     component_locator = f"{k} {field}"

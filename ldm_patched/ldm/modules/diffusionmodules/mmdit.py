@@ -12,39 +12,49 @@ from .util import timestep_embedding
 import ldm_patched.modules.ops
 import ldm_patched.ldm.common_dit
 
+
 def default(x, y):
     if x is not None:
         return x
     return y
 
+
 class Mlp(nn.Module):
-    """ MLP as used in Vision Transformer, MLP-Mixer and related networks
-    """
+    """MLP as used in Vision Transformer, MLP-Mixer and related networks"""
+
     def __init__(
-            self,
-            in_features,
-            hidden_features=None,
-            out_features=None,
-            act_layer=nn.GELU,
-            norm_layer=None,
-            bias=True,
-            drop=0.,
-            use_conv=False,
-            dtype=None,
-            device=None,
-            operations=None,
+        self,
+        in_features,
+        hidden_features=None,
+        out_features=None,
+        act_layer=nn.GELU,
+        norm_layer=None,
+        bias=True,
+        drop=0.0,
+        use_conv=False,
+        dtype=None,
+        device=None,
+        operations=None,
     ):
         super().__init__()
         out_features = out_features or in_features
         hidden_features = hidden_features or in_features
         drop_probs = drop
-        linear_layer = partial(operations.Conv2d, kernel_size=1) if use_conv else operations.Linear
+        linear_layer = (
+            partial(operations.Conv2d, kernel_size=1) if use_conv else operations.Linear
+        )
 
-        self.fc1 = linear_layer(in_features, hidden_features, bias=bias, dtype=dtype, device=device)
+        self.fc1 = linear_layer(
+            in_features, hidden_features, bias=bias, dtype=dtype, device=device
+        )
         self.act = act_layer()
         self.drop1 = nn.Dropout(drop_probs)
-        self.norm = norm_layer(hidden_features) if norm_layer is not None else nn.Identity()
-        self.fc2 = linear_layer(hidden_features, out_features, bias=bias, dtype=dtype, device=device)
+        self.norm = (
+            norm_layer(hidden_features) if norm_layer is not None else nn.Identity()
+        )
+        self.fc2 = linear_layer(
+            hidden_features, out_features, bias=bias, dtype=dtype, device=device
+        )
         self.drop2 = nn.Dropout(drop_probs)
 
     def forward(self, x):
@@ -56,33 +66,36 @@ class Mlp(nn.Module):
         x = self.drop2(x)
         return x
 
+
 class PatchEmbed(nn.Module):
-    """ 2D Image to Patch Embedding
-    """
+    """2D Image to Patch Embedding"""
+
     dynamic_img_pad: torch.jit.Final[bool]
 
     def __init__(
-            self,
-            img_size: Optional[int] = 224,
-            patch_size: int = 16,
-            in_chans: int = 3,
-            embed_dim: int = 768,
-            norm_layer = None,
-            flatten: bool = True,
-            bias: bool = True,
-            strict_img_size: bool = True,
-            dynamic_img_pad: bool = True,
-            padding_mode='circular',
-            dtype=None,
-            device=None,
-            operations=None,
+        self,
+        img_size: Optional[int] = 224,
+        patch_size: int = 16,
+        in_chans: int = 3,
+        embed_dim: int = 768,
+        norm_layer=None,
+        flatten: bool = True,
+        bias: bool = True,
+        strict_img_size: bool = True,
+        dynamic_img_pad: bool = True,
+        padding_mode="circular",
+        dtype=None,
+        device=None,
+        operations=None,
     ):
         super().__init__()
         self.patch_size = (patch_size, patch_size)
         self.padding_mode = padding_mode
         if img_size is not None:
             self.img_size = (img_size, img_size)
-            self.grid_size = tuple([s // p for s, p in zip(self.img_size, self.patch_size)])
+            self.grid_size = tuple(
+                [s // p for s, p in zip(self.img_size, self.patch_size)]
+            )
             self.num_patches = self.grid_size[0] * self.grid_size[1]
         else:
             self.img_size = None
@@ -94,7 +107,15 @@ class PatchEmbed(nn.Module):
         self.strict_img_size = strict_img_size
         self.dynamic_img_pad = dynamic_img_pad
 
-        self.proj = operations.Conv2d(in_chans, embed_dim, kernel_size=patch_size, stride=patch_size, bias=bias, dtype=dtype, device=device)
+        self.proj = operations.Conv2d(
+            in_chans,
+            embed_dim,
+            kernel_size=patch_size,
+            stride=patch_size,
+            bias=bias,
+            dtype=dtype,
+            device=device,
+        )
         self.norm = norm_layer(embed_dim) if norm_layer else nn.Identity()
 
     def forward(self, x):
@@ -113,12 +134,15 @@ class PatchEmbed(nn.Module):
         #             f"Input width ({W}) should be divisible by patch size ({self.patch_size[1]})."
         #         )
         if self.dynamic_img_pad:
-            x = ldm_patched.ldm.common_dit.pad_to_patch_size(x, self.patch_size, padding_mode=self.padding_mode)
+            x = ldm_patched.ldm.common_dit.pad_to_patch_size(
+                x, self.patch_size, padding_mode=self.padding_mode
+            )
         x = self.proj(x)
         if self.flatten:
             x = x.flatten(2).transpose(1, 2)  # NCHW -> NLC
         x = self.norm(x)
         return x
+
 
 def modulate(x, shift, scale):
     if shift is None:
@@ -193,7 +217,10 @@ def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
     emb = np.concatenate([emb_sin, emb_cos], axis=1)  # (M, D)
     return emb
 
-def get_1d_sincos_pos_embed_from_grid_torch(embed_dim, pos, device=None, dtype=torch.float32):
+
+def get_1d_sincos_pos_embed_from_grid_torch(
+    embed_dim, pos, device=None, dtype=torch.float32
+):
     omega = torch.arange(embed_dim // 2, device=device, dtype=dtype)
     omega /= embed_dim / 2.0
     omega = 1.0 / 10000**omega  # (D/2,)
@@ -204,13 +231,28 @@ def get_1d_sincos_pos_embed_from_grid_torch(embed_dim, pos, device=None, dtype=t
     emb = torch.cat([emb_sin, emb_cos], dim=1)  # (M, D)
     return emb
 
-def get_2d_sincos_pos_embed_torch(embed_dim, w, h, val_center=7.5, val_magnitude=7.5, device=None, dtype=torch.float32):
+
+def get_2d_sincos_pos_embed_torch(
+    embed_dim, w, h, val_center=7.5, val_magnitude=7.5, device=None, dtype=torch.float32
+):
     small = min(h, w)
     val_h = (h / small) * val_magnitude
     val_w = (w / small) * val_magnitude
-    grid_h, grid_w = torch.meshgrid(torch.linspace(-val_h + val_center, val_h + val_center, h, device=device, dtype=dtype), torch.linspace(-val_w + val_center, val_w + val_center, w, device=device, dtype=dtype), indexing='ij')
-    emb_h = get_1d_sincos_pos_embed_from_grid_torch(embed_dim // 2, grid_h, device=device, dtype=dtype)
-    emb_w = get_1d_sincos_pos_embed_from_grid_torch(embed_dim // 2, grid_w, device=device, dtype=dtype)
+    grid_h, grid_w = torch.meshgrid(
+        torch.linspace(
+            -val_h + val_center, val_h + val_center, h, device=device, dtype=dtype
+        ),
+        torch.linspace(
+            -val_w + val_center, val_w + val_center, w, device=device, dtype=dtype
+        ),
+        indexing="ij",
+    )
+    emb_h = get_1d_sincos_pos_embed_from_grid_torch(
+        embed_dim // 2, grid_h, device=device, dtype=dtype
+    )
+    emb_w = get_1d_sincos_pos_embed_from_grid_torch(
+        embed_dim // 2, grid_w, device=device, dtype=dtype
+    )
     emb = torch.cat([emb_w, emb_h], dim=1)  # (H*W, D)
     return emb
 
@@ -225,12 +267,27 @@ class TimestepEmbedder(nn.Module):
     Embeds scalar timesteps into vector representations.
     """
 
-    def __init__(self, hidden_size, frequency_embedding_size=256, dtype=None, device=None, operations=None):
+    def __init__(
+        self,
+        hidden_size,
+        frequency_embedding_size=256,
+        dtype=None,
+        device=None,
+        operations=None,
+    ):
         super().__init__()
         self.mlp = nn.Sequential(
-            operations.Linear(frequency_embedding_size, hidden_size, bias=True, dtype=dtype, device=device),
+            operations.Linear(
+                frequency_embedding_size,
+                hidden_size,
+                bias=True,
+                dtype=dtype,
+                device=device,
+            ),
             nn.SiLU(),
-            operations.Linear(hidden_size, hidden_size, bias=True, dtype=dtype, device=device),
+            operations.Linear(
+                hidden_size, hidden_size, bias=True, dtype=dtype, device=device
+            ),
         )
         self.frequency_embedding_size = frequency_embedding_size
 
@@ -245,12 +302,18 @@ class VectorEmbedder(nn.Module):
     Embeds a flat vector of dimension input_dim
     """
 
-    def __init__(self, input_dim: int, hidden_size: int, dtype=None, device=None, operations=None):
+    def __init__(
+        self, input_dim: int, hidden_size: int, dtype=None, device=None, operations=None
+    ):
         super().__init__()
         self.mlp = nn.Sequential(
-            operations.Linear(input_dim, hidden_size, bias=True, dtype=dtype, device=device),
+            operations.Linear(
+                input_dim, hidden_size, bias=True, dtype=dtype, device=device
+            ),
             nn.SiLU(),
-            operations.Linear(hidden_size, hidden_size, bias=True, dtype=dtype, device=device),
+            operations.Linear(
+                hidden_size, hidden_size, bias=True, dtype=dtype, device=device
+            ),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -290,7 +353,9 @@ class SelfAttention(nn.Module):
         self.num_heads = num_heads
         self.head_dim = dim // num_heads
 
-        self.qkv = operations.Linear(dim, dim * 3, bias=qkv_bias, dtype=dtype, device=device)
+        self.qkv = operations.Linear(
+            dim, dim * 3, bias=qkv_bias, dtype=dtype, device=device
+        )
         if not pre_only:
             self.proj = operations.Linear(dim, dim, dtype=dtype, device=device)
             self.proj_drop = nn.Dropout(proj_drop)
@@ -299,11 +364,35 @@ class SelfAttention(nn.Module):
         self.pre_only = pre_only
 
         if qk_norm == "rms":
-            self.ln_q = RMSNorm(self.head_dim, elementwise_affine=True, eps=1.0e-6, dtype=dtype, device=device)
-            self.ln_k = RMSNorm(self.head_dim, elementwise_affine=True, eps=1.0e-6, dtype=dtype, device=device)
+            self.ln_q = RMSNorm(
+                self.head_dim,
+                elementwise_affine=True,
+                eps=1.0e-6,
+                dtype=dtype,
+                device=device,
+            )
+            self.ln_k = RMSNorm(
+                self.head_dim,
+                elementwise_affine=True,
+                eps=1.0e-6,
+                dtype=dtype,
+                device=device,
+            )
         elif qk_norm == "ln":
-            self.ln_q = operations.LayerNorm(self.head_dim, elementwise_affine=True, eps=1.0e-6, dtype=dtype, device=device)
-            self.ln_k = operations.LayerNorm(self.head_dim, elementwise_affine=True, eps=1.0e-6, dtype=dtype, device=device)
+            self.ln_q = operations.LayerNorm(
+                self.head_dim,
+                elementwise_affine=True,
+                eps=1.0e-6,
+                dtype=dtype,
+                device=device,
+            )
+            self.ln_k = operations.LayerNorm(
+                self.head_dim,
+                elementwise_affine=True,
+                eps=1.0e-6,
+                dtype=dtype,
+                device=device,
+            )
         elif qk_norm is None:
             self.ln_q = nn.Identity()
             self.ln_k = nn.Identity()
@@ -326,16 +415,19 @@ class SelfAttention(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         q, k, v = self.pre_attention(x)
-        x = optimized_attention(
-            q, k, v, heads=self.num_heads
-        )
+        x = optimized_attention(q, k, v, heads=self.num_heads)
         x = self.post_attention(x)
         return x
 
 
 class RMSNorm(torch.nn.Module):
     def __init__(
-        self, dim: int, elementwise_affine: bool = False, eps: float = 1e-6, device=None, dtype=None
+        self,
+        dim: int,
+        elementwise_affine: bool = False,
+        eps: float = 1e-6,
+        device=None,
+        dtype=None,
     ):
         """
         Initialize the RMSNorm normalization layer.
@@ -356,7 +448,6 @@ class RMSNorm(torch.nn.Module):
 
     def forward(self, x):
         return ldm_patched.ldm.common_dit.rms_norm(x, self.weight, self.eps)
-
 
 
 class SwiGLUFeedForward(nn.Module):
@@ -425,7 +516,13 @@ class DismantledBlock(nn.Module):
         super().__init__()
         assert attn_mode in self.ATTENTION_MODES
         if not rmsnorm:
-            self.norm1 = operations.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6, dtype=dtype, device=device)
+            self.norm1 = operations.LayerNorm(
+                hidden_size,
+                elementwise_affine=False,
+                eps=1e-6,
+                dtype=dtype,
+                device=device,
+            )
         else:
             self.norm1 = RMSNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         self.attn = SelfAttention(
@@ -438,7 +535,7 @@ class DismantledBlock(nn.Module):
             rmsnorm=rmsnorm,
             dtype=dtype,
             device=device,
-            operations=operations
+            operations=operations,
         )
         if x_block_self_attn:
             assert not pre_only
@@ -454,14 +551,18 @@ class DismantledBlock(nn.Module):
                 rmsnorm=rmsnorm,
                 dtype=dtype,
                 device=device,
-                operations=operations
+                operations=operations,
             )
         else:
             self.x_block_self_attn = False
         if not pre_only:
             if not rmsnorm:
                 self.norm2 = operations.LayerNorm(
-                    hidden_size, elementwise_affine=False, eps=1e-6, dtype=dtype, device=device
+                    hidden_size,
+                    elementwise_affine=False,
+                    eps=1e-6,
+                    dtype=dtype,
+                    device=device,
                 )
             else:
                 self.norm2 = RMSNorm(hidden_size, elementwise_affine=False, eps=1e-6)
@@ -475,7 +576,7 @@ class DismantledBlock(nn.Module):
                     drop=0,
                     dtype=dtype,
                     device=device,
-                    operations=operations
+                    operations=operations,
                 )
             else:
                 self.mlp = SwiGLUFeedForward(
@@ -493,7 +594,10 @@ class DismantledBlock(nn.Module):
         else:
             n_mods = 4 if not pre_only else 1
         self.adaLN_modulation = nn.Sequential(
-            nn.SiLU(), operations.Linear(hidden_size, n_mods * hidden_size, bias=True, dtype=dtype, device=device)
+            nn.SiLU(),
+            operations.Linear(
+                hidden_size, n_mods * hidden_size, bias=True, dtype=dtype, device=device
+            ),
         )
         self.pre_only = pre_only
 
@@ -516,9 +620,7 @@ class DismantledBlock(nn.Module):
                     gate_msa,
                     scale_mlp,
                     gate_mlp,
-                ) = self.adaLN_modulation(
-                    c
-                ).chunk(4, dim=1)
+                ) = self.adaLN_modulation(c).chunk(4, dim=1)
             qkv = self.attn.pre_attention(modulate(self.norm1(x), shift_msa, scale_msa))
             return qkv, (
                 x,
@@ -532,9 +634,7 @@ class DismantledBlock(nn.Module):
                 (
                     shift_msa,
                     scale_msa,
-                ) = self.adaLN_modulation(
-                    c
-                ).chunk(2, dim=1)
+                ) = self.adaLN_modulation(c).chunk(2, dim=1)
             else:
                 shift_msa = None
                 scale_msa = self.adaLN_modulation(c)
@@ -565,16 +665,22 @@ class DismantledBlock(nn.Module):
         x_norm = self.norm1(x)
         qkv = self.attn.pre_attention(modulate(x_norm, shift_msa, scale_msa))
         qkv2 = self.attn2.pre_attention(modulate(x_norm, shift_msa2, scale_msa2))
-        return qkv, qkv2, (
-            x,
-            gate_msa,
-            shift_mlp,
-            scale_mlp,
-            gate_mlp,
-            gate_msa2,
+        return (
+            qkv,
+            qkv2,
+            (
+                x,
+                gate_msa,
+                shift_mlp,
+                scale_mlp,
+                gate_mlp,
+                gate_msa2,
+            ),
         )
 
-    def post_attention_x(self, attn, attn2, x, gate_msa, shift_mlp, scale_mlp, gate_mlp, gate_msa2):
+    def post_attention_x(
+        self, attn, attn2, x, gate_msa, shift_mlp, scale_mlp, gate_mlp, gate_msa2
+    ):
         assert not self.pre_only
         attn1 = self.attn.post_attention(attn)
         attn2 = self.attn2.post_attention(attn2)
@@ -592,18 +698,24 @@ class DismantledBlock(nn.Module):
         if self.x_block_self_attn:
             qkv, qkv2, intermediates = self.pre_attention_x(x, c)
             attn, _ = optimized_attention(
-                qkv[0], qkv[1], qkv[2],
+                qkv[0],
+                qkv[1],
+                qkv[2],
                 num_heads=self.attn.num_heads,
             )
             attn2, _ = optimized_attention(
-                qkv2[0], qkv2[1], qkv2[2],
+                qkv2[0],
+                qkv2[1],
+                qkv2[2],
                 num_heads=self.attn2.num_heads,
             )
             return self.post_attention_x(attn, attn2, *intermediates)
         else:
             qkv, intermediates = self.pre_attention(x, c)
             attn = optimized_attention(
-                qkv[0], qkv[1], qkv[2],
+                qkv[0],
+                qkv[1],
+                qkv[2],
                 heads=self.attn.num_heads,
             )
             return self.post_attention(attn, *intermediates)
@@ -632,7 +744,9 @@ def _block_mixing(context, x, context_block, x_block, c):
     qkv = tuple(o)
 
     attn = optimized_attention(
-        qkv[0], qkv[1], qkv[2],
+        qkv[0],
+        qkv[1],
+        qkv[2],
         heads=x_block.attn.num_heads,
     )
     context_attn, x_attn = (
@@ -647,9 +761,11 @@ def _block_mixing(context, x, context_block, x_block, c):
         context = None
     if x_block.x_block_self_attn:
         attn2 = optimized_attention(
-                x_qkv2[0], x_qkv2[1], x_qkv2[2],
-                heads=x_block.attn2.num_heads,
-            )
+            x_qkv2[0],
+            x_qkv2[1],
+            x_qkv2[2],
+            heads=x_block.attn2.num_heads,
+        )
         x = x_block.post_attention_x(x_attn, attn2, *x_intermediates)
     else:
         x = x_block.post_attention(x_attn, *x_intermediates)
@@ -668,12 +784,16 @@ class JointBlock(nn.Module):
         pre_only = kwargs.pop("pre_only")
         qk_norm = kwargs.pop("qk_norm", None)
         x_block_self_attn = kwargs.pop("x_block_self_attn", False)
-        self.context_block = DismantledBlock(*args, pre_only=pre_only, qk_norm=qk_norm, **kwargs)
-        self.x_block = DismantledBlock(*args,
-                                       pre_only=False,
-                                       qk_norm=qk_norm,
-                                       x_block_self_attn=x_block_self_attn,
-                                       **kwargs)
+        self.context_block = DismantledBlock(
+            *args, pre_only=pre_only, qk_norm=qk_norm, **kwargs
+        )
+        self.x_block = DismantledBlock(
+            *args,
+            pre_only=False,
+            qk_norm=qk_norm,
+            x_block_self_attn=x_block_self_attn,
+            **kwargs,
+        )
 
     def forward(self, *args, **kwargs):
         return block_mixing(
@@ -697,14 +817,27 @@ class FinalLayer(nn.Module):
         operations=None,
     ):
         super().__init__()
-        self.norm_final = operations.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6, dtype=dtype, device=device)
+        self.norm_final = operations.LayerNorm(
+            hidden_size, elementwise_affine=False, eps=1e-6, dtype=dtype, device=device
+        )
         self.linear = (
-            operations.Linear(hidden_size, patch_size * patch_size * out_channels, bias=True, dtype=dtype, device=device)
+            operations.Linear(
+                hidden_size,
+                patch_size * patch_size * out_channels,
+                bias=True,
+                dtype=dtype,
+                device=device,
+            )
             if (total_out_channels is None)
-            else operations.Linear(hidden_size, total_out_channels, bias=True, dtype=dtype, device=device)
+            else operations.Linear(
+                hidden_size, total_out_channels, bias=True, dtype=dtype, device=device
+            )
         )
         self.adaLN_modulation = nn.Sequential(
-            nn.SiLU(), operations.Linear(hidden_size, 2 * hidden_size, bias=True, dtype=dtype, device=device)
+            nn.SiLU(),
+            operations.Linear(
+                hidden_size, 2 * hidden_size, bias=True, dtype=dtype, device=device
+            ),
         )
 
     def forward(self, x: torch.Tensor, c: torch.Tensor) -> torch.Tensor:
@@ -713,8 +846,11 @@ class FinalLayer(nn.Module):
         x = self.linear(x)
         return x
 
+
 class SelfAttentionContext(nn.Module):
-    def __init__(self, dim, heads=8, dim_head=64, dtype=None, device=None, operations=None):
+    def __init__(
+        self, dim, heads=8, dim_head=64, dtype=None, device=None, operations=None
+    ):
         super().__init__()
         dim_head = dim // heads
         inner_dim = dim
@@ -722,39 +858,71 @@ class SelfAttentionContext(nn.Module):
         self.heads = heads
         self.dim_head = dim_head
 
-        self.qkv = operations.Linear(dim, dim * 3, bias=True, dtype=dtype, device=device)
+        self.qkv = operations.Linear(
+            dim, dim * 3, bias=True, dtype=dtype, device=device
+        )
 
         self.proj = operations.Linear(inner_dim, dim, dtype=dtype, device=device)
 
     def forward(self, x):
         qkv = self.qkv(x)
         q, k, v = split_qkv(qkv, self.dim_head)
-        x = optimized_attention(q.reshape(q.shape[0], q.shape[1], -1), k, v, heads=self.heads)
+        x = optimized_attention(
+            q.reshape(q.shape[0], q.shape[1], -1), k, v, heads=self.heads
+        )
         return self.proj(x)
+
 
 class ContextProcessorBlock(nn.Module):
     def __init__(self, context_size, dtype=None, device=None, operations=None):
         super().__init__()
-        self.norm1 = operations.LayerNorm(context_size, elementwise_affine=False, eps=1e-6, dtype=dtype, device=device)
-        self.attn = SelfAttentionContext(context_size, dtype=dtype, device=device, operations=operations)
-        self.norm2 = operations.LayerNorm(context_size, elementwise_affine=False, eps=1e-6, dtype=dtype, device=device)
-        self.mlp = Mlp(in_features=context_size, hidden_features=(context_size * 4), act_layer=lambda: nn.GELU(approximate="tanh"), drop=0, dtype=dtype, device=device, operations=operations)
+        self.norm1 = operations.LayerNorm(
+            context_size, elementwise_affine=False, eps=1e-6, dtype=dtype, device=device
+        )
+        self.attn = SelfAttentionContext(
+            context_size, dtype=dtype, device=device, operations=operations
+        )
+        self.norm2 = operations.LayerNorm(
+            context_size, elementwise_affine=False, eps=1e-6, dtype=dtype, device=device
+        )
+        self.mlp = Mlp(
+            in_features=context_size,
+            hidden_features=(context_size * 4),
+            act_layer=lambda: nn.GELU(approximate="tanh"),
+            drop=0,
+            dtype=dtype,
+            device=device,
+            operations=operations,
+        )
 
     def forward(self, x):
         x += self.attn(self.norm1(x))
         x += self.mlp(self.norm2(x))
         return x
 
+
 class ContextProcessor(nn.Module):
-    def __init__(self, context_size, num_layers, dtype=None, device=None, operations=None):
+    def __init__(
+        self, context_size, num_layers, dtype=None, device=None, operations=None
+    ):
         super().__init__()
-        self.layers = torch.nn.ModuleList([ContextProcessorBlock(context_size, dtype=dtype, device=device, operations=operations) for i in range(num_layers)])
-        self.norm = operations.LayerNorm(context_size, elementwise_affine=False, eps=1e-6, dtype=dtype, device=device)
+        self.layers = torch.nn.ModuleList(
+            [
+                ContextProcessorBlock(
+                    context_size, dtype=dtype, device=device, operations=operations
+                )
+                for i in range(num_layers)
+            ]
+        )
+        self.norm = operations.LayerNorm(
+            context_size, elementwise_affine=False, eps=1e-6, dtype=dtype, device=device
+        )
 
     def forward(self, x):
         for i, l in enumerate(self.layers):
             x = l(x)
         return self.norm(x)
+
 
 class MMDiT(nn.Module):
     """
@@ -784,19 +952,19 @@ class MMDiT(nn.Module):
         pos_embed_scaling_factor: Optional[float] = None,
         pos_embed_offset: Optional[float] = None,
         pos_embed_max_size: Optional[int] = None,
-        num_patches = None,
+        num_patches=None,
         qk_norm: Optional[str] = None,
         qkv_bias: bool = True,
-        context_processor_layers = None,
+        context_processor_layers=None,
         x_block_self_attn: bool = False,
         x_block_self_attn_layers: Optional[List[int]] = [],
-        context_size = 4096,
-        num_blocks = None,
-        final_layer = True,
-        skip_blocks = False,
-        dtype = None, #TODO
-        device = None,
-        operations = None,
+        context_size=4096,
+        num_blocks=None,
+        final_layer=True,
+        skip_blocks=False,
+        dtype=None,  # TODO
+        device=None,
+        operations=None,
     ):
         super().__init__()
         self.dtype = dtype
@@ -831,28 +999,48 @@ class MMDiT(nn.Module):
             strict_img_size=self.pos_embed_max_size is None,
             dtype=dtype,
             device=device,
-            operations=operations
+            operations=operations,
         )
-        self.t_embedder = TimestepEmbedder(self.hidden_size, dtype=dtype, device=device, operations=operations)
+        self.t_embedder = TimestepEmbedder(
+            self.hidden_size, dtype=dtype, device=device, operations=operations
+        )
 
         self.y_embedder = None
         if adm_in_channels is not None:
             assert isinstance(adm_in_channels, int)
-            self.y_embedder = VectorEmbedder(adm_in_channels, self.hidden_size, dtype=dtype, device=device, operations=operations)
+            self.y_embedder = VectorEmbedder(
+                adm_in_channels,
+                self.hidden_size,
+                dtype=dtype,
+                device=device,
+                operations=operations,
+            )
 
         if context_processor_layers is not None:
-            self.context_processor = ContextProcessor(context_size, context_processor_layers, dtype=dtype, device=device, operations=operations)
+            self.context_processor = ContextProcessor(
+                context_size,
+                context_processor_layers,
+                dtype=dtype,
+                device=device,
+                operations=operations,
+            )
         else:
             self.context_processor = None
 
         self.context_embedder = nn.Identity()
         if context_embedder_config is not None:
             if context_embedder_config["target"] == "torch.nn.Linear":
-                self.context_embedder = operations.Linear(**context_embedder_config["params"], dtype=dtype, device=device)
+                self.context_embedder = operations.Linear(
+                    **context_embedder_config["params"], dtype=dtype, device=device
+                )
 
         self.register_length = register_length
         if self.register_length > 0:
-            self.register = nn.Parameter(torch.randn(1, register_length, self.hidden_size, dtype=dtype, device=device))
+            self.register = nn.Parameter(
+                torch.randn(
+                    1, register_length, self.hidden_size, dtype=dtype, device=device
+                )
+            )
 
         # num_patches = self.x_embedder.num_patches
         # Will use fixed sin-cos embedding:
@@ -860,7 +1048,9 @@ class MMDiT(nn.Module):
         if num_patches is not None:
             self.register_buffer(
                 "pos_embed",
-                torch.empty(1, num_patches, self.hidden_size, dtype=dtype, device=device),
+                torch.empty(
+                    1, num_patches, self.hidden_size, dtype=dtype, device=device
+                ),
             )
         else:
             self.pos_embed = None
@@ -880,7 +1070,8 @@ class MMDiT(nn.Module):
                         scale_mod_only=scale_mod_only,
                         swiglu=swiglu,
                         qk_norm=qk_norm,
-                        x_block_self_attn=(i in self.x_block_self_attn_layers) or x_block_self_attn,
+                        x_block_self_attn=(i in self.x_block_self_attn_layers)
+                        or x_block_self_attn,
                         dtype=dtype,
                         device=device,
                         operations=operations,
@@ -890,7 +1081,14 @@ class MMDiT(nn.Module):
             )
 
         if final_layer:
-            self.final_layer = FinalLayer(self.hidden_size, patch_size, self.out_channels, dtype=dtype, device=device, operations=operations)
+            self.final_layer = FinalLayer(
+                self.hidden_size,
+                patch_size,
+                self.out_channels,
+                dtype=dtype,
+                device=device,
+                operations=operations,
+            )
 
         if compile_core:
             assert False
@@ -949,8 +1147,8 @@ class MMDiT(nn.Module):
         x: torch.Tensor,
         c_mod: torch.Tensor,
         context: Optional[torch.Tensor] = None,
-        control = None,
-        transformer_options = {},
+        control=None,
+        transformer_options={},
     ) -> torch.Tensor:
         patches_replace = transformer_options.get("patches_replace", {})
         if self.register_length > 0:
@@ -968,12 +1166,18 @@ class MMDiT(nn.Module):
         blocks = len(self.joint_blocks)
         for i in range(blocks):
             if ("double_block", i) in blocks_replace:
+
                 def block_wrap(args):
                     out = {}
-                    out["txt"], out["img"] = self.joint_blocks[i](args["txt"], args["img"], c=args["vec"])
+                    out["txt"], out["img"] = self.joint_blocks[i](
+                        args["txt"], args["img"], c=args["vec"]
+                    )
                     return out
 
-                out = blocks_replace[("double_block", i)]({"img": x, "txt": context, "vec": c_mod}, {"original_block": block_wrap})
+                out = blocks_replace[("double_block", i)](
+                    {"img": x, "txt": context, "vec": c_mod},
+                    {"original_block": block_wrap},
+                )
                 context = out["txt"]
                 x = out["img"]
             else:
@@ -999,8 +1203,8 @@ class MMDiT(nn.Module):
         t: torch.Tensor,
         y: Optional[torch.Tensor] = None,
         context: Optional[torch.Tensor] = None,
-        control = None,
-        transformer_options = {},
+        control=None,
+        transformer_options={},
     ) -> torch.Tensor:
         """
         Forward pass of DiT.
@@ -1013,7 +1217,9 @@ class MMDiT(nn.Module):
             context = self.context_processor(context)
 
         hw = x.shape[-2:]
-        x = self.x_embedder(x) + ldm_patched.modules.ops.cast_to_input(self.cropped_pos_embed(hw, device=x.device), x)
+        x = self.x_embedder(x) + ldm_patched.modules.ops.cast_to_input(
+            self.cropped_pos_embed(hw, device=x.device), x
+        )
         c = self.t_embedder(t, dtype=x.dtype)  # (N, D)
         if y is not None and self.y_embedder is not None:
             y = self.y_embedder(y)  # (N, D)
@@ -1025,7 +1231,7 @@ class MMDiT(nn.Module):
         x = self.forward_core_with_concat(x, c, context, control, transformer_options)
 
         x = self.unpatchify(x, hw=hw)  # (N, out_channels, H, W)
-        return x[:,:,:hw[-2],:hw[-1]]
+        return x[:, :, : hw[-2], : hw[-1]]
 
 
 class OpenAISignatureMMDITWrapper(MMDiT):
@@ -1035,8 +1241,15 @@ class OpenAISignatureMMDITWrapper(MMDiT):
         timesteps: torch.Tensor,
         context: Optional[torch.Tensor] = None,
         y: Optional[torch.Tensor] = None,
-        control = None,
-        transformer_options = {},
+        control=None,
+        transformer_options={},
         **kwargs,
     ) -> torch.Tensor:
-        return super().forward(x, timesteps, context=context, y=y, control=control, transformer_options=transformer_options)
+        return super().forward(
+            x,
+            timesteps,
+            context=context,
+            y=y,
+            control=control,
+            transformer_options=transformer_options,
+        )

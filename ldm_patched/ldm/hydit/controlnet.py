@@ -193,16 +193,16 @@ class HunYuanControlNet(nn.Module):
         )
 
         # Input zero linear for the first block
-        self.before_proj = operations.Linear(self.hidden_size, self.hidden_size, dtype=dtype, device=device)
-
+        self.before_proj = operations.Linear(
+            self.hidden_size, self.hidden_size, dtype=dtype, device=device
+        )
 
         # Output zero linear for the every block
         self.after_proj_list = nn.ModuleList(
             [
-
-                    operations.Linear(
-                        self.hidden_size, self.hidden_size, dtype=dtype, device=device
-                    )
+                operations.Linear(
+                    self.hidden_size, self.hidden_size, dtype=dtype, device=device
+                )
                 for _ in range(len(self.blocks))
             ]
         )
@@ -212,7 +212,7 @@ class HunYuanControlNet(nn.Module):
         x,
         hint,
         timesteps,
-        context,#encoder_hidden_states=None,
+        context,  # encoder_hidden_states=None,
         text_embedding_mask=None,
         encoder_hidden_states_t5=None,
         text_embedding_mask_t5=None,
@@ -258,7 +258,9 @@ class HunYuanControlNet(nn.Module):
         b_t5, l_t5, c_t5 = text_states_t5.shape
         text_states_t5 = self.mlp_t5(text_states_t5.view(-1, c_t5)).view(b_t5, l_t5, -1)
 
-        padding = ldm_patched.modules.ops.cast_to_input(self.text_embedding_padding, text_states)
+        padding = ldm_patched.modules.ops.cast_to_input(
+            self.text_embedding_padding, text_states
+        )
 
         text_states[:, -self.text_len :] = torch.where(
             text_states_mask[:, -self.text_len :].unsqueeze(2),
@@ -316,4 +318,3 @@ class HunYuanControlNet(nn.Module):
             controls.append(self.after_proj_list[layer](x))  # zero linear for output
 
         return {"output": controls}
-    

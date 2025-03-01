@@ -6,263 +6,259 @@ from midas.dpt_depth import DPTDepthModel
 from midas.midas_net import MidasNet
 from midas.midas_net_custom import MidasNet_small
 
+
 def DPT_BEiT_L_512(pretrained=True, **kwargs):
-    """ # This docstring shows up in hub.help()
+    """# This docstring shows up in hub.help()
     MiDaS DPT_BEiT_L_512 model for monocular depth estimation
     pretrained (bool): load pretrained weights into model
     """
 
     model = DPTDepthModel(
-            path=None,
-            backbone="beitl16_512",
-            non_negative=True,
-        )
+        path=None,
+        backbone="beitl16_512",
+        non_negative=True,
+    )
 
     if pretrained:
-        checkpoint = (
-            "https://github.com/isl-org/MiDaS/releases/download/v3_1/dpt_beit_large_512.pt"
-        )
+        checkpoint = "https://github.com/isl-org/MiDaS/releases/download/v3_1/dpt_beit_large_512.pt"
         state_dict = torch.hub.load_state_dict_from_url(
-            checkpoint, map_location=torch.device('cpu'), progress=True, check_hash=True
+            checkpoint, map_location=torch.device("cpu"), progress=True, check_hash=True
         )
         model.load_state_dict(state_dict)
 
     return model
 
+
 def DPT_BEiT_L_384(pretrained=True, **kwargs):
-    """ # This docstring shows up in hub.help()
+    """# This docstring shows up in hub.help()
     MiDaS DPT_BEiT_L_384 model for monocular depth estimation
     pretrained (bool): load pretrained weights into model
     """
 
     model = DPTDepthModel(
-            path=None,
-            backbone="beitl16_384",
-            non_negative=True,
-        )
+        path=None,
+        backbone="beitl16_384",
+        non_negative=True,
+    )
 
     if pretrained:
-        checkpoint = (
-            "https://github.com/isl-org/MiDaS/releases/download/v3_1/dpt_beit_large_384.pt"
-        )
+        checkpoint = "https://github.com/isl-org/MiDaS/releases/download/v3_1/dpt_beit_large_384.pt"
         state_dict = torch.hub.load_state_dict_from_url(
-            checkpoint, map_location=torch.device('cpu'), progress=True, check_hash=True
+            checkpoint, map_location=torch.device("cpu"), progress=True, check_hash=True
         )
         model.load_state_dict(state_dict)
 
     return model
 
+
 def DPT_BEiT_B_384(pretrained=True, **kwargs):
-    """ # This docstring shows up in hub.help()
+    """# This docstring shows up in hub.help()
     MiDaS DPT_BEiT_B_384 model for monocular depth estimation
     pretrained (bool): load pretrained weights into model
     """
 
     model = DPTDepthModel(
-            path=None,
-            backbone="beitb16_384",
-            non_negative=True,
-        )
+        path=None,
+        backbone="beitb16_384",
+        non_negative=True,
+    )
 
     if pretrained:
-        checkpoint = (
-            "https://github.com/isl-org/MiDaS/releases/download/v3_1/dpt_beit_base_384.pt"
-        )
+        checkpoint = "https://github.com/isl-org/MiDaS/releases/download/v3_1/dpt_beit_base_384.pt"
         state_dict = torch.hub.load_state_dict_from_url(
-            checkpoint, map_location=torch.device('cpu'), progress=True, check_hash=True
+            checkpoint, map_location=torch.device("cpu"), progress=True, check_hash=True
         )
         model.load_state_dict(state_dict)
 
     return model
 
+
 def DPT_SwinV2_L_384(pretrained=True, **kwargs):
-    """ # This docstring shows up in hub.help()
+    """# This docstring shows up in hub.help()
     MiDaS DPT_SwinV2_L_384 model for monocular depth estimation
     pretrained (bool): load pretrained weights into model
     """
 
     model = DPTDepthModel(
-            path=None,
-            backbone="swin2l24_384",
-            non_negative=True,
-        )
+        path=None,
+        backbone="swin2l24_384",
+        non_negative=True,
+    )
 
     if pretrained:
-        checkpoint = (
-            "https://github.com/isl-org/MiDaS/releases/download/v3_1/dpt_swin2_large_384.pt"
-        )
+        checkpoint = "https://github.com/isl-org/MiDaS/releases/download/v3_1/dpt_swin2_large_384.pt"
         state_dict = torch.hub.load_state_dict_from_url(
-            checkpoint, map_location=torch.device('cpu'), progress=True, check_hash=True
+            checkpoint, map_location=torch.device("cpu"), progress=True, check_hash=True
         )
         model.load_state_dict(state_dict)
 
     return model
 
+
 def DPT_SwinV2_B_384(pretrained=True, **kwargs):
-    """ # This docstring shows up in hub.help()
+    """# This docstring shows up in hub.help()
     MiDaS DPT_SwinV2_B_384 model for monocular depth estimation
     pretrained (bool): load pretrained weights into model
     """
 
     model = DPTDepthModel(
-            path=None,
-            backbone="swin2b24_384",
-            non_negative=True,
-        )
+        path=None,
+        backbone="swin2b24_384",
+        non_negative=True,
+    )
 
     if pretrained:
-        checkpoint = (
-            "https://github.com/isl-org/MiDaS/releases/download/v3_1/dpt_swin2_base_384.pt"
-        )
+        checkpoint = "https://github.com/isl-org/MiDaS/releases/download/v3_1/dpt_swin2_base_384.pt"
         state_dict = torch.hub.load_state_dict_from_url(
-            checkpoint, map_location=torch.device('cpu'), progress=True, check_hash=True
+            checkpoint, map_location=torch.device("cpu"), progress=True, check_hash=True
         )
         model.load_state_dict(state_dict)
 
     return model
 
+
 def DPT_SwinV2_T_256(pretrained=True, **kwargs):
-    """ # This docstring shows up in hub.help()
+    """# This docstring shows up in hub.help()
     MiDaS DPT_SwinV2_T_256 model for monocular depth estimation
     pretrained (bool): load pretrained weights into model
     """
 
     model = DPTDepthModel(
-            path=None,
-            backbone="swin2t16_256",
-            non_negative=True,
-        )
+        path=None,
+        backbone="swin2t16_256",
+        non_negative=True,
+    )
 
     if pretrained:
-        checkpoint = (
-            "https://github.com/isl-org/MiDaS/releases/download/v3_1/dpt_swin2_tiny_256.pt"
-        )
+        checkpoint = "https://github.com/isl-org/MiDaS/releases/download/v3_1/dpt_swin2_tiny_256.pt"
         state_dict = torch.hub.load_state_dict_from_url(
-            checkpoint, map_location=torch.device('cpu'), progress=True, check_hash=True
+            checkpoint, map_location=torch.device("cpu"), progress=True, check_hash=True
         )
         model.load_state_dict(state_dict)
 
     return model
 
+
 def DPT_Swin_L_384(pretrained=True, **kwargs):
-    """ # This docstring shows up in hub.help()
+    """# This docstring shows up in hub.help()
     MiDaS DPT_Swin_L_384 model for monocular depth estimation
     pretrained (bool): load pretrained weights into model
     """
 
     model = DPTDepthModel(
-            path=None,
-            backbone="swinl12_384",
-            non_negative=True,
-        )
+        path=None,
+        backbone="swinl12_384",
+        non_negative=True,
+    )
 
     if pretrained:
-        checkpoint = (
-            "https://github.com/isl-org/MiDaS/releases/download/v3_1/dpt_swin_large_384.pt"
-        )
+        checkpoint = "https://github.com/isl-org/MiDaS/releases/download/v3_1/dpt_swin_large_384.pt"
         state_dict = torch.hub.load_state_dict_from_url(
-            checkpoint, map_location=torch.device('cpu'), progress=True, check_hash=True
+            checkpoint, map_location=torch.device("cpu"), progress=True, check_hash=True
         )
         model.load_state_dict(state_dict)
 
     return model
 
+
 def DPT_Next_ViT_L_384(pretrained=True, **kwargs):
-    """ # This docstring shows up in hub.help()
+    """# This docstring shows up in hub.help()
     MiDaS DPT_Next_ViT_L_384 model for monocular depth estimation
     pretrained (bool): load pretrained weights into model
     """
 
     model = DPTDepthModel(
-            path=None,
-            backbone="next_vit_large_6m",
-            non_negative=True,
-        )
+        path=None,
+        backbone="next_vit_large_6m",
+        non_negative=True,
+    )
 
     if pretrained:
-        checkpoint = (
-            "https://github.com/isl-org/MiDaS/releases/download/v3_1/dpt_next_vit_large_384.pt"
-        )
+        checkpoint = "https://github.com/isl-org/MiDaS/releases/download/v3_1/dpt_next_vit_large_384.pt"
         state_dict = torch.hub.load_state_dict_from_url(
-            checkpoint, map_location=torch.device('cpu'), progress=True, check_hash=True
+            checkpoint, map_location=torch.device("cpu"), progress=True, check_hash=True
         )
         model.load_state_dict(state_dict)
 
     return model
 
+
 def DPT_LeViT_224(pretrained=True, **kwargs):
-    """ # This docstring shows up in hub.help()
+    """# This docstring shows up in hub.help()
     MiDaS DPT_LeViT_224 model for monocular depth estimation
     pretrained (bool): load pretrained weights into model
     """
 
     model = DPTDepthModel(
-            path=None,
-            backbone="levit_384",
-            non_negative=True,
-            head_features_1=64,
-            head_features_2=8,
-        )
+        path=None,
+        backbone="levit_384",
+        non_negative=True,
+        head_features_1=64,
+        head_features_2=8,
+    )
 
     if pretrained:
         checkpoint = (
             "https://github.com/isl-org/MiDaS/releases/download/v3_1/dpt_levit_224.pt"
         )
         state_dict = torch.hub.load_state_dict_from_url(
-            checkpoint, map_location=torch.device('cpu'), progress=True, check_hash=True
+            checkpoint, map_location=torch.device("cpu"), progress=True, check_hash=True
         )
         model.load_state_dict(state_dict)
 
     return model
 
+
 def DPT_Large(pretrained=True, **kwargs):
-    """ # This docstring shows up in hub.help()
+    """# This docstring shows up in hub.help()
     MiDaS DPT-Large model for monocular depth estimation
     pretrained (bool): load pretrained weights into model
     """
 
     model = DPTDepthModel(
-            path=None,
-            backbone="vitl16_384",
-            non_negative=True,
-        )
+        path=None,
+        backbone="vitl16_384",
+        non_negative=True,
+    )
 
     if pretrained:
         checkpoint = (
             "https://github.com/isl-org/MiDaS/releases/download/v3/dpt_large_384.pt"
         )
         state_dict = torch.hub.load_state_dict_from_url(
-            checkpoint, map_location=torch.device('cpu'), progress=True, check_hash=True
+            checkpoint, map_location=torch.device("cpu"), progress=True, check_hash=True
         )
         model.load_state_dict(state_dict)
 
     return model
-    
+
+
 def DPT_Hybrid(pretrained=True, **kwargs):
-    """ # This docstring shows up in hub.help()
+    """# This docstring shows up in hub.help()
     MiDaS DPT-Hybrid model for monocular depth estimation
     pretrained (bool): load pretrained weights into model
     """
 
     model = DPTDepthModel(
-            path=None,
-            backbone="vitb_rn50_384",
-            non_negative=True,
-        )
+        path=None,
+        backbone="vitb_rn50_384",
+        non_negative=True,
+    )
 
     if pretrained:
         checkpoint = (
             "https://github.com/isl-org/MiDaS/releases/download/v3/dpt_hybrid_384.pt"
         )
         state_dict = torch.hub.load_state_dict_from_url(
-            checkpoint, map_location=torch.device('cpu'), progress=True, check_hash=True
+            checkpoint, map_location=torch.device("cpu"), progress=True, check_hash=True
         )
         model.load_state_dict(state_dict)
 
     return model
-    
+
+
 def MiDaS(pretrained=True, **kwargs):
-    """ # This docstring shows up in hub.help()
+    """# This docstring shows up in hub.help()
     MiDaS v2.1 model for monocular depth estimation
     pretrained (bool): load pretrained weights into model
     """
@@ -274,26 +270,32 @@ def MiDaS(pretrained=True, **kwargs):
             "https://github.com/isl-org/MiDaS/releases/download/v2_1/midas_v21_384.pt"
         )
         state_dict = torch.hub.load_state_dict_from_url(
-            checkpoint, map_location=torch.device('cpu'), progress=True, check_hash=True
+            checkpoint, map_location=torch.device("cpu"), progress=True, check_hash=True
         )
         model.load_state_dict(state_dict)
 
     return model
 
+
 def MiDaS_small(pretrained=True, **kwargs):
-    """ # This docstring shows up in hub.help()
+    """# This docstring shows up in hub.help()
     MiDaS v2.1 small model for monocular depth estimation on resource-constrained devices
     pretrained (bool): load pretrained weights into model
     """
 
-    model = MidasNet_small(None, features=64, backbone="efficientnet_lite3", exportable=True, non_negative=True, blocks={'expand': True})
+    model = MidasNet_small(
+        None,
+        features=64,
+        backbone="efficientnet_lite3",
+        exportable=True,
+        non_negative=True,
+        blocks={"expand": True},
+    )
 
     if pretrained:
-        checkpoint = (
-            "https://github.com/isl-org/MiDaS/releases/download/v2_1/midas_v21_small_256.pt"
-        )
+        checkpoint = "https://github.com/isl-org/MiDaS/releases/download/v2_1/midas_v21_small_256.pt"
         state_dict = torch.hub.load_state_dict_from_url(
-            checkpoint, map_location=torch.device('cpu'), progress=True, check_hash=True
+            checkpoint, map_location=torch.device("cpu"), progress=True, check_hash=True
         )
         model.load_state_dict(state_dict)
 

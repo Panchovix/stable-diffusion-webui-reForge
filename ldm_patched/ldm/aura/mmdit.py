@@ -1,5 +1,5 @@
-#AuraFlow MMDiT
-#Originally written by the AuraFlow Authors
+# AuraFlow MMDiT
+# Originally written by the AuraFlow Authors
 
 import math
 
@@ -10,6 +10,7 @@ import torch.nn.functional as F
 from ldm_patched.ldm.modules.attention import optimized_attention
 import ldm_patched.modules.ops
 import ldm_patched.ldm.common_dit
+
 
 def modulate(x, shift, scale):
     return x * (1 + scale.unsqueeze(1)) + shift.unsqueeze(1)
@@ -22,7 +23,9 @@ def find_multiple(n: int, k: int) -> int:
 
 
 class MLP(nn.Module):
-    def __init__(self, dim, hidden_dim=None, dtype=None, device=None, operations=None) -> None:
+    def __init__(
+        self, dim, hidden_dim=None, dtype=None, device=None, operations=None
+    ) -> None:
         super().__init__()
         if hidden_dim is None:
             hidden_dim = 4 * dim
@@ -30,9 +33,15 @@ class MLP(nn.Module):
         n_hidden = int(2 * hidden_dim / 3)
         n_hidden = find_multiple(n_hidden, 256)
 
-        self.c_fc1 = operations.Linear(dim, n_hidden, bias=False, dtype=dtype, device=device)
-        self.c_fc2 = operations.Linear(dim, n_hidden, bias=False, dtype=dtype, device=device)
-        self.c_proj = operations.Linear(n_hidden, dim, bias=False, dtype=dtype, device=device)
+        self.c_fc1 = operations.Linear(
+            dim, n_hidden, bias=False, dtype=dtype, device=device
+        )
+        self.c_fc2 = operations.Linear(
+            dim, n_hidden, bias=False, dtype=dtype, device=device
+        )
+        self.c_proj = operations.Linear(
+            n_hidden, dim, bias=False, dtype=dtype, device=device
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = F.silu(self.c_fc1(x)) * self.c_fc2(x)
@@ -59,8 +68,11 @@ class MultiHeadLayerNorm(nn.Module):
         hidden_states = self.weight.to(torch.float32) * hidden_states
         return hidden_states.to(input_dtype)
 
+
 class SingleAttention(nn.Module):
-    def __init__(self, dim, n_heads, mh_qknorm=False, dtype=None, device=None, operations=None):
+    def __init__(
+        self, dim, n_heads, mh_qknorm=False, dtype=None, device=None, operations=None
+    ):
         super().__init__()
 
         self.n_heads = n_heads
@@ -73,19 +85,26 @@ class SingleAttention(nn.Module):
         self.w1o = operations.Linear(dim, dim, bias=False, dtype=dtype, device=device)
 
         self.q_norm1 = (
-            MultiHeadLayerNorm((self.n_heads, self.head_dim), dtype=dtype, device=device)
+            MultiHeadLayerNorm(
+                (self.n_heads, self.head_dim), dtype=dtype, device=device
+            )
             if mh_qknorm
-            else operations.LayerNorm(self.head_dim, elementwise_affine=False, dtype=dtype, device=device)
+            else operations.LayerNorm(
+                self.head_dim, elementwise_affine=False, dtype=dtype, device=device
+            )
         )
         self.k_norm1 = (
-            MultiHeadLayerNorm((self.n_heads, self.head_dim), dtype=dtype, device=device)
+            MultiHeadLayerNorm(
+                (self.n_heads, self.head_dim), dtype=dtype, device=device
+            )
             if mh_qknorm
-            else operations.LayerNorm(self.head_dim, elementwise_affine=False, dtype=dtype, device=device)
+            else operations.LayerNorm(
+                self.head_dim, elementwise_affine=False, dtype=dtype, device=device
+            )
         )
 
-    #@torch.compile()
+    # @torch.compile()
     def forward(self, c):
-
         bsz, seqlen1, _ = c.shape
 
         q, k, v = self.w1q(c), self.w1k(c), self.w1v(c)
@@ -94,14 +113,21 @@ class SingleAttention(nn.Module):
         v = v.view(bsz, seqlen1, self.n_heads, self.head_dim)
         q, k = self.q_norm1(q), self.k_norm1(k)
 
-        output = optimized_attention(q.permute(0, 2, 1, 3), k.permute(0, 2, 1, 3), v.permute(0, 2, 1, 3), self.n_heads, skip_reshape=True)
+        output = optimized_attention(
+            q.permute(0, 2, 1, 3),
+            k.permute(0, 2, 1, 3),
+            v.permute(0, 2, 1, 3),
+            self.n_heads,
+            skip_reshape=True,
+        )
         c = self.w1o(output)
         return c
 
 
-
 class DoubleAttention(nn.Module):
-    def __init__(self, dim, n_heads, mh_qknorm=False, dtype=None, device=None, operations=None):
+    def __init__(
+        self, dim, n_heads, mh_qknorm=False, dtype=None, device=None, operations=None
+    ):
         super().__init__()
 
         self.n_heads = n_heads
@@ -120,31 +146,45 @@ class DoubleAttention(nn.Module):
         self.w2o = operations.Linear(dim, dim, bias=False, dtype=dtype, device=device)
 
         self.q_norm1 = (
-            MultiHeadLayerNorm((self.n_heads, self.head_dim), dtype=dtype, device=device)
+            MultiHeadLayerNorm(
+                (self.n_heads, self.head_dim), dtype=dtype, device=device
+            )
             if mh_qknorm
-            else operations.LayerNorm(self.head_dim, elementwise_affine=False, dtype=dtype, device=device)
+            else operations.LayerNorm(
+                self.head_dim, elementwise_affine=False, dtype=dtype, device=device
+            )
         )
         self.k_norm1 = (
-            MultiHeadLayerNorm((self.n_heads, self.head_dim), dtype=dtype, device=device)
+            MultiHeadLayerNorm(
+                (self.n_heads, self.head_dim), dtype=dtype, device=device
+            )
             if mh_qknorm
-            else operations.LayerNorm(self.head_dim, elementwise_affine=False, dtype=dtype, device=device)
+            else operations.LayerNorm(
+                self.head_dim, elementwise_affine=False, dtype=dtype, device=device
+            )
         )
 
         self.q_norm2 = (
-            MultiHeadLayerNorm((self.n_heads, self.head_dim), dtype=dtype, device=device)
+            MultiHeadLayerNorm(
+                (self.n_heads, self.head_dim), dtype=dtype, device=device
+            )
             if mh_qknorm
-            else operations.LayerNorm(self.head_dim, elementwise_affine=False, dtype=dtype, device=device)
+            else operations.LayerNorm(
+                self.head_dim, elementwise_affine=False, dtype=dtype, device=device
+            )
         )
         self.k_norm2 = (
-            MultiHeadLayerNorm((self.n_heads, self.head_dim), dtype=dtype, device=device)
+            MultiHeadLayerNorm(
+                (self.n_heads, self.head_dim), dtype=dtype, device=device
+            )
             if mh_qknorm
-            else operations.LayerNorm(self.head_dim, elementwise_affine=False, dtype=dtype, device=device)
+            else operations.LayerNorm(
+                self.head_dim, elementwise_affine=False, dtype=dtype, device=device
+            )
         )
 
-
-    #@torch.compile()
+    # @torch.compile()
     def forward(self, c, x):
-
         bsz, seqlen1, _ = c.shape
         bsz, seqlen2, _ = x.shape
 
@@ -167,7 +207,13 @@ class DoubleAttention(nn.Module):
             torch.cat([cv, xv], dim=1),
         )
 
-        output = optimized_attention(q.permute(0, 2, 1, 3), k.permute(0, 2, 1, 3), v.permute(0, 2, 1, 3), self.n_heads, skip_reshape=True)
+        output = optimized_attention(
+            q.permute(0, 2, 1, 3),
+            k.permute(0, 2, 1, 3),
+            v.permute(0, 2, 1, 3),
+            self.n_heads,
+            skip_reshape=True,
+        )
 
         c, x = output.split([seqlen1, seqlen2], dim=1)
         c = self.w1o(c)
@@ -177,37 +223,69 @@ class DoubleAttention(nn.Module):
 
 
 class MMDiTBlock(nn.Module):
-    def __init__(self, dim, heads=8, global_conddim=1024, is_last=False, dtype=None, device=None, operations=None):
+    def __init__(
+        self,
+        dim,
+        heads=8,
+        global_conddim=1024,
+        is_last=False,
+        dtype=None,
+        device=None,
+        operations=None,
+    ):
         super().__init__()
 
-        self.normC1 = operations.LayerNorm(dim, elementwise_affine=False, dtype=dtype, device=device)
-        self.normC2 = operations.LayerNorm(dim, elementwise_affine=False, dtype=dtype, device=device)
+        self.normC1 = operations.LayerNorm(
+            dim, elementwise_affine=False, dtype=dtype, device=device
+        )
+        self.normC2 = operations.LayerNorm(
+            dim, elementwise_affine=False, dtype=dtype, device=device
+        )
         if not is_last:
-            self.mlpC = MLP(dim, hidden_dim=dim * 4, dtype=dtype, device=device, operations=operations)
+            self.mlpC = MLP(
+                dim,
+                hidden_dim=dim * 4,
+                dtype=dtype,
+                device=device,
+                operations=operations,
+            )
             self.modC = nn.Sequential(
                 nn.SiLU(),
-                operations.Linear(global_conddim, 6 * dim, bias=False, dtype=dtype, device=device),
+                operations.Linear(
+                    global_conddim, 6 * dim, bias=False, dtype=dtype, device=device
+                ),
             )
         else:
             self.modC = nn.Sequential(
                 nn.SiLU(),
-                operations.Linear(global_conddim, 2 * dim, bias=False, dtype=dtype, device=device),
+                operations.Linear(
+                    global_conddim, 2 * dim, bias=False, dtype=dtype, device=device
+                ),
             )
 
-        self.normX1 = operations.LayerNorm(dim, elementwise_affine=False, dtype=dtype, device=device)
-        self.normX2 = operations.LayerNorm(dim, elementwise_affine=False, dtype=dtype, device=device)
-        self.mlpX = MLP(dim, hidden_dim=dim * 4, dtype=dtype, device=device, operations=operations)
+        self.normX1 = operations.LayerNorm(
+            dim, elementwise_affine=False, dtype=dtype, device=device
+        )
+        self.normX2 = operations.LayerNorm(
+            dim, elementwise_affine=False, dtype=dtype, device=device
+        )
+        self.mlpX = MLP(
+            dim, hidden_dim=dim * 4, dtype=dtype, device=device, operations=operations
+        )
         self.modX = nn.Sequential(
             nn.SiLU(),
-            operations.Linear(global_conddim, 6 * dim, bias=False, dtype=dtype, device=device),
+            operations.Linear(
+                global_conddim, 6 * dim, bias=False, dtype=dtype, device=device
+            ),
         )
 
-        self.attn = DoubleAttention(dim, heads, dtype=dtype, device=device, operations=operations)
+        self.attn = DoubleAttention(
+            dim, heads, dtype=dtype, device=device, operations=operations
+        )
         self.is_last = is_last
 
-    #@torch.compile()
+    # @torch.compile()
     def forward(self, c, x, global_cond, **kwargs):
-
         cres, xres = c, x
 
         cshift_msa, cscale_msa, cgate_msa, cshift_mlp, cscale_mlp, cgate_mlp = (
@@ -226,7 +304,6 @@ class MMDiTBlock(nn.Module):
         # attention
         c, x = self.attn(c, x)
 
-
         c = self.normC2(cres + cgate_msa.unsqueeze(1) * c)
         c = cgate_mlp.unsqueeze(1) * self.mlpC(modulate(c, cshift_mlp, cscale_mlp))
         c = cres + c
@@ -237,23 +314,42 @@ class MMDiTBlock(nn.Module):
 
         return c, x
 
+
 class DiTBlock(nn.Module):
     # like MMDiTBlock, but it only has X
-    def __init__(self, dim, heads=8, global_conddim=1024, dtype=None, device=None, operations=None):
+    def __init__(
+        self,
+        dim,
+        heads=8,
+        global_conddim=1024,
+        dtype=None,
+        device=None,
+        operations=None,
+    ):
         super().__init__()
 
-        self.norm1 = operations.LayerNorm(dim, elementwise_affine=False, dtype=dtype, device=device)
-        self.norm2 = operations.LayerNorm(dim, elementwise_affine=False, dtype=dtype, device=device)
+        self.norm1 = operations.LayerNorm(
+            dim, elementwise_affine=False, dtype=dtype, device=device
+        )
+        self.norm2 = operations.LayerNorm(
+            dim, elementwise_affine=False, dtype=dtype, device=device
+        )
 
         self.modCX = nn.Sequential(
             nn.SiLU(),
-            operations.Linear(global_conddim, 6 * dim, bias=False, dtype=dtype, device=device),
+            operations.Linear(
+                global_conddim, 6 * dim, bias=False, dtype=dtype, device=device
+            ),
         )
 
-        self.attn = SingleAttention(dim, heads, dtype=dtype, device=device, operations=operations)
-        self.mlp = MLP(dim, hidden_dim=dim * 4, dtype=dtype, device=device, operations=operations)
+        self.attn = SingleAttention(
+            dim, heads, dtype=dtype, device=device, operations=operations
+        )
+        self.mlp = MLP(
+            dim, hidden_dim=dim * 4, dtype=dtype, device=device, operations=operations
+        )
 
-    #@torch.compile()
+    # @torch.compile()
     def forward(self, cx, global_cond, **kwargs):
         cxres = cx
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.modCX(
@@ -270,12 +366,20 @@ class DiTBlock(nn.Module):
         return cx
 
 
-
 class TimestepEmbedder(nn.Module):
-    def __init__(self, hidden_size, frequency_embedding_size=256, dtype=None, device=None, operations=None):
+    def __init__(
+        self,
+        hidden_size,
+        frequency_embedding_size=256,
+        dtype=None,
+        device=None,
+        operations=None,
+    ):
         super().__init__()
         self.mlp = nn.Sequential(
-            operations.Linear(frequency_embedding_size, hidden_size, dtype=dtype, device=device),
+            operations.Linear(
+                frequency_embedding_size, hidden_size, dtype=dtype, device=device
+            ),
             nn.SiLU(),
             operations.Linear(hidden_size, hidden_size, dtype=dtype, device=device),
         )
@@ -295,7 +399,7 @@ class TimestepEmbedder(nn.Module):
             )
         return embedding
 
-    #@torch.compile()
+    # @torch.compile()
     def forward(self, t, dtype):
         t_freq = self.timestep_embedding(t, self.frequency_embedding_size).to(dtype)
         t_emb = self.mlp(t_freq)
@@ -322,7 +426,9 @@ class MMDiT(nn.Module):
         super().__init__()
         self.dtype = dtype
 
-        self.t_embedder = TimestepEmbedder(global_conddim, dtype=dtype, device=device, operations=operations)
+        self.t_embedder = TimestepEmbedder(
+            global_conddim, dtype=dtype, device=device, operations=operations
+        )
 
         self.cond_seq_linear = operations.Linear(
             cond_seq_dim, dim, bias=False, dtype=dtype, device=device
@@ -331,31 +437,54 @@ class MMDiT(nn.Module):
             patch_size * patch_size * in_channels, dim, dtype=dtype, device=device
         )  # init linear for patchified image.
 
-        self.positional_encoding = nn.Parameter(torch.empty(1, max_seq, dim, dtype=dtype, device=device))
-        self.register_tokens = nn.Parameter(torch.empty(1, 8, dim, dtype=dtype, device=device))
+        self.positional_encoding = nn.Parameter(
+            torch.empty(1, max_seq, dim, dtype=dtype, device=device)
+        )
+        self.register_tokens = nn.Parameter(
+            torch.empty(1, 8, dim, dtype=dtype, device=device)
+        )
 
         self.double_layers = nn.ModuleList([])
         self.single_layers = nn.ModuleList([])
 
-
         for idx in range(n_double_layers):
             self.double_layers.append(
-                MMDiTBlock(dim, n_heads, global_conddim, is_last=(idx == n_layers - 1), dtype=dtype, device=device, operations=operations)
+                MMDiTBlock(
+                    dim,
+                    n_heads,
+                    global_conddim,
+                    is_last=(idx == n_layers - 1),
+                    dtype=dtype,
+                    device=device,
+                    operations=operations,
+                )
             )
 
         for idx in range(n_double_layers, n_layers):
             self.single_layers.append(
-                DiTBlock(dim, n_heads, global_conddim, dtype=dtype, device=device, operations=operations)
+                DiTBlock(
+                    dim,
+                    n_heads,
+                    global_conddim,
+                    dtype=dtype,
+                    device=device,
+                    operations=operations,
+                )
             )
 
-
         self.final_linear = operations.Linear(
-            dim, patch_size * patch_size * out_channels, bias=False, dtype=dtype, device=device
+            dim,
+            patch_size * patch_size * out_channels,
+            bias=False,
+            dtype=dtype,
+            device=device,
         )
 
         self.modF = nn.Sequential(
             nn.SiLU(),
-            operations.Linear(global_conddim, 2 * dim, bias=False, dtype=dtype, device=device),
+            operations.Linear(
+                global_conddim, 2 * dim, bias=False, dtype=dtype, device=device
+            ),
         )
 
         self.out_channels = out_channels
@@ -387,13 +516,11 @@ class MMDiT(nn.Module):
         h_p, w_p = h // self.patch_size, w // self.patch_size
         original_pe_indexes = torch.arange(self.positional_encoding.shape[1])
         original_pe_indexes = original_pe_indexes.view(self.h_max, self.w_max)
-        starth =  self.h_max // 2 - h_p // 2
-        endh =starth + h_p
+        starth = self.h_max // 2 - h_p // 2
+        endh = starth + h_p
         startw = self.w_max // 2 - w_p // 2
         endw = startw + w_p
-        original_pe_indexes = original_pe_indexes[
-            starth:endh, startw:endw
-        ]
+        original_pe_indexes = original_pe_indexes[starth:endh, startw:endw]
         return original_pe_indexes.flatten()
 
     def unpatchify(self, x, h, w):
@@ -407,7 +534,9 @@ class MMDiT(nn.Module):
 
     def patchify(self, x):
         B, C, H, W = x.size()
-        x = ldm_patched.ldm.common_dit.pad_to_patch_size(x, (self.patch_size, self.patch_size))
+        x = ldm_patched.ldm.common_dit.pad_to_patch_size(
+            x, (self.patch_size, self.patch_size)
+        )
         x = x.view(
             B,
             C,
@@ -425,15 +554,19 @@ class MMDiT(nn.Module):
         max_dim = max(h, w)
 
         cur_dim = self.h_max
-        pos_encoding = ldm_patched.modules.ops.cast_to_input(self.positional_encoding.reshape(1, cur_dim, cur_dim, -1), x)
+        pos_encoding = ldm_patched.modules.ops.cast_to_input(
+            self.positional_encoding.reshape(1, cur_dim, cur_dim, -1), x
+        )
 
         if max_dim > cur_dim:
-            pos_encoding = F.interpolate(pos_encoding.movedim(-1, 1), (max_dim, max_dim), mode="bilinear").movedim(1, -1)
+            pos_encoding = F.interpolate(
+                pos_encoding.movedim(-1, 1), (max_dim, max_dim), mode="bilinear"
+            ).movedim(1, -1)
             cur_dim = max_dim
 
         from_h = (cur_dim - h) // 2
         from_w = (cur_dim - w) // 2
-        pos_encoding = pos_encoding[:,from_h:from_h+h,from_w:from_w+w]
+        pos_encoding = pos_encoding[:, from_h : from_h + h, from_w : from_w + w]
         return x + pos_encoding.reshape(1, -1, self.positional_encoding.shape[-1])
 
     def forward(self, x, timestep, context, **kwargs):
@@ -453,7 +586,15 @@ class MMDiT(nn.Module):
         t = timestep
 
         c = self.cond_seq_linear(c_seq)  # B, T_c, D
-        c = torch.cat([ldm_patched.modules.ops.cast_to_input(self.register_tokens, c).repeat(c.size(0), 1, 1), c], dim=1)
+        c = torch.cat(
+            [
+                ldm_patched.modules.ops.cast_to_input(self.register_tokens, c).repeat(
+                    c.size(0), 1, 1
+                ),
+                c,
+            ],
+            dim=1,
+        )
 
         global_cond = self.t_embedder(t, x.dtype)  # B, D
 
@@ -473,5 +614,7 @@ class MMDiT(nn.Module):
 
         x = modulate(x, fshift, fscale)
         x = self.final_linear(x)
-        x = self.unpatchify(x, (h + 1) // self.patch_size, (w + 1) // self.patch_size)[:,:,:h,:w]
+        x = self.unpatchify(x, (h + 1) // self.patch_size, (w + 1) // self.patch_size)[
+            :, :, :h, :w
+        ]
         return x

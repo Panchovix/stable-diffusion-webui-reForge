@@ -5,12 +5,16 @@ from modules import shared
 from modules.paths_internal import script_path, cwd
 
 
-def natural_sort_key(s, regex=re.compile('([0-9]+)')):
+def natural_sort_key(s, regex=re.compile("([0-9]+)")):
     return [int(text) if text.isdigit() else text.lower() for text in regex.split(s)]
 
 
 def listfiles(dirname):
-    filenames = [os.path.join(dirname, x) for x in sorted(os.listdir(dirname), key=natural_sort_key) if not x.startswith(".")]
+    filenames = [
+        os.path.join(dirname, x)
+        for x in sorted(os.listdir(dirname), key=natural_sort_key)
+        if not x.startswith(".")
+    ]
     return [file for file in filenames if os.path.isfile(file)]
 
 
@@ -76,7 +80,9 @@ class MassFileListerCachedDir:
         self.files_cased = None
         self.dirname = dirname
 
-        stats = ((x.name, x.stat(follow_symlinks=False)) for x in os.scandir(self.dirname))
+        stats = (
+            (x.name, x.stat(follow_symlinks=False)) for x in os.scandir(self.dirname)
+        )
         files = [(n, s.st_mtime, s.st_ctime) for n, s in stats]
         self.files = {x[0].lower(): x for x in files}
         self.files_cased = {x[0]: x for x in files}
@@ -154,6 +160,7 @@ class MassFileLister:
         if cached_dir := self.cached_dirs.get(dirname):
             cached_dir.update_entry(filename)
 
+
 def topological_sort(dependencies):
     """Accepts a dictionary mapping name to its dependencies, returns a list of names ordered according to dependencies.
     Ignores errors relating to missing dependencies or circular dependencies
@@ -208,9 +215,12 @@ Requested path was: {path}
     elif platform.system() == "Darwin":
         subprocess.Popen(["open", path])
     elif "microsoft-standard-WSL2" in platform.uname().release:
-        subprocess.Popen(["explorer.exe", subprocess.check_output(["wslpath", "-w", path])])
+        subprocess.Popen(
+            ["explorer.exe", subprocess.check_output(["wslpath", "-w", path])]
+        )
     else:
         subprocess.Popen(["xdg-open", path])
+
 
 def load_file_from_url(
     url: str,
@@ -231,18 +241,24 @@ def load_file_from_url(
     """
     from urllib.parse import urlparse
     import requests
+
     try:
         from tqdm import tqdm
     except ImportError:
+
         class tqdm:
             def __init__(self, *args, **kwargs):
                 pass
+
             def update(self, n=1, *args, **kwargs):
                 pass
+
             def __enter__(self):
                 return self
+
             def __exit__(self, exc_type, exc_val, exc_tb):
                 pass
+
     if not file_name:
         parts = urlparse(url)
         file_name = os.path.basename(parts.path)
@@ -253,9 +269,15 @@ def load_file_from_url(
         print(f'\nDownloading: "{url}" to {cached_file}')
         response = requests.get(url, stream=True)
         response.raise_for_status()
-        total_size = int(response.headers.get('content-length', 0))
-        with tqdm(total=total_size, unit='B', unit_scale=True, desc=file_name, disable=not progress) as progress_bar:
-            with open(temp_file, 'wb') as file:
+        total_size = int(response.headers.get("content-length", 0))
+        with tqdm(
+            total=total_size,
+            unit="B",
+            unit_scale=True,
+            desc=file_name,
+            disable=not progress,
+        ) as progress_bar:
+            with open(temp_file, "wb") as file:
                 for chunk in response.iter_content(chunk_size=1024):
                     if chunk:
                         file.write(chunk)
@@ -263,12 +285,17 @@ def load_file_from_url(
         if hash_prefix and not compare_sha256(temp_file, hash_prefix):
             print(f"Hash mismatch for {temp_file}. Deleting the temporary file.")
             os.remove(temp_file)
-            raise ValueError(f"File hash does not match the expected hash prefix {hash_prefix}!")
+            raise ValueError(
+                f"File hash does not match the expected hash prefix {hash_prefix}!"
+            )
         os.rename(temp_file, cached_file)
     return cached_file
+
+
 def compare_sha256(file_path: str, hash_prefix: str) -> bool:
     """Check if the SHA256 hash of the file matches the given prefix."""
     import hashlib
+
     hash_sha256 = hashlib.sha256()
     blksize = 1024 * 1024
     with open(file_path, "rb") as f:

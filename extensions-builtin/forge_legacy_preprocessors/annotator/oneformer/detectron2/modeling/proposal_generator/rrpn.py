@@ -6,7 +6,11 @@ import torch
 
 from annotator.oneformer.detectron2.config import configurable
 from annotator.oneformer.detectron2.layers import ShapeSpec, batched_nms_rotated, cat
-from annotator.oneformer.detectron2.structures import Instances, RotatedBoxes, pairwise_iou_rotated
+from annotator.oneformer.detectron2.structures import (
+    Instances,
+    RotatedBoxes,
+    pairwise_iou_rotated,
+)
 from annotator.oneformer.detectron2.utils.memory import retry_if_cuda_oom
 
 from ..box_regression import Box2BoxTransformRotated
@@ -80,7 +84,9 @@ def find_top_rrpn_proposals(
 
         topk_proposals.append(topk_proposals_i)
         topk_scores.append(topk_scores_i)
-        level_ids.append(torch.full((num_proposals_i,), level_id, dtype=torch.int64, device=device))
+        level_ids.append(
+            torch.full((num_proposals_i,), level_id, dtype=torch.int64, device=device)
+        )
 
     # 2. Concat all levels together
     topk_scores = cat(topk_scores, dim=1)
@@ -94,7 +100,9 @@ def find_top_rrpn_proposals(
         scores_per_img = topk_scores[n]
         lvl = level_ids
 
-        valid_mask = torch.isfinite(boxes.tensor).all(dim=1) & torch.isfinite(scores_per_img)
+        valid_mask = torch.isfinite(boxes.tensor).all(dim=1) & torch.isfinite(
+            scores_per_img
+        )
         if not valid_mask.all():
             if training:
                 raise FloatingPointError(
@@ -144,11 +152,15 @@ class RRPN(RPN):
     @classmethod
     def from_config(cls, cfg, input_shape: Dict[str, ShapeSpec]):
         ret = super().from_config(cfg, input_shape)
-        ret["box2box_transform"] = Box2BoxTransformRotated(weights=cfg.MODEL.RPN.BBOX_REG_WEIGHTS)
+        ret["box2box_transform"] = Box2BoxTransformRotated(
+            weights=cfg.MODEL.RPN.BBOX_REG_WEIGHTS
+        )
         return ret
 
     @torch.no_grad()
-    def label_and_sample_anchors(self, anchors: List[RotatedBoxes], gt_instances: List[Instances]):
+    def label_and_sample_anchors(
+        self, anchors: List[RotatedBoxes], gt_instances: List[Instances]
+    ):
         """
         Args:
             anchors (list[RotatedBoxes]): anchors for each feature map.
@@ -175,8 +187,12 @@ class RRPN(RPN):
             """
             gt_boxes_i: ground-truth boxes for i-th image
             """
-            match_quality_matrix = retry_if_cuda_oom(pairwise_iou_rotated)(gt_boxes_i, anchors)
-            matched_idxs, gt_labels_i = retry_if_cuda_oom(self.anchor_matcher)(match_quality_matrix)
+            match_quality_matrix = retry_if_cuda_oom(pairwise_iou_rotated)(
+                gt_boxes_i, anchors
+            )
+            matched_idxs, gt_labels_i = retry_if_cuda_oom(self.anchor_matcher)(
+                match_quality_matrix
+            )
             # Matching is memory-expensive and may result in CPU tensors. But the result is small
             gt_labels_i = gt_labels_i.to(device=gt_boxes_i.device)
 
@@ -195,7 +211,9 @@ class RRPN(RPN):
         return gt_labels, matched_gt_boxes
 
     @torch.no_grad()
-    def predict_proposals(self, anchors, pred_objectness_logits, pred_anchor_deltas, image_sizes):
+    def predict_proposals(
+        self, anchors, pred_objectness_logits, pred_anchor_deltas, image_sizes
+    ):
         pred_proposals = self._decode_proposals(anchors, pred_anchor_deltas)
         return find_top_rrpn_proposals(
             pred_proposals,

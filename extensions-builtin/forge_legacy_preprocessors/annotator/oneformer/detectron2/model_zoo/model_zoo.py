@@ -5,7 +5,12 @@ import pkg_resources
 import torch
 
 from annotator.oneformer.detectron2.checkpoint import DetectionCheckpointer
-from annotator.oneformer.detectron2.config import CfgNode, LazyConfig, get_cfg, instantiate
+from annotator.oneformer.detectron2.config import (
+    CfgNode,
+    LazyConfig,
+    get_cfg,
+    instantiate,
+)
 from annotator.oneformer.detectron2.modeling import build_model
 
 
@@ -121,7 +126,9 @@ def get_checkpoint_url(config_path):
     """
     url = _ModelZooUrls.query(config_path)
     if url is None:
-        raise RuntimeError("Pretrained model for {} is not available!".format(config_path))
+        raise RuntimeError(
+            "Pretrained model for {} is not available!".format(config_path)
+        )
     return url
 
 

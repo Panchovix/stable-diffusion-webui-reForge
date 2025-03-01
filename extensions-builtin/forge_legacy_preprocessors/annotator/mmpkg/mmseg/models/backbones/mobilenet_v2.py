@@ -39,20 +39,29 @@ class MobileNetV2(nn.Module):
 
     # Parameters to build layers. 3 parameters are needed to construct a
     # layer, from left to right: expand_ratio, channel, num_blocks.
-    arch_settings = [[1, 16, 1], [6, 24, 2], [6, 32, 3], [6, 64, 4],
-                     [6, 96, 3], [6, 160, 3], [6, 320, 1]]
+    arch_settings = [
+        [1, 16, 1],
+        [6, 24, 2],
+        [6, 32, 3],
+        [6, 64, 4],
+        [6, 96, 3],
+        [6, 160, 3],
+        [6, 320, 1],
+    ]
 
-    def __init__(self,
-                 widen_factor=1.,
-                 strides=(1, 2, 2, 2, 1, 2, 1),
-                 dilations=(1, 1, 1, 1, 1, 1, 1),
-                 out_indices=(1, 2, 4, 6),
-                 frozen_stages=-1,
-                 conv_cfg=None,
-                 norm_cfg=dict(type='BN'),
-                 act_cfg=dict(type='ReLU6'),
-                 norm_eval=False,
-                 with_cp=False):
+    def __init__(
+        self,
+        widen_factor=1.0,
+        strides=(1, 2, 2, 2, 1, 2, 1),
+        dilations=(1, 1, 1, 1, 1, 1, 1),
+        out_indices=(1, 2, 4, 6),
+        frozen_stages=-1,
+        conv_cfg=None,
+        norm_cfg=dict(type="BN"),
+        act_cfg=dict(type="ReLU6"),
+        norm_eval=False,
+        with_cp=False,
+    ):
         super(MobileNetV2, self).__init__()
         self.widen_factor = widen_factor
         self.strides = strides
@@ -61,12 +70,14 @@ class MobileNetV2(nn.Module):
         self.out_indices = out_indices
         for index in out_indices:
             if index not in range(0, 7):
-                raise ValueError('the item in out_indices must in '
-                                 f'range(0, 8). But received {index}')
+                raise ValueError(
+                    f"the item in out_indices must in range(0, 8). But received {index}"
+                )
 
         if frozen_stages not in range(-1, 7):
-            raise ValueError('frozen_stages must be in range(-1, 7). '
-                             f'But received {frozen_stages}')
+            raise ValueError(
+                f"frozen_stages must be in range(-1, 7). But received {frozen_stages}"
+            )
         self.out_indices = out_indices
         self.frozen_stages = frozen_stages
         self.conv_cfg = conv_cfg
@@ -85,7 +96,8 @@ class MobileNetV2(nn.Module):
             padding=1,
             conv_cfg=self.conv_cfg,
             norm_cfg=self.norm_cfg,
-            act_cfg=self.act_cfg)
+            act_cfg=self.act_cfg,
+        )
 
         self.layers = []
 
@@ -99,13 +111,13 @@ class MobileNetV2(nn.Module):
                 num_blocks=num_blocks,
                 stride=stride,
                 dilation=dilation,
-                expand_ratio=expand_ratio)
-            layer_name = f'layer{i + 1}'
+                expand_ratio=expand_ratio,
+            )
+            layer_name = f"layer{i + 1}"
             self.add_module(layer_name, inverted_res_layer)
             self.layers.append(layer_name)
 
-    def make_layer(self, out_channels, num_blocks, stride, dilation,
-                   expand_ratio):
+    def make_layer(self, out_channels, num_blocks, stride, dilation, expand_ratio):
         """Stack InvertedResidual blocks to build a layer for MobileNetV2.
 
         Args:
@@ -128,7 +140,9 @@ class MobileNetV2(nn.Module):
                     conv_cfg=self.conv_cfg,
                     norm_cfg=self.norm_cfg,
                     act_cfg=self.act_cfg,
-                    with_cp=self.with_cp))
+                    with_cp=self.with_cp,
+                )
+            )
             self.in_channels = out_channels
 
         return nn.Sequential(*layers)
@@ -144,7 +158,7 @@ class MobileNetV2(nn.Module):
                 elif isinstance(m, (_BatchNorm, nn.GroupNorm)):
                     constant_init(m, 1)
         else:
-            raise TypeError('pretrained must be a str or None')
+            raise TypeError("pretrained must be a str or None")
 
     def forward(self, x):
         x = self.conv1(x)
@@ -166,7 +180,7 @@ class MobileNetV2(nn.Module):
             for param in self.conv1.parameters():
                 param.requires_grad = False
         for i in range(1, self.frozen_stages + 1):
-            layer = getattr(self, f'layer{i}')
+            layer = getattr(self, f"layer{i}")
             layer.eval()
             for param in layer.parameters():
                 param.requires_grad = False

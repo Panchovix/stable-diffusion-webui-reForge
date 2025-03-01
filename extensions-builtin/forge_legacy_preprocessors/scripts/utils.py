@@ -223,10 +223,7 @@ def npimg2tensor(img: np.ndarray) -> torch.Tensor:
 def tensor2npimg(t: torch.Tensor) -> np.ndarray:
     """Convert tensor ([1, C, H, W]) to numpy RGB img ([H, W, C])"""
     return (
-        (rearrange(t, "1 c h w -> h w c") * 255.0)
-        .to(dtype=torch.uint8)
-        .cpu()
-        .numpy()
+        (rearrange(t, "1 c h w -> h w c") * 255.0).to(dtype=torch.uint8).cpu().numpy()
     )
 
 

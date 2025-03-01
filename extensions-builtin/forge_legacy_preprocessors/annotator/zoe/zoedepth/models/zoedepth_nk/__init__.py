@@ -28,4 +28,4 @@ all_versions = {
     "v1": ZoeDepthNK,
 }
 
-get_version = lambda v : all_versions[v]
+get_version = lambda v: all_versions[v]

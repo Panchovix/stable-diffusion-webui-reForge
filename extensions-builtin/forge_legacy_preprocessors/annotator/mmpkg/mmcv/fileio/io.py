@@ -7,11 +7,11 @@ from .file_client import FileClient
 from .handlers import BaseFileHandler, JsonHandler, PickleHandler, YamlHandler
 
 file_handlers = {
-    'json': JsonHandler(),
-    'yaml': YamlHandler(),
-    'yml': YamlHandler(),
-    'pickle': PickleHandler(),
-    'pkl': PickleHandler()
+    "json": JsonHandler(),
+    "yaml": YamlHandler(),
+    "yml": YamlHandler(),
+    "pickle": PickleHandler(),
+    "pkl": PickleHandler(),
 }
 
 
@@ -46,9 +46,9 @@ def load(file, file_format=None, file_client_args=None, **kwargs):
     if isinstance(file, Path):
         file = str(file)
     if file_format is None and is_str(file):
-        file_format = file.split('.')[-1]
+        file_format = file.split(".")[-1]
     if file_format not in file_handlers:
-        raise TypeError(f'Unsupported format: {file_format}')
+        raise TypeError(f"Unsupported format: {file_format}")
 
     handler = file_handlers[file_format]
     if is_str(file):
@@ -59,7 +59,7 @@ def load(file, file_format=None, file_client_args=None, **kwargs):
         else:
             with BytesIO(file_client.get(file)) as f:
                 obj = handler.load_from_fileobj(f, **kwargs)
-    elif hasattr(file, 'read'):
+    elif hasattr(file, "read"):
         obj = handler.load_from_fileobj(file, **kwargs)
     else:
         raise TypeError('"file" must be a filepath str or a file-object')
@@ -97,12 +97,11 @@ def dump(obj, file=None, file_format=None, file_client_args=None, **kwargs):
         file = str(file)
     if file_format is None:
         if is_str(file):
-            file_format = file.split('.')[-1]
+            file_format = file.split(".")[-1]
         elif file is None:
-            raise ValueError(
-                'file_format must be specified since file is None')
+            raise ValueError("file_format must be specified since file is None")
     if file_format not in file_handlers:
-        raise TypeError(f'Unsupported format: {file_format}')
+        raise TypeError(f"Unsupported format: {file_format}")
 
     handler = file_handlers[file_format]
     if file is None:
@@ -117,7 +116,7 @@ def dump(obj, file=None, file_format=None, file_client_args=None, **kwargs):
             with BytesIO() as f:
                 handler.dump_to_fileobj(obj, f, **kwargs)
                 file_client.put(f.getvalue(), file)
-    elif hasattr(file, 'write'):
+    elif hasattr(file, "write"):
         handler.dump_to_fileobj(obj, file, **kwargs)
     else:
         raise TypeError('"file" must be a filename str or a file-object')
@@ -133,17 +132,17 @@ def _register_handler(handler, file_formats):
     """
     if not isinstance(handler, BaseFileHandler):
         raise TypeError(
-            f'handler must be a child of BaseFileHandler, not {type(handler)}')
+            f"handler must be a child of BaseFileHandler, not {type(handler)}"
+        )
     if isinstance(file_formats, str):
         file_formats = [file_formats]
     if not is_list_of(file_formats, str):
-        raise TypeError('file_formats must be a str or a list of str')
+        raise TypeError("file_formats must be a str or a list of str")
     for ext in file_formats:
         file_handlers[ext] = handler
 
 
 def register_handler(file_formats, **kwargs):
-
     def wrap(cls):
         _register_handler(cls(**kwargs), file_formats)
         return cls

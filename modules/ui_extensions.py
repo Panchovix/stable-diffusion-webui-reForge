@@ -21,17 +21,23 @@ STYLE_PRIMARY = ' style="color: var(--primary-400)"'
 
 
 def check_access():
-    assert not shared.cmd_opts.disable_extension_access, "extension access disabled because of command line flags"
+    assert not shared.cmd_opts.disable_extension_access, (
+        "extension access disabled because of command line flags"
+    )
 
 
 def apply_and_restart(disable_list, update_list, disable_all):
     check_access()
 
     disabled = json.loads(disable_list)
-    assert type(disabled) == list, f"wrong disable_list data for apply_and_restart: {disable_list}"
+    assert type(disabled) == list, (
+        f"wrong disable_list data for apply_and_restart: {disable_list}"
+    )
 
     update = json.loads(update_list)
-    assert type(update) == list, f"wrong update_list data for apply_and_restart: {update_list}"
+    assert type(update) == list, (
+        f"wrong update_list data for apply_and_restart: {update_list}"
+    )
 
     if update:
         save_config_state("Backup (pre-update)")
@@ -63,7 +69,7 @@ def save_config_state(name):
     name = os.path.basename(name or "Config")
 
     current_config_state["name"] = name
-    timestamp = datetime.now().strftime('%Y_%m_%d-%H_%M_%S')
+    timestamp = datetime.now().strftime("%Y_%m_%d-%H_%M_%S")
     filename = os.path.join(config_states_dir, f"{timestamp}_{name}.json")
     print(f"Saving backup of webui/extension state to {filename}.")
     with open(filename, "w", encoding="utf-8") as f:
@@ -71,7 +77,9 @@ def save_config_state(name):
     config_states.list_config_states()
     new_value = next(iter(config_states.all_config_states.keys()), "Current")
     new_choices = ["Current"] + list(config_states.all_config_states.keys())
-    return gr.Dropdown.update(value=new_value, choices=new_choices), f"<span>Saved current webui/extension state to \"{filename}\"</span>"
+    return gr.Dropdown.update(
+        value=new_value, choices=new_choices
+    ), f'<span>Saved current webui/extension state to "{filename}"</span>'
 
 
 def restore_config_state(confirmed, config_state_name, restore_type):
@@ -102,19 +110,24 @@ def check_updates(id_task, disable_list):
     check_access()
 
     disabled = json.loads(disable_list)
-    assert type(disabled) == list, f"wrong disable_list data for apply_and_restart: {disable_list}"
+    assert type(disabled) == list, (
+        f"wrong disable_list data for apply_and_restart: {disable_list}"
+    )
 
-    exts = [ext for ext in extensions.extensions if ext.remote is not None and ext.name not in disabled]
+    exts = [
+        ext
+        for ext in extensions.extensions
+        if ext.remote is not None and ext.name not in disabled
+    ]
     shared.state.job_count = len(exts)
 
     lock = threading.Lock()
 
     def _check_update(ext):
-
         try:
             ext.check_updates()
         except FileNotFoundError as e:
-            if 'FETCH_HEAD' not in str(e):
+            if "FETCH_HEAD" not in str(e):
                 raise
         except Exception:
             with lock:
@@ -122,7 +135,10 @@ def check_updates(id_task, disable_list):
         with lock:
             shared.state.textinfo = ext.name
             shared.state.nextjob()
-    with ThreadPoolExecutor(max_workers=max(1, int(shared.opts.concurrent_git_fetch_limit))) as executor:
+
+    with ThreadPoolExecutor(
+        max_workers=max(1, int(shared.opts.concurrent_git_fetch_limit))
+    ) as executor:
         for ext in exts:
             executor.submit(_check_update, ext)
 
@@ -147,7 +163,7 @@ def extension_table():
         <thead>
             <tr>
                 <th>
-                    <input class="gr-check-radio gr-checkbox all_extensions_toggle" type="checkbox" {'checked="checked"' if all(ext.enabled for ext in extensions.extensions) else ''} onchange="toggle_all_extensions(event)" />
+                    <input class="gr-check-radio gr-checkbox all_extensions_toggle" type="checkbox" {'checked="checked"' if all(ext.enabled for ext in extensions.extensions) else ""} onchange="toggle_all_extensions(event)" />
                     <abbr title="Use checkbox to enable the extension; it will be enabled or disabled when you click apply button">Extension</abbr>
                 </th>
                 <th>URL</th>
@@ -164,7 +180,7 @@ def extension_table():
         ext: extensions.Extension
         ext.read_info_from_repo()
 
-        remote = f"""<a href="{html.escape(ext.remote or '')}" target="_blank">{html.escape("built-in" if ext.is_builtin else ext.remote or '')}</a>"""
+        remote = f"""<a href="{html.escape(ext.remote or "")}" target="_blank">{html.escape("built-in" if ext.is_builtin else ext.remote or "")}</a>"""
 
         if ext.can_update:
             ext_status = f"""<label><input class="gr-check-radio gr-checkbox" name="update_{html.escape(ext.name)}" checked="checked" type="checkbox">{html.escape(ext.status)}</label>"""
@@ -172,7 +188,14 @@ def extension_table():
             ext_status = ext.status
 
         style = ""
-        if shared.cmd_opts.disable_extra_extensions and not ext.is_builtin or shared.opts.disable_all_extensions == "extra" and not ext.is_builtin or shared.cmd_opts.disable_all_extensions or shared.opts.disable_all_extensions == "all":
+        if (
+            shared.cmd_opts.disable_extra_extensions
+            and not ext.is_builtin
+            or shared.opts.disable_all_extensions == "extra"
+            and not ext.is_builtin
+            or shared.cmd_opts.disable_all_extensions
+            or shared.opts.disable_all_extensions == "all"
+        ):
             style = STYLE_PRIMARY
 
         version_link = ext.version
@@ -181,12 +204,12 @@ def extension_table():
 
         code += f"""
             <tr>
-                <td><label{style}><input class="gr-check-radio gr-checkbox extension_toggle" name="enable_{html.escape(ext.name)}" type="checkbox" {'checked="checked"' if ext.enabled else ''} onchange="toggle_extension(event)" />{html.escape(ext.name)}</label></td>
+                <td><label{style}><input class="gr-check-radio gr-checkbox extension_toggle" name="enable_{html.escape(ext.name)}" type="checkbox" {'checked="checked"' if ext.enabled else ""} onchange="toggle_extension(event)" />{html.escape(ext.name)}</label></td>
                 <td>{remote}</td>
                 <td>{ext.branch}</td>
                 <td>{version_link}</td>
                 <td>{datetime.fromtimestamp(ext.commit_date) if ext.commit_date else ""}</td>
-                <td{' class="extension_status"' if ext.remote is not None else ''}>{ext_status}</td>
+                <td{' class="extension_status"' if ext.remote is not None else ""}>{ext_status}</td>
             </tr>
     """
 
@@ -205,7 +228,9 @@ def update_config_states_table(state_name):
         config_state = config_states.all_config_states[state_name]
 
     config_name = config_state.get("name", "Config")
-    created_date = datetime.fromtimestamp(config_state["created_at"]).strftime('%Y-%m-%d %H:%M:%S')
+    created_date = datetime.fromtimestamp(config_state["created_at"]).strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
     filepath = config_state.get("filepath", "<unknown>")
 
     try:
@@ -218,7 +243,7 @@ def update_config_states_table(state_name):
         else:
             webui_commit_date = "<unknown>"
 
-        remote = f"""<a href="{html.escape(webui_remote)}" target="_blank">{html.escape(webui_remote or '')}</a>"""
+        remote = f"""<a href="{html.escape(webui_remote)}" target="_blank">{html.escape(webui_remote or "")}</a>"""
         commit_link = make_commit_link(webui_commit_hash, webui_remote)
         date_link = make_commit_link(webui_commit_hash, webui_remote, webui_commit_date)
 
@@ -292,7 +317,7 @@ def update_config_states_table(state_name):
             else:
                 ext_commit_date = "<unknown>"
 
-            remote = f"""<a href="{html.escape(ext_remote)}" target="_blank">{html.escape(ext_remote or '')}</a>"""
+            remote = f"""<a href="{html.escape(ext_remote)}" target="_blank">{html.escape(ext_remote or "")}</a>"""
             commit_link = make_commit_link(ext_commit_hash, ext_remote)
             date_link = make_commit_link(ext_commit_hash, ext_remote, ext_commit_date)
 
@@ -313,7 +338,7 @@ def update_config_states_table(state_name):
                     style_commit = STYLE_PRIMARY
 
             code += f"""        <tr>
-            <td><label{style_enabled}><input class="gr-check-radio gr-checkbox" type="checkbox" disabled="true" {'checked="checked"' if ext_enabled else ''}>{html.escape(ext_name)}</label></td>
+            <td><label{style_enabled}><input class="gr-check-radio gr-checkbox" type="checkbox" disabled="true" {'checked="checked"' if ext_enabled else ""}>{html.escape(ext_name)}</label></td>
             <td><label{style_remote}>{remote}</label></td>
             <td><label{style_branch}>{ext_branch}</label></td>
             <td><label{style_commit}>{commit_link}</label></td>
@@ -344,7 +369,7 @@ def normalize_git_url(url):
 
 
 def get_extension_dirname_from_url(url):
-    *parts, last_part = url.split('/')
+    *parts, last_part = url.split("/")
     return normalize_git_url(last_part)
 
 
@@ -356,17 +381,23 @@ def install_extension_from_url(dirname, url, branch_name=None):
     if isinstance(url, str):
         url = url.strip()
 
-    assert url, 'No URL specified'
+    assert url, "No URL specified"
 
     if dirname is None or dirname == "":
         dirname = get_extension_dirname_from_url(url)
 
     target_dir = os.path.join(extensions.extensions_dir, dirname)
-    assert not os.path.exists(target_dir), f'Extension directory already exists: {target_dir}'
+    assert not os.path.exists(target_dir), (
+        f"Extension directory already exists: {target_dir}"
+    )
 
     normalized_url = normalize_git_url(url)
-    if any(x for x in extensions.extensions if normalize_git_url(x.remote) == normalized_url):
-        raise Exception(f'Extension with this URL is already installed: {url}')
+    if any(
+        x
+        for x in extensions.extensions
+        if normalize_git_url(x.remote) == normalized_url
+    ):
+        raise Exception(f"Extension with this URL is already installed: {url}")
 
     tmpdir = os.path.join(paths.data_path, "tmp", dirname)
 
@@ -374,12 +405,14 @@ def install_extension_from_url(dirname, url, branch_name=None):
         shutil.rmtree(tmpdir, True)
         if not branch_name:
             # if no branch is specified, use the default branch
-            with git.Repo.clone_from(url, tmpdir, filter=['blob:none']) as repo:
+            with git.Repo.clone_from(url, tmpdir, filter=["blob:none"]) as repo:
                 repo.remote().fetch()
                 for submodule in repo.submodules:
                     submodule.update()
         else:
-            with git.Repo.clone_from(url, tmpdir, filter=['blob:none'], branch=branch_name) as repo:
+            with git.Repo.clone_from(
+                url, tmpdir, filter=["blob:none"], branch=branch_name
+            ) as repo:
                 repo.remote().fetch()
                 for submodule in repo.submodules:
                     submodule.update()
@@ -395,72 +428,104 @@ def install_extension_from_url(dirname, url, branch_name=None):
                 raise err
 
         import launch
+
         launch.run_extension_installer(target_dir)
 
         extensions.list_extensions()
-        return [extension_table(), html.escape(f"Installed into {target_dir}. Use Installed tab to restart.")]
+        return [
+            extension_table(),
+            html.escape(f"Installed into {target_dir}. Use Installed tab to restart."),
+        ]
     finally:
         shutil.rmtree(tmpdir, True)
 
 
-def install_extension_from_index(url, selected_tags, showing_type, filtering_type, sort_column, filter_text):
+def install_extension_from_index(
+    url, selected_tags, showing_type, filtering_type, sort_column, filter_text
+):
     ext_table, message = install_extension_from_url(None, url)
 
-    code, _ = refresh_available_extensions_from_data(selected_tags, showing_type, filtering_type, sort_column, filter_text)
+    code, _ = refresh_available_extensions_from_data(
+        selected_tags, showing_type, filtering_type, sort_column, filter_text
+    )
 
-    return code, ext_table, message, ''
+    return code, ext_table, message, ""
 
 
-def refresh_available_extensions(url, selected_tags, showing_type, filtering_type, sort_column):
+def refresh_available_extensions(
+    url, selected_tags, showing_type, filtering_type, sort_column
+):
     global available_extensions
 
     import urllib.request
+
     with urllib.request.urlopen(url) as response:
         text = response.read()
 
     available_extensions = json.loads(text)
 
-    code, tags = refresh_available_extensions_from_data(selected_tags, showing_type, filtering_type, sort_column)
+    code, tags = refresh_available_extensions_from_data(
+        selected_tags, showing_type, filtering_type, sort_column
+    )
 
-    return url, code, gr.CheckboxGroup.update(choices=tags), '', ''
-
-
-def refresh_available_extensions_for_tags(selected_tags, showing_type, filtering_type, sort_column, filter_text):
-    code, _ = refresh_available_extensions_from_data(selected_tags, showing_type, filtering_type, sort_column, filter_text)
-
-    return code, ''
+    return url, code, gr.CheckboxGroup.update(choices=tags), "", ""
 
 
-def search_extensions(filter_text, selected_tags, showing_type, filtering_type, sort_column):
-    code, _ = refresh_available_extensions_from_data(selected_tags, showing_type, filtering_type, sort_column, filter_text)
+def refresh_available_extensions_for_tags(
+    selected_tags, showing_type, filtering_type, sort_column, filter_text
+):
+    code, _ = refresh_available_extensions_from_data(
+        selected_tags, showing_type, filtering_type, sort_column, filter_text
+    )
 
-    return code, ''
+    return code, ""
+
+
+def search_extensions(
+    filter_text, selected_tags, showing_type, filtering_type, sort_column
+):
+    code, _ = refresh_available_extensions_from_data(
+        selected_tags, showing_type, filtering_type, sort_column, filter_text
+    )
+
+    return code, ""
 
 
 sort_ordering = [
     # (reverse, order_by_function)
-    (True, lambda x: x.get('added', 'z')),
-    (False, lambda x: x.get('added', 'z')),
-    (False, lambda x: x.get('name', 'z')),
-    (True, lambda x: x.get('name', 'z')),
-    (False, lambda x: 'z'),
-    (True, lambda x: x.get('commit_time', '')),
-    (True, lambda x: x.get('created_at', '')),
-    (True, lambda x: x.get('stars', 0)),
+    (True, lambda x: x.get("added", "z")),
+    (False, lambda x: x.get("added", "z")),
+    (False, lambda x: x.get("name", "z")),
+    (True, lambda x: x.get("name", "z")),
+    (False, lambda x: "z"),
+    (True, lambda x: x.get("commit_time", "")),
+    (True, lambda x: x.get("created_at", "")),
+    (True, lambda x: x.get("stars", 0)),
 ]
 
 
 def get_date(info: dict, key):
     try:
-        return datetime.strptime(info.get(key), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).astimezone().strftime("%Y-%m-%d")
+        return (
+            datetime.strptime(info.get(key), "%Y-%m-%dT%H:%M:%SZ")
+            .replace(tzinfo=timezone.utc)
+            .astimezone()
+            .strftime("%Y-%m-%d")
+        )
     except (ValueError, TypeError):
-        return ''
+        return ""
 
 
-def refresh_available_extensions_from_data(selected_tags, showing_type, filtering_type, sort_column, filter_text=""):
+def refresh_available_extensions_from_data(
+    selected_tags, showing_type, filtering_type, sort_column, filter_text=""
+):
     extlist = available_extensions["extensions"]
     installed_extensions = {extension.name for extension in extensions.extensions}
-    installed_extension_urls = {normalize_git_url(extension.remote) for extension in extensions.extensions if extension.remote is not None}
+    installed_extension_urls = {
+        normalize_git_url(extension.remote)
+        for extension in extensions.extensions
+        if extension.remote is not None
+    }
 
     tags = available_extensions.get("tags", {})
     selected_tags = set(selected_tags)
@@ -478,14 +543,16 @@ def refresh_available_extensions_from_data(selected_tags, showing_type, filterin
         <tbody>
     """
 
-    sort_reverse, sort_function = sort_ordering[sort_column if 0 <= sort_column < len(sort_ordering) else 0]
+    sort_reverse, sort_function = sort_ordering[
+        sort_column if 0 <= sort_column < len(sort_ordering) else 0
+    ]
 
     for ext in sorted(extlist, key=sort_function, reverse=sort_reverse):
         name = ext.get("name", "noname")
         stars = int(ext.get("stars", 0))
-        added = ext.get('added', 'unknown')
-        update_time = get_date(ext, 'commit_time')
-        create_time = get_date(ext, 'created_at')
+        added = ext.get("added", "unknown")
+        update_time = get_date(ext, "commit_time")
+        create_time = get_date(ext, "created_at")
         url = ext.get("url", None)
         description = ext.get("description", "")
         extension_tags = ext.get("tags", [])
@@ -493,17 +560,20 @@ def refresh_available_extensions_from_data(selected_tags, showing_type, filterin
         if url is None:
             continue
 
-        existing = get_extension_dirname_from_url(url) in installed_extensions or normalize_git_url(url) in installed_extension_urls
+        existing = (
+            get_extension_dirname_from_url(url) in installed_extensions
+            or normalize_git_url(url) in installed_extension_urls
+        )
         extension_tags = extension_tags + ["installed"] if existing else extension_tags
 
         if len(selected_tags) > 0:
             matched_tags = [x for x in extension_tags if x in selected_tags]
-            if filtering_type == 'or':
+            if filtering_type == "or":
                 need_hide = len(matched_tags) > 0
             else:
                 need_hide = len(matched_tags) == len(selected_tags)
 
-            if showing_type == 'show':
+            if showing_type == "show":
                 need_hide = not need_hide
 
             if need_hide:
@@ -511,13 +581,21 @@ def refresh_available_extensions_from_data(selected_tags, showing_type, filterin
                 continue
 
         if filter_text and filter_text.strip():
-            if filter_text.lower() not in html.escape(name).lower() and filter_text.lower() not in html.escape(description).lower():
+            if (
+                filter_text.lower() not in html.escape(name).lower()
+                and filter_text.lower() not in html.escape(description).lower()
+            ):
                 hidden += 1
                 continue
 
         install_code = f"""<button onclick="install_extension_from_index(this, '{html.escape(url)}')" {"disabled=disabled" if existing else ""} class="lg secondary gradio-button custom-button">{"Install" if not existing else "Installed"}</button>"""
 
-        tags_text = ", ".join([f"<span class='extension-tag' title='{tags.get(x, '')}'>{x}</span>" for x in extension_tags])
+        tags_text = ", ".join(
+            [
+                f"<span class='extension-tag' title='{tags.get(x, '')}'>{x}</span>"
+                for x in extension_tags
+            ]
+        )
 
         code += f"""
             <tr>
@@ -558,19 +636,37 @@ def create_ui():
     with gr.Blocks(analytics_enabled=False) as ui:
         with gr.Tabs(elem_id="tabs_extensions"):
             with gr.TabItem("Installed", id="installed"):
-
                 with gr.Row(elem_id="extensions_installed_top"):
-                    apply_label = ("Apply and restart UI" if restart.is_restartable() else "Apply and quit")
+                    apply_label = (
+                        "Apply and restart UI"
+                        if restart.is_restartable()
+                        else "Apply and quit"
+                    )
                     apply = gr.Button(value=apply_label, variant="primary")
                     check = gr.Button(value="Check for updates")
-                    extensions_disable_all = gr.Radio(label="Disable all extensions", choices=["none", "extra", "all"], value=shared.opts.disable_all_extensions, elem_id="extensions_disable_all")
-                    extensions_disabled_list = gr.Text(elem_id="extensions_disabled_list", visible=False, container=False)
-                    extensions_update_list = gr.Text(elem_id="extensions_update_list", visible=False, container=False)
-                    refresh = gr.Button(value='Refresh', variant="compact")
+                    extensions_disable_all = gr.Radio(
+                        label="Disable all extensions",
+                        choices=["none", "extra", "all"],
+                        value=shared.opts.disable_all_extensions,
+                        elem_id="extensions_disable_all",
+                    )
+                    extensions_disabled_list = gr.Text(
+                        elem_id="extensions_disabled_list",
+                        visible=False,
+                        container=False,
+                    )
+                    extensions_update_list = gr.Text(
+                        elem_id="extensions_update_list", visible=False, container=False
+                    )
+                    refresh = gr.Button(value="Refresh", variant="compact")
 
                 html = ""
 
-                if shared.cmd_opts.disable_all_extensions or shared.cmd_opts.disable_extra_extensions or shared.opts.disable_all_extensions != "none":
+                if (
+                    shared.cmd_opts.disable_all_extensions
+                    or shared.cmd_opts.disable_extra_extensions
+                    or shared.opts.disable_all_extensions != "none"
+                ):
                     if shared.cmd_opts.disable_all_extensions:
                         msg = '"--disable-all-extensions" was used, remove it to load all extensions again'
                     elif shared.opts.disable_all_extensions != "none":
@@ -583,15 +679,31 @@ def create_ui():
                     info = gr.HTML(html)
 
                 with gr.Row(elem_classes="progress-container"):
-                    extensions_table = gr.HTML('Loading...', elem_id="extensions_installed_html")
+                    extensions_table = gr.HTML(
+                        "Loading...", elem_id="extensions_installed_html"
+                    )
 
-                ui.load(fn=extension_table, inputs=[], outputs=[extensions_table], show_progress=False)
-                refresh.click(fn=extension_table, inputs=[], outputs=[extensions_table], show_progress=False)
+                ui.load(
+                    fn=extension_table,
+                    inputs=[],
+                    outputs=[extensions_table],
+                    show_progress=False,
+                )
+                refresh.click(
+                    fn=extension_table,
+                    inputs=[],
+                    outputs=[extensions_table],
+                    show_progress=False,
+                )
 
                 apply.click(
                     fn=apply_and_restart,
                     js="extensions_apply",
-                    inputs=[extensions_disabled_list, extensions_update_list, extensions_disable_all],
+                    inputs=[
+                        extensions_disabled_list,
+                        extensions_update_list,
+                        extensions_disable_all,
+                    ],
                     outputs=[],
                 )
 
@@ -604,19 +716,62 @@ def create_ui():
 
             with gr.TabItem("Available", id="available"):
                 with gr.Row():
-                    refresh_available_extensions_button = gr.Button(value="Load from:", variant="primary")
-                    extensions_index_url = os.environ.get('WEBUI_EXTENSIONS_INDEX', "https://raw.githubusercontent.com/AUTOMATIC1111/stable-diffusion-webui-extensions/master/index.json")
-                    available_extensions_index = gr.Text(value=extensions_index_url, label="Extension index URL", container=False)
-                    extension_to_install = gr.Text(elem_id="extension_to_install", visible=False)
-                    install_extension_button = gr.Button(elem_id="install_extension_button", visible=False)
+                    refresh_available_extensions_button = gr.Button(
+                        value="Load from:", variant="primary"
+                    )
+                    extensions_index_url = os.environ.get(
+                        "WEBUI_EXTENSIONS_INDEX",
+                        "https://raw.githubusercontent.com/AUTOMATIC1111/stable-diffusion-webui-extensions/master/index.json",
+                    )
+                    available_extensions_index = gr.Text(
+                        value=extensions_index_url,
+                        label="Extension index URL",
+                        container=False,
+                    )
+                    extension_to_install = gr.Text(
+                        elem_id="extension_to_install", visible=False
+                    )
+                    install_extension_button = gr.Button(
+                        elem_id="install_extension_button", visible=False
+                    )
 
                 with gr.Row():
-                    selected_tags = gr.CheckboxGroup(value=["ads", "localization", "installed"], label="Extension tags", choices=["script", "ads", "localization", "installed"], elem_classes=['compact-checkbox-group'])
-                    sort_column = gr.Radio(value="newest first", label="Order", choices=["newest first", "oldest first", "a-z", "z-a", "internal order",'update time', 'create time', "stars"], type="index", elem_classes=['compact-checkbox-group'])
+                    selected_tags = gr.CheckboxGroup(
+                        value=["ads", "localization", "installed"],
+                        label="Extension tags",
+                        choices=["script", "ads", "localization", "installed"],
+                        elem_classes=["compact-checkbox-group"],
+                    )
+                    sort_column = gr.Radio(
+                        value="newest first",
+                        label="Order",
+                        choices=[
+                            "newest first",
+                            "oldest first",
+                            "a-z",
+                            "z-a",
+                            "internal order",
+                            "update time",
+                            "create time",
+                            "stars",
+                        ],
+                        type="index",
+                        elem_classes=["compact-checkbox-group"],
+                    )
 
                 with gr.Row():
-                    showing_type = gr.Radio(value="hide", label="Showing type", choices=["hide", "show"], elem_classes=['compact-checkbox-group'])
-                    filtering_type = gr.Radio(value="or", label="Filtering type", choices=["or", "and"], elem_classes=['compact-checkbox-group'])
+                    showing_type = gr.Radio(
+                        value="hide",
+                        label="Showing type",
+                        choices=["hide", "show"],
+                        elem_classes=["compact-checkbox-group"],
+                    )
+                    filtering_type = gr.Radio(
+                        value="or",
+                        label="Filtering type",
+                        choices=["or", "and"],
+                        elem_classes=["compact-checkbox-group"],
+                    )
 
                 with gr.Row():
                     search_extensions_text = gr.Text(label="Search", container=False)
@@ -625,84 +780,207 @@ def create_ui():
                 available_extensions_table = gr.HTML()
 
                 refresh_available_extensions_button.click(
-                    fn=modules.ui.wrap_gradio_call(refresh_available_extensions, extra_outputs=[gr.update(), gr.update(), gr.update(), gr.update()]),
-                    inputs=[available_extensions_index, selected_tags, showing_type, filtering_type, sort_column],
-                    outputs=[available_extensions_index, available_extensions_table, selected_tags, search_extensions_text, install_result],
+                    fn=modules.ui.wrap_gradio_call(
+                        refresh_available_extensions,
+                        extra_outputs=[
+                            gr.update(),
+                            gr.update(),
+                            gr.update(),
+                            gr.update(),
+                        ],
+                    ),
+                    inputs=[
+                        available_extensions_index,
+                        selected_tags,
+                        showing_type,
+                        filtering_type,
+                        sort_column,
+                    ],
+                    outputs=[
+                        available_extensions_index,
+                        available_extensions_table,
+                        selected_tags,
+                        search_extensions_text,
+                        install_result,
+                    ],
                 )
 
                 install_extension_button.click(
-                    fn=modules.ui.wrap_gradio_call_no_job(install_extension_from_index, extra_outputs=[gr.update(), gr.update()]),
-                    inputs=[extension_to_install, selected_tags, showing_type, filtering_type, sort_column, search_extensions_text],
-                    outputs=[available_extensions_table, extensions_table, install_result],
+                    fn=modules.ui.wrap_gradio_call_no_job(
+                        install_extension_from_index,
+                        extra_outputs=[gr.update(), gr.update()],
+                    ),
+                    inputs=[
+                        extension_to_install,
+                        selected_tags,
+                        showing_type,
+                        filtering_type,
+                        sort_column,
+                        search_extensions_text,
+                    ],
+                    outputs=[
+                        available_extensions_table,
+                        extensions_table,
+                        install_result,
+                    ],
                 )
 
                 search_extensions_text.change(
-                    fn=modules.ui.wrap_gradio_call_no_job(search_extensions, extra_outputs=[gr.update()]),
-                    inputs=[search_extensions_text, selected_tags, showing_type, filtering_type, sort_column],
+                    fn=modules.ui.wrap_gradio_call_no_job(
+                        search_extensions, extra_outputs=[gr.update()]
+                    ),
+                    inputs=[
+                        search_extensions_text,
+                        selected_tags,
+                        showing_type,
+                        filtering_type,
+                        sort_column,
+                    ],
                     outputs=[available_extensions_table, install_result],
                 )
 
                 selected_tags.change(
-                    fn=modules.ui.wrap_gradio_call_no_job(refresh_available_extensions_for_tags, extra_outputs=[gr.update()]),
-                    inputs=[selected_tags, showing_type, filtering_type, sort_column, search_extensions_text],
-                    outputs=[available_extensions_table, install_result]
+                    fn=modules.ui.wrap_gradio_call_no_job(
+                        refresh_available_extensions_for_tags,
+                        extra_outputs=[gr.update()],
+                    ),
+                    inputs=[
+                        selected_tags,
+                        showing_type,
+                        filtering_type,
+                        sort_column,
+                        search_extensions_text,
+                    ],
+                    outputs=[available_extensions_table, install_result],
                 )
 
                 showing_type.change(
-                    fn=modules.ui.wrap_gradio_call_no_job(refresh_available_extensions_for_tags, extra_outputs=[gr.update()]),
-                    inputs=[selected_tags, showing_type, filtering_type, sort_column, search_extensions_text],
-                    outputs=[available_extensions_table, install_result]
+                    fn=modules.ui.wrap_gradio_call_no_job(
+                        refresh_available_extensions_for_tags,
+                        extra_outputs=[gr.update()],
+                    ),
+                    inputs=[
+                        selected_tags,
+                        showing_type,
+                        filtering_type,
+                        sort_column,
+                        search_extensions_text,
+                    ],
+                    outputs=[available_extensions_table, install_result],
                 )
 
                 filtering_type.change(
-                    fn=modules.ui.wrap_gradio_call_no_job(refresh_available_extensions_for_tags, extra_outputs=[gr.update()]),
-                    inputs=[selected_tags, showing_type, filtering_type, sort_column, search_extensions_text],
-                    outputs=[available_extensions_table, install_result]
+                    fn=modules.ui.wrap_gradio_call_no_job(
+                        refresh_available_extensions_for_tags,
+                        extra_outputs=[gr.update()],
+                    ),
+                    inputs=[
+                        selected_tags,
+                        showing_type,
+                        filtering_type,
+                        sort_column,
+                        search_extensions_text,
+                    ],
+                    outputs=[available_extensions_table, install_result],
                 )
 
                 sort_column.change(
-                    fn=modules.ui.wrap_gradio_call_no_job(refresh_available_extensions_for_tags, extra_outputs=[gr.update()]),
-                    inputs=[selected_tags, showing_type, filtering_type, sort_column, search_extensions_text],
-                    outputs=[available_extensions_table, install_result]
+                    fn=modules.ui.wrap_gradio_call_no_job(
+                        refresh_available_extensions_for_tags,
+                        extra_outputs=[gr.update()],
+                    ),
+                    inputs=[
+                        selected_tags,
+                        showing_type,
+                        filtering_type,
+                        sort_column,
+                        search_extensions_text,
+                    ],
+                    outputs=[available_extensions_table, install_result],
                 )
 
             with gr.TabItem("Install from URL", id="install_from_url"):
                 install_url = gr.Text(label="URL for extension's git repository")
-                install_branch = gr.Text(label="Specific branch name", placeholder="Leave empty for default main branch")
-                install_dirname = gr.Text(label="Local directory name", placeholder="Leave empty for auto")
+                install_branch = gr.Text(
+                    label="Specific branch name",
+                    placeholder="Leave empty for default main branch",
+                )
+                install_dirname = gr.Text(
+                    label="Local directory name", placeholder="Leave empty for auto"
+                )
                 install_button = gr.Button(value="Install", variant="primary")
                 install_result = gr.HTML(elem_id="extension_install_result")
 
                 install_button.click(
-                    fn=modules.ui.wrap_gradio_call_no_job(lambda *args: [gr.update(), *install_extension_from_url(*args)], extra_outputs=[gr.update(), gr.update()]),
+                    fn=modules.ui.wrap_gradio_call_no_job(
+                        lambda *args: [gr.update(), *install_extension_from_url(*args)],
+                        extra_outputs=[gr.update(), gr.update()],
+                    ),
                     inputs=[install_dirname, install_url, install_branch],
                     outputs=[install_url, extensions_table, install_result],
                 )
 
             with gr.TabItem("Backup/Restore"):
                 with gr.Row(elem_id="extensions_backup_top_row"):
-                    config_states_list = gr.Dropdown(label="Saved Configs", elem_id="extension_backup_saved_configs", value="Current", choices=["Current"] + list(config_states.all_config_states.keys()))
-                    modules.ui.create_refresh_button(config_states_list, config_states.list_config_states, lambda: {"choices": ["Current"] + list(config_states.all_config_states.keys())}, "refresh_config_states")
-                    config_restore_type = gr.Radio(label="State to restore", choices=["extensions", "webui", "both"], value="extensions", elem_id="extension_backup_restore_type")
-                    config_restore_button = gr.Button(value="Restore Selected Config", variant="primary", elem_id="extension_backup_restore")
+                    config_states_list = gr.Dropdown(
+                        label="Saved Configs",
+                        elem_id="extension_backup_saved_configs",
+                        value="Current",
+                        choices=["Current"]
+                        + list(config_states.all_config_states.keys()),
+                    )
+                    modules.ui.create_refresh_button(
+                        config_states_list,
+                        config_states.list_config_states,
+                        lambda: {
+                            "choices": ["Current"]
+                            + list(config_states.all_config_states.keys())
+                        },
+                        "refresh_config_states",
+                    )
+                    config_restore_type = gr.Radio(
+                        label="State to restore",
+                        choices=["extensions", "webui", "both"],
+                        value="extensions",
+                        elem_id="extension_backup_restore_type",
+                    )
+                    config_restore_button = gr.Button(
+                        value="Restore Selected Config",
+                        variant="primary",
+                        elem_id="extension_backup_restore",
+                    )
                 with gr.Row(elem_id="extensions_backup_top_row2"):
-                    config_save_name = gr.Textbox("", placeholder="Config Name", show_label=False)
+                    config_save_name = gr.Textbox(
+                        "", placeholder="Config Name", show_label=False
+                    )
                     config_save_button = gr.Button(value="Save Current Config")
 
                 config_states_info = gr.HTML("")
                 config_states_table = gr.HTML("Loading...")
-                ui.load(fn=update_config_states_table, inputs=[config_states_list], outputs=[config_states_table])
+                ui.load(
+                    fn=update_config_states_table,
+                    inputs=[config_states_list],
+                    outputs=[config_states_table],
+                )
 
-                config_save_button.click(fn=save_config_state, inputs=[config_save_name], outputs=[config_states_list, config_states_info])
+                config_save_button.click(
+                    fn=save_config_state,
+                    inputs=[config_save_name],
+                    outputs=[config_states_list, config_states_info],
+                )
 
                 dummy_component = gr.Label(visible=False)
-                config_restore_button.click(fn=restore_config_state, js="config_state_confirm_restore", inputs=[dummy_component, config_states_list, config_restore_type], outputs=[config_states_info])
+                config_restore_button.click(
+                    fn=restore_config_state,
+                    js="config_state_confirm_restore",
+                    inputs=[dummy_component, config_states_list, config_restore_type],
+                    outputs=[config_states_info],
+                )
 
                 config_states_list.change(
                     fn=update_config_states_table,
                     inputs=[config_states_list],
                     outputs=[config_states_table],
                 )
-
 
     return ui

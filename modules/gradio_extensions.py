@@ -1,5 +1,4 @@
 import inspect
-import types
 import warnings
 from functools import wraps
 
@@ -9,8 +8,10 @@ import gradio.component_meta
 
 from modules import scripts, ui_tempdir, patches
 
+
 class GradioDeprecationWarning(DeprecationWarning):
     pass
+
 
 def add_classes_to_gradio_component(comp):
     """
@@ -19,12 +20,12 @@ def add_classes_to_gradio_component(comp):
 
     comp.elem_classes = [f"gradio-{comp.get_block_name()}", *(comp.elem_classes or [])]
 
-    if getattr(comp, 'multiselect', False):
-        comp.elem_classes.append('multiselect')
+    if getattr(comp, "multiselect", False):
+        comp.elem_classes.append("multiselect")
 
 
 def Component_init(self, *args, **kwargs):
-    self.webui_tooltip = kwargs.pop('tooltip', None)
+    self.webui_tooltip = kwargs.pop("tooltip", None)
 
     if scripts.scripts_current is not None:
         scripts.scripts_current.before_component(self, **kwargs)
@@ -46,11 +47,11 @@ def Component_init(self, *args, **kwargs):
 def Block_get_config(self):
     config = original_Block_get_config(self)
 
-    webui_tooltip = getattr(self, 'webui_tooltip', None)
+    webui_tooltip = getattr(self, "webui_tooltip", None)
     if webui_tooltip:
         config["webui_tooltip"] = webui_tooltip
 
-    config.pop('example_inputs', None)
+    config.pop("example_inputs", None)
 
     return config
 
@@ -83,24 +84,45 @@ def Blocks_get_config_file(self, *args, **kwargs):
     return config
 
 
-
-original_Component_init = patches.patch(__name__, obj=gr.components.Component, field="__init__", replacement=Component_init)
-original_Block_get_config = patches.patch(__name__, obj=gr.blocks.Block, field="get_config", replacement=Block_get_config)
-original_BlockContext_init = patches.patch(__name__, obj=gr.blocks.BlockContext, field="__init__", replacement=BlockContext_init)
-original_Blocks_get_config_file = patches.patch(__name__, obj=gr.blocks.Blocks, field="get_config_file", replacement=Blocks_get_config_file)
+original_Component_init = patches.patch(
+    __name__, obj=gr.components.Component, field="__init__", replacement=Component_init
+)
+original_Block_get_config = patches.patch(
+    __name__, obj=gr.blocks.Block, field="get_config", replacement=Block_get_config
+)
+original_BlockContext_init = patches.patch(
+    __name__,
+    obj=gr.blocks.BlockContext,
+    field="__init__",
+    replacement=BlockContext_init,
+)
+original_Blocks_get_config_file = patches.patch(
+    __name__,
+    obj=gr.blocks.Blocks,
+    field="get_config_file",
+    replacement=Blocks_get_config_file,
+)
 
 
 ui_tempdir.install_ui_tempdir_override()
 
+
 def gradio_component_meta_create_or_modify_pyi(component_class, class_name, events):
-    if hasattr(component_class, 'webui_do_not_create_gradio_pyi_thank_you'):
+    if hasattr(component_class, "webui_do_not_create_gradio_pyi_thank_you"):
         return
 
-    gradio_component_meta_create_or_modify_pyi_original(component_class, class_name, events)
+    gradio_component_meta_create_or_modify_pyi_original(
+        component_class, class_name, events
+    )
 
 
 # this prevents creation of .pyi files in webui dir
-gradio_component_meta_create_or_modify_pyi_original = patches.patch(__file__, gradio.component_meta, 'create_or_modify_pyi', gradio_component_meta_create_or_modify_pyi)
+gradio_component_meta_create_or_modify_pyi_original = patches.patch(
+    __file__,
+    gradio.component_meta,
+    "create_or_modify_pyi",
+    gradio_component_meta_create_or_modify_pyi,
+)
 
 # this function is broken and does not seem to do anything useful
 gradio.component_meta.updateable = lambda x: x
@@ -109,15 +131,15 @@ gradio.component_meta.updateable = lambda x: x
 class EventWrapper:
     def __init__(self, replaced_event):
         self.replaced_event = replaced_event
-        self.has_trigger = getattr(replaced_event, 'has_trigger', None)
-        self.event_name = getattr(replaced_event, 'event_name', None)
-        self.callback = getattr(replaced_event, 'callback', None)
-        self.real_self = getattr(replaced_event, '__self__', None)
+        self.has_trigger = getattr(replaced_event, "has_trigger", None)
+        self.event_name = getattr(replaced_event, "event_name", None)
+        self.callback = getattr(replaced_event, "callback", None)
+        self.real_self = getattr(replaced_event, "__self__", None)
 
     def __call__(self, *args, **kwargs):
-        if '_js' in kwargs:
-            kwargs['js'] = kwargs['_js']
-            del kwargs['_js']
+        if "_js" in kwargs:
+            kwargs["js"] = kwargs["_js"]
+            del kwargs["_js"]
         return self.replaced_event(*args, **kwargs)
 
     @property
@@ -126,11 +148,13 @@ class EventWrapper:
 
 
 def repair(grclass):
-    if not getattr(grclass, 'EVENTS', None):
+    if not getattr(grclass, "EVENTS", None):
         return
 
     @wraps(grclass.__init__)
-    def __repaired_init__(self, *args, tooltip=None, source=None, original=grclass.__init__, **kwargs):
+    def __repaired_init__(
+        self, *args, tooltip=None, source=None, original=grclass.__init__, **kwargs
+    ):
         if source:
             kwargs["sources"] = [source]
 
@@ -140,7 +164,11 @@ def repair(grclass):
             if k in allowed_kwargs:
                 fixed_kwargs[k] = v
             else:
-                warnings.warn(f"unexpected argument for {grclass.__name__}: {k}", GradioDeprecationWarning, stacklevel=2)
+                warnings.warn(
+                    f"unexpected argument for {grclass.__name__}: {k}",
+                    GradioDeprecationWarning,
+                    stacklevel=2,
+                )
 
         original(self, *args, **fixed_kwargs)
 
@@ -163,10 +191,12 @@ class Dependency(gr.events.Dependency):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        def then(*xargs, js=None, _js=None,**xkwargs):
+        def then(*xargs, js=None, _js=None, **xkwargs):
             if _js:
-                warnings.warn(f"_js is deprecated.", GradioDeprecationWarning, stacklevel=2)
-                xkwargs['js'] = _js
+                warnings.warn(
+                    "_js is deprecated.", GradioDeprecationWarning, stacklevel=2
+                )
+                xkwargs["js"] = _js
 
             return original_then(*xargs, **xkwargs)
 
@@ -178,14 +208,16 @@ gr.events.Dependency = Dependency
 
 gr.Box = gr.Group
 
+
 def patched_url_ok(url: str) -> bool:
     # Retry for longer i guess.
-    print("Testing URL:",url)
-    import httpx, time
-    
+    print("Testing URL:", url)
+    import httpx
+    import time
+
     start_slice = time.monotonic()
     try:
-        for _ in range(5*60):
+        for _ in range(5 * 60):
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore")
                 try:
@@ -194,7 +226,9 @@ def patched_url_ok(url: str) -> bool:
                     time.sleep(0.500)
                     continue
             if r.status_code in (200, 401, 302):  # 401 or 302 if auth is set
-                print(f"Gradio url_ok reported: {round(time.monotonic() - start_slice,ndigits=2)}s to OK")
+                print(
+                    f"Gradio url_ok reported: {round(time.monotonic() - start_slice, ndigits=2)}s to OK"
+                )
                 return True
             time.sleep(0.500)
     except (ConnectionError, httpx.ConnectError):

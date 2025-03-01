@@ -26,9 +26,9 @@ class PerceptualLoss(nn.Module):
             weights.requires_grad = False
 
         for module in vgg.modules():
-            if module.__class__.__name__ == 'Sequential':
+            if module.__class__.__name__ == "Sequential":
                 continue
-            elif module.__class__.__name__ == 'MaxPool2d':
+            elif module.__class__.__name__ == "MaxPool2d":
                 vgg_avg_pooling.append(nn.AvgPool2d(kernel_size=2, stride=2, padding=0))
             else:
                 vgg_avg_pooling.append(module)
@@ -39,7 +39,9 @@ class PerceptualLoss(nn.Module):
         return (x - self.mean_.to(x.device)) / self.std_.to(x.device)
 
     def partial_losses(self, input, target, mask=None):
-        check_and_warn_input_range(target, 0, 1, 'PerceptualLoss target in partial_losses')
+        check_and_warn_input_range(
+            target, 0, 1, "PerceptualLoss target in partial_losses"
+        )
 
         # we expect input and target to be in [0, 1] range
         losses = []
@@ -52,16 +54,19 @@ class PerceptualLoss(nn.Module):
             features_target = target
 
         for layer in self.vgg[:30]:
-
             features_input = layer(features_input)
             features_target = layer(features_target)
 
-            if layer.__class__.__name__ == 'ReLU':
-                loss = F.mse_loss(features_input, features_target, reduction='none')
+            if layer.__class__.__name__ == "ReLU":
+                loss = F.mse_loss(features_input, features_target, reduction="none")
 
                 if mask is not None:
-                    cur_mask = F.interpolate(mask, size=features_input.shape[-2:],
-                                             mode='bilinear', align_corners=False)
+                    cur_mask = F.interpolate(
+                        mask,
+                        size=features_input.shape[-2:],
+                        mode="bilinear",
+                        align_corners=False,
+                    )
                     loss = loss * (1 - cur_mask)
 
                 loss = loss.mean(dim=tuple(range(1, len(loss.shape))))
@@ -74,7 +79,9 @@ class PerceptualLoss(nn.Module):
         return torch.stack(losses).sum(dim=0)
 
     def get_global_features(self, input):
-        check_and_warn_input_range(input, 0, 1, 'PerceptualLoss input in get_global_features')
+        check_and_warn_input_range(
+            input, 0, 1, "PerceptualLoss input in get_global_features"
+        )
 
         if self.normalize_inputs:
             features_input = self.do_normalize_inputs(input)
@@ -86,14 +93,21 @@ class PerceptualLoss(nn.Module):
 
 
 class ResNetPL(nn.Module):
-    def __init__(self, weight=1,
-                 weights_path=None, arch_encoder='resnet50dilated', segmentation=True):
+    def __init__(
+        self,
+        weight=1,
+        weights_path=None,
+        arch_encoder="resnet50dilated",
+        segmentation=True,
+    ):
         super().__init__()
-        self.impl = ModelBuilder.get_encoder(weights_path=weights_path,
-                                             arch_encoder=arch_encoder,
-                                             arch_decoder='ppm_deepsup',
-                                             fc_dim=2048,
-                                             segmentation=segmentation)
+        self.impl = ModelBuilder.get_encoder(
+            weights_path=weights_path,
+            arch_encoder=arch_encoder,
+            arch_decoder="ppm_deepsup",
+            fc_dim=2048,
+            segmentation=segmentation,
+        )
         self.impl.eval()
         for w in self.impl.parameters():
             w.requires_grad_(False)
@@ -107,7 +121,13 @@ class ResNetPL(nn.Module):
         pred_feats = self.impl(pred, return_feature_maps=True)
         target_feats = self.impl(target, return_feature_maps=True)
 
-        result = torch.stack([F.mse_loss(cur_pred, cur_target)
-                              for cur_pred, cur_target
-                              in zip(pred_feats, target_feats)]).sum() * self.weight
+        result = (
+            torch.stack(
+                [
+                    F.mse_loss(cur_pred, cur_target)
+                    for cur_pred, cur_target in zip(pred_feats, target_feats)
+                ]
+            ).sum()
+            * self.weight
+        )
         return result

@@ -82,10 +82,14 @@ class AnimalPose:
         self.model_input_size = (256, 256)
 
         # Always loads to CPU to avoid building OpenCV.
-        device = 'cpu'
-        backend = cv2.dnn.DNN_BACKEND_OPENCV if device == 'cpu' else cv2.dnn.DNN_BACKEND_CUDA
+        device = "cpu"
+        backend = (
+            cv2.dnn.DNN_BACKEND_OPENCV if device == "cpu" else cv2.dnn.DNN_BACKEND_CUDA
+        )
         # You need to manually build OpenCV through cmake to work with your GPU.
-        providers = cv2.dnn.DNN_TARGET_CPU if device == 'cpu' else cv2.dnn.DNN_TARGET_CUDA
+        providers = (
+            cv2.dnn.DNN_TARGET_CPU if device == "cpu" else cv2.dnn.DNN_TARGET_CUDA
+        )
 
         self.session_det = cv2.dnn.readNetFromONNX(onnx_det)
         self.session_det.setPreferableBackend(backend)

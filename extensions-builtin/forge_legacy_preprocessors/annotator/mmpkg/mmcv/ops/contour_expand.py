@@ -4,11 +4,10 @@ import torch
 
 from ..utils import ext_loader
 
-ext_module = ext_loader.load_ext('_ext', ['contour_expand'])
+ext_module = ext_loader.load_ext("_ext", ["contour_expand"])
 
 
-def contour_expand(kernel_mask, internal_kernel_label, min_kernel_area,
-                   kernel_num):
+def contour_expand(kernel_mask, internal_kernel_label, min_kernel_area, kernel_num):
     """Expand kernel contours so that foreground pixels are assigned into
     instances.
 
@@ -33,7 +32,7 @@ def contour_expand(kernel_mask, internal_kernel_label, min_kernel_area,
     if isinstance(internal_kernel_label, np.ndarray):
         internal_kernel_label = torch.from_numpy(internal_kernel_label)
 
-    if torch.__version__ == 'parrots':
+    if torch.__version__ == "parrots":
         if kernel_mask.shape[0] == 0 or internal_kernel_label.shape[0] == 0:
             label = []
         else:
@@ -41,9 +40,11 @@ def contour_expand(kernel_mask, internal_kernel_label, min_kernel_area,
                 kernel_mask,
                 internal_kernel_label,
                 min_kernel_area=min_kernel_area,
-                kernel_num=kernel_num)
+                kernel_num=kernel_num,
+            )
             label = label.tolist()
     else:
-        label = ext_module.contour_expand(kernel_mask, internal_kernel_label,
-                                          min_kernel_area, kernel_num)
+        label = ext_module.contour_expand(
+            kernel_mask, internal_kernel_label, min_kernel_area, kernel_num
+        )
     return label

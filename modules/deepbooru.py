@@ -1,4 +1,3 @@
-import os
 import re
 
 import torch
@@ -9,7 +8,7 @@ from ldm_patched.modules import model_management
 from ldm_patched.modules.model_patcher import ModelPatcher
 
 
-re_special = re.compile(r'([\\()])')
+re_special = re.compile(r"([\\()])")
 
 
 class DeepDanbooru:
@@ -29,10 +28,10 @@ class DeepDanbooru:
             return
 
         files = modelloader.load_models(
-            model_path=os.path.join(paths.models_path, "torch_deepdanbooru"),
-            model_url='https://github.com/AUTOMATIC1111/TorchDeepDanbooru/releases/download/v1/model-resnet_custom_v3.pt',
+            model_path=str(paths.models_path / "torch_deepdanbooru"),
+            model_url="https://github.com/AUTOMATIC1111/TorchDeepDanbooru/releases/download/v1/model-resnet_custom_v3.pt",
             ext_filter=[".pt"],
-            download_name='model-resnet_custom_v3.pt',
+            download_name="model-resnet_custom_v3.pt",
         )
 
         self.model = deepbooru_model.DeepDanbooruModel()
@@ -41,7 +40,9 @@ class DeepDanbooru:
         self.model.eval()
         self.model.to(self.offload_device, self.dtype)
 
-        self.patcher = ModelPatcher(self.model, load_device=self.load_device, offload_device=self.offload_device)
+        self.patcher = ModelPatcher(
+            self.model, load_device=self.load_device, offload_device=self.offload_device
+        )
 
     def start(self):
         self.load()
@@ -85,19 +86,24 @@ class DeepDanbooru:
         if alpha_sort:
             tags = sorted(probability_dict)
         else:
-            tags = [tag for tag, _ in sorted(probability_dict.items(), key=lambda x: -x[1])]
+            tags = [
+                tag for tag, _ in sorted(probability_dict.items(), key=lambda x: -x[1])
+            ]
 
         res = []
 
-        filtertags = {x.strip().replace(' ', '_') for x in shared.opts.deepbooru_filter_tags.split(",")}
+        filtertags = {
+            x.strip().replace(" ", "_")
+            for x in shared.opts.deepbooru_filter_tags.split(",")
+        }
 
         for tag in [x for x in tags if x not in filtertags]:
             probability = probability_dict[tag]
             tag_outformat = tag
             if use_spaces:
-                tag_outformat = tag_outformat.replace('_', ' ')
+                tag_outformat = tag_outformat.replace("_", " ")
             if use_escape:
-                tag_outformat = re.sub(re_special, r'\\\1', tag_outformat)
+                tag_outformat = re.sub(re_special, r"\\\1", tag_outformat)
             if include_ranks:
                 tag_outformat = f"({tag_outformat}:{probability:.3f})"
 

@@ -24,13 +24,16 @@ class NormalDsineDetector:
         modelpath = os.path.join(self.model_dir, "dsine.pt")
         if not os.path.exists(modelpath):
             from modules.modelloader import load_file_from_url
+
             load_file_from_url(remote_model_path, model_dir=self.model_dir)
         model = DSINE()
         model.pixel_coords = model.pixel_coords.to(self.device)
         model = utils.load_checkpoint(modelpath, model)
         model.eval()
         self.model = model.to(self.device)
-        self.norm = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        self.norm = transforms.Normalize(
+            mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+        )
 
     def unload_model(self):
         if self.model is not None:
@@ -50,20 +53,22 @@ class NormalDsineDetector:
         with torch.no_grad():
             image_normal = torch.from_numpy(image_normal).float().to(self.device)
             image_normal = image_normal / 255.0
-            image_normal = rearrange(image_normal, 'h w c -> 1 c h w')
+            image_normal = rearrange(image_normal, "h w c -> 1 c h w")
             image_normal = self.norm(image_normal)
-            
-            intrins = utils.get_intrins_from_fov(new_fov=new_fov, H=orig_H, W=orig_W, device=self.device).unsqueeze(0)
-            
+
+            intrins = utils.get_intrins_from_fov(
+                new_fov=new_fov, H=orig_H, W=orig_W, device=self.device
+            ).unsqueeze(0)
+
             intrins[:, 0, 2] += l
             intrins[:, 1, 2] += t
-            
+
             normal = self.model(image_normal, intrins=intrins)[-1]
-            normal = normal[:, :, t:t+orig_H, l:l+orig_W]
+            normal = normal[:, :, t : t + orig_H, l : l + orig_W]
 
             normal = ((normal + 1) * 0.5).clip(0, 1)
 
-            normal = rearrange(normal[0], 'c h w -> h w c').cpu().numpy()
+            normal = rearrange(normal[0], "c h w -> h w c").cpu().numpy()
             normal_image = (normal * 255.0).clip(0, 255).astype(np.uint8)
 
             return remove_pad(normal_image)

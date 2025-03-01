@@ -2,7 +2,6 @@ import datetime
 import logging
 import threading
 import time
-import traceback
 import torch
 
 from modules import errors, shared, devices
@@ -19,14 +18,14 @@ class State:
     job_no = 0
     job_count = 0
     processing_has_refined_job_count = False
-    job_timestamp = '0'
+    job_timestamp = "0"
     sampling_step = 0
     sampling_steps = 0
     current_latent = None
     current_image = None
     current_image_sampling_step = 0
     id_live_preview = 0
-    textinfo: str|None = None
+    textinfo: str | None = None
     time_start = None
     server_start = None
     _server_command_signal = threading.Event()
@@ -87,7 +86,10 @@ class State:
         log.info("Received stop generating request")
 
     def nextjob(self):
-        if shared.opts.live_previews_enable and shared.opts.show_progress_every_n_steps == -1:
+        if (
+            shared.opts.live_previews_enable
+            and shared.opts.show_progress_every_n_steps == -1
+        ):
             self.do_set_current_image()
 
         self.job_no += 1
@@ -142,7 +144,12 @@ class State:
         if not shared.parallel_processing_allowed:
             return
 
-        if self.sampling_step - self.current_image_sampling_step >= shared.opts.show_progress_every_n_steps and shared.opts.live_previews_enable and shared.opts.show_progress_every_n_steps != -1:
+        if (
+            self.sampling_step - self.current_image_sampling_step
+            >= shared.opts.show_progress_every_n_steps
+            and shared.opts.live_previews_enable
+            and shared.opts.show_progress_every_n_steps != -1
+        ):
             self.do_set_current_image()
 
     @torch.inference_mode()
@@ -154,13 +161,17 @@ class State:
 
         try:
             if shared.opts.show_progress_grid:
-                self.assign_current_image(modules.sd_samplers.samples_to_image_grid(self.current_latent))
+                self.assign_current_image(
+                    modules.sd_samplers.samples_to_image_grid(self.current_latent)
+                )
             else:
-                self.assign_current_image(modules.sd_samplers.sample_to_image(self.current_latent))
+                self.assign_current_image(
+                    modules.sd_samplers.sample_to_image(self.current_latent)
+                )
 
             self.current_image_sampling_step = self.sampling_step
 
-        except Exception as e:
+        except Exception:
             # traceback.print_exc()
             # print(e)
             # when switching models during generation, VAE would be on CPU, so creating an image will fail.
@@ -169,7 +180,10 @@ class State:
 
     @torch.inference_mode()
     def assign_current_image(self, image):
-        if shared.opts.live_previews_image_format == 'jpeg' and image.mode in ('RGBA', 'P'):
-            image = image.convert('RGB')
+        if shared.opts.live_previews_image_format == "jpeg" and image.mode in (
+            "RGBA",
+            "P",
+        ):
+            image = image.convert("RGB")
         self.current_image = image
         self.id_live_preview += 1

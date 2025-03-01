@@ -16,22 +16,25 @@ def conv3x3(in_planes, out_planes, stride=1, dilation=1):
         stride=stride,
         padding=dilation,
         dilation=dilation,
-        bias=False)
+        bias=False,
+    )
 
 
 class BasicBlock(nn.Module):
     expansion = 1
 
-    def __init__(self,
-                 inplanes,
-                 planes,
-                 stride=1,
-                 dilation=1,
-                 downsample=None,
-                 style='pytorch',
-                 with_cp=False):
+    def __init__(
+        self,
+        inplanes,
+        planes,
+        stride=1,
+        dilation=1,
+        downsample=None,
+        style="pytorch",
+        with_cp=False,
+    ):
         super(BasicBlock, self).__init__()
-        assert style in ['pytorch', 'caffe']
+        assert style in ["pytorch", "caffe"]
         self.conv1 = conv3x3(inplanes, planes, stride, dilation)
         self.bn1 = nn.BatchNorm2d(planes)
         self.relu = nn.ReLU(inplace=True)
@@ -64,29 +67,32 @@ class BasicBlock(nn.Module):
 class Bottleneck(nn.Module):
     expansion = 4
 
-    def __init__(self,
-                 inplanes,
-                 planes,
-                 stride=1,
-                 dilation=1,
-                 downsample=None,
-                 style='pytorch',
-                 with_cp=False):
+    def __init__(
+        self,
+        inplanes,
+        planes,
+        stride=1,
+        dilation=1,
+        downsample=None,
+        style="pytorch",
+        with_cp=False,
+    ):
         """Bottleneck block.
 
         If style is "pytorch", the stride-two layer is the 3x3 conv layer, if
         it is "caffe", the stride-two layer is the first 1x1 conv layer.
         """
         super(Bottleneck, self).__init__()
-        assert style in ['pytorch', 'caffe']
-        if style == 'pytorch':
+        assert style in ["pytorch", "caffe"]
+        if style == "pytorch":
             conv1_stride = 1
             conv2_stride = stride
         else:
             conv1_stride = stride
             conv2_stride = 1
         self.conv1 = nn.Conv2d(
-            inplanes, planes, kernel_size=1, stride=conv1_stride, bias=False)
+            inplanes, planes, kernel_size=1, stride=conv1_stride, bias=False
+        )
         self.conv2 = nn.Conv2d(
             planes,
             planes,
@@ -94,12 +100,14 @@ class Bottleneck(nn.Module):
             stride=conv2_stride,
             padding=dilation,
             dilation=dilation,
-            bias=False)
+            bias=False,
+        )
 
         self.bn1 = nn.BatchNorm2d(planes)
         self.bn2 = nn.BatchNorm2d(planes)
         self.conv3 = nn.Conv2d(
-            planes, planes * self.expansion, kernel_size=1, bias=False)
+            planes, planes * self.expansion, kernel_size=1, bias=False
+        )
         self.bn3 = nn.BatchNorm2d(planes * self.expansion)
         self.relu = nn.ReLU(inplace=True)
         self.downsample = downsample
@@ -108,7 +116,6 @@ class Bottleneck(nn.Module):
         self.with_cp = with_cp
 
     def forward(self, x):
-
         def _inner_forward(x):
             residual = x
 
@@ -140,14 +147,16 @@ class Bottleneck(nn.Module):
         return out
 
 
-def make_res_layer(block,
-                   inplanes,
-                   planes,
-                   blocks,
-                   stride=1,
-                   dilation=1,
-                   style='pytorch',
-                   with_cp=False):
+def make_res_layer(
+    block,
+    inplanes,
+    planes,
+    blocks,
+    stride=1,
+    dilation=1,
+    style="pytorch",
+    with_cp=False,
+):
     downsample = None
     if stride != 1 or inplanes != planes * block.expansion:
         downsample = nn.Sequential(
@@ -156,24 +165,22 @@ def make_res_layer(block,
                 planes * block.expansion,
                 kernel_size=1,
                 stride=stride,
-                bias=False),
+                bias=False,
+            ),
             nn.BatchNorm2d(planes * block.expansion),
         )
 
     layers = []
     layers.append(
         block(
-            inplanes,
-            planes,
-            stride,
-            dilation,
-            downsample,
-            style=style,
-            with_cp=with_cp))
+            inplanes, planes, stride, dilation, downsample, style=style, with_cp=with_cp
+        )
+    )
     inplanes = planes * block.expansion
     for _ in range(1, blocks):
         layers.append(
-            block(inplanes, planes, 1, dilation, style=style, with_cp=with_cp))
+            block(inplanes, planes, 1, dilation, style=style, with_cp=with_cp)
+        )
 
     return nn.Sequential(*layers)
 
@@ -204,23 +211,25 @@ class ResNet(nn.Module):
         34: (BasicBlock, (3, 4, 6, 3)),
         50: (Bottleneck, (3, 4, 6, 3)),
         101: (Bottleneck, (3, 4, 23, 3)),
-        152: (Bottleneck, (3, 8, 36, 3))
+        152: (Bottleneck, (3, 8, 36, 3)),
     }
 
-    def __init__(self,
-                 depth,
-                 num_stages=4,
-                 strides=(1, 2, 2, 2),
-                 dilations=(1, 1, 1, 1),
-                 out_indices=(0, 1, 2, 3),
-                 style='pytorch',
-                 frozen_stages=-1,
-                 bn_eval=True,
-                 bn_frozen=False,
-                 with_cp=False):
+    def __init__(
+        self,
+        depth,
+        num_stages=4,
+        strides=(1, 2, 2, 2),
+        dilations=(1, 1, 1, 1),
+        out_indices=(0, 1, 2, 3),
+        style="pytorch",
+        frozen_stages=-1,
+        bn_eval=True,
+        bn_frozen=False,
+        with_cp=False,
+    ):
         super(ResNet, self).__init__()
         if depth not in self.arch_settings:
-            raise KeyError(f'invalid depth {depth} for resnet')
+            raise KeyError(f"invalid depth {depth} for resnet")
         assert num_stages >= 1 and num_stages <= 4
         block, stage_blocks = self.arch_settings[depth]
         stage_blocks = stage_blocks[:num_stages]
@@ -235,8 +244,7 @@ class ResNet(nn.Module):
         self.with_cp = with_cp
 
         self.inplanes = 64
-        self.conv1 = nn.Conv2d(
-            3, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
         self.bn1 = nn.BatchNorm2d(64)
         self.relu = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
@@ -254,18 +262,20 @@ class ResNet(nn.Module):
                 stride=stride,
                 dilation=dilation,
                 style=self.style,
-                with_cp=with_cp)
+                with_cp=with_cp,
+            )
             self.inplanes = planes * block.expansion
-            layer_name = f'layer{i + 1}'
+            layer_name = f"layer{i + 1}"
             self.add_module(layer_name, res_layer)
             self.res_layers.append(layer_name)
 
-        self.feat_dim = block.expansion * 64 * 2**(len(stage_blocks) - 1)
+        self.feat_dim = block.expansion * 64 * 2 ** (len(stage_blocks) - 1)
 
     def init_weights(self, pretrained=None):
         if isinstance(pretrained, str):
             logger = logging.getLogger()
             from ..runner import load_checkpoint
+
             load_checkpoint(self, pretrained, strict=False, logger=logger)
         elif pretrained is None:
             for m in self.modules():
@@ -274,7 +284,7 @@ class ResNet(nn.Module):
                 elif isinstance(m, nn.BatchNorm2d):
                     constant_init(m, 1)
         else:
-            raise TypeError('pretrained must be a str or None')
+            raise TypeError("pretrained must be a str or None")
 
     def forward(self, x):
         x = self.conv1(x)
@@ -310,7 +320,7 @@ class ResNet(nn.Module):
             self.bn1.weight.requires_grad = False
             self.bn1.bias.requires_grad = False
             for i in range(1, self.frozen_stages + 1):
-                mod = getattr(self, f'layer{i}')
+                mod = getattr(self, f"layer{i}")
                 mod.eval()
                 for param in mod.parameters():
                     param.requires_grad = False

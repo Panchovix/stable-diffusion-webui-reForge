@@ -11,7 +11,11 @@ import torch
 from PIL import Image
 
 from annotator.oneformer.detectron2.data import DatasetCatalog, MetadataCatalog
-from annotator.oneformer.detectron2.utils.comm import all_gather, is_main_process, synchronize
+from annotator.oneformer.detectron2.utils.comm import (
+    all_gather,
+    is_main_process,
+    synchronize,
+)
 from annotator.oneformer.detectron2.utils.file_io import PathManager
 
 from .evaluator import DatasetEvaluator
@@ -90,8 +94,12 @@ class SemSegEvaluator(DatasetEvaluator):
         self.sem_seg_loading_fn = sem_seg_loading_fn
         self._num_classes = len(meta.stuff_classes)
         if num_classes is not None:
-            assert self._num_classes == num_classes, f"{self._num_classes} != {num_classes}"
-        self._ignore_label = ignore_label if ignore_label is not None else meta.ignore_label
+            assert self._num_classes == num_classes, (
+                f"{self._num_classes} != {num_classes}"
+            )
+        self._ignore_label = (
+            ignore_label if ignore_label is not None else meta.ignore_label
+        )
 
         # This is because cv2.erode did not work for int datatype. Only works for uint8.
         self._compute_boundary_iou = True
@@ -111,7 +119,9 @@ class SemSegEvaluator(DatasetEvaluator):
             )
 
     def reset(self):
-        self._conf_matrix = np.zeros((self._num_classes + 1, self._num_classes + 1), dtype=np.int64)
+        self._conf_matrix = np.zeros(
+            (self._num_classes + 1, self._num_classes + 1), dtype=np.int64
+        )
         self._b_conf_matrix = np.zeros(
             (self._num_classes + 1, self._num_classes + 1), dtype=np.int64
         )
@@ -237,9 +247,11 @@ class SemSegEvaluator(DatasetEvaluator):
         json_list = []
         for label in np.unique(sem_seg):
             if self._contiguous_id_to_dataset_id is not None:
-                assert (
-                    label in self._contiguous_id_to_dataset_id
-                ), "Label {} is not in the metadata info for {}".format(label, self._dataset_name)
+                assert label in self._contiguous_id_to_dataset_id, (
+                    "Label {} is not in the metadata info for {}".format(
+                        label, self._dataset_name
+                    )
+                )
                 dataset_id = self._contiguous_id_to_dataset_id[label]
             else:
                 dataset_id = int(label)
@@ -247,7 +259,11 @@ class SemSegEvaluator(DatasetEvaluator):
             mask_rle = mask_util.encode(np.array(mask[:, :, None], order="F"))[0]
             mask_rle["counts"] = mask_rle["counts"].decode("utf-8")
             json_list.append(
-                {"file_name": input_file_name, "category_id": dataset_id, "segmentation": mask_rle}
+                {
+                    "file_name": input_file_name,
+                    "category_id": dataset_id,
+                    "segmentation": mask_rle,
+                }
             )
         return json_list
 

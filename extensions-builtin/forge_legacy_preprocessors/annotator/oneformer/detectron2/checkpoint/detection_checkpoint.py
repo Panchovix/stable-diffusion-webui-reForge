@@ -60,7 +60,7 @@ class DetectionCheckpointer(Checkpointer):
             path = parsed_url._replace(query="").geturl()  # remove query from filename
             path = self.path_manager.get_local_path(path)
 
-        self.logger.setLevel('CRITICAL')
+        self.logger.setLevel("CRITICAL")
         ret = super().load(path, *args, **kwargs)
 
         if need_sync:
@@ -83,25 +83,35 @@ class DetectionCheckpointer(Checkpointer):
                     # Detection models have "blobs", but ImageNet models don't
                     data = data["blobs"]
                 data = {k: v for k, v in data.items() if not k.endswith("_momentum")}
-                return {"model": data, "__author__": "Caffe2", "matching_heuristics": True}
+                return {
+                    "model": data,
+                    "__author__": "Caffe2",
+                    "matching_heuristics": True,
+                }
         elif filename.endswith(".pyth"):
             # assume file is from pycls; no one else seems to use the ".pyth" extension
             with PathManager.open(filename, "rb") as f:
                 data = torch.load(f)
-            assert (
-                "model_state" in data
-            ), f"Cannot load .pyth file {filename}; pycls checkpoints must contain 'model_state'."
+            assert "model_state" in data, (
+                f"Cannot load .pyth file {filename}; pycls checkpoints must contain 'model_state'."
+            )
             model_state = {
                 k: v
                 for k, v in data["model_state"].items()
                 if not k.endswith("num_batches_tracked")
             }
-            return {"model": model_state, "__author__": "pycls", "matching_heuristics": True}
+            return {
+                "model": model_state,
+                "__author__": "pycls",
+                "matching_heuristics": True,
+            }
 
         loaded = self._torch_load(filename)
         if "model" not in loaded:
             loaded = {"model": loaded}
-        assert self._parsed_url_during_load is not None, "`_load_file` must be called inside `load`"
+        assert self._parsed_url_during_load is not None, (
+            "`_load_file` must be called inside `load`"
+        )
         parsed_url = self._parsed_url_during_load
         queries = parse_qs(parsed_url.query)
         if queries.pop("matching_heuristics", "False") == ["True"]:

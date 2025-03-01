@@ -8,7 +8,9 @@ class ScriptPostprocessingCeption(scripts_postprocessing.ScriptPostprocessing):
 
     def ui(self):
         with ui_components.InputAccordion(False, label="Caption") as enable:
-            option = gr.CheckboxGroup(value=["Deepbooru"], choices=["Deepbooru", "BLIP"], show_label=False)
+            option = gr.CheckboxGroup(
+                value=["Deepbooru"], choices=["Deepbooru", "BLIP"], show_label=False
+            )
 
         return {
             "enable": enable,

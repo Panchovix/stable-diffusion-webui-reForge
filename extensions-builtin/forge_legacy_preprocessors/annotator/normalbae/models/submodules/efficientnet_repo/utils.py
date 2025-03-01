@@ -3,6 +3,7 @@ import os
 
 class AverageMeter:
     """Computes and stores the average and current value"""
+
     def __init__(self):
         self.reset()
 
@@ -41,12 +42,11 @@ def get_outdir(path, *paths, inc=False):
         os.makedirs(outdir)
     elif inc:
         count = 1
-        outdir_inc = outdir + '-' + str(count)
+        outdir_inc = outdir + "-" + str(count)
         while os.path.exists(outdir_inc):
             count = count + 1
-            outdir_inc = outdir + '-' + str(count)
+            outdir_inc = outdir + "-" + str(count)
             assert count < 100
         outdir = outdir_inc
         os.makedirs(outdir)
     return outdir
-

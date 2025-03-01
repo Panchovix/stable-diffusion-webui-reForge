@@ -42,7 +42,9 @@ class CfgNode(_CfgNode):
             cfg_filename: config filename
             allow_unsafe: allow unsafe yaml syntax
         """
-        assert PathManager.isfile(cfg_filename), f"Config file '{cfg_filename}' does not exist!"
+        assert PathManager.isfile(cfg_filename), (
+            f"Config file '{cfg_filename}' does not exist!"
+        )
         loaded_cfg = self.load_yaml_with_base(cfg_filename, allow_unsafe=allow_unsafe)
         loaded_cfg = type(self)(loaded_cfg)
 
@@ -50,9 +52,9 @@ class CfgNode(_CfgNode):
         from .defaults import _C
 
         latest_ver = _C.VERSION
-        assert (
-            latest_ver == self.VERSION
-        ), "CfgNode.merge_from_file is only allowed on a config object of latest version!"
+        assert latest_ver == self.VERSION, (
+            "CfgNode.merge_from_file is only allowed on a config object of latest version!"
+        )
 
         logger = logging.getLogger(__name__)
 
@@ -61,8 +63,10 @@ class CfgNode(_CfgNode):
             from .compat import guess_version
 
             loaded_ver = guess_version(loaded_cfg, cfg_filename)
-        assert loaded_ver <= self.VERSION, "Cannot merge a v{} config into a v{} config.".format(
-            loaded_ver, self.VERSION
+        assert loaded_ver <= self.VERSION, (
+            "Cannot merge a v{} config into a v{} config.".format(
+                loaded_ver, self.VERSION
+            )
         )
 
         if loaded_ver == self.VERSION:
@@ -183,7 +187,9 @@ def configurable(init_func=None, *, from_config=None):
                     "Class with @configurable must have a 'from_config' classmethod."
                 ) from e
             if not inspect.ismethod(from_config_func):
-                raise TypeError("Class with @configurable must have a 'from_config' classmethod.")
+                raise TypeError(
+                    "Class with @configurable must have a 'from_config' classmethod."
+                )
 
             if _called_with_cfg(*args, **kwargs):
                 explicit_args = _get_args_from_config(from_config_func, *args, **kwargs)
@@ -196,9 +202,9 @@ def configurable(init_func=None, *, from_config=None):
     else:
         if from_config is None:
             return configurable  # @configurable() is made equivalent to @configurable
-        assert inspect.isfunction(
-            from_config
-        ), "from_config argument of configurable must be a function!"
+        assert inspect.isfunction(from_config), (
+            "from_config argument of configurable must be a function!"
+        )
 
         def wrapper(orig_func):
             @functools.wraps(orig_func)
@@ -233,7 +239,9 @@ def _get_args_from_config(from_config_func, *args, **kwargs):
         param.kind in [param.VAR_POSITIONAL, param.VAR_KEYWORD]
         for param in signature.parameters.values()
     )
-    if support_var_arg:  # forward all arguments to from_config, if from_config accepts them
+    if (
+        support_var_arg
+    ):  # forward all arguments to from_config, if from_config accepts them
         ret = from_config_func(*args, **kwargs)
     else:
         # forward supported arguments to from_config

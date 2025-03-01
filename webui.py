@@ -40,6 +40,7 @@ def api_only_worker():
     api = create_api(app)
 
     from modules import script_callbacks
+
     script_callbacks.before_ui_callback()
     script_callbacks.app_started_callback(None, app)
 
@@ -47,8 +48,9 @@ def api_only_worker():
     api.launch(
         server_name=initialize_util.gradio_server_name(),
         port=cmd_opts.port if cmd_opts.port else 7861,
-        root_path=f"/{cmd_opts.subpath}" if cmd_opts.subpath else ""
+        root_path=f"/{cmd_opts.subpath}" if cmd_opts.subpath else "",
     )
+
 
 def warning_if_invalid_install_dir():
     """
@@ -64,29 +66,46 @@ def warning_if_invalid_install_dir():
     from packaging.version import parse
     from pathlib import Path
     import gradio
-    if parse('3.32.0') <= parse(gradio.__version__) < parse('4'):
+
+    if parse("3.32.0") <= parse(gradio.__version__) < parse("4"):
+
         def abspath(path):
             """modified from Gradio 3.41.2 gradio.utils.abspath()"""
             if path.is_absolute():
                 return path
-            is_symlink = path.is_symlink() or any(parent.is_symlink() for parent in path.parents)
-            return Path.cwd() / path if (is_symlink or path == path.resolve()) else path.resolve()
+            is_symlink = path.is_symlink() or any(
+                parent.is_symlink() for parent in path.parents
+            )
+            return (
+                Path.cwd() / path
+                if (is_symlink or path == path.resolve())
+                else path.resolve()
+            )
+
         webui_root = Path(__file__).parent
         if any(part.startswith(".") for part in abspath(webui_root).parts):
-            print(f'''{"!"*25} Warning {"!"*25}
+            print(f'''{"!" * 25} Warning {"!" * 25}
 WebUI is installed in a directory that has a leading dot (.) in one of its parent directories.
 This will prevent WebUI from functioning properly.
 Please move the installation to a different directory.
 Current path: "{webui_root}"
 For more information see: https://github.com/AUTOMATIC1111/stable-diffusion-webui/issues/13292
-{"!"*25} Warning {"!"*25}''')
+{"!" * 25} Warning {"!" * 25}''')
+
 
 def webui_worker():
     from modules.shared_cmd_options import cmd_opts
 
     launch_api = cmd_opts.api
 
-    from modules import shared, ui_tempdir, script_callbacks, ui, progress, ui_extra_networks
+    from modules import (
+        shared,
+        ui_tempdir,
+        script_callbacks,
+        ui,
+        progress,
+        ui_extra_networks,
+    )
 
     warning_if_invalid_install_dir()
 
@@ -107,7 +126,7 @@ def webui_worker():
         gradio_auth_creds = list(initialize_util.get_gradio_auth_creds()) or None
 
         auto_launch_browser = False
-        if os.getenv('SD_WEBUI_RESTARTING') != '1':
+        if os.getenv("SD_WEBUI_RESTARTING") != "1":
             if shared.opts.auto_launch_browser == "Remote" or cmd_opts.autolaunch:
                 auto_launch_browser = True
             elif shared.opts.auto_launch_browser == "Local":
@@ -140,7 +159,9 @@ def webui_worker():
         # an attacker to trick the user into opening a malicious HTML page, which makes a request to the
         # running web ui and do whatever the attacker wants, including installing an extension and
         # running its code. We disable this here. Suggested by RyotaK.
-        app.user_middleware = [x for x in app.user_middleware if x.cls.__name__ != 'CORSMiddleware']
+        app.user_middleware = [
+            x for x in app.user_middleware if x.cls.__name__ != "CORSMiddleware"
+        ]
 
         initialize_util.setup_middleware(app)
 
@@ -169,7 +190,7 @@ def webui_worker():
                     else:
                         print(f"Unknown server command: {server_command}")
         except KeyboardInterrupt:
-            print('Caught KeyboardInterrupt, stopping...')
+            print("Caught KeyboardInterrupt, stopping...")
             server_command = "stop"
 
         if server_command == "stop":
@@ -179,9 +200,9 @@ def webui_worker():
             break
 
         # disable auto launch webui in browser for subsequent UI Reload
-        os.environ.setdefault('SD_WEBUI_RESTARTING', '1')
+        os.environ.setdefault("SD_WEBUI_RESTARTING", "1")
 
-        print('Restarting UI...')
+        print("Restarting UI...")
         shared.demo.close()
         time.sleep(0.5)
         startup_timer.reset()

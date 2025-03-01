@@ -34,7 +34,9 @@ def load_fooocus_patch(lora: dict, to_load: dict):
             loaded_keys.add(key)
 
     not_loaded = sum(1 for x in lora if x not in loaded_keys)
-    print(f"[Fooocus Patch Loader] {len(loaded_keys)} keys loaded, {not_loaded} remaining keys not found in model.")
+    print(
+        f"[Fooocus Patch Loader] {len(loaded_keys)} keys loaded, {not_loaded} remaining keys not found in model."
+    )
     return patch_dict
 
 
@@ -46,15 +48,17 @@ def calculate_weight_fooocus(weight, alpha, v):
         w1 = (w1 / 255.0) * (w_max - w_min) + w_min
         weight += alpha * cast_to_device(w1, weight.device, weight.dtype)
     else:
-        print(f"[Fooocus Patch Loader] weight not merged ({w1.shape} != {weight.shape})")
+        print(
+            f"[Fooocus Patch Loader] weight not merged ({w1.shape} != {weight.shape})"
+        )
     return weight
 
 
 class FooocusInpaintPatcher(ControlModelPatcher):
     @staticmethod
     def try_build_from_state_dict(state_dict, ckpt_path):
-        if 'diffusion_model.time_embed.0.weight' in state_dict:
-            if len(state_dict['diffusion_model.time_embed.0.weight']) == 3:
+        if "diffusion_model.time_embed.0.weight" in state_dict:
+            if len(state_dict["diffusion_model.time_embed.0.weight"]) == 3:
                 return FooocusInpaintPatcher(state_dict)
 
         return None
@@ -62,26 +66,41 @@ class FooocusInpaintPatcher(ControlModelPatcher):
     def __init__(self, state_dict):
         super().__init__()
         self.state_dict = state_dict
-        self.inpaint_head = InpaintHead().to(device=torch.device('cpu'), dtype=torch.float32)
-        self.inpaint_head.load_state_dict(load_torch_file(os.path.join(os.path.dirname(__file__), 'fooocus_inpaint_head')))
+        self.inpaint_head = InpaintHead().to(
+            device=torch.device("cpu"), dtype=torch.float32
+        )
+        self.inpaint_head.load_state_dict(
+            load_torch_file(
+                os.path.join(os.path.dirname(__file__), "fooocus_inpaint_head")
+            )
+        )
 
         return
 
     def process_before_every_sampling(self, process, cond, mask, *args, **kwargs):
-        cond_original = kwargs['cond_original']
-        mask_original = kwargs['mask_original']
+        cond_original = kwargs["cond_original"]
+        mask_original = kwargs["mask_original"]
 
         unet_original = process.sd_model.forge_objects.unet.clone()
         unet = process.sd_model.forge_objects.unet.clone()
         vae = process.sd_model.forge_objects.vae
 
         latent_image = vae.encode(cond_original.movedim(1, -1))
-        latent_image = process.sd_model.forge_objects.unet.model.latent_format.process_in(latent_image)
-        latent_mask = torch.nn.functional.max_pool2d(mask_original, (8, 8)).round().to(cond)
-        feed = torch.cat([
-            latent_mask.to(device=torch.device('cpu'), dtype=torch.float32),
-            latent_image.to(device=torch.device('cpu'), dtype=torch.float32)
-        ], dim=1)
+        latent_image = (
+            process.sd_model.forge_objects.unet.model.latent_format.process_in(
+                latent_image
+            )
+        )
+        latent_mask = (
+            torch.nn.functional.max_pool2d(mask_original, (8, 8)).round().to(cond)
+        )
+        feed = torch.cat(
+            [
+                latent_mask.to(device=torch.device("cpu"), dtype=torch.float32),
+                latent_image.to(device=torch.device("cpu"), dtype=torch.float32),
+            ],
+            dim=1,
+        )
         inpaint_head_feature = self.inpaint_head(feed)
 
         def input_block_patch(h, transformer_options):
@@ -105,21 +124,37 @@ class FooocusInpaintPatcher(ControlModelPatcher):
         sigma_start = unet.model.model_sampling.percent_to_sigma(self.start_percent)
         sigma_end = unet.model.model_sampling.percent_to_sigma(self.end_percent)
 
-        def conditioning_modifier(model, x, timestep, uncond, cond, cond_scale, model_options, seed):
+        def conditioning_modifier(
+            model, x, timestep, uncond, cond, cond_scale, model_options, seed
+        ):
             if timestep > sigma_start or timestep < sigma_end:
                 target_model = unet_original
                 model_options = copy.deepcopy(model_options)
-                if 'transformer_options' in model_options:
-                    if 'patches' in model_options['transformer_options']:
-                        if 'input_block_patch' in model_options['transformer_options']['patches']:
-                            del model_options['transformer_options']['patches']['input_block_patch']
+                if "transformer_options" in model_options:
+                    if "patches" in model_options["transformer_options"]:
+                        if (
+                            "input_block_patch"
+                            in model_options["transformer_options"]["patches"]
+                        ):
+                            del model_options["transformer_options"]["patches"][
+                                "input_block_patch"
+                            ]
             else:
                 target_model = unet
 
             if not is_model_loaded(target_model):
                 sampling_prepare(target_model, x)
 
-            return target_model.model, x, timestep, uncond, cond, cond_scale, model_options, seed
+            return (
+                target_model.model,
+                x,
+                timestep,
+                uncond,
+                cond,
+                cond_scale,
+                model_options,
+                seed,
+            )
 
         unet.add_conditioning_modifier(conditioning_modifier)
 
@@ -127,5 +162,5 @@ class FooocusInpaintPatcher(ControlModelPatcher):
         return
 
 
-model_patcher.extra_weight_calculators['fooocus'] = calculate_weight_fooocus
+model_patcher.extra_weight_calculators["fooocus"] = calculate_weight_fooocus
 add_supported_control_model(FooocusInpaintPatcher)

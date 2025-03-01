@@ -60,11 +60,19 @@ class FreeUForForge(scripts.Script):
 
     def ui(self, *args, **kwargs):
         with gr.Accordion(open=False, label=self.title()):
-            freeu_enabled = gr.Checkbox(label='Enabled', value=False)
-            freeu_b1 = gr.Slider(label='B1', minimum=0, maximum=2, step=0.01, value=1.01)
-            freeu_b2 = gr.Slider(label='B2', minimum=0, maximum=2, step=0.01, value=1.02)
-            freeu_s1 = gr.Slider(label='S1', minimum=0, maximum=4, step=0.01, value=0.99)
-            freeu_s2 = gr.Slider(label='S2', minimum=0, maximum=4, step=0.01, value=0.95)
+            freeu_enabled = gr.Checkbox(label="Enabled", value=False)
+            freeu_b1 = gr.Slider(
+                label="B1", minimum=0, maximum=2, step=0.01, value=1.01
+            )
+            freeu_b2 = gr.Slider(
+                label="B2", minimum=0, maximum=2, step=0.01, value=1.02
+            )
+            freeu_s1 = gr.Slider(
+                label="S1", minimum=0, maximum=4, step=0.01, value=0.99
+            )
+            freeu_s2 = gr.Slider(
+                label="S2", minimum=0, maximum=4, step=0.01, value=0.95
+            )
 
         return freeu_enabled, freeu_b1, freeu_b2, freeu_s1, freeu_s2
 
@@ -98,20 +106,24 @@ class FreeUForForge(scripts.Script):
 
         # Below codes will add some logs to the texts below the image outputs on UI.
         # The extra_generation_params does not influence results.
-        p.extra_generation_params.update(dict(
-            freeu_enabled=freeu_enabled,
-            freeu_b1=freeu_b1,
-            freeu_b2=freeu_b2,
-            freeu_s1=freeu_s1,
-            freeu_s2=freeu_s2,
-        ))
+        p.extra_generation_params.update(
+            dict(
+                freeu_enabled=freeu_enabled,
+                freeu_b1=freeu_b1,
+                freeu_b2=freeu_b2,
+                freeu_s1=freeu_s1,
+                freeu_s2=freeu_s2,
+            )
+        )
 
         return
+
 
 def set_value(p, x: Any, xs: Any, *, field: str):
     if not hasattr(p, "_freeu_xyz"):
         p._freeu_xyz = {}
     p._freeu_xyz[field] = x
+
 
 def make_axis_on_xyz_grid():
     xyz_grid = None
@@ -128,7 +140,7 @@ def make_axis_on_xyz_grid():
             "FreeU Enabled",
             str,
             partial(set_value, field="freeu_enabled"),
-            choices=lambda: ["True", "False"]
+            choices=lambda: ["True", "False"],
         ),
         xyz_grid.AxisOption(
             "FreeU B1",
@@ -155,6 +167,7 @@ def make_axis_on_xyz_grid():
     if not any(x.label.startswith("FreeU") for x in xyz_grid.axis_options):
         xyz_grid.axis_options.extend(axis)
 
+
 def on_before_ui():
     try:
         make_axis_on_xyz_grid()
@@ -164,5 +177,6 @@ def on_before_ui():
             f"[-] FreeU Integrated: xyz_grid error:\n{error}",
             file=sys.stderr,
         )
+
 
 script_callbacks.on_before_ui(on_before_ui)

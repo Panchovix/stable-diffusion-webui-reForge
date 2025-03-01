@@ -13,8 +13,8 @@ def forward_next_vit(pretrained, x):
 
 
 def _make_next_vit_backbone(
-        model,
-        hooks=[2, 6, 36, 39],
+    model,
+    hooks=[2, 6, 36, 39],
 ):
     pretrained = nn.Module()
 

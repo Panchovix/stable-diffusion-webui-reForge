@@ -1,10 +1,10 @@
 # Original code from Comfy, https://github.com/comfyanonymous/ComfyUI
 
 
-
 from ..diffusionmodules.upscaling import ImageConcatWithNoiseAugmentation
 from ..diffusionmodules.openaimodel import Timestep
 import torch
+
 
 class CLIPEmbeddingNoiseAugmentation(ImageConcatWithNoiseAugmentation):
     def __init__(self, *args, clip_stats_path=None, timestep_dim=256, **kwargs):
@@ -19,7 +19,7 @@ class CLIPEmbeddingNoiseAugmentation(ImageConcatWithNoiseAugmentation):
 
     def scale(self, x):
         # re-normalize to centered mean and unit variance
-        x = (x - self.data_mean.to(x.device)) * 1. / self.data_std.to(x.device)
+        x = (x - self.data_mean.to(x.device)) * 1.0 / self.data_std.to(x.device)
         return x
 
     def unscale(self, x):
@@ -29,7 +29,9 @@ class CLIPEmbeddingNoiseAugmentation(ImageConcatWithNoiseAugmentation):
 
     def forward(self, x, noise_level=None, seed=None):
         if noise_level is None:
-            noise_level = torch.randint(0, self.max_noise_level, (x.shape[0],), device=x.device).long()
+            noise_level = torch.randint(
+                0, self.max_noise_level, (x.shape[0],), device=x.device
+            ).long()
         else:
             assert isinstance(noise_level, torch.Tensor)
         x = self.scale(x)

@@ -40,26 +40,26 @@ from modules_forge.shared import add_supported_preprocessor
 class LegacyPreprocessor(Preprocessor):
     def __init__(self, legacy_dict):
         super().__init__()
-        self.name = legacy_dict['label']
-        self.call_function = legacy_dict['call_function']
-        self.unload_function = legacy_dict['unload_function']
-        self.managed_model = legacy_dict['managed_model']
-        self.do_not_need_model = legacy_dict['model_free']
-        self.show_control_mode = not legacy_dict['no_control_mode']
-        self.sorting_priority = legacy_dict['priority']
-        self.tags = legacy_dict['tags']
+        self.name = legacy_dict["label"]
+        self.call_function = legacy_dict["call_function"]
+        self.unload_function = legacy_dict["unload_function"]
+        self.managed_model = legacy_dict["managed_model"]
+        self.do_not_need_model = legacy_dict["model_free"]
+        self.show_control_mode = not legacy_dict["no_control_mode"]
+        self.sorting_priority = legacy_dict["priority"]
+        self.tags = legacy_dict["tags"]
 
         filters_aliases = {
-            'instructp2p': ['ip2p'],
-            'segmentation': ['seg'],
-            'normalmap': ['normal'],
-            't2i-adapter': ['t2i_adapter', 't2iadapter', 't2ia'],
-            'ip-adapter': ['ip_adapter', 'ipadapter'],
-            'openpose': ['openpose', 'densepose'],
-            'instant-iD': ['instant_id', 'instantid'],
+            "instructp2p": ["ip2p"],
+            "segmentation": ["seg"],
+            "normalmap": ["normal"],
+            "t2i-adapter": ["t2i_adapter", "t2iadapter", "t2ia"],
+            "ip-adapter": ["ip_adapter", "ipadapter"],
+            "openpose": ["openpose", "densepose"],
+            "instant-iD": ["instant_id", "instantid"],
         }
 
-        if legacy_dict.get('use_soft_projection_in_hr_fix', False):
+        if legacy_dict.get("use_soft_projection_in_hr_fix", False):
             self.use_soft_projection_in_hr_fix = True
 
         self.model_filename_filters = []
@@ -68,29 +68,45 @@ class LegacyPreprocessor(Preprocessor):
             self.model_filename_filters.append(tag_lower)
             self.model_filename_filters += filters_aliases.get(tag_lower, [])
 
-        if legacy_dict['resolution'] is None:
+        if legacy_dict["resolution"] is None:
             self.resolution = PreprocessorParameter(visible=False)
         else:
-            legacy_dict['resolution']['label'] = 'Resolution'
-            legacy_dict['resolution']['step'] = 8
-            self.resolution = PreprocessorParameter(**legacy_dict['resolution'], visible=True)
+            legacy_dict["resolution"]["label"] = "Resolution"
+            legacy_dict["resolution"]["step"] = 8
+            self.resolution = PreprocessorParameter(
+                **legacy_dict["resolution"], visible=True
+            )
 
-        if legacy_dict['slider_1'] is None:
+        if legacy_dict["slider_1"] is None:
             self.slider_1 = PreprocessorParameter(visible=False)
         else:
-            self.slider_1 = PreprocessorParameter(**legacy_dict['slider_1'], visible=True)
+            self.slider_1 = PreprocessorParameter(
+                **legacy_dict["slider_1"], visible=True
+            )
 
-        if legacy_dict['slider_2'] is None:
+        if legacy_dict["slider_2"] is None:
             self.slider_2 = PreprocessorParameter(visible=False)
         else:
-            self.slider_2 = PreprocessorParameter(**legacy_dict['slider_2'], visible=True)
+            self.slider_2 = PreprocessorParameter(
+                **legacy_dict["slider_2"], visible=True
+            )
 
-        if legacy_dict['slider_3'] is None:
+        if legacy_dict["slider_3"] is None:
             self.slider_3 = PreprocessorParameter(visible=False)
         else:
-            self.slider_3 = PreprocessorParameter(**legacy_dict['slider_3'], visible=True)
+            self.slider_3 = PreprocessorParameter(
+                **legacy_dict["slider_3"], visible=True
+            )
 
-    def __call__(self, input_image, resolution, slider_1=None, slider_2=None, slider_3=None, **kwargs):
+    def __call__(
+        self,
+        input_image,
+        resolution,
+        slider_1=None,
+        slider_2=None,
+        slider_3=None,
+        **kwargs,
+    ):
         # Legacy Preprocessors does not have slider 3
         del slider_3
 
@@ -100,7 +116,13 @@ class LegacyPreprocessor(Preprocessor):
             context = contextlib.nullcontext
 
         with context():
-            result, is_image = self.call_function(img=input_image, res=resolution, thr_a=slider_1, thr_b=slider_2, **kwargs)
+            result, is_image = self.call_function(
+                img=input_image,
+                res=resolution,
+                thr_a=slider_1,
+                thr_b=slider_2,
+                **kwargs,
+            )
 
         if is_image:
             result = HWC3(result)

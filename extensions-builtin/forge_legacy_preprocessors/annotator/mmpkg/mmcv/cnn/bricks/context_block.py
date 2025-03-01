@@ -31,50 +31,50 @@ class ContextBlock(nn.Module):
             addition and multiplication respectively. Default: ('channel_add',)
     """
 
-    _abbr_ = 'context_block'
+    _abbr_ = "context_block"
 
-    def __init__(self,
-                 in_channels,
-                 ratio,
-                 pooling_type='att',
-                 fusion_types=('channel_add', )):
+    def __init__(
+        self, in_channels, ratio, pooling_type="att", fusion_types=("channel_add",)
+    ):
         super(ContextBlock, self).__init__()
-        assert pooling_type in ['avg', 'att']
+        assert pooling_type in ["avg", "att"]
         assert isinstance(fusion_types, (list, tuple))
-        valid_fusion_types = ['channel_add', 'channel_mul']
+        valid_fusion_types = ["channel_add", "channel_mul"]
         assert all([f in valid_fusion_types for f in fusion_types])
-        assert len(fusion_types) > 0, 'at least one fusion should be used'
+        assert len(fusion_types) > 0, "at least one fusion should be used"
         self.in_channels = in_channels
         self.ratio = ratio
         self.planes = int(in_channels * ratio)
         self.pooling_type = pooling_type
         self.fusion_types = fusion_types
-        if pooling_type == 'att':
+        if pooling_type == "att":
             self.conv_mask = nn.Conv2d(in_channels, 1, kernel_size=1)
             self.softmax = nn.Softmax(dim=2)
         else:
             self.avg_pool = nn.AdaptiveAvgPool2d(1)
-        if 'channel_add' in fusion_types:
+        if "channel_add" in fusion_types:
             self.channel_add_conv = nn.Sequential(
                 nn.Conv2d(self.in_channels, self.planes, kernel_size=1),
                 nn.LayerNorm([self.planes, 1, 1]),
                 nn.ReLU(inplace=True),  # yapf: disable
-                nn.Conv2d(self.planes, self.in_channels, kernel_size=1))
+                nn.Conv2d(self.planes, self.in_channels, kernel_size=1),
+            )
         else:
             self.channel_add_conv = None
-        if 'channel_mul' in fusion_types:
+        if "channel_mul" in fusion_types:
             self.channel_mul_conv = nn.Sequential(
                 nn.Conv2d(self.in_channels, self.planes, kernel_size=1),
                 nn.LayerNorm([self.planes, 1, 1]),
                 nn.ReLU(inplace=True),  # yapf: disable
-                nn.Conv2d(self.planes, self.in_channels, kernel_size=1))
+                nn.Conv2d(self.planes, self.in_channels, kernel_size=1),
+            )
         else:
             self.channel_mul_conv = None
         self.reset_parameters()
 
     def reset_parameters(self):
-        if self.pooling_type == 'att':
-            kaiming_init(self.conv_mask, mode='fan_in')
+        if self.pooling_type == "att":
+            kaiming_init(self.conv_mask, mode="fan_in")
             self.conv_mask.inited = True
 
         if self.channel_add_conv is not None:
@@ -84,7 +84,7 @@ class ContextBlock(nn.Module):
 
     def spatial_pool(self, x):
         batch, channel, height, width = x.size()
-        if self.pooling_type == 'att':
+        if self.pooling_type == "att":
             input_x = x
             # [N, C, H * W]
             input_x = input_x.view(batch, channel, height * width)

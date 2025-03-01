@@ -6,7 +6,13 @@ from torch import nn
 from torch.nn import functional as F
 
 from annotator.oneformer.detectron2.config import configurable
-from annotator.oneformer.detectron2.layers import Conv2d, ConvTranspose2d, ShapeSpec, cat, get_norm
+from annotator.oneformer.detectron2.layers import (
+    Conv2d,
+    ConvTranspose2d,
+    ShapeSpec,
+    cat,
+    get_norm,
+)
 from annotator.oneformer.detectron2.layers.wrappers import move_device_like
 from annotator.oneformer.detectron2.structures import Instances
 from annotator.oneformer.detectron2.utils.events import get_event_storage
@@ -30,7 +36,9 @@ The registered object will be called with `obj(cfg, input_shape)`.
 
 
 @torch.jit.unused
-def mask_rcnn_loss(pred_mask_logits: torch.Tensor, instances: List[Instances], vis_period: int = 0):
+def mask_rcnn_loss(
+    pred_mask_logits: torch.Tensor, instances: List[Instances], vis_period: int = 0
+):
     """
     Compute the mask prediction loss defined in the Mask R-CNN paper.
 
@@ -51,7 +59,9 @@ def mask_rcnn_loss(pred_mask_logits: torch.Tensor, instances: List[Instances], v
     cls_agnostic_mask = pred_mask_logits.size(1) == 1
     total_num_masks = pred_mask_logits.size(0)
     mask_side_len = pred_mask_logits.size(2)
-    assert pred_mask_logits.size(2) == pred_mask_logits.size(3), "Mask prediction must be square!"
+    assert pred_mask_logits.size(2) == pred_mask_logits.size(3), (
+        "Mask prediction must be square!"
+    )
 
     gt_classes = []
     gt_masks = []
@@ -94,7 +104,9 @@ def mask_rcnn_loss(pred_mask_logits: torch.Tensor, instances: List[Instances], v
     false_positive = (mask_incorrect & ~gt_masks_bool).sum().item() / max(
         gt_masks_bool.numel() - num_positive, 1.0
     )
-    false_negative = (mask_incorrect & gt_masks_bool).sum().item() / max(num_positive, 1.0)
+    false_negative = (mask_incorrect & gt_masks_bool).sum().item() / max(
+        num_positive, 1.0
+    )
 
     storage = get_event_storage()
     storage.put_scalar("mask_rcnn/accuracy", mask_accuracy)
@@ -108,11 +120,15 @@ def mask_rcnn_loss(pred_mask_logits: torch.Tensor, instances: List[Instances], v
             vis_mask = torch.stack([vis_mask] * 3, axis=0)
             storage.put_image(name + f" ({idx})", vis_mask)
 
-    mask_loss = F.binary_cross_entropy_with_logits(pred_mask_logits, gt_masks, reduction="mean")
+    mask_loss = F.binary_cross_entropy_with_logits(
+        pred_mask_logits, gt_masks, reduction="mean"
+    )
     return mask_loss
 
 
-def mask_rcnn_inference(pred_mask_logits: torch.Tensor, pred_instances: List[Instances]):
+def mask_rcnn_inference(
+    pred_mask_logits: torch.Tensor, pred_instances: List[Instances]
+):
     """
     Convert pred_mask_logits to estimated foreground probability masks while also
     extracting only the masks for the predicted classes in pred_instances. For each
@@ -196,7 +212,10 @@ class BaseMaskRCNNHead(nn.Module):
         """
         x = self.layers(x)
         if self.training:
-            return {"loss_mask": mask_rcnn_loss(x, instances, self.vis_period) * self.loss_weight}
+            return {
+                "loss_mask": mask_rcnn_loss(x, instances, self.vis_period)
+                * self.loss_weight
+            }
         else:
             mask_rcnn_inference(x, instances)
             return instances
@@ -219,7 +238,9 @@ class MaskRCNNConvUpsampleHead(BaseMaskRCNNHead, nn.Sequential):
     """
 
     @configurable
-    def __init__(self, input_shape: ShapeSpec, *, num_classes, conv_dims, conv_norm="", **kwargs):
+    def __init__(
+        self, input_shape: ShapeSpec, *, num_classes, conv_dims, conv_norm="", **kwargs
+    ):
         """
         NOTE: this interface is experimental.
 
@@ -259,7 +280,9 @@ class MaskRCNNConvUpsampleHead(BaseMaskRCNNHead, nn.Sequential):
         self.add_module("deconv_relu", nn.ReLU())
         cur_channels = conv_dims[-1]
 
-        self.predictor = Conv2d(cur_channels, num_classes, kernel_size=1, stride=1, padding=0)
+        self.predictor = Conv2d(
+            cur_channels, num_classes, kernel_size=1, stride=1, padding=0
+        )
 
         for layer in self.conv_norm_relus + [self.deconv]:
             weight_init.c2_msra_fill(layer)

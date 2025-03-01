@@ -16,14 +16,15 @@ class ResidualBlock(nn.Module):
     def __init__(self, in_features):
         super(ResidualBlock, self).__init__()
 
-        conv_block = [  nn.ReflectionPad2d(1),
-                        nn.Conv2d(in_features, in_features, 3),
-                        norm_layer(in_features),
-                        nn.ReLU(inplace=True),
-                        nn.ReflectionPad2d(1),
-                        nn.Conv2d(in_features, in_features, 3),
-                        norm_layer(in_features)
-                        ]
+        conv_block = [
+            nn.ReflectionPad2d(1),
+            nn.Conv2d(in_features, in_features, 3),
+            norm_layer(in_features),
+            nn.ReLU(inplace=True),
+            nn.ReflectionPad2d(1),
+            nn.Conv2d(in_features, in_features, 3),
+            norm_layer(in_features),
+        ]
 
         self.conv_block = nn.Sequential(*conv_block)
 
@@ -36,22 +37,26 @@ class Generator(nn.Module):
         super(Generator, self).__init__()
 
         # Initial convolution block
-        model0 = [   nn.ReflectionPad2d(3),
-                    nn.Conv2d(input_nc, 64, 7),
-                    norm_layer(64),
-                    nn.ReLU(inplace=True) ]
+        model0 = [
+            nn.ReflectionPad2d(3),
+            nn.Conv2d(input_nc, 64, 7),
+            norm_layer(64),
+            nn.ReLU(inplace=True),
+        ]
         self.model0 = nn.Sequential(*model0)
 
         # Downsampling
         model1 = []
         in_features = 64
-        out_features = in_features*2
+        out_features = in_features * 2
         for _ in range(2):
-            model1 += [  nn.Conv2d(in_features, out_features, 3, stride=2, padding=1),
-                        norm_layer(out_features),
-                        nn.ReLU(inplace=True) ]
+            model1 += [
+                nn.Conv2d(in_features, out_features, 3, stride=2, padding=1),
+                norm_layer(out_features),
+                nn.ReLU(inplace=True),
+            ]
             in_features = out_features
-            out_features = in_features*2
+            out_features = in_features * 2
         self.model1 = nn.Sequential(*model1)
 
         model2 = []
@@ -62,18 +67,21 @@ class Generator(nn.Module):
 
         # Upsampling
         model3 = []
-        out_features = in_features//2
+        out_features = in_features // 2
         for _ in range(2):
-            model3 += [  nn.ConvTranspose2d(in_features, out_features, 3, stride=2, padding=1, output_padding=1),
-                        norm_layer(out_features),
-                        nn.ReLU(inplace=True) ]
+            model3 += [
+                nn.ConvTranspose2d(
+                    in_features, out_features, 3, stride=2, padding=1, output_padding=1
+                ),
+                norm_layer(out_features),
+                nn.ReLU(inplace=True),
+            ]
             in_features = out_features
-            out_features = in_features//2
+            out_features = in_features // 2
         self.model3 = nn.Sequential(*model3)
 
         # Output layer
-        model4 = [  nn.ReflectionPad2d(3),
-                        nn.Conv2d(64, output_nc, 7)]
+        model4 = [nn.ReflectionPad2d(3), nn.Conv2d(64, output_nc, 7)]
         if sigmoid:
             model4 += [nn.Sigmoid()]
 
@@ -91,8 +99,8 @@ class Generator(nn.Module):
 
 class LineartDetector:
     model_dir = os.path.join(models_path, "lineart")
-    model_default = 'sk_model.pth'
-    model_coarse = 'sk_model2.pth'
+    model_default = "sk_model.pth"
+    model_coarse = "sk_model2.pth"
 
     def __init__(self, model_name):
         self.model = None
@@ -100,13 +108,16 @@ class LineartDetector:
         self.device = devices.get_device_for("controlnet")
 
     def load_model(self, name):
-        remote_model_path = "https://huggingface.co/lllyasviel/Annotators/resolve/main/" + name
+        remote_model_path = (
+            "https://huggingface.co/lllyasviel/Annotators/resolve/main/" + name
+        )
         model_path = os.path.join(self.model_dir, name)
         if not os.path.exists(model_path):
             from modules.modelloader import load_file_from_url
+
             load_file_from_url(remote_model_path, model_dir=self.model_dir)
         model = Generator(3, 1, 3)
-        model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
+        model.load_state_dict(torch.load(model_path, map_location=torch.device("cpu")))
         model.eval()
         self.model = model.to(self.device)
 
@@ -124,7 +135,7 @@ class LineartDetector:
         with torch.no_grad():
             image = torch.from_numpy(image).float().to(self.device)
             image = image / 255.0
-            image = rearrange(image, 'h w c -> 1 c h w')
+            image = rearrange(image, "h w c -> 1 c h w")
             line = self.model(image)[0][0]
 
             line = line.cpu().numpy()

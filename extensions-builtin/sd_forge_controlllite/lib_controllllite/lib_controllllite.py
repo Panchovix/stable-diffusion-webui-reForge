@@ -18,17 +18,23 @@ def extra_options_to_module_prefix(extra_options):
     block = extra_options["block"]
     block_index = extra_options["block_index"]
     if block[0] == "input":
-        module_pfx = f"lllite_unet_input_blocks_{block[1]}_1_transformer_blocks_{block_index}"
+        module_pfx = (
+            f"lllite_unet_input_blocks_{block[1]}_1_transformer_blocks_{block_index}"
+        )
     elif block[0] == "middle":
         module_pfx = f"lllite_unet_middle_block_1_transformer_blocks_{block_index}"
     elif block[0] == "output":
-        module_pfx = f"lllite_unet_output_blocks_{block[1]}_1_transformer_blocks_{block_index}"
+        module_pfx = (
+            f"lllite_unet_output_blocks_{block[1]}_1_transformer_blocks_{block_index}"
+        )
     else:
         raise Exception("invalid block name")
     return module_pfx
 
 
-def load_control_net_lllite_patch(ctrl_sd, cond_image, multiplier, num_steps, start_percent, end_percent):
+def load_control_net_lllite_patch(
+    ctrl_sd, cond_image, multiplier, num_steps, start_percent, end_percent
+):
     # calculate start and end step
     start_step = math.floor(num_steps * start_percent) if start_percent > 0 else 0
     end_step = math.floor(num_steps * end_percent) if end_percent > 0 else num_steps
@@ -139,19 +145,41 @@ class LLLiteModule(torch.nn.Module):
         self.is_first = False
 
         modules = []
-        modules.append(torch.nn.Conv2d(3, cond_emb_dim // 2, kernel_size=4, stride=4, padding=0))  # to latent (from VAE) size*2
+        modules.append(
+            torch.nn.Conv2d(3, cond_emb_dim // 2, kernel_size=4, stride=4, padding=0)
+        )  # to latent (from VAE) size*2
         if depth == 1:
             modules.append(torch.nn.ReLU(inplace=True))
-            modules.append(torch.nn.Conv2d(cond_emb_dim // 2, cond_emb_dim, kernel_size=2, stride=2, padding=0))
+            modules.append(
+                torch.nn.Conv2d(
+                    cond_emb_dim // 2, cond_emb_dim, kernel_size=2, stride=2, padding=0
+                )
+            )
         elif depth == 2:
             modules.append(torch.nn.ReLU(inplace=True))
-            modules.append(torch.nn.Conv2d(cond_emb_dim // 2, cond_emb_dim, kernel_size=4, stride=4, padding=0))
+            modules.append(
+                torch.nn.Conv2d(
+                    cond_emb_dim // 2, cond_emb_dim, kernel_size=4, stride=4, padding=0
+                )
+            )
         elif depth == 3:
             # kernel size 8は大きすぎるので、4にする / kernel size 8 is too large, so set it to 4
             modules.append(torch.nn.ReLU(inplace=True))
-            modules.append(torch.nn.Conv2d(cond_emb_dim // 2, cond_emb_dim // 2, kernel_size=4, stride=4, padding=0))
+            modules.append(
+                torch.nn.Conv2d(
+                    cond_emb_dim // 2,
+                    cond_emb_dim // 2,
+                    kernel_size=4,
+                    stride=4,
+                    padding=0,
+                )
+            )
             modules.append(torch.nn.ReLU(inplace=True))
-            modules.append(torch.nn.Conv2d(cond_emb_dim // 2, cond_emb_dim, kernel_size=2, stride=2, padding=0))
+            modules.append(
+                torch.nn.Conv2d(
+                    cond_emb_dim // 2, cond_emb_dim, kernel_size=2, stride=2, padding=0
+                )
+            )
 
         self.conditioning1 = torch.nn.Sequential(*modules)
 
@@ -161,7 +189,9 @@ class LLLiteModule(torch.nn.Module):
                 torch.nn.ReLU(inplace=True),
             )
             self.mid = torch.nn.Sequential(
-                torch.nn.Conv2d(mlp_dim + cond_emb_dim, mlp_dim, kernel_size=1, stride=1, padding=0),
+                torch.nn.Conv2d(
+                    mlp_dim + cond_emb_dim, mlp_dim, kernel_size=1, stride=1, padding=0
+                ),
                 torch.nn.ReLU(inplace=True),
             )
             self.up = torch.nn.Sequential(
@@ -248,10 +278,19 @@ class LLLiteLoader:
                 "model": ("MODEL",),
                 "model_name": None,
                 "cond_image": ("IMAGE",),
-                "strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 10.0, "step": 0.01}),
+                "strength": (
+                    "FLOAT",
+                    {"default": 1.0, "min": 0.0, "max": 10.0, "step": 0.01},
+                ),
                 "steps": ("INT", {"default": 0, "min": 0, "max": 200, "step": 1}),
-                "start_percent": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 100.0, "step": 0.1}),
-                "end_percent": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 100.0, "step": 0.1}),
+                "start_percent": (
+                    "FLOAT",
+                    {"default": 0.0, "min": 0.0, "max": 100.0, "step": 0.1},
+                ),
+                "end_percent": (
+                    "FLOAT",
+                    {"default": 0.0, "min": 0.0, "max": 100.0, "step": 0.1},
+                ),
             }
         }
 
@@ -259,11 +298,15 @@ class LLLiteLoader:
     FUNCTION = "load_lllite"
     CATEGORY = "loaders"
 
-    def load_lllite(self, model, state_dict, cond_image, strength, steps, start_percent, end_percent):
+    def load_lllite(
+        self, model, state_dict, cond_image, strength, steps, start_percent, end_percent
+    ):
         # cond_image is b,h,w,3, 0-1
 
         model_lllite = model.clone()
-        patch = load_control_net_lllite_patch(state_dict, cond_image, strength, steps, start_percent, end_percent)
+        patch = load_control_net_lllite_patch(
+            state_dict, cond_image, strength, steps, start_percent, end_percent
+        )
         if patch is not None:
             model_lllite.set_model_attn1_patch(patch)
             model_lllite.set_model_attn2_patch(patch)

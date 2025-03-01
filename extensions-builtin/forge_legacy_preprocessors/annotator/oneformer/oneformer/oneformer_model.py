@@ -11,10 +11,19 @@ from torch.nn import functional as F
 
 from annotator.oneformer.detectron2.config import configurable
 from annotator.oneformer.detectron2.data import MetadataCatalog
-from annotator.oneformer.detectron2.modeling import META_ARCH_REGISTRY, build_backbone, build_sem_seg_head
+from annotator.oneformer.detectron2.modeling import (
+    META_ARCH_REGISTRY,
+    build_backbone,
+    build_sem_seg_head,
+)
 from annotator.oneformer.detectron2.modeling.backbone import Backbone
 from annotator.oneformer.detectron2.modeling.postprocessing import sem_seg_postprocess
-from annotator.oneformer.detectron2.structures import Boxes, ImageList, Instances, BitMasks
+from annotator.oneformer.detectron2.structures import (
+    Boxes,
+    ImageList,
+    Instances,
+    BitMasks,
+)
 from annotator.oneformer.detectron2.utils.memory import retry_if_cuda_oom
 
 from .modeling.matcher import HungarianMatcher
@@ -22,6 +31,7 @@ from einops import rearrange
 from .modeling.transformer_decoder.text_transformer import TextTransformer
 from .modeling.transformer_decoder.oneformer_transformer_decoder import MLP
 from annotator.oneformer.oneformer.data.tokenizer import SimpleTokenizer, Tokenize
+
 
 @META_ARCH_REGISTRY.register()
 class OneFormer(nn.Module):
@@ -97,7 +107,9 @@ class OneFormer(nn.Module):
             size_divisibility = self.backbone.size_divisibility
         self.size_divisibility = size_divisibility
         self.sem_seg_postprocess_before_inference = sem_seg_postprocess_before_inference
-        self.register_buffer("pixel_mean", torch.Tensor(pixel_mean).view(-1, 1, 1), False)
+        self.register_buffer(
+            "pixel_mean", torch.Tensor(pixel_mean).view(-1, 1, 1), False
+        )
         self.register_buffer("pixel_std", torch.Tensor(pixel_std).view(-1, 1, 1), False)
 
         # additional args
@@ -111,7 +123,9 @@ class OneFormer(nn.Module):
         self.task_tokenizer = Tokenize(SimpleTokenizer(), max_seq_len=task_seq_len)
         self.is_demo = is_demo
 
-        self.thing_indices = [k for k in self.metadata.thing_dataset_id_to_contiguous_id.keys()]
+        self.thing_indices = [
+            k for k in self.metadata.thing_dataset_id_to_contiguous_id.keys()
+        ]
 
         if not self.semantic_on:
             assert self.sem_seg_postprocess_before_inference
@@ -122,14 +136,22 @@ class OneFormer(nn.Module):
         sem_seg_head = build_sem_seg_head(cfg, backbone.output_shape())
 
         if cfg.MODEL.IS_TRAIN:
-            text_encoder = TextTransformer(context_length=cfg.MODEL.TEXT_ENCODER.CONTEXT_LENGTH,
-                                    width=cfg.MODEL.TEXT_ENCODER.WIDTH,
-                                    layers=cfg.MODEL.TEXT_ENCODER.NUM_LAYERS,
-                                    vocab_size=cfg.MODEL.TEXT_ENCODER.VOCAB_SIZE)
-            text_projector = MLP(text_encoder.width, cfg.MODEL.ONE_FORMER.HIDDEN_DIM, 
-                                cfg.MODEL.ONE_FORMER.HIDDEN_DIM, cfg.MODEL.TEXT_ENCODER.PROJ_NUM_LAYERS)
+            text_encoder = TextTransformer(
+                context_length=cfg.MODEL.TEXT_ENCODER.CONTEXT_LENGTH,
+                width=cfg.MODEL.TEXT_ENCODER.WIDTH,
+                layers=cfg.MODEL.TEXT_ENCODER.NUM_LAYERS,
+                vocab_size=cfg.MODEL.TEXT_ENCODER.VOCAB_SIZE,
+            )
+            text_projector = MLP(
+                text_encoder.width,
+                cfg.MODEL.ONE_FORMER.HIDDEN_DIM,
+                cfg.MODEL.ONE_FORMER.HIDDEN_DIM,
+                cfg.MODEL.TEXT_ENCODER.PROJ_NUM_LAYERS,
+            )
             if cfg.MODEL.TEXT_ENCODER.N_CTX > 0:
-                prompt_ctx = nn.Embedding(cfg.MODEL.TEXT_ENCODER.N_CTX, cfg.MODEL.TEXT_ENCODER.WIDTH)
+                prompt_ctx = nn.Embedding(
+                    cfg.MODEL.TEXT_ENCODER.N_CTX, cfg.MODEL.TEXT_ENCODER.WIDTH
+                )
             else:
                 prompt_ctx = None
         else:
@@ -137,8 +159,12 @@ class OneFormer(nn.Module):
             text_projector = None
             prompt_ctx = None
 
-        task_mlp = MLP(cfg.INPUT.TASK_SEQ_LEN, cfg.MODEL.ONE_FORMER.HIDDEN_DIM,
-                        cfg.MODEL.ONE_FORMER.HIDDEN_DIM, 2)
+        task_mlp = MLP(
+            cfg.INPUT.TASK_SEQ_LEN,
+            cfg.MODEL.ONE_FORMER.HIDDEN_DIM,
+            cfg.MODEL.ONE_FORMER.HIDDEN_DIM,
+            2,
+        )
 
         # Loss parameters:
         deep_supervision = cfg.MODEL.ONE_FORMER.DEEP_SUPERVISION
@@ -149,7 +175,7 @@ class OneFormer(nn.Module):
         dice_weight = cfg.MODEL.ONE_FORMER.DICE_WEIGHT
         mask_weight = cfg.MODEL.ONE_FORMER.MASK_WEIGHT
         contrastive_weight = cfg.MODEL.ONE_FORMER.CONTRASTIVE_WEIGHT
-        
+
         # building criterion
         matcher = HungarianMatcher(
             cost_class=class_weight,
@@ -158,10 +184,13 @@ class OneFormer(nn.Module):
             num_points=cfg.MODEL.ONE_FORMER.TRAIN_NUM_POINTS,
         )
 
-        weight_dict = {"loss_ce": class_weight, "loss_mask": mask_weight, 
-                        "loss_dice": dice_weight, "loss_contrastive": contrastive_weight}
+        weight_dict = {
+            "loss_ce": class_weight,
+            "loss_mask": mask_weight,
+            "loss_dice": dice_weight,
+            "loss_contrastive": contrastive_weight,
+        }
 
-        
         if deep_supervision:
             dec_layers = cfg.MODEL.ONE_FORMER.DEC_LAYERS
             aux_weight_dict = {}
@@ -212,7 +241,7 @@ class OneFormer(nn.Module):
         num_text = 1
         if text.ndim == 3:
             num_text = text.shape[1]
-            text = rearrange(text, 'b n l -> (b n) l', n=num_text)
+            text = rearrange(text, "b n l -> (b n) l", n=num_text)
             squeeze_dim = True
 
         # [B, C]
@@ -221,13 +250,15 @@ class OneFormer(nn.Module):
         text_x = self.text_projector(x)
 
         if squeeze_dim:
-            text_x = rearrange(text_x, '(b n) c -> b n c', n=num_text)
+            text_x = rearrange(text_x, "(b n) c -> b n c", n=num_text)
             if self.prompt_ctx is not None:
-                text_ctx = self.prompt_ctx.weight.unsqueeze(0).repeat(text_x.shape[0], 1, 1)
+                text_ctx = self.prompt_ctx.weight.unsqueeze(0).repeat(
+                    text_x.shape[0], 1, 1
+                )
                 text_x = torch.cat([text_x, text_ctx], dim=1)
-        
+
         return {"texts": text_x}
-    
+
     def forward(self, batched_inputs):
         """
         Args:
@@ -257,14 +288,26 @@ class OneFormer(nn.Module):
         images = [(x - self.pixel_mean) / self.pixel_std for x in images]
         images = ImageList.from_tensors(images, self.size_divisibility)
 
-        tasks = torch.cat([self.task_tokenizer(x["task"]).to(self.device).unsqueeze(0) for x in batched_inputs], dim=0)
+        tasks = torch.cat(
+            [
+                self.task_tokenizer(x["task"]).to(self.device).unsqueeze(0)
+                for x in batched_inputs
+            ],
+            dim=0,
+        )
         tasks = self.task_mlp(tasks.float())
 
         features = self.backbone(images.tensor)
         outputs = self.sem_seg_head(features, tasks)
 
         if self.training:
-            texts = torch.cat([self.text_tokenizer(x["text"]).to(self.device).unsqueeze(0) for x in batched_inputs], dim=0)
+            texts = torch.cat(
+                [
+                    self.text_tokenizer(x["text"]).to(self.device).unsqueeze(0)
+                    for x in batched_inputs
+                ],
+                dim=0,
+            )
             texts_x = self.encode_text(texts)
 
             outputs = {**outputs, **texts_x}
@@ -300,9 +343,14 @@ class OneFormer(nn.Module):
             del outputs
 
             processed_results = []
-            for i, data in enumerate(zip(
-                mask_cls_results, mask_pred_results, batched_inputs, images.image_sizes
-            )):
+            for i, data in enumerate(
+                zip(
+                    mask_cls_results,
+                    mask_pred_results,
+                    batched_inputs,
+                    images.image_sizes,
+                )
+            ):
                 mask_cls_result, mask_pred_result, input_per_image, image_size = data
                 height = input_per_image.get("height", image_size[0])
                 width = input_per_image.get("width", image_size[1])
@@ -316,23 +364,33 @@ class OneFormer(nn.Module):
 
                 # semantic segmentation inference
                 if self.semantic_on:
-                    r = retry_if_cuda_oom(self.semantic_inference)(mask_cls_result, mask_pred_result)
+                    r = retry_if_cuda_oom(self.semantic_inference)(
+                        mask_cls_result, mask_pred_result
+                    )
                     if not self.sem_seg_postprocess_before_inference:
-                        r = retry_if_cuda_oom(sem_seg_postprocess)(r, image_size, height, width)
+                        r = retry_if_cuda_oom(sem_seg_postprocess)(
+                            r, image_size, height, width
+                        )
                     processed_results[-1]["sem_seg"] = r
 
                 # panoptic segmentation inference
                 if self.panoptic_on:
-                    panoptic_r = retry_if_cuda_oom(self.panoptic_inference)(mask_cls_result, mask_pred_result)
+                    panoptic_r = retry_if_cuda_oom(self.panoptic_inference)(
+                        mask_cls_result, mask_pred_result
+                    )
                     processed_results[-1]["panoptic_seg"] = panoptic_r
-                
+
                 # instance segmentation inference
                 if self.instance_on:
-                    instance_r = retry_if_cuda_oom(self.instance_inference)(mask_cls_result, mask_pred_result)
+                    instance_r = retry_if_cuda_oom(self.instance_inference)(
+                        mask_cls_result, mask_pred_result
+                    )
                     processed_results[-1]["instances"] = instance_r
 
                 if self.detection_on:
-                    bbox_r = retry_if_cuda_oom(self.instance_inference)(mask_cls_result, mask_pred_result)
+                    bbox_r = retry_if_cuda_oom(self.instance_inference)(
+                        mask_cls_result, mask_pred_result
+                    )
                     processed_results[-1]["box_instances"] = bbox_r
 
             return processed_results
@@ -343,7 +401,11 @@ class OneFormer(nn.Module):
         for targets_per_image in targets:
             # pad gt
             gt_masks = targets_per_image.gt_masks
-            padded_masks = torch.zeros((gt_masks.shape[0], h_pad, w_pad), dtype=gt_masks.dtype, device=gt_masks.device)
+            padded_masks = torch.zeros(
+                (gt_masks.shape[0], h_pad, w_pad),
+                dtype=gt_masks.dtype,
+                device=gt_masks.device,
+            )
             padded_masks[:, : gt_masks.shape[1], : gt_masks.shape[2]] = gt_masks
             new_targets.append(
                 {
@@ -363,7 +425,9 @@ class OneFormer(nn.Module):
         scores, labels = F.softmax(mask_cls, dim=-1).max(-1)
         mask_pred = mask_pred.sigmoid()
 
-        keep = labels.ne(self.sem_seg_head.num_classes) & (scores > self.object_mask_threshold)
+        keep = labels.ne(self.sem_seg_head.num_classes) & (
+            scores > self.object_mask_threshold
+        )
         cur_scores = scores[keep]
         cur_classes = labels[keep]
         cur_masks = mask_pred[keep]
@@ -387,7 +451,10 @@ class OneFormer(nn.Module):
             stuff_memory_list = {}
             for k in range(cur_classes.shape[0]):
                 pred_class = cur_classes[k].item()
-                isthing = pred_class in self.metadata.thing_dataset_id_to_contiguous_id.values()
+                isthing = (
+                    pred_class
+                    in self.metadata.thing_dataset_id_to_contiguous_id.values()
+                )
                 mask_area = (cur_mask_ids == k).sum().item()
                 original_area = (cur_masks[k] >= 0.5).sum().item()
                 mask = (cur_mask_ids == k) & (cur_masks[k] >= 0.5)
@@ -423,10 +490,17 @@ class OneFormer(nn.Module):
 
         # [Q, K]
         scores = F.softmax(mask_cls, dim=-1)[:, :-1]
-        labels = torch.arange(self.sem_seg_head.num_classes, device=self.device).unsqueeze(0).repeat(self.num_queries, 1).flatten(0, 1)
-        
+        labels = (
+            torch.arange(self.sem_seg_head.num_classes, device=self.device)
+            .unsqueeze(0)
+            .repeat(self.num_queries, 1)
+            .flatten(0, 1)
+        )
+
         # scores_per_image, topk_indices = scores.flatten(0, 1).topk(self.num_queries, sorted=False)
-        scores_per_image, topk_indices = scores.flatten(0, 1).topk(self.test_topk_per_image, sorted=False)
+        scores_per_image, topk_indices = scores.flatten(0, 1).topk(
+            self.test_topk_per_image, sorted=False
+        )
         labels_per_image = labels[topk_indices]
 
         topk_indices = topk_indices // self.sem_seg_head.num_classes
@@ -444,15 +518,19 @@ class OneFormer(nn.Module):
         if self.panoptic_on:
             keep = torch.zeros_like(scores_per_image).bool()
             for i, lab in enumerate(labels_per_image):
-                keep[i] = lab in self.metadata.thing_dataset_id_to_contiguous_id.values()
+                keep[i] = (
+                    lab in self.metadata.thing_dataset_id_to_contiguous_id.values()
+                )
 
             scores_per_image = scores_per_image[keep]
             labels_per_image = labels_per_image[keep]
             mask_pred = mask_pred[keep]
-        
-        if 'ade20k' in self.metadata.name:
+
+        if "ade20k" in self.metadata.name:
             for i in range(labels_per_image.shape[0]):
-                labels_per_image[i] = self.thing_indices.index(labels_per_image[i].item())
+                labels_per_image[i] = self.thing_indices.index(
+                    labels_per_image[i].item()
+                )
 
         result = Instances(image_size)
         # mask (before sigmoid)
@@ -464,7 +542,9 @@ class OneFormer(nn.Module):
             result.pred_boxes = Boxes(torch.zeros(mask_pred.size(0), 4))
 
         # calculate average mask prob
-        mask_scores_per_image = (mask_pred.sigmoid().flatten(1) * result.pred_masks.flatten(1)).sum(1) / (result.pred_masks.flatten(1).sum(1) + 1e-6)
+        mask_scores_per_image = (
+            mask_pred.sigmoid().flatten(1) * result.pred_masks.flatten(1)
+        ).sum(1) / (result.pred_masks.flatten(1).sum(1) + 1e-6)
         result.scores = scores_per_image * mask_scores_per_image
         result.pred_classes = labels_per_image
         return result

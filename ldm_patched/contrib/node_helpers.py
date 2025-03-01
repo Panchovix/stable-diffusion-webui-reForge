@@ -4,6 +4,7 @@ from ldm_patched.modules.args_parser import args
 
 from PIL import ImageFile, UnidentifiedImageError
 
+
 def conditioning_set_values(conditioning, values={}):
     c = []
     for t in conditioning:
@@ -14,11 +15,16 @@ def conditioning_set_values(conditioning, values={}):
 
     return c
 
+
 def pillow(fn, arg):
     prev_value = None
     try:
         x = fn(arg)
-    except (OSError, UnidentifiedImageError, ValueError): #PIL issues #4472 and #2445, also fixes ComfyUI issue #3416
+    except (
+        OSError,
+        UnidentifiedImageError,
+        ValueError,
+    ):  # PIL issues #4472 and #2445, also fixes ComfyUI issue #3416
         prev_value = ImageFile.LOAD_TRUNCATED_IMAGES
         ImageFile.LOAD_TRUNCATED_IMAGES = True
         x = fn(arg)
@@ -27,11 +33,12 @@ def pillow(fn, arg):
             ImageFile.LOAD_TRUNCATED_IMAGES = prev_value
     return x
 
+
 def hasher():
     hashfuncs = {
         "md5": hashlib.md5,
         "sha1": hashlib.sha1,
         "sha256": hashlib.sha256,
-        "sha512": hashlib.sha512
+        "sha512": hashlib.sha512,
     }
     return hashfuncs[args.default_hashing_function]

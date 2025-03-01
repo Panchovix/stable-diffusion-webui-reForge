@@ -1,14 +1,22 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 from annotator.mmpkg.mmcv.utils import Registry, is_method_overridden
 
-HOOKS = Registry('hook')
+HOOKS = Registry("hook")
 
 
 class Hook:
-    stages = ('before_run', 'before_train_epoch', 'before_train_iter',
-              'after_train_iter', 'after_train_epoch', 'before_val_epoch',
-              'before_val_iter', 'after_val_iter', 'after_val_epoch',
-              'after_run')
+    stages = (
+        "before_run",
+        "before_train_epoch",
+        "before_train_iter",
+        "after_train_iter",
+        "after_train_epoch",
+        "before_val_epoch",
+        "before_val_iter",
+        "after_val_iter",
+        "after_val_epoch",
+        "after_run",
+    )
 
     def before_run(self, runner):
         pass
@@ -79,10 +87,10 @@ class Hook:
         # some methods will be triggered in multi stages
         # use this dict to map method to stages.
         method_stages_map = {
-            'before_epoch': ['before_train_epoch', 'before_val_epoch'],
-            'after_epoch': ['after_train_epoch', 'after_val_epoch'],
-            'before_iter': ['before_train_iter', 'before_val_iter'],
-            'after_iter': ['after_train_iter', 'after_val_iter'],
+            "before_epoch": ["before_train_epoch", "before_val_epoch"],
+            "after_epoch": ["after_train_epoch", "after_val_epoch"],
+            "before_iter": ["before_train_iter", "before_val_iter"],
+            "after_iter": ["after_train_iter", "after_val_iter"],
         }
 
         for method, map_stages in method_stages_map.items():

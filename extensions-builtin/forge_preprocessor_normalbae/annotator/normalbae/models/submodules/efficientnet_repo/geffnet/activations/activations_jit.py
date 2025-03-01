@@ -1,4 +1,4 @@
-""" Activations (jit)
+"""Activations (jit)
 
 A collection of jit-scripted activations fn and modules with a common interface so that they can
 easily be swapped. All have an `inplace` arg even if not used.
@@ -14,8 +14,16 @@ import torch
 from torch import nn as nn
 from torch.nn import functional as F
 
-__all__ = ['swish_jit', 'SwishJit', 'mish_jit', 'MishJit',
-           'hard_sigmoid_jit', 'HardSigmoidJit', 'hard_swish_jit', 'HardSwishJit']
+__all__ = [
+    "swish_jit",
+    "SwishJit",
+    "mish_jit",
+    "MishJit",
+    "hard_sigmoid_jit",
+    "HardSigmoidJit",
+    "hard_swish_jit",
+    "HardSwishJit",
+]
 
 
 @torch.jit.script
@@ -30,8 +38,7 @@ def swish_jit(x, inplace: bool = False):
 
 @torch.jit.script
 def mish_jit(x, _inplace: bool = False):
-    """Mish: A Self Regularized Non-Monotonic Neural Activation Function - https://arxiv.org/abs/1908.08681
-    """
+    """Mish: A Self Regularized Non-Monotonic Neural Activation Function - https://arxiv.org/abs/1908.08681"""
     return x.mul(F.softplus(x).tanh())
 
 
@@ -54,7 +61,7 @@ class MishJit(nn.Module):
 @torch.jit.script
 def hard_sigmoid_jit(x, inplace: bool = False):
     # return F.relu6(x + 3.) / 6.
-    return (x + 3).clamp(min=0, max=6).div(6.)  # clamp seems ever so slightly faster?
+    return (x + 3).clamp(min=0, max=6).div(6.0)  # clamp seems ever so slightly faster?
 
 
 class HardSigmoidJit(nn.Module):
@@ -68,7 +75,9 @@ class HardSigmoidJit(nn.Module):
 @torch.jit.script
 def hard_swish_jit(x, inplace: bool = False):
     # return x * (F.relu6(x + 3.) / 6)
-    return x * (x + 3).clamp(min=0, max=6).div(6.)  # clamp seems ever so slightly faster?
+    return x * (x + 3).clamp(min=0, max=6).div(
+        6.0
+    )  # clamp seems ever so slightly faster?
 
 
 class HardSwishJit(nn.Module):

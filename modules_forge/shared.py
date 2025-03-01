@@ -26,16 +26,16 @@ cmd_opts = parser.parse_known_args()[0]
 if cmd_opts.controlnet_dir:
     controlnet_dir = str(cmd_opts.controlnet_dir)
 else:
-    controlnet_dir = os.path.join(models_path, 'ControlNet')
+    controlnet_dir = os.path.join(models_path, "ControlNet")
 os.makedirs(controlnet_dir, exist_ok=True)
 
 if cmd_opts.controlnet_preprocessor_models_dir:
     preprocessor_dir = str(cmd_opts.controlnet_preprocessor_models_dir)
 else:
-    preprocessor_dir = os.path.join(models_path, 'ControlNetPreprocessor')
+    preprocessor_dir = os.path.join(models_path, "ControlNetPreprocessor")
 os.makedirs(preprocessor_dir, exist_ok=True)
 
-diffusers_dir = os.path.join(models_path, 'diffusers')
+diffusers_dir = os.path.join(models_path, "diffusers")
 os.makedirs(diffusers_dir, exist_ok=True)
 
 supported_preprocessors = {}

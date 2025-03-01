@@ -120,9 +120,11 @@ class MarigoldPipeline(nn.Module):
                 subfolder=noise_scheduler_pretrained_path["subfolder"],
             )
         elif "DEISMultistepScheduler" == noise_scheduler_type:
-            self.noise_scheduler: SchedulerMixin = DEISMultistepScheduler.from_pretrained(
-                noise_scheduler_pretrained_path["path"],
-                subfolder=noise_scheduler_pretrained_path["subfolder"],
+            self.noise_scheduler: SchedulerMixin = (
+                DEISMultistepScheduler.from_pretrained(
+                    noise_scheduler_pretrained_path["path"],
+                    subfolder=noise_scheduler_pretrained_path["subfolder"],
+                )
             )
         else:
             raise NotImplementedError
@@ -140,7 +142,7 @@ class MarigoldPipeline(nn.Module):
             with torch.no_grad():
                 self.empty_text_embed = self._encode_text(
                     "", tokenizer, text_encoder
-                ).detach()#.to(dtype=precision)  # [1, 2, 1024]
+                ).detach()  # .to(dtype=precision)  # [1, 2, 1024]
         else:
             self.empty_text_embed = empty_text_embed
 
@@ -202,7 +204,7 @@ class MarigoldPipeline(nn.Module):
         return_depth_latent=False,
     ):
         device = rgb_in.device
-        precision = self.unet.dtype    
+        precision = self.unet.dtype
         # Set timesteps
         self.noise_scheduler.set_timesteps(num_inference_steps, device=device)
         timesteps = self.noise_scheduler.timesteps  # [T]
@@ -213,9 +215,9 @@ class MarigoldPipeline(nn.Module):
         # Initial depth map (noise)
         if init_depth_latent is not None:
             init_depth_latent = init_depth_latent.to(dtype=precision)
-            assert (
-                init_depth_latent.shape == rgb_latent.shape
-            ), "initial depth latent should be the size of [B, 4, H/8, W/8]"
+            assert init_depth_latent.shape == rgb_latent.shape, (
+                "initial depth latent should be the size of [B, 4, H/8, W/8]"
+            )
             depth_latent = init_depth_latent
             depth_latent = torch.randn(rgb_latent.shape, device=device, dtype=precision)
         else:
@@ -245,7 +247,12 @@ class MarigoldPipeline(nn.Module):
 
         # Denoising loop
         if show_pbar:
-            iterable = tqdm(enumerate(timesteps), total=len(timesteps), leave=False, desc="denoising")
+            iterable = tqdm(
+                enumerate(timesteps),
+                total=len(timesteps),
+                leave=False,
+                desc="denoising",
+            )
         else:
             iterable = enumerate(timesteps)
         for i, t in iterable:
@@ -261,11 +268,10 @@ class MarigoldPipeline(nn.Module):
             depth_latent = self.noise_scheduler.step(
                 noise_pred, t, depth_latent
             ).prev_sample.to(dtype=precision)
-            
 
             if num_output_inter_results > 0 and t in steps_to_output:
                 depth_latent_ls.append(depth_latent.detach().clone())
-                #depth_latent_ls = depth_latent_ls.to(dtype=precision)
+                # depth_latent_ls = depth_latent_ls.to(dtype=precision)
                 inter_steps.append(t - 1)
 
         # Decode depth latent
@@ -286,7 +292,7 @@ class MarigoldPipeline(nn.Module):
     def encode_rgb(self, rgb_in):
         rgb_latent = self.rgb_encoder(rgb_in)  # [B, 4, h, w]
         rgb_latent = rgb_latent * self.rgb_latent_scale_factor
-        return rgb_latent 
+        return rgb_latent
 
     def encode_depth(self, depth_in):
         depth_latent = self.depth_ae.encode(depth_in)
@@ -294,10 +300,10 @@ class MarigoldPipeline(nn.Module):
         return depth_latent
 
     def decode_depth(self, depth_latent):
-        #depth_latent = depth_latent.to(dtype=torch.float16)
+        # depth_latent = depth_latent.to(dtype=torch.float16)
         depth_latent = depth_latent / self.depth_latent_scale_factor
         depth = self.depth_ae.decode(depth_latent)  # [B, 1, H, W]
-        return depth 
+        return depth
 
     @staticmethod
     def _encode_text(prompt, tokenizer, text_encoder):

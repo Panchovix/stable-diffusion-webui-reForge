@@ -8,7 +8,7 @@ from annotator.mmpkg.mmcv.video import flowread
 from .image import imshow
 
 
-def flowshow(flow, win_name='', wait_time=0):
+def flowshow(flow, win_name="", wait_time=0):
     """Show optical flow.
 
     Args:
@@ -44,8 +44,11 @@ def flow2rgb(flow, color_wheel=None, unknown_thr=1e6):
     dy = flow[:, :, 1].copy()
 
     ignore_inds = (
-        np.isnan(dx) | np.isnan(dy) | (np.abs(dx) > unknown_thr) |
-        (np.abs(dy) > unknown_thr))
+        np.isnan(dx)
+        | np.isnan(dy)
+        | (np.abs(dx) > unknown_thr)
+        | (np.abs(dy) > unknown_thr)
+    )
     dx[ignore_inds] = 0
     dy[ignore_inds] = 0
 
@@ -62,8 +65,7 @@ def flow2rgb(flow, color_wheel=None, unknown_thr=1e6):
     bin_left = np.floor(bin_real).astype(int)
     bin_right = (bin_left + 1) % num_bins
     w = (bin_real - bin_left.astype(np.float32))[..., None]
-    flow_img = (1 -
-                w) * color_wheel[bin_left, :] + w * color_wheel[bin_right, :]
+    flow_img = (1 - w) * color_wheel[bin_left, :] + w * color_wheel[bin_right, :]
     small_ind = rad <= 1
     flow_img[small_ind] = 1 - rad[small_ind, None] * (1 - flow_img[small_ind])
     flow_img[np.logical_not(small_ind)] *= 0.75
@@ -106,7 +108,7 @@ def make_color_wheel(bins=None):
     col = 0
     for i, color in enumerate([ry, yg, gc, cb, bm, mr]):
         for j in range(3):
-            color_wheel[j, col:col + bins[i]] = color[j]
+            color_wheel[j, col : col + bins[i]] = color[j]
         col += bins[i]
 
     return color_wheel.T

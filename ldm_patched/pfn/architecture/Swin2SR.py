@@ -109,7 +109,9 @@ class WindowAttention(nn.Module):
         self.pretrained_window_size = pretrained_window_size
         self.num_heads = num_heads
 
-        self.logit_scale = nn.Parameter(torch.log(10 * torch.ones((num_heads, 1, 1))), requires_grad=True)  # type: ignore
+        self.logit_scale = nn.Parameter(
+            torch.log(10 * torch.ones((num_heads, 1, 1))), requires_grad=True
+        )  # type: ignore
 
         # mlp to generate continuous relative position bias
         self.cpb_mlp = nn.Sequential(
@@ -184,7 +186,13 @@ class WindowAttention(nn.Module):
         B_, N, C = x.shape
         qkv_bias = None
         if self.q_bias is not None:
-            qkv_bias = torch.cat((self.q_bias, torch.zeros_like(self.v_bias, requires_grad=False), self.v_bias))  # type: ignore
+            qkv_bias = torch.cat(
+                (
+                    self.q_bias,
+                    torch.zeros_like(self.v_bias, requires_grad=False),
+                    self.v_bias,
+                )
+            )  # type: ignore
         qkv = F.linear(input=x, weight=self.qkv.weight, bias=qkv_bias)
         qkv = qkv.reshape(B_, N, 3, self.num_heads, -1).permute(2, 0, 3, 1, 4)
         q, k, v = (
@@ -204,7 +212,9 @@ class WindowAttention(nn.Module):
         relative_position_bias_table = self.cpb_mlp(self.relative_coords_table).view(
             -1, self.num_heads
         )
-        relative_position_bias = relative_position_bias_table[self.relative_position_index.view(-1)].view(  # type: ignore
+        relative_position_bias = relative_position_bias_table[
+            self.relative_position_index.view(-1)
+        ].view(  # type: ignore
             self.window_size[0] * self.window_size[1],
             self.window_size[0] * self.window_size[1],
             -1,
@@ -297,9 +307,9 @@ class SwinTransformerBlock(nn.Module):
             # if window size is larger than input resolution, we don't partition windows
             self.shift_size = 0
             self.window_size = min(self.input_resolution)
-        assert (
-            0 <= self.shift_size < self.window_size
-        ), "shift_size must in 0-window_size"
+        assert 0 <= self.shift_size < self.window_size, (
+            "shift_size must in 0-window_size"
+        )
 
         self.norm1 = norm_layer(dim)
         self.attn = WindowAttention(
@@ -600,7 +610,10 @@ class PatchEmbed(nn.Module):
         super().__init__()
         img_size = to_2tuple(img_size)
         patch_size = to_2tuple(patch_size)
-        patches_resolution = [img_size[0] // patch_size[0], img_size[1] // patch_size[1]]  # type: ignore
+        patches_resolution = [
+            img_size[0] // patch_size[0],
+            img_size[1] // patch_size[1],
+        ]  # type: ignore
         self.img_size = img_size
         self.patch_size = patch_size
         self.patches_resolution = patches_resolution
@@ -610,7 +623,10 @@ class PatchEmbed(nn.Module):
         self.embed_dim = embed_dim
 
         self.proj = nn.Conv2d(
-            in_chans, embed_dim, kernel_size=patch_size, stride=patch_size  # type: ignore
+            in_chans,
+            embed_dim,
+            kernel_size=patch_size,
+            stride=patch_size,  # type: ignore
         )
         if norm_layer is not None:
             self.norm = norm_layer(embed_dim)
@@ -629,7 +645,13 @@ class PatchEmbed(nn.Module):
 
     def flops(self):
         Ho, Wo = self.patches_resolution
-        flops = Ho * Wo * self.embed_dim * self.in_chans * (self.patch_size[0] * self.patch_size[1])  # type: ignore
+        flops = (
+            Ho
+            * Wo
+            * self.embed_dim
+            * self.in_chans
+            * (self.patch_size[0] * self.patch_size[1])
+        )  # type: ignore
         if self.norm is not None:
             flops += Ho * Wo * self.embed_dim
         return flops
@@ -761,7 +783,10 @@ class PatchUnEmbed(nn.Module):
         super().__init__()
         img_size = to_2tuple(img_size)
         patch_size = to_2tuple(patch_size)
-        patches_resolution = [img_size[0] // patch_size[0], img_size[1] // patch_size[1]]  # type: ignore
+        patches_resolution = [
+            img_size[0] // patch_size[0],
+            img_size[1] // patch_size[1],
+        ]  # type: ignore
         self.img_size = img_size
         self.patch_size = patch_size
         self.patches_resolution = patches_resolution
@@ -799,7 +824,7 @@ class Upsample(nn.Sequential):
             m.append(nn.PixelShuffle(3))
         else:
             raise ValueError(
-                f"scale {scale} is not supported. " "Supported scales: 2^n and 3."
+                f"scale {scale} is not supported. Supported scales: 2^n and 3."
             )
         super(Upsample, self).__init__(*m)
 
@@ -823,7 +848,7 @@ class Upsample_hf(nn.Sequential):
             m.append(nn.PixelShuffle(3))
         else:
             raise ValueError(
-                f"scale {scale} is not supported. " "Supported scales: 2^n and 3."
+                f"scale {scale} is not supported. Supported scales: 2^n and 3."
             )
         super(Upsample_hf, self).__init__(*m)
 
@@ -1091,7 +1116,9 @@ class Swin2SR(nn.Module):
 
         # absolute position embedding
         if self.ape:
-            self.absolute_pos_embed = nn.Parameter(torch.zeros(1, num_patches, embed_dim))  # type: ignore
+            self.absolute_pos_embed = nn.Parameter(
+                torch.zeros(1, num_patches, embed_dim)
+            )  # type: ignore
             trunc_normal_(self.absolute_pos_embed, std=0.02)
 
         self.pos_drop = nn.Dropout(p=drop_rate)
@@ -1360,7 +1387,11 @@ class Swin2SR(nn.Module):
 
         elif self.upsampler == "pixelshuffle_hf":
             x_out = x_out / self.img_range + self.mean  # type: ignore
-            return x_out[:, :, : H * self.upscale, : W * self.upscale], x[:, :, : H * self.upscale, : W * self.upscale], x_hf[:, :, : H * self.upscale, : W * self.upscale]  # type: ignore
+            return (
+                x_out[:, :, : H * self.upscale, : W * self.upscale],
+                x[:, :, : H * self.upscale, : W * self.upscale],
+                x_hf[:, :, : H * self.upscale, : W * self.upscale],
+            )  # type: ignore
 
         else:
             return x[:, :, : H * self.upscale, : W * self.upscale]

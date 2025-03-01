@@ -1,7 +1,6 @@
 # Original code from Comfy, https://github.com/comfyanonymous/ComfyUI
 
 
-
 import torch
 import ldm_patched.modules.model_management
 import ldm_patched.modules.sample
@@ -12,10 +11,14 @@ import ldm_patched.modules.utils
 class PerpNeg:
     @classmethod
     def INPUT_TYPES(s):
-        return {"required": {"model": ("MODEL", ),
-                             "empty_conditioning": ("CONDITIONING", ),
-                             "neg_scale": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 100.0}),
-                            }}
+        return {
+            "required": {
+                "model": ("MODEL",),
+                "empty_conditioning": ("CONDITIONING",),
+                "neg_scale": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 100.0}),
+            }
+        }
+
     RETURN_TYPES = ("MODEL",)
     FUNCTION = "patch"
 
@@ -33,21 +36,27 @@ class PerpNeg:
             x = args["input"]
             sigma = args["sigma"]
             model_options = args["model_options"]
-            nocond_processed = ldm_patched.modules.samplers.encode_model_conds(model.extra_conds, nocond, x, x.device, "negative")
+            nocond_processed = ldm_patched.modules.samplers.encode_model_conds(
+                model.extra_conds, nocond, x, x.device, "negative"
+            )
 
-            (noise_pred_nocond, _) = ldm_patched.modules.samplers.calc_cond_uncond_batch(model, nocond_processed, None, x, sigma, model_options)
+            (noise_pred_nocond, _) = (
+                ldm_patched.modules.samplers.calc_cond_uncond_batch(
+                    model, nocond_processed, None, x, sigma, model_options
+                )
+            )
 
             pos = noise_pred_pos - noise_pred_nocond
             neg = noise_pred_neg - noise_pred_nocond
-            perp = neg - ((torch.mul(neg, pos).sum())/(torch.norm(pos)**2)) * pos
+            perp = neg - ((torch.mul(neg, pos).sum()) / (torch.norm(pos) ** 2)) * pos
             perp_neg = perp * neg_scale
-            cfg_result = noise_pred_nocond + cond_scale*(pos - perp_neg)
+            cfg_result = noise_pred_nocond + cond_scale * (pos - perp_neg)
             cfg_result = x - cfg_result
             return cfg_result
 
         m.set_model_sampler_cfg_function(cfg_function)
 
-        return (m, )
+        return (m,)
 
 
 NODE_CLASS_MAPPINGS = {

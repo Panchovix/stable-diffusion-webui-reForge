@@ -2,10 +2,7 @@ import hashlib
 import os.path
 
 from modules import shared
-import modules.cache
-
-dump_cache = modules.cache.dump_cache
-cache = modules.cache.cache
+from modules.utils.cache import cache, dump_cache
 
 
 def calculate_sha256(filename):
@@ -48,7 +45,7 @@ def sha256(filename, title, use_addnet_hash=False):
     if shared.cmd_opts.no_hashing:
         return None
 
-    print(f"Calculating sha256 for {filename}: ", end='')
+    print(f"Calculating sha256 for {filename}: ", end="")
     if use_addnet_hash:
         with open(filename, "rb") as file:
             sha256_value = addnet_hash_safetensors(file)
@@ -81,4 +78,3 @@ def addnet_hash_safetensors(b):
         hash_sha256.update(chunk)
 
     return hash_sha256.hexdigest()
-

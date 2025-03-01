@@ -1,5 +1,5 @@
-"""Utils for monoDepth.
-"""
+"""Utils for monoDepth."""
+
 import sys
 import re
 import numpy as np
@@ -17,7 +17,6 @@ def read_pfm(path):
         tuple: (data, scale)
     """
     with open(path, "rb") as file:
-
         color = None
         width = None
         height = None
@@ -163,6 +162,7 @@ def resize_depth(depth, width, height):
 
     return depth_resized
 
+
 def write_depth(path, depth, grayscale, bits=1):
     """Write depth map to png file.
 
@@ -175,13 +175,13 @@ def write_depth(path, depth, grayscale, bits=1):
         bits = 1
 
     if not np.isfinite(depth).all():
-        depth=np.nan_to_num(depth, nan=0.0, posinf=0.0, neginf=0.0)
+        depth = np.nan_to_num(depth, nan=0.0, posinf=0.0, neginf=0.0)
         print("WARNING: Non-finite depth values present")
 
     depth_min = depth.min()
     depth_max = depth.max()
 
-    max_val = (2**(8*bits))-1
+    max_val = (2 ** (8 * bits)) - 1
 
     if depth_max - depth_min > np.finfo("float").eps:
         out = max_val * (depth - depth_min) / (depth_max - depth_min)

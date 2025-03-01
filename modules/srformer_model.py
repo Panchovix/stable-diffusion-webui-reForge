@@ -21,7 +21,9 @@ class UpscalerSRFormer(Upscaler):
         try:
             model = self.load_model(selected_model)
         except Exception:
-            errors.report(f"Unable to load SRFormer model {selected_model}", exc_info=True)
+            errors.report(
+                f"Unable to load SRFormer model {selected_model}", exc_info=True
+            )
             return img
         model.to(devices.device_srformer)
         return srformer_upscale(model, img)
@@ -33,16 +35,16 @@ class UpscalerSRFormer(Upscaler):
             filename = path
         return modelloader.load_spandrel_model(
             filename,
-            device=('cpu' if devices.device_srformer.type == 'mps' else None),
+            device=("cpu" if devices.device_srformer.type == "mps" else None),
             prefer_half=(not cmd_opts.no_half and not cmd_opts.upcast_sampling),
-            expected_architecture='SRFormer',
+            expected_architecture="SRFormer",
         )
 
 
 def srformer_upscale(model, img):
-        return upscale_with_model(
-            model,
-            img,
-            tile_size=opts.SRFormer_tile,
-            tile_overlap=opts.SRFormer_tile_overlap,
-        )
+    return upscale_with_model(
+        model,
+        img,
+        tile_size=opts.SRFormer_tile,
+        tile_overlap=opts.SRFormer_tile_overlap,
+    )

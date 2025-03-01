@@ -25,7 +25,9 @@ def setup_wandb(cfg, args):
         if ("name" not in init_args) or (init_args["name"] is None):
             init_args["name"] = os.path.basename(args.config_file)
         else:
-            init_args["name"] = init_args["name"] + '_' + os.path.basename(args.config_file)
+            init_args["name"] = (
+                init_args["name"] + "_" + os.path.basename(args.config_file)
+            )
         wandb.init(**init_args)
 
 
@@ -68,11 +70,10 @@ class WandbWriter(EventWriter):
         ]
 
     def write(self):
-
         storage = get_event_storage()
 
         def _group_name(scalar_name):
-            for (rule, op) in self._group_rules:
+            for rule, op in self._group_rules:
                 if rule(scalar_name):
                     return op(scalar_name)
             return scalar_name

@@ -25,7 +25,7 @@ class DisentangledNonLocal2d(NonLocal2d):
         pairwise_weight = torch.matmul(theta_x, phi_x)
         if self.use_scale:
             # theta_x.shape[-1] is `self.inter_channels`
-            pairwise_weight /= theta_x.shape[-1]**0.5
+            pairwise_weight /= theta_x.shape[-1] ** 0.5
         pairwise_weight /= self.temperature
         pairwise_weight = pairwise_weight.softmax(dim=-1)
         return pairwise_weight
@@ -39,14 +39,14 @@ class DisentangledNonLocal2d(NonLocal2d):
         g_x = g_x.permute(0, 2, 1)
 
         # theta_x: [N, HxW, C], phi_x: [N, C, HxW]
-        if self.mode == 'gaussian':
+        if self.mode == "gaussian":
             theta_x = x.view(n, self.in_channels, -1)
             theta_x = theta_x.permute(0, 2, 1)
             if self.sub_sample:
                 phi_x = self.phi(x).view(n, self.in_channels, -1)
             else:
                 phi_x = x.view(n, self.in_channels, -1)
-        elif self.mode == 'concatenation':
+        elif self.mode == "concatenation":
             theta_x = self.theta(x).view(n, self.inter_channels, -1, 1)
             phi_x = self.phi(x).view(n, self.inter_channels, 1, -1)
         else:
@@ -65,8 +65,11 @@ class DisentangledNonLocal2d(NonLocal2d):
         # y: [N, HxW, C]
         y = torch.matmul(pairwise_weight, g_x)
         # y: [N, C, H, W]
-        y = y.permute(0, 2, 1).contiguous().reshape(n, self.inter_channels,
-                                                    *x.size()[2:])
+        y = (
+            y.permute(0, 2, 1)
+            .contiguous()
+            .reshape(n, self.inter_channels, *x.size()[2:])
+        )
 
         # unary_mask: [N, 1, HxW]
         unary_mask = self.conv_mask(x)
@@ -75,8 +78,9 @@ class DisentangledNonLocal2d(NonLocal2d):
         # unary_x: [N, 1, C]
         unary_x = torch.matmul(unary_mask, g_x)
         # unary_x: [N, C, 1, 1]
-        unary_x = unary_x.permute(0, 2, 1).contiguous().reshape(
-            n, self.inter_channels, 1, 1)
+        unary_x = (
+            unary_x.permute(0, 2, 1).contiguous().reshape(n, self.inter_channels, 1, 1)
+        )
 
         output = x + self.conv_out(y + unary_x)
 
@@ -99,12 +103,14 @@ class DNLHead(FCNHead):
         temperature (float): Temperature to adjust attention. Default: 0.05
     """
 
-    def __init__(self,
-                 reduction=2,
-                 use_scale=True,
-                 mode='embedded_gaussian',
-                 temperature=0.05,
-                 **kwargs):
+    def __init__(
+        self,
+        reduction=2,
+        use_scale=True,
+        mode="embedded_gaussian",
+        temperature=0.05,
+        **kwargs,
+    ):
         super(DNLHead, self).__init__(num_convs=2, **kwargs)
         self.reduction = reduction
         self.use_scale = use_scale
@@ -117,7 +123,8 @@ class DNLHead(FCNHead):
             conv_cfg=self.conv_cfg,
             norm_cfg=self.norm_cfg,
             mode=self.mode,
-            temperature=self.temperature)
+            temperature=self.temperature,
+        )
 
     def forward(self, inputs):
         """Forward function."""

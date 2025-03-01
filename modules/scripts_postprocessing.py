@@ -4,6 +4,7 @@ import os
 import gradio as gr
 
 from modules import errors, shared
+from pathlib import Path
 
 
 @dataclasses.dataclass
@@ -17,7 +18,7 @@ class PostprocessedImage:
         self.image = image
         self.info = {}
         self.shared = PostprocessedImageSharedInfo()
-        self.extra_images = []
+        self.extra_images: list["PostprocessedImage"] = []
         self.nametags = []
         self.disable_processing = False
         self.caption = None
@@ -56,9 +57,9 @@ class PostprocessedImage:
 
 class ScriptPostprocessing:
     filename = None
-    controls = None
-    args_from = None
-    args_to = None
+    controls:dict[str,gr.components.Component] = {}
+    args_from:int = -1
+    args_to:int = -1
 
     # define if the script should be used only in extras or main UI
     extra_only = None
@@ -102,9 +103,10 @@ class ScriptPostprocessing:
     def image_changed(self):
         pass
 
-    tab_name = ''  # used by ScriptPostprocessingForMainUI
-    replace_pattern = re.compile(r'\s')
-    rm_pattern = re.compile(r'[^a-z_0-9]')
+    tab_name = ""  # used by ScriptPostprocessingForMainUI
+    replace_pattern = re.compile(r"\s")
+    rm_pattern = re.compile(r"[^a-z_0-9]")
+
     def elem_id(self, item_id):
         """
         Helper function to generate id for a HTML element
@@ -114,14 +116,15 @@ class ScriptPostprocessing:
         tab_name will be set to '_img2img' or '_txt2img' if use by ScriptPostprocessingForMainUI
         Extensions should use this function to generate element IDs
         """
-        return self.elem_id_suffix(f'extras_{self.name.lower()}_{item_id}')
+        return self.elem_id_suffix(f"extras_{self.name.lower()}_{item_id}")
+
     def elem_id_suffix(self, base_id):
         """
         Append tab_name to the base_id
         Extensions that already have specific there element IDs and wish to keep their IDs the same when possible should use this function
         """
-        base_id = self.rm_pattern.sub('', self.replace_pattern.sub('_', base_id))
-        return f'{base_id}{self.tab_name}'
+        base_id = self.rm_pattern.sub("", self.replace_pattern.sub("_", base_id))
+        return f"{base_id}{self.tab_name}"
 
 
 def wrap_call(func, filename, funcname, *args, default=None, **kwargs):
@@ -136,26 +139,24 @@ def wrap_call(func, filename, funcname, *args, default=None, **kwargs):
 
 class ScriptPostprocessingRunner:
     def __init__(self):
-        self.scripts = None
+        self.scripts: list[ScriptPostprocessing] = []
         self.ui_created = False
 
     def initialize_scripts(self, scripts_data):
-        self.scripts = []
-
         for script_data in scripts_data:
             script: ScriptPostprocessing = script_data.script_class()
             script.filename = script_data.path
 
             self.scripts.append(script)
 
-    def create_script_ui(self, script, inputs):
+    def create_script_ui(self, script:ScriptPostprocessing, inputs:list):
         script.args_from = len(inputs)
         script.args_to = len(inputs)
 
         script.controls = wrap_call(script.ui, script.filename, "ui")
 
         for control in script.controls.values():
-            control.custom_script_source = os.path.basename(script.filename)
+            control.custom_script_source = Path(script.filename).resolve().parent.stem
 
         inputs += list(script.controls.values())
         script.args_to = len(inputs)
@@ -163,6 +164,7 @@ class ScriptPostprocessingRunner:
     def scripts_in_preferred_order(self):
         if self.scripts is None:
             import modules.scripts
+
             self.initialize_scripts(modules.scripts.postprocessing_scripts_data)
 
         scripts_order = shared.opts.postprocessing_operation_order
@@ -175,8 +177,20 @@ class ScriptPostprocessingRunner:
 
             return len(self.scripts)
 
-        filtered_scripts = [script for script in self.scripts if script.name not in scripts_filter_out and not script.main_ui_only]
-        script_scores = {script.name: (script_score(script.name), script.order, script.name, original_index) for original_index, script in enumerate(filtered_scripts)}
+        filtered_scripts = [
+            script
+            for script in self.scripts
+            if script.name not in scripts_filter_out and not script.main_ui_only
+        ]
+        script_scores = {
+            script.name: (
+                script_score(script.name),
+                script.order,
+                script.name,
+                original_index,
+            )
+            for original_index, script in enumerate(filtered_scripts)
+        }
 
         return sorted(filtered_scripts, key=lambda x: script_scores[x.name])
 
@@ -196,7 +210,7 @@ class ScriptPostprocessingRunner:
         scripts = []
 
         for script in self.scripts_in_preferred_order():
-            script_args = args[script.args_from:script.args_to]
+            script_args = args[script.args_from : script.args_to]
 
             process_args = {}
             for (name, _component), value in zip(script.controls.items(), script_args):
@@ -216,7 +230,6 @@ class ScriptPostprocessingRunner:
             shared.state.job = script.name
 
             for single_image in all_images.copy():
-
                 if not single_image.disable_processing:
                     script.process(single_image, **process_args)
 
@@ -241,7 +254,6 @@ class ScriptPostprocessingRunner:
         for script in scripts:
             script_args_dict = scripts_args.get(script.name, None)
             if script_args_dict is not None:
-
                 for i, name in enumerate(script.controls):
                     args[script.args_from + i] = script_args_dict.get(name, None)
 
@@ -250,4 +262,3 @@ class ScriptPostprocessingRunner:
     def image_changed(self):
         for script in self.scripts_in_preferred_order():
             script.image_changed()
-

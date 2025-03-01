@@ -6,11 +6,13 @@ from . import model_base
 from . import utils
 from . import latent_formats
 
+
 class ClipTarget:
     def __init__(self, tokenizer, clip):
         self.clip = clip
         self.tokenizer = tokenizer
         self.params = {}
+
 
 class BASE:
     unet_config = {}
@@ -64,15 +66,24 @@ class BASE:
 
     def get_model(self, state_dict, prefix="", device=None):
         if self.noise_aug_config is not None:
-            out = model_base.SD21UNCLIP(self, self.noise_aug_config, model_type=self.model_type(state_dict, prefix), device=device)
+            out = model_base.SD21UNCLIP(
+                self,
+                self.noise_aug_config,
+                model_type=self.model_type(state_dict, prefix),
+                device=device,
+            )
         else:
-            out = model_base.BaseModel(self, model_type=self.model_type(state_dict, prefix), device=device)
+            out = model_base.BaseModel(
+                self, model_type=self.model_type(state_dict, prefix), device=device
+            )
         if self.inpaint_model():
             out.set_inpaint()
         return out
 
     def process_clip_state_dict(self, state_dict):
-        state_dict = utils.state_dict_prefix_replace(state_dict, {k: "" for k in self.text_encoder_key_prefix}, filter_keys=True)
+        state_dict = utils.state_dict_prefix_replace(
+            state_dict, {k: "" for k in self.text_encoder_key_prefix}, filter_keys=True
+        )
         return state_dict
 
     def process_unet_state_dict(self, state_dict):
@@ -100,5 +111,5 @@ class BASE:
         return utils.state_dict_prefix_replace(state_dict, replace_prefix)
 
     def set_inference_dtype(self, dtype, manual_cast_dtype):
-        self.unet_config['dtype'] = dtype
+        self.unet_config["dtype"] = dtype
         self.manual_cast_dtype = manual_cast_dtype

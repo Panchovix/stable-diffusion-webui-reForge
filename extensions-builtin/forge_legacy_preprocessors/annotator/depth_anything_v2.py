@@ -6,13 +6,15 @@ try:
     from depth_anything_v2.util.transform import Resize, NormalizeImage, PrepareForNet
 except ImportError:
     print("Installing depth_anything_v2...")
-    subprocess.check_call([
-        sys.executable, 
-        "-m", 
-        "pip", 
-        "install",
-        "https://github.com/MackinationsAi/UDAV2-ControlNet/releases/download/v1.0.0/depth_anything_v2-2024.7.1.0-py2.py3-none-any.whl"
-    ])
+    subprocess.check_call(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "https://github.com/MackinationsAi/UDAV2-ControlNet/releases/download/v1.0.0/depth_anything_v2-2024.7.1.0-py2.py3-none-any.whl",
+        ]
+    )
     from depth_anything_v2.dpt import DepthAnythingV2
     from depth_anything_v2.util.transform import Resize, NormalizeImage, PrepareForNet
 
@@ -42,6 +44,7 @@ transform = Compose(
     ]
 )
 
+
 class DepthAnythingV2Detector:
     """https://github.com/MackinationsAi/Upgraded-Depth-Anything-V2"""
 
@@ -63,7 +66,9 @@ class DepthAnythingV2Detector:
             "https://huggingface.co/MackinationsAi/Depth-Anything-V2_Safetensors/resolve/main/depth_anything_v2_vitl.safetensors",
         )
         model_path = load_model(
-            "depth_anything_v2_vitl.safetensors", remote_url=remote_url, model_dir=self.model_dir
+            "depth_anything_v2_vitl.safetensors",
+            remote_url=remote_url,
+            model_dir=self.model_dir,
         )
         self.model.load_state_dict(load_file(model_path))
 
@@ -74,9 +79,11 @@ class DepthAnythingV2Detector:
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB) / 255.0
         image = transform({"image": image})["image"]
         image = torch.from_numpy(image).unsqueeze(0).to(self.device)
+
         @torch.no_grad()
         def predict_depth(model, image):
             return model(image)
+
         depth = predict_depth(self.model, image)
         depth = F.interpolate(
             depth[None], (h, w), mode="bilinear", align_corners=False

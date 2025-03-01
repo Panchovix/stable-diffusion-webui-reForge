@@ -6,7 +6,7 @@ import torch.distributed as dist
 logger_initialized = {}
 
 
-def get_logger(name, log_file=None, log_level=logging.INFO, file_mode='w'):
+def get_logger(name, log_file=None, log_level=logging.INFO, file_mode="w"):
     """Initialize and get a logger by name.
 
     If the logger has not been initialized, this method will initialize the
@@ -66,7 +66,8 @@ def get_logger(name, log_file=None, log_level=logging.INFO, file_mode='w'):
         handlers.append(file_handler)
 
     formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
     for handler in handlers:
         handler.setFormatter(formatter)
         handler.setLevel(log_level)
@@ -99,12 +100,13 @@ def print_log(msg, logger=None, level=logging.INFO):
         print(msg)
     elif isinstance(logger, logging.Logger):
         logger.log(level, msg)
-    elif logger == 'silent':
+    elif logger == "silent":
         pass
     elif isinstance(logger, str):
         _logger = get_logger(logger)
         _logger.log(level, msg)
     else:
         raise TypeError(
-            'logger should be either a logging.Logger object, str, '
-            f'"silent" or None, but got {type(logger)}')
+            "logger should be either a logging.Logger object, str, "
+            f'"silent" or None, but got {type(logger)}'
+        )

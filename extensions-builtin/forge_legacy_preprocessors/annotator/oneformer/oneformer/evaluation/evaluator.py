@@ -97,9 +97,11 @@ class DatasetEvaluators(DatasetEvaluator):
             result = evaluator.evaluate()
             if is_main_process() and result is not None:
                 for k, v in result.items():
-                    assert (
-                        k not in results
-                    ), "Different evaluators produce results with the same key {}".format(k)
+                    assert k not in results, (
+                        "Different evaluators produce results with the same key {}".format(
+                            k
+                        )
+                    )
                     results[k] = v
         return results
 
@@ -172,9 +174,13 @@ def inference_on_dataset(
             data_seconds_per_iter = total_data_time / iters_after_start
             compute_seconds_per_iter = total_compute_time / iters_after_start
             eval_seconds_per_iter = total_eval_time / iters_after_start
-            total_seconds_per_iter = (time.perf_counter() - start_time) / iters_after_start
+            total_seconds_per_iter = (
+                time.perf_counter() - start_time
+            ) / iters_after_start
             if idx >= num_warmup * 2 or compute_seconds_per_iter > 5:
-                eta = datetime.timedelta(seconds=int(total_seconds_per_iter * (total - idx - 1)))
+                eta = datetime.timedelta(
+                    seconds=int(total_seconds_per_iter * (total - idx - 1))
+                )
                 log_every_n_seconds(
                     logging.INFO,
                     (
@@ -201,7 +207,9 @@ def inference_on_dataset(
     total_compute_time_str = str(datetime.timedelta(seconds=int(total_compute_time)))
     logger.info(
         "Total inference pure compute time: {} ({:.6f} s / iter per device, on {} devices)".format(
-            total_compute_time_str, total_compute_time / (total - num_warmup), num_devices
+            total_compute_time_str,
+            total_compute_time / (total - num_warmup),
+            num_devices,
         )
     )
 

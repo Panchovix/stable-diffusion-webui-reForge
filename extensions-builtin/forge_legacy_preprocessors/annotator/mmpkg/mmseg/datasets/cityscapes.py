@@ -18,22 +18,56 @@ class CityscapesDataset(CustomDataset):
     fixed to '_gtFine_labelTrainIds.png' for Cityscapes dataset.
     """
 
-    CLASSES = ('road', 'sidewalk', 'building', 'wall', 'fence', 'pole',
-               'traffic light', 'traffic sign', 'vegetation', 'terrain', 'sky',
-               'person', 'rider', 'car', 'truck', 'bus', 'train', 'motorcycle',
-               'bicycle')
+    CLASSES = (
+        "road",
+        "sidewalk",
+        "building",
+        "wall",
+        "fence",
+        "pole",
+        "traffic light",
+        "traffic sign",
+        "vegetation",
+        "terrain",
+        "sky",
+        "person",
+        "rider",
+        "car",
+        "truck",
+        "bus",
+        "train",
+        "motorcycle",
+        "bicycle",
+    )
 
-    PALETTE = [[128, 64, 128], [244, 35, 232], [70, 70, 70], [102, 102, 156],
-               [190, 153, 153], [153, 153, 153], [250, 170, 30], [220, 220, 0],
-               [107, 142, 35], [152, 251, 152], [70, 130, 180], [220, 20, 60],
-               [255, 0, 0], [0, 0, 142], [0, 0, 70], [0, 60, 100],
-               [0, 80, 100], [0, 0, 230], [119, 11, 32]]
+    PALETTE = [
+        [128, 64, 128],
+        [244, 35, 232],
+        [70, 70, 70],
+        [102, 102, 156],
+        [190, 153, 153],
+        [153, 153, 153],
+        [250, 170, 30],
+        [220, 220, 0],
+        [107, 142, 35],
+        [152, 251, 152],
+        [70, 130, 180],
+        [220, 20, 60],
+        [255, 0, 0],
+        [0, 0, 142],
+        [0, 0, 70],
+        [0, 60, 100],
+        [0, 80, 100],
+        [0, 0, 230],
+        [119, 11, 32],
+    ]
 
     def __init__(self, **kwargs):
         super(CityscapesDataset, self).__init__(
-            img_suffix='_leftImg8bit.png',
-            seg_map_suffix='_gtFine_labelTrainIds.png',
-            **kwargs)
+            img_suffix="_leftImg8bit.png",
+            seg_map_suffix="_gtFine_labelTrainIds.png",
+            **kwargs,
+        )
 
     @staticmethod
     def _convert_to_label_id(result):
@@ -41,6 +75,7 @@ class CityscapesDataset(CustomDataset):
         if isinstance(result, str):
             result = np.load(result)
         import cityscapesscripts.helpers.labels as CSLabels
+
         result_copy = result.copy()
         for trainId, label in CSLabels.trainId2label.items():
             result_copy[result == trainId] = label.id
@@ -70,13 +105,14 @@ class CityscapesDataset(CustomDataset):
             result = results[idx]
             if to_label_id:
                 result = self._convert_to_label_id(result)
-            filename = self.img_infos[idx]['filename']
+            filename = self.img_infos[idx]["filename"]
             basename = osp.splitext(osp.basename(filename))[0]
 
-            png_filename = osp.join(imgfile_prefix, f'{basename}.png')
+            png_filename = osp.join(imgfile_prefix, f"{basename}.png")
 
-            output = Image.fromarray(result.astype(np.uint8)).convert('P')
+            output = Image.fromarray(result.astype(np.uint8)).convert("P")
             import cityscapesscripts.helpers.labels as CSLabels
+
             palette = np.zeros((len(CSLabels.id2label), 3), dtype=np.uint8)
             for label_id, label in CSLabels.id2label.items():
                 palette[label_id] = label.color
@@ -107,10 +143,11 @@ class CityscapesDataset(CustomDataset):
                 for saving json/png files when img_prefix is not specified.
         """
 
-        assert isinstance(results, list), 'results must be a list'
+        assert isinstance(results, list), "results must be a list"
         assert len(results) == len(self), (
-            'The length of results is not equal to the dataset len: '
-            f'{len(results)} != {len(self)}')
+            "The length of results is not equal to the dataset len: "
+            f"{len(results)} != {len(self)}"
+        )
 
         if imgfile_prefix is None:
             tmp_dir = tempfile.TemporaryDirectory()
@@ -121,12 +158,14 @@ class CityscapesDataset(CustomDataset):
 
         return result_files, tmp_dir
 
-    def evaluate(self,
-                 results,
-                 metric='mIoU',
-                 logger=None,
-                 imgfile_prefix=None,
-                 efficient_test=False):
+    def evaluate(
+        self,
+        results,
+        metric="mIoU",
+        logger=None,
+        imgfile_prefix=None,
+        efficient_test=False,
+    ):
         """Evaluation in Cityscapes/default protocol.
 
         Args:
@@ -150,14 +189,17 @@ class CityscapesDataset(CustomDataset):
 
         eval_results = dict()
         metrics = metric.copy() if isinstance(metric, list) else [metric]
-        if 'cityscapes' in metrics:
+        if "cityscapes" in metrics:
             eval_results.update(
-                self._evaluate_cityscapes(results, logger, imgfile_prefix))
-            metrics.remove('cityscapes')
+                self._evaluate_cityscapes(results, logger, imgfile_prefix)
+            )
+            metrics.remove("cityscapes")
         if len(metrics) > 0:
             eval_results.update(
-                super(CityscapesDataset,
-                      self).evaluate(results, metrics, logger, efficient_test))
+                super(CityscapesDataset, self).evaluate(
+                    results, metrics, logger, efficient_test
+                )
+            )
 
         return eval_results
 
@@ -176,11 +218,13 @@ class CityscapesDataset(CustomDataset):
         try:
             import cityscapesscripts.evaluation.evalPixelLevelSemanticLabeling as CSEval  # noqa
         except ImportError:
-            raise ImportError('Please run "pip install cityscapesscripts" to '
-                              'install cityscapesscripts first.')
-        msg = 'Evaluating in Cityscapes style'
+            raise ImportError(
+                'Please run "pip install cityscapesscripts" to '
+                "install cityscapesscripts first."
+            )
+        msg = "Evaluating in Cityscapes style"
         if logger is None:
-            msg = '\n' + msg
+            msg = "\n" + msg
         print_log(msg, logger=logger)
 
         result_files, tmp_dir = self.format_results(results, imgfile_prefix)
@@ -191,7 +235,7 @@ class CityscapesDataset(CustomDataset):
             result_dir = tmp_dir.name
 
         eval_results = dict()
-        print_log(f'Evaluating results under {result_dir} ...', logger=logger)
+        print_log(f"Evaluating results under {result_dir} ...", logger=logger)
 
         CSEval.args.evalInstLevelScore = True
         CSEval.args.predictionPath = osp.abspath(result_dir)
@@ -204,12 +248,14 @@ class CityscapesDataset(CustomDataset):
         # when evaluating with official cityscapesscripts,
         # **_gtFine_labelIds.png is used
         for seg_map in mmcv.scandir(
-                self.ann_dir, 'gtFine_labelIds.png', recursive=True):
+            self.ann_dir, "gtFine_labelIds.png", recursive=True
+        ):
             seg_map_list.append(osp.join(self.ann_dir, seg_map))
             pred_list.append(CSEval.getPrediction(CSEval.args, seg_map))
 
         eval_results.update(
-            CSEval.evaluateImgLists(pred_list, seg_map_list, CSEval.args))
+            CSEval.evaluateImgLists(pred_list, seg_map_list, CSEval.args)
+        )
 
         if tmp_dir is not None:
             tmp_dir.cleanup()

@@ -10,7 +10,7 @@ class ModalInterface(gr.Interface):
         html_content: str,
         open_button_text: str,
         open_button_classes: List[str] = [],
-        open_button_extra_attrs: str = ''
+        open_button_extra_attrs: str = "",
     ):
         self.html_content = html_content
         self.open_button_text = open_button_text
@@ -31,7 +31,7 @@ class ModalInterface(gr.Interface):
             </div>
         </div>
         <div id="cnet-modal-open-{self.modal_id}" 
-                class="cnet-modal-open {' '.join(self.open_button_classes)}"
+                class="cnet-modal-open {" ".join(self.open_button_classes)}"
                 {self.open_button_extra_attrs}
         >{self.open_button_text}</div>
         """

@@ -3,7 +3,7 @@ Supports saving and restoring webui and extensions from a known working set of c
 """
 
 import os
-import json
+import modules.utils.speedjson as json
 import tqdm
 
 from datetime import datetime
@@ -24,7 +24,7 @@ def list_config_states():
     config_states = []
     for filename in os.listdir(config_states_dir):
         if filename.endswith(".json"):
-            path = os.path.join(config_states_dir, filename)
+            path = config_states_dir / filename
             try:
                 with open(path, "r", encoding="utf-8") as f:
                     j = json.load(f)
@@ -32,12 +32,14 @@ def list_config_states():
                     j["filepath"] = path
                     config_states.append(j)
             except Exception as e:
-                print(f'[ERROR]: Config states {path}, {e}')
+                print(f"[ERROR]: Config states {path}, {e}")
 
     config_states = sorted(config_states, key=lambda cs: cs["created_at"], reverse=True)
 
     for cs in config_states:
-        timestamp = datetime.fromtimestamp(cs["created_at"]).strftime('%Y-%m-%d %H:%M:%S')
+        timestamp = datetime.fromtimestamp(cs["created_at"]).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
         name = cs.get("name", "Config")
         full_name = f"{name}: {timestamp}"
         all_config_states[full_name] = cs
@@ -49,7 +51,7 @@ def get_webui_config():
     webui_repo = None
 
     try:
-        if os.path.exists(os.path.join(script_path, ".git")):
+        if (script_path / ".git").is_dir():
             webui_repo = git.Repo(script_path)
     except Exception:
         errors.report(f"Error reading webui git info from {script_path}", exc_info=True)
@@ -92,7 +94,7 @@ def get_extension_config():
             "commit_hash": ext.commit_hash,
             "commit_date": ext.commit_date,
             "branch": ext.branch,
-            "have_info_from_repo": ext.have_info_from_repo
+            "have_info_from_repo": ext.have_info_from_repo,
         }
 
         ext_config[ext.name] = entry
@@ -108,7 +110,7 @@ def get_config():
     return {
         "created_at": creation_time,
         "webui": webui_config,
-        "extensions": ext_config
+        "extensions": ext_config,
     }
 
 
@@ -129,12 +131,14 @@ def restore_webui_config(config):
     webui_repo = None
 
     try:
-        if os.path.exists(os.path.join(script_path, ".git")):
+        if (script_path / ".git").is_dir():
             webui_repo = git.Repo(script_path)
     except Exception:
         errors.report(f"Error reading webui git info from {script_path}", exc_info=True)
         return
-
+    if webui_repo is None:
+        errors.report("No .git file found.")
+        return
     try:
         webui_repo.git.fetch(all=True)
         webui_repo.git.reset(webui_commit_hash, hard=True)
@@ -165,7 +169,14 @@ def restore_extension_config(config):
         if ext.name not in ext_config:
             ext.disabled = True
             disabled.append(ext.name)
-            results.append((ext, current_commit[:8], False, "Saved extension state not found in config, marking as disabled"))
+            results.append(
+                (
+                    ext,
+                    current_commit[:8],
+                    False,
+                    "Saved extension state not found in config, marking as disabled",
+                )
+            )
             continue
 
         entry = ext_config[ext.name]
@@ -175,11 +186,15 @@ def restore_extension_config(config):
                 ext.fetch_and_reset_hard(entry["commit_hash"])
                 ext.read_info_from_repo()
                 if current_commit != entry["commit_hash"]:
-                    results.append((ext, current_commit[:8], True, entry["commit_hash"][:8]))
+                    results.append(
+                        (ext, current_commit[:8], True, entry["commit_hash"][:8])
+                    )
             except Exception as ex:
                 results.append((ext, current_commit[:8], False, ex))
         else:
-            results.append((ext, current_commit[:8], False, "No commit hash found in config"))
+            results.append(
+                (ext, current_commit[:8], False, "No commit hash found in config")
+            )
 
         if not entry.get("enabled", False):
             ext.disabled = True
