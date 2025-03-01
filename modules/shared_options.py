@@ -3,7 +3,6 @@ import gradio as gr
 
 from modules import (
     localization,
-    ui_components,
     shared_items,
     shared,
     interrogate,
@@ -11,6 +10,7 @@ from modules import (
     util,
     sd_emphasis,
 )
+from modules.core_ui.components import FormColorPicker, DropdownEditable, DropdownMulti
 from modules.paths_internal import (
     data_path,
     default_output_dir,
@@ -52,7 +52,7 @@ options_templates.update(
             "samples_format": OptionInfo(
                 "png",
                 "File format for images",
-                ui_components.DropdownEditable,
+                DropdownEditable,
                 {"choices": ("png", "jpg", "jpeg", "webp", "avif")},
             ).info(
                 "manual input of <a href='https://pillow.readthedocs.io/en/stable/handbook/image-file-formats.html' target='_blank'>other formats</a> is possible, but compatibility is not guaranteed"
@@ -76,7 +76,7 @@ options_templates.update(
             "grid_format": OptionInfo(
                 "png",
                 "File format for grids",
-                ui_components.DropdownEditable,
+                DropdownEditable,
                 {"choices": ("png", "jpg", "jpeg", "webp", "avif")},
             ).info(
                 "manual input of <a href='https://pillow.readthedocs.io/en/stable/handbook/image-file-formats.html' target='_blank'>other formats</a> is possible, but compatibility is not guaranteed"
@@ -106,19 +106,19 @@ options_templates.update(
             "grid_text_active_color": OptionInfo(
                 "#000000",
                 "Text color for image grids",
-                ui_components.FormColorPicker,
+                FormColorPicker,
                 {},
             ),
             "grid_text_inactive_color": OptionInfo(
                 "#999999",
                 "Inactive text color for image grids",
-                ui_components.FormColorPicker,
+                FormColorPicker,
                 {},
             ),
             "grid_background_color": OptionInfo(
                 "#ffffff",
                 "Background color for image grids",
-                ui_components.FormColorPicker,
+                FormColorPicker,
                 {},
             ),
             "save_images_before_face_restoration": OptionInfo(
@@ -920,7 +920,7 @@ options_templates.update(
             "img2img_background_color": OptionInfo(
                 "#ffffff",
                 "With img2img, fill transparent parts of the input image with this color.",
-                ui_components.FormColorPicker,
+                FormColorPicker,
                 {},
             ),
             "img2img_editor_height": OptionInfo(
@@ -934,20 +934,20 @@ options_templates.update(
             "img2img_sketch_default_brush_color": OptionInfo(
                 "#ffffff",
                 "Sketch initial brush color",
-                ui_components.FormColorPicker,
+                FormColorPicker,
                 {},
             )
             .info("default brush color of img2img sketch")
             .needs_reload_ui(),
             "img2img_inpaint_mask_brush_color": OptionInfo(
-                "#ffffff", "Inpaint mask brush color", ui_components.FormColorPicker, {}
+                "#ffffff", "Inpaint mask brush color", FormColorPicker, {}
             )
             .info("brush color of inpaint mask")
             .needs_reload_ui(),
             "img2img_inpaint_sketch_default_brush_color": OptionInfo(
                 "#ffffff",
                 "Inpaint sketch initial brush color",
-                ui_components.FormColorPicker,
+                FormColorPicker,
                 {},
             )
             .info("default brush color of img2img inpaint sketch")
@@ -1449,7 +1449,7 @@ options_templates.update(
             "quicksettings_list": OptionInfo(
                 ["sd_model_checkpoint", "sd_vae", "CLIP_stop_at_last_layers"],
                 "Quicksettings list",
-                ui_components.DropdownMulti,
+                DropdownMulti,
                 lambda: {"choices": list(shared.opts.data_labels.keys())},
             )
             .js("info", "settingsHintsShowQuicksettings")
@@ -1460,19 +1460,19 @@ options_templates.update(
             "ui_tab_order": OptionInfo(
                 [],
                 "UI tab order",
-                ui_components.DropdownMulti,
+                DropdownMulti,
                 lambda: {"choices": list(shared.tab_names)},
             ).needs_reload_ui(),
             "hidden_tabs": OptionInfo(
                 [],
                 "Hidden UI tabs",
-                ui_components.DropdownMulti,
+                DropdownMulti,
                 lambda: {"choices": list(shared.tab_names)},
             ).needs_reload_ui(),
             "ui_reorder_list": OptionInfo(
                 [],
                 "UI item order for txt2img/img2img tabs",
-                ui_components.DropdownMulti,
+                DropdownMulti,
                 lambda: {"choices": list(shared_items.ui_reorder_categories())},
             )
             .info("selected items appear first")
@@ -1480,7 +1480,7 @@ options_templates.update(
             "gradio_theme": OptionInfo(
                 "Default",
                 "Gradio theme",
-                ui_components.DropdownEditable,
+                DropdownEditable,
                 lambda: {
                     "choices": ["Default"] + shared_gradio_themes.gradio_hf_hub_themes
                 },
@@ -1547,7 +1547,7 @@ It is displayed in UI below the image. To use infotext, paste it into the prompt
             "infotext_skip_pasting": OptionInfo(
                 [],
                 "Disregard fields from pasted infotext",
-                ui_components.DropdownMulti,
+                DropdownMulti,
                 lambda: {"choices": shared_items.get_infotext_names()},
             ),
             "infotext_styles": OptionInfo(
@@ -3064,7 +3064,7 @@ options_templates.update(
             "postprocessing_enable_in_main_ui": OptionInfo(
                 [],
                 "Enable postprocessing operations in txt2img and img2img tabs",
-                ui_components.DropdownMulti,
+                DropdownMulti,
                 lambda: {
                     "choices": [
                         x.name
@@ -3077,7 +3077,7 @@ options_templates.update(
             "postprocessing_disable_in_extras": OptionInfo(
                 [],
                 "Disable postprocessing operations in extras tab",
-                ui_components.DropdownMulti,
+                DropdownMulti,
                 lambda: {
                     "choices": [
                         x.name
@@ -3090,7 +3090,7 @@ options_templates.update(
             "postprocessing_operation_order": OptionInfo(
                 [],
                 "Postprocessing operation order",
-                ui_components.DropdownMulti,
+                DropdownMulti,
                 lambda: {
                     "choices": [
                         x.name

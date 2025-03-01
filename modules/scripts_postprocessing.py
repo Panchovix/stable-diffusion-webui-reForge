@@ -4,6 +4,7 @@ import os
 import gradio as gr
 
 from modules import errors, shared
+from pathlib import Path
 
 
 @dataclasses.dataclass
@@ -17,7 +18,7 @@ class PostprocessedImage:
         self.image = image
         self.info = {}
         self.shared = PostprocessedImageSharedInfo()
-        self.extra_images = []
+        self.extra_images: list["PostprocessedImage"] = []
         self.nametags = []
         self.disable_processing = False
         self.caption = None
@@ -56,9 +57,9 @@ class PostprocessedImage:
 
 class ScriptPostprocessing:
     filename = None
-    controls = None
-    args_from = None
-    args_to = None
+    controls:dict[str,gr.components.Component] = {}
+    args_from:int = -1
+    args_to:int = -1
 
     # define if the script should be used only in extras or main UI
     extra_only = None
@@ -138,26 +139,24 @@ def wrap_call(func, filename, funcname, *args, default=None, **kwargs):
 
 class ScriptPostprocessingRunner:
     def __init__(self):
-        self.scripts = None
+        self.scripts: list[ScriptPostprocessing] = []
         self.ui_created = False
 
     def initialize_scripts(self, scripts_data):
-        self.scripts = []
-
         for script_data in scripts_data:
             script: ScriptPostprocessing = script_data.script_class()
             script.filename = script_data.path
 
             self.scripts.append(script)
 
-    def create_script_ui(self, script, inputs):
+    def create_script_ui(self, script:ScriptPostprocessing, inputs:list):
         script.args_from = len(inputs)
         script.args_to = len(inputs)
 
         script.controls = wrap_call(script.ui, script.filename, "ui")
 
         for control in script.controls.values():
-            control.custom_script_source = os.path.basename(script.filename)
+            control.custom_script_source = Path(script.filename).resolve().parent.stem
 
         inputs += list(script.controls.values())
         script.args_to = len(inputs)

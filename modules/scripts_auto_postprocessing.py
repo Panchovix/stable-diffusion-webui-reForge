@@ -27,7 +27,7 @@ class ScriptPostprocessingForMainUI(scripts.Script):
         script_pp.image = pp.image
 
 
-def create_auto_preprocessing_script_data():
+def create_auto_preprocessing_script_data()-> list[scripts.ScriptClassData]:
     from modules import scripts
 
     res = []

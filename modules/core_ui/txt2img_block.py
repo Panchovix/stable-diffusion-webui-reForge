@@ -418,6 +418,8 @@ def create_interface():
             output_panel = create_output_panel(
                 "txt2img", opts.outdir_txt2img_samples, toprow
             )
+            if not output_panel.button_upscale or not output_panel.gallery:
+                raise Exception("output_panel is not ready yet.")
 
             if (
                 not toprow.ui_styles
@@ -468,8 +470,8 @@ def create_interface():
                 show_progress="hidden",
             )
 
-            toprow.prompt.submit(**txt2img_args)
-            toprow.submit.click(**txt2img_args)
+            toprow.prompt.submit(**txt2img_args) # type: ignore
+            toprow.submit.click(**txt2img_args) # type: ignore
 
             def select_gallery_image(index):
                 index = int(index)

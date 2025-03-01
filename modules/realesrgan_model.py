@@ -73,7 +73,7 @@ class UpscalerRealESRGAN(Upscaler):
         raise ValueError(f"Unable to find model info: {path}")
 
 
-def get_realesrgan_models(scaler: UpscalerRealESRGAN):
+def get_realesrgan_models(scaler: UpscalerRealESRGAN|None):
     return [
         UpscalerData(
             name="R-ESRGAN General 4xV3",

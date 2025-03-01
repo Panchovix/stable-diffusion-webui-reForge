@@ -96,17 +96,17 @@ class UpscalerData:
     name = None
     data_path = None
     scale: int = 4
-    scaler: Upscaler = None
+    scaler: Upscaler | None = None
     model: None
 
     def __init__(
         self,
         name: str,
         path: str,
-        upscaler: Upscaler = None,
+        upscaler: Upscaler | None = None,
         scale: int = 4,
         model=None,
-        sha256: str = None,
+        sha256: str | None = None,
     ):
         self.name = name
         self.data_path = path

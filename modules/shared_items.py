@@ -1,7 +1,8 @@
 import html
 import sys
 
-from modules import script_callbacks, scripts, ui_components
+from modules import script_callbacks, scripts, scripts_postprocessing
+from modules.core_ui.components import DropdownMulti
 from modules.options import OptionHTML, OptionInfo
 from modules.shared_cmd_options import cmd_opts
 
@@ -18,16 +19,14 @@ def dat_models_names():
     return [x.name for x in modules.dat_model.get_dat_models(None)]
 
 
-def postprocessing_scripts(filter_out_extra_only=False, filter_out_main_ui_only=False):
+def postprocessing_scripts(filter_out_extra_only=False, filter_out_main_ui_only=False) -> list[scripts_postprocessing.ScriptPostprocessing]:
     import modules.scripts
-
-    return list(
-        filter(
-            lambda s: (not filter_out_extra_only or not s.extra_only)
-            and (not filter_out_main_ui_only or not s.main_ui_only),
-            modules.scripts.scripts_postproc.scripts,
-        )
-    )
+    return [
+        s
+        for s in modules.scripts.scripts_postproc.scripts
+        if not filter_out_extra_only or not s.extra_only
+        if not filter_out_main_ui_only or not s.main_ui_only
+    ]
 
 
 def sd_vae_items():
@@ -177,7 +176,7 @@ def callbacks_order_settings():
         option_info = OptionInfo(
             [],
             f"{category} callback priority",
-            ui_components.DropdownMulti,
+            DropdownMulti,
             {"choices": [x.name for x in callbacks]},
         )
         option_info.needs_restart()
