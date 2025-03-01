@@ -1,4 +1,4 @@
-import json
+import modules.utils.speedjson as json
 import os
 import os.path
 import threading

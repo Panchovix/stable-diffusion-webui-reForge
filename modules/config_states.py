@@ -3,7 +3,7 @@ Supports saving and restoring webui and extensions from a known working set of c
 """
 
 import os
-import json
+import modules.utils.speedjson as json
 import tqdm
 
 from datetime import datetime
@@ -134,7 +134,9 @@ def restore_webui_config(config):
     except Exception:
         errors.report(f"Error reading webui git info from {script_path}", exc_info=True)
         return
-
+    if webui_repo is None:
+        errors.report(f"No .git file found.")
+        return
     try:
         webui_repo.git.fetch(all=True)
         webui_repo.git.reset(webui_commit_hash, hard=True)

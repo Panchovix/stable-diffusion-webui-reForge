@@ -6,6 +6,7 @@ import os
 from contextlib import nullcontext
 
 import gradio as gr
+from PIL import Image
 
 from modules import call_queue, shared, ui_tempdir, util
 from modules.infotext_utils import image_from_url_text
@@ -17,12 +18,12 @@ folder_symbol = '\U0001f4c2'  # 📂
 refresh_symbol = '\U0001f504'  # 🔄
 
 
-def update_generation_info(generation_info, html_info, img_index):
+def update_generation_info(generation_info:str, html_info, img_index:int):
     try:
-        generation_info = json.loads(generation_info)
-        if img_index < 0 or img_index >= len(generation_info["infotexts"]):
+        generation_info_dict:dict = json.loads(generation_info)
+        if img_index < 0 or img_index >= len(generation_info_dict["infotexts"]):
             return html_info, gr.update()
-        return plaintext_to_html(generation_info["infotexts"][img_index]), gr.update()
+        return plaintext_to_html(generation_info_dict["infotexts"][img_index]), gr.update()
     except Exception:
         pass
     # if the json parse or anything else fails, just return the old html_info
@@ -61,7 +62,7 @@ def update_logfile(logfile_path, fields):
         writer.writerows(rows)
 
 
-def save_files(js_data, images, do_make_zip, index):
+def save_files(js_data, images:list[tuple[Image.Image,str]], do_make_zip, index):
     filenames = []
     fullfns = []
     parsed_infotexts = []
@@ -76,7 +77,7 @@ def save_files(js_data, images, do_make_zip, index):
     data = json.loads(js_data)
     p = MyObject(data)
 
-    path = shared.opts.outdir_save
+    path:str = shared.opts.outdir_save
     save_to_dirs = shared.opts.use_save_to_dirs_for_ui
     extension: str = shared.opts.samples_format
     start_index = 0

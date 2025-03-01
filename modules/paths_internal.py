@@ -2,6 +2,7 @@
 
 import argparse
 import os
+import pathlib
 import sys
 import shlex
 from pathlib import Path
@@ -13,7 +14,7 @@ commandline_args = os.environ.get('COMMANDLINE_ARGS', "")
 sys.argv += shlex.split(commandline_args)
 
 cwd = os.getcwd()
-modules_path = os.path.dirname(os.path.realpath(__file__))
+modules_path = pathlib.Path(os.path.realpath(__file__)).parent
 script_path = os.path.dirname(modules_path)
 
 sd_configs_path = os.path.join(script_path, "configs")
