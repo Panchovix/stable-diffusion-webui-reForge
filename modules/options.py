@@ -2,6 +2,7 @@ import os
 import json
 import sys
 from dataclasses import dataclass
+from typing import Any
 
 import gradio as gr
 
@@ -167,7 +168,7 @@ class Options:
 
         return super(Options, self).__setattr__(key, value)
 
-    def __getattr__(self, item):
+    def __getattr__(self, item)-> Any:
         if item in options_builtin_fields:
             return super(Options, self).__getattribute__(item)
 

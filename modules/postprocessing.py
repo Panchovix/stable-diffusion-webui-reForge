@@ -8,9 +8,9 @@ from modules import (
     devices,
     scripts,
     scripts_postprocessing,
-    ui_common,
     infotext_utils,
 )
+from modules.core_ui import common_elements
 from modules.shared import opts
 
 
@@ -168,7 +168,7 @@ def run_postprocessing(
 
     devices.torch_gc()
     shared.state.end()
-    return outputs, ui_common.plaintext_to_html(infotext), ""
+    return outputs, common_elements.plaintext_to_html(infotext), ""
 
 
 def run_postprocessing_webui(id_task, *args, **kwargs):

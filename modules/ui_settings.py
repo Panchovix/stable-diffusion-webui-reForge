@@ -1,7 +1,6 @@
 import gradio as gr
 
 from modules import (
-    ui_common,
     shared,
     script_callbacks,
     scripts,
@@ -11,6 +10,7 @@ from modules import (
     shared_items,
 )
 from modules.call_queue import wrap_gradio_call_no_job
+from modules.core_ui import common_elements
 from modules.options import options_section
 from modules.shared import opts
 from modules.ui_components import FormRow
@@ -62,7 +62,7 @@ def create_setting_component(key, is_quicksettings=False):
     if info.refresh is not None:
         if is_quicksettings:
             res = comp(label=info.label, value=fun(), elem_id=elem_id, **(args or {}))
-            ui_common.create_refresh_button(
+            common_elements.create_refresh_button(
                 res, info.refresh, info.component_args, f"refresh_{key}"
             )
         else:
@@ -70,7 +70,7 @@ def create_setting_component(key, is_quicksettings=False):
                 res = comp(
                     label=info.label, value=fun(), elem_id=elem_id, **(args or {})
                 )
-                ui_common.create_refresh_button(
+                common_elements.create_refresh_button(
                     res, info.refresh, info.component_args, f"refresh_{key}"
                 )
     else:

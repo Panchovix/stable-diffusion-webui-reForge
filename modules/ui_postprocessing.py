@@ -1,5 +1,6 @@
 import gradio as gr
-from modules import scripts, shared, ui_common, postprocessing, call_queue, ui_toprow
+from modules import scripts, shared, postprocessing, call_queue
+from modules.core_ui import common_elements, toprow
 import modules.infotext_utils as parameters_copypaste
 from modules.ui_components import ResizeHandleRow
 
@@ -60,13 +61,13 @@ def create_ui():
             script_inputs = scripts.scripts_postproc.setup_ui()
 
         with gr.Column():
-            toprow = ui_toprow.Toprow(
+            toprow = toprow.Toprow(
                 is_compact=True, is_img2img=False, id_part="extras"
             )
             toprow.create_inline_toprow_image()
             submit = toprow.submit
 
-            output_panel = ui_common.create_output_panel(
+            output_panel = common_elements.create_output_panel(
                 "extras", shared.opts.outdir_extras_samples
             )
 

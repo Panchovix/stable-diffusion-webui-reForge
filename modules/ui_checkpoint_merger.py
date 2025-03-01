@@ -2,7 +2,7 @@ import gradio as gr
 
 from modules import sd_models, sd_vae, errors, extras, call_queue
 from modules.ui_components import FormRow
-from modules.ui_common import create_refresh_button
+from modules.core_ui.common_elements import create_refresh_button
 
 
 def update_interp_description(value):

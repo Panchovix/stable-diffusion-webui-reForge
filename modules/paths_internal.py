@@ -43,7 +43,7 @@ data_path = Path(cmd_opts_pre.data_dir)
 
 models_path = (
     Path(cmd_opts_pre.models_dir)
-    if Path(cmd_opts_pre.models_dir)
+    if cmd_opts_pre.models_dir
     else Path(data_path) / "models"
 )
 extensions_dir = Path(data_path) / "extensions"

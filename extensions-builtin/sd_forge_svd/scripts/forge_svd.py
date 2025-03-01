@@ -6,7 +6,7 @@ import pathlib
 import modules.infotext_utils as parameters_copypaste
 from modules import script_callbacks
 from modules.paths import models_path
-from modules.ui_common import refresh_symbol
+from modules.core_ui.common_elements import refresh_symbol
 from modules.ui_components import ResizeHandleRow, ToolButton
 from modules import shared
 

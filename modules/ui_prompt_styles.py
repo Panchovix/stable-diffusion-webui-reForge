@@ -1,6 +1,7 @@
 import gradio as gr
 
-from modules import shared, ui_common, ui_components, styles
+from modules import shared, ui_components, styles
+from modules.core_ui import common_elements
 
 styles_edit_symbol = "\U0001f58c\ufe0f"  # 🖌️
 styles_materialize_symbol = "\U0001f4cb"  # 📋
@@ -100,7 +101,7 @@ class UiPromptStyles:
                     allow_custom_value=True,
                     info="Styles allow you to add custom text to prompt. Use the {prompt} token in style text, and it will be replaced with user's prompt when applying style. Otherwise, style's text will be added to the end of the prompt.",
                 )
-                ui_common.create_refresh_button(
+                common_elements.create_refresh_button(
                     [self.dropdown, self.selection],
                     shared.prompt_styles.reload,
                     lambda: {"choices": list(shared.prompt_styles.styles)},
@@ -187,7 +188,7 @@ class UiPromptStyles:
             show_progress=False,
         )
 
-        ui_common.setup_dialog(
+        common_elements.setup_dialog(
             button_show=edit_button, dialog=styles_dialog, button_close=self.close
         )
 
