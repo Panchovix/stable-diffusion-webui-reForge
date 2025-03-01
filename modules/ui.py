@@ -113,16 +113,18 @@ def calc_resolution_hires(enable, width, height, hr_scale, hr_resize_x, hr_resiz
 
 
 def resize_from_to_html(width, height, scale_by):
+    if not scale_by:
+        return "Resize: Invalid Scale"
     target_width = int(float(width) * scale_by)
     target_height = int(float(height) * scale_by)
 
     if not target_width or not target_height:
-        return "no image selected"
+        return "Resize: Zero Target Width / Height"
 
     target_width -= target_width % 8        #   note: hardcoded latent size 8
     target_height -= target_height % 8
 
-    return f"resize: from <span class='resolution'>{width}x{height}</span> to <span class='resolution'>{target_width}x{target_height}</span>"
+    return f"Resize from: <span class='resolution'>{width}x{height}</span> to <span class='resolution'>{target_width}x{target_height}</span>"
 
 
 def process_interrogate(interrogation_function, mode, ii_input_dir, ii_output_dir, *ii_singles):
