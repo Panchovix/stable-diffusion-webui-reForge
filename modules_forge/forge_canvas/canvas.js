@@ -7,7 +7,7 @@ class TextAreaBinder {
   constructor(elementId, classNamePrefix) {
     // Selects the textarea element within the specified element ID and class prefix.
     this.target = document.querySelector(
-      "#" + elementId + "." + classNamePrefix + " textarea"
+      "#" + elementId + "." + classNamePrefix + " textarea",
     );
     // Flag to prevent infinite loop during value synchronization.
     this.sync_lock = false;
@@ -98,7 +98,7 @@ class ForgeCanvas {
     defaultScribbleAlpha = 100,
     lockAlpha = false,
     defaultScribbleSoftness = 0,
-    lockSoftness = false
+    lockSoftness = false,
   ) {
     // Configuration from gradio (likely related to UI framework).
     this.gradio_config = gradio_config;
@@ -169,13 +169,16 @@ class ForgeCanvas {
     // Text area binder for background image data (likely for gradio integration).
     this.background_gradio_bind = new TextAreaBinder(
       this.uuid,
-      "logical_image_background"
+      "logical_image_background",
     );
     // Text area binder for foreground (scribble) image data.
     this.foreground_gradio_bind = new TextAreaBinder(
       this.uuid,
-      "logical_image_foreground"
+      "logical_image_foreground",
     );
+    this.panMode = this.no_scribbles; // Default to pan mode if scribbles disabled
+    this.lastTouchDistance = 0; // For pinch zoom
+    this.touching = false; // Track touch state
     // Initialize the canvas and event listeners.
     this.start();
   }
@@ -187,81 +190,84 @@ class ForgeCanvas {
     let forgeCanvas = this;
     // Get references to all necessary HTML elements using their IDs.
     const imageContainerElement = document.getElementById(
-        "imageContainer_" + forgeCanvas.uuid
+        "imageContainer_" + forgeCanvas.uuid,
       ),
       imageElement = document.getElementById("image_" + forgeCanvas.uuid),
       resizeLineElement = document.getElementById(
-        "resizeLine_" + forgeCanvas.uuid
+        "resizeLine_" + forgeCanvas.uuid,
       ),
       containerElement = document.getElementById(
-        "container_" + forgeCanvas.uuid
+        "container_" + forgeCanvas.uuid,
       ),
       toolbarElement = document.getElementById("toolbar_" + forgeCanvas.uuid),
       uploadButtonElement = document.getElementById(
-        "uploadButton_" + forgeCanvas.uuid
+        "uploadButton_" + forgeCanvas.uuid,
       ),
       resetButtonElement = document.getElementById(
-        "resetButton_" + forgeCanvas.uuid
+        "resetButton_" + forgeCanvas.uuid,
       ),
       centerImageButtonElement = document.getElementById(
-        "centerButton_" + forgeCanvas.uuid
+        "centerButton_" + forgeCanvas.uuid,
       ),
       removeButtonElement = document.getElementById(
-        "removeButton_" + forgeCanvas.uuid
+        "removeButton_" + forgeCanvas.uuid,
       ),
       undoButtonElement = document.getElementById(
-        "undoButton_" + forgeCanvas.uuid
+        "undoButton_" + forgeCanvas.uuid,
       ),
       redoButtonElement = document.getElementById(
-        "redoButton_" + forgeCanvas.uuid
+        "redoButton_" + forgeCanvas.uuid,
       ),
       drawingCanvasElement = document.getElementById(
-        "drawingCanvas_" + forgeCanvas.uuid
+        "drawingCanvas_" + forgeCanvas.uuid,
       ),
       maximizeButtonElement = document.getElementById(
-        "maxButton_" + forgeCanvas.uuid
+        "maxButton_" + forgeCanvas.uuid,
       ),
       minimizeButtonElement = document.getElementById(
-        "minButton_" + forgeCanvas.uuid
+        "minButton_" + forgeCanvas.uuid,
       ),
       scribbleIndicatorElement = document.getElementById(
-        "scribbleIndicator_" + forgeCanvas.uuid
+        "scribbleIndicator_" + forgeCanvas.uuid,
       ),
       uploadHintElement = document.getElementById(
-        "uploadHint_" + forgeCanvas.uuid
+        "uploadHint_" + forgeCanvas.uuid,
       ),
       scribbleColorElement = document.getElementById(
-        "scribbleColor_" + forgeCanvas.uuid
+        "scribbleColor_" + forgeCanvas.uuid,
       ),
       scribbleColorBlockElement = document.getElementById(
-        "scribbleColorBlock_" + forgeCanvas.uuid
+        "scribbleColorBlock_" + forgeCanvas.uuid,
       ),
       scribbleWidthElement = document.getElementById(
-        "scribbleWidth_" + forgeCanvas.uuid
+        "scribbleWidth_" + forgeCanvas.uuid,
       ),
       widthLabelElement = document.getElementById(
-        "widthLabel_" + forgeCanvas.uuid
+        "widthLabel_" + forgeCanvas.uuid,
       ),
       scribbleWidthBlockElement = document.getElementById(
-        "scribbleWidthBlock_" + forgeCanvas.uuid
+        "scribbleWidthBlock_" + forgeCanvas.uuid,
       ),
       scribbleAlphaElement = document.getElementById(
-        "scribbleAlpha_" + forgeCanvas.uuid
+        "scribbleAlpha_" + forgeCanvas.uuid,
       ),
       alphaLabelElement = document.getElementById(
-        "alphaLabel_" + forgeCanvas.uuid
+        "alphaLabel_" + forgeCanvas.uuid,
       ),
       scribbleAlphaBlockElement = document.getElementById(
-        "scribbleAlphaBlock_" + forgeCanvas.uuid
+        "scribbleAlphaBlock_" + forgeCanvas.uuid,
       ),
       scribbleSoftnessElement = document.getElementById(
-        "scribbleSoftness_" + forgeCanvas.uuid
+        "scribbleSoftness_" + forgeCanvas.uuid,
       ),
       softnessLabelElement = document.getElementById(
-        "softnessLabel_" + forgeCanvas.uuid
+        "softnessLabel_" + forgeCanvas.uuid,
       ),
       scribbleSoftnessBlockElement = document.getElementById(
-        "scribbleSoftnessBlock_" + forgeCanvas.uuid
+        "scribbleSoftnessBlock_" + forgeCanvas.uuid,
+      ),
+      panModeButtonElement = document.getElementById(
+        "panModeButton_" + forgeCanvas.uuid,
       );
 
     // Initialize scribble color, width, alpha, and softness input values.
@@ -275,8 +281,9 @@ class ForgeCanvas {
     scribbleIndicatorElement.style.width = indicatorSize + "px";
     scribbleIndicatorElement.style.height = indicatorSize + "px";
 
-    const touchDevice = (navigator.maxTouchPoints || 'ontouchstart' in document.documentElement);
-    var lockToolbar = false
+    const touchDevice =
+      navigator.maxTouchPoints || "ontouchstart" in document.documentElement;
+    var lockToolbar = false;
     if (touchDevice && touchDevice >= 1) {
       toolbarElement.style.opacity = "1";
       lockToolbar = true;
@@ -295,6 +302,7 @@ class ForgeCanvas {
 
     // Hide scribble related elements if scribbling is disabled.
     if (forgeCanvas.no_scribbles) {
+      panModeButtonElement.style.display = "none";
       resetButtonElement.style.display = "none";
       undoButtonElement.style.display = "none";
       redoButtonElement.style.display = "none";
@@ -433,6 +441,7 @@ class ForgeCanvas {
       ) {
         return;
       }
+      if (forgeCanvas.panMode) return;
       const canvasRect = drawingCanvasElement.getBoundingClientRect();
       forgeCanvas.drawing = true;
       drawingCanvasElement.style.cursor = "crosshair";
@@ -447,13 +456,14 @@ class ForgeCanvas {
         0,
         0,
         drawingCanvasElement.width,
-        drawingCanvasElement.height
+        drawingCanvasElement.height,
       );
       forgeCanvas.handleDraw(event);
     });
 
     // Event listener for pointer move on drawing canvas (continue drawing).
     drawingCanvasElement.addEventListener("pointermove", function (event) {
+      if (forgeCanvas.panMode) return;
       if (forgeCanvas.drawing) forgeCanvas.handleDraw(event);
       if (forgeCanvas.img && !forgeCanvas.dragging)
         drawingCanvasElement.style.cursor = "crosshair";
@@ -487,34 +497,6 @@ class ForgeCanvas {
       forgeCanvas.drawing = false;
       drawingCanvasElement.style.cursor = "";
       scribbleIndicatorElement.style.display = "none";
-    });
-
-    // Prevent toolbar pointerdown from propagating to image container (for dragging).
-    toolbarElement.addEventListener("pointerdown", function (event) {
-      event.stopPropagation();
-    });
-
-    // Event listener for pointer down on image container (start dragging or upload).
-    imageContainerElement.addEventListener("pointerdown", function (event) {
-      const containerRect = imageContainerElement.getBoundingClientRect();
-      const offsetX = event.clientX - containerRect.left;
-      const offsetY = event.clientY - containerRect.top;
-
-      // Right click drag image
-      if (event.button === 2 && forgeCanvas.isInsideImage(offsetX, offsetY)) {
-        forgeCanvas.dragging = true;
-        forgeCanvas.offsetX = offsetX - forgeCanvas.imgX;
-        forgeCanvas.offsetY = offsetY - forgeCanvas.imgY;
-        imageElement.style.cursor = "grabbing";
-        drawingCanvasElement.style.cursor = "grabbing";
-        scribbleIndicatorElement.style.display = "none";
-      } else {
-        // Left click upload if no image
-        event.button === 0 &&
-          !forgeCanvas.img &&
-          !forgeCanvas.no_upload &&
-          document.getElementById("imageInput_" + forgeCanvas.uuid).click();
-      }
     });
 
     // Event listener for pointer move on image container (dragging).
@@ -574,8 +556,7 @@ class ForgeCanvas {
 
     // Hide toolbar and reset cursors on pointer out of image container.
     imageContainerElement.addEventListener("pointerout", function () {
-      if (!lockToolbar)
-        toolbarElement.style.opacity = "0";
+      if (!lockToolbar) toolbarElement.style.opacity = "0";
       imageElement.style.cursor = "";
       drawingCanvasElement.style.cursor = "";
       imageContainerElement.style.cursor = "";
@@ -587,7 +568,6 @@ class ForgeCanvas {
       forgeCanvas.resizing = true;
       event.preventDefault();
       event.stopPropagation();
-      
     });
 
     // Event listener for document pointer move (resizing container).
@@ -614,7 +594,7 @@ class ForgeCanvas {
       imageContainerElement.addEventListener(
         eventType,
         preventDefaultEvent,
-        false
+        false,
       );
     });
     function preventDefaultEvent(event) {
@@ -679,6 +659,124 @@ class ForgeCanvas {
     // Event listener for minimize button click.
     minimizeButtonElement.addEventListener("click", function () {
       forgeCanvas.minimize();
+    });
+
+    // Update pan mode button appearance
+    const updatePanModeButton = () => {
+      panModeButtonElement.textContent = !forgeCanvas.panMode ? "✏️" : "✋";
+      panModeButtonElement.title = forgeCanvas.panMode
+        ? "Draw Mode"
+        : "Pan Mode";
+    };
+    updatePanModeButton();
+
+    // Pan mode toggle button click handler
+    panModeButtonElement.addEventListener("click", function () {
+      forgeCanvas.panMode = !forgeCanvas.panMode;
+      updatePanModeButton();
+    });
+
+    // Pointer/touch event handlers
+    imageContainerElement.addEventListener("pointerdown", function (event) {
+      const containerRect = imageContainerElement.getBoundingClientRect();
+      const offsetX = event.clientX - containerRect.left;
+      const offsetY = event.clientY - containerRect.top;
+
+      // Start dragging if in pan mode or right click
+      if ((forgeCanvas.panMode && event.button === 0) || event.button === 2) {
+        if (forgeCanvas.isInsideImage(offsetX, offsetY)) {
+          forgeCanvas.dragging = true;
+          forgeCanvas.offsetX = offsetX - forgeCanvas.imgX;
+          forgeCanvas.offsetY = offsetY - forgeCanvas.imgY;
+          imageElement.style.cursor = "grabbing";
+          drawingCanvasElement.style.cursor = "grabbing";
+          scribbleIndicatorElement.style.display = "none";
+        }
+      } else if (
+        event.button === 0 &&
+        !forgeCanvas.img &&
+        !forgeCanvas.no_upload
+      ) {
+        document.getElementById("imageInput_" + forgeCanvas.uuid).click();
+      }
+    });
+
+    // Touch event handlers
+    imageContainerElement.addEventListener("touchstart", function (event) {
+      if (event.target.closest(".forge-toolbar")) return; // Don't handle touches on toolbar
+      if (!forgeCanvas.panMode) return;
+
+      event.preventDefault();
+      forgeCanvas.touching = true;
+
+      if (event.touches.length === 1) {
+        const touch = event.touches[0];
+        const containerRect = imageContainerElement.getBoundingClientRect();
+        forgeCanvas.offsetX =
+          touch.clientX - containerRect.left - forgeCanvas.imgX;
+        forgeCanvas.offsetY =
+          touch.clientY - containerRect.top - forgeCanvas.imgY;
+      } else if (event.touches.length === 2) {
+        // Store initial pinch distance
+        const touch1 = event.touches[0];
+        const touch2 = event.touches[1];
+        forgeCanvas.lastTouchDistance = Math.hypot(
+          touch2.clientX - touch1.clientX,
+          touch2.clientY - touch1.clientY,
+        );
+      }
+    });
+
+    imageContainerElement.addEventListener("touchmove", function (event) {
+      if (!forgeCanvas.panMode) return;
+      if (!forgeCanvas.touching) return;
+      event.preventDefault();
+
+      if (event.touches.length === 1) {
+        // Pan
+        const touch = event.touches[0];
+        const containerRect = imageContainerElement.getBoundingClientRect();
+        forgeCanvas.imgX =
+          touch.clientX - containerRect.left - forgeCanvas.offsetX;
+        forgeCanvas.imgY =
+          touch.clientY - containerRect.top - forgeCanvas.offsetY;
+        forgeCanvas.drawImage();
+      } else if (event.touches.length === 2) {
+        // Pinch zoom
+        const touch1 = event.touches[0];
+        const touch2 = event.touches[1];
+        const currentDistance = Math.hypot(
+          touch2.clientX - touch1.clientX,
+          touch2.clientY - touch1.clientY,
+        );
+
+        const scale = currentDistance / forgeCanvas.lastTouchDistance;
+        const oldScale = forgeCanvas.imgScale;
+        forgeCanvas.imgScale *= scale;
+        forgeCanvas.imgScale = Math.max(0.1, forgeCanvas.imgScale);
+
+        // Adjust position to zoom toward center of pinch
+        const centerX = (touch1.clientX + touch2.clientX) / 2;
+        const centerY = (touch1.clientY + touch2.clientY) / 2;
+        const containerRect = imageContainerElement.getBoundingClientRect();
+        const scaleRatio = forgeCanvas.imgScale / oldScale;
+        forgeCanvas.imgX =
+          centerX -
+          containerRect.left -
+          (centerX - containerRect.left - forgeCanvas.imgX) * scaleRatio;
+        forgeCanvas.imgY =
+          centerY -
+          containerRect.top -
+          (centerY - containerRect.top - forgeCanvas.imgY) * scaleRatio;
+
+        forgeCanvas.lastTouchDistance = currentDistance;
+        forgeCanvas.drawImage();
+      }
+    });
+
+    imageContainerElement.addEventListener("touchend", function () {
+      if (!forgeCanvas.panMode) return;
+      forgeCanvas.touching = false;
     });
 
     // Initialize undo/redo button states.
@@ -888,7 +986,7 @@ class ForgeCanvas {
   drawImage() {
     const imageElement = document.getElementById("image_" + this.uuid),
       drawingCanvasElement = document.getElementById(
-        "drawingCanvas_" + this.uuid
+        "drawingCanvas_" + this.uuid,
       );
 
     if (this.img) {
@@ -915,7 +1013,7 @@ class ForgeCanvas {
    */
   adjustInitialPositionAndScale() {
     const imageContainerElement = document.getElementById(
-      "imageContainer_" + this.uuid
+      "imageContainer_" + this.uuid,
     );
     const containerWidth = imageContainerElement.clientWidth - 32; // Container width minus padding
     const containerHeight = imageContainerElement.clientHeight - 32; // Container height minus padding
@@ -1012,7 +1110,7 @@ class ForgeCanvas {
    */
   updateUndoRedoButtons() {
     const undoButtonElement = document.getElementById(
-        "undoButton_" + this.uuid
+        "undoButton_" + this.uuid,
       ),
       redoButtonElement = document.getElementById("redoButton_" + this.uuid);
     undoButtonElement.disabled = this.historyIndex <= 0; // Disable undo if no history
@@ -1117,7 +1215,7 @@ class ForgeCanvas {
   handleDragEnd(event, pointerLeave) {
     const imageElement = document.getElementById("image_" + this.uuid),
       drawingCanvasElement = document.getElementById(
-        "drawingCanvas_" + this.uuid
+        "drawingCanvas_" + this.uuid,
       );
     this.dragging = false; // Reset dragging flag
     imageElement.style.cursor = "grab"; // Reset image cursor
