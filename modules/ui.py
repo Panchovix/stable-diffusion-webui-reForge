@@ -9,16 +9,14 @@ from contextlib import ExitStack
 import gradio as gr
 import gradio.analytics
 import gradio.utils
-from gradio.components.image_editor import Brush
-from PIL import Image, PngImagePlugin  # noqa: F401
+from PIL import Image
 from modules.call_queue import (
     wrap_gradio_gpu_call,
     wrap_queued_call,
-    wrap_gradio_call,
     wrap_gradio_call_no_job,
-)  # noqa: F401
+)
 
-from modules import gradio_extensions, sd_schedulers  # noqa: F401
+from modules import gradio_extensions, sd_schedulers
 from modules import (
     sd_hijack,
     sd_models,
@@ -92,7 +90,8 @@ mimetypes.add_type("text/css", ".css")
 if not cmd_opts.share and not cmd_opts.listen:
     # fix gradio phoning home
     gradio.analytics.version_check = lambda: None
-    gradio.utils.get_local_ip_address = lambda: "127.0.0.1"
+    # TODO: Check if needed?
+    # gradio.utils.get_local_ip_address = lambda: "127.0.0.1"
 
 if cmd_opts.ngrok is not None:
     import modules.ngrok as ngrok
@@ -186,7 +185,7 @@ def process_interrogate(
         assert not shared.cmd_opts.hide_ui_dir_config, (
             "Launched with --hide-ui-dir-config, batch img2img disabled"
         )
-        images = shared.listfiles(ii_input_dir)
+        images = Path(ii_input_dir).iterdir()
         print(f"Will process {len(images)} images.")
         if ii_output_dir != "":
             os.makedirs(ii_output_dir, exist_ok=True)
@@ -290,7 +289,7 @@ def setup_progressbar(*args, **kwargs):
     pass
 
 
-def apply_setting(key, value):
+def apply_setting(key:str, value:Any):
     if value is None:
         return gr.update()
 
