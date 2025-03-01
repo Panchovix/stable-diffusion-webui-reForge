@@ -1,4 +1,3 @@
-
 random_symbol = "\U0001f3b2\ufe0f"  # 🎲️
 reuse_symbol = "\u267b\ufe0f"  # ♻️
 paste_symbol = "\u2199\ufe0f"  # ↙

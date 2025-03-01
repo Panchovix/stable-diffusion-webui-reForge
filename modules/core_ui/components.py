@@ -1,4 +1,3 @@
-from functools import wraps
 
 import gradio as gr
 
@@ -19,7 +18,7 @@ gr.Dropdown.get_expected_parent = FormComponent.get_expected_parent
 class ToolButton(gr.Button, FormComponent):
     """Small button with single emoji as text, fits inside gradio forms"""
 
-    @wraps(gr.Button.__init__)
+    # @wraps(gr.Button.__init__)
     def __init__(self, value="", *args, elem_classes=None, **kwargs):
         elem_classes = elem_classes or []
         super().__init__(
@@ -35,7 +34,7 @@ class ResizeHandleRow(gr.Row):
 
     webui_do_not_create_gradio_pyi_thank_you = True
 
-    @wraps(gr.Row.__init__)
+    # @wraps(gr.Row.__init__)
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
@@ -83,7 +82,7 @@ class FormColorPicker(gr.ColorPicker, FormComponent):
 class DropdownMulti(gr.Dropdown, FormComponent):
     """Same as gr.Dropdown but always multiselect"""
 
-    @wraps(gr.Dropdown.__init__)
+    # @wraps(gr.Dropdown.__init__)
     def __init__(self, **kwargs):
         kwargs["multiselect"] = True
         super().__init__(**kwargs)
@@ -95,7 +94,7 @@ class DropdownMulti(gr.Dropdown, FormComponent):
 class DropdownEditable(gr.Dropdown, FormComponent):
     """Same as gr.Dropdown but allows editing value"""
 
-    @wraps(gr.Dropdown.__init__)
+    # @wraps(gr.Dropdown.__init__)
     def __init__(self, **kwargs):
         kwargs["allow_custom_value"] = True
         super().__init__(**kwargs)
@@ -114,7 +113,7 @@ class InputAccordionImpl(gr.Checkbox):
 
     global_index = 0
 
-    @wraps(gr.Checkbox.__init__)
+    # @wraps(gr.Checkbox.__init__)
     def __init__(self, value=None, setup=False, **kwargs):
         if not setup:
             super().__init__(value=value, **kwargs)

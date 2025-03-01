@@ -1,8 +1,7 @@
 import gradio as gr
 
-from modules import shared, ui_prompt_styles
 import modules.images
-
+from modules import shared, ui_prompt_styles
 from modules.core_ui.components import ToolButton
 
 
@@ -186,8 +185,8 @@ class Toprow:
     def create_tools_row(self):
         with gr.Row(elem_id=f"{self.id_part}_tools"):
             from modules.ui import (
-                paste_symbol,
                 clear_prompt_symbol,
+                paste_symbol,
                 restore_progress_symbol,
             )
 

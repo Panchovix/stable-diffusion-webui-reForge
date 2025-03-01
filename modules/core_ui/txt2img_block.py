@@ -1,45 +1,46 @@
 from contextlib import ExitStack
 
 import gradio as gr
+
+import modules.infotext_utils as parameters_copypaste
+import modules.shared as shared
+from modules import (
+    processing,
+    progress,
+    scripts,
+    sd_models,
+    sd_samplers,
+    sd_schedulers,
+    txt2img,
+    ui_extra_networks,
+)
 from modules.call_queue import (
     wrap_gradio_gpu_call,
     wrap_queued_call,
 )
-
-from modules import sd_schedulers
-from modules import (
-    progress,
-    scripts,
-    sd_samplers,
-    ui_extra_networks,
-    sd_models,
-    txt2img,
-    processing
+from modules.core_ui.common_elements import (
+    create_output_panel,
+    create_override_settings_dropdown,
+    create_refresh_button,
+    ordered_ui_categories,
 )
-
 from modules.core_ui.components import (
-    FormRow,
     FormGroup,
-    ToolButton,
     FormHTML,
-    ResizeHandleRow,
+    FormRow,
     InputAccordion,
+    ResizeHandleRow,
+    ToolButton,
 )
-from modules.core_ui.common_elements import create_refresh_button, create_output_panel, create_override_settings_dropdown,ordered_ui_categories
-from modules.core_ui.toolbutton_symbols import switch_values_symbol
-
-from modules.shared import opts
-
-import modules.infotext_utils as parameters_copypaste
-import modules.shared as shared
-from modules.infotext_utils import PasteField
-from modules_forge.forge_canvas.canvas import canvas_head
-
-from modules.core_ui.toprow import Toprow
 from modules.core_ui.token_counters import (
     update_negative_prompt_token_counter,
     update_token_counter,
 )
+from modules.core_ui.toolbutton_symbols import switch_values_symbol
+from modules.core_ui.toprow import Toprow
+from modules.infotext_utils import PasteField
+from modules.shared import opts
+from modules_forge.forge_canvas.canvas import canvas_head
 
 
 def calc_resolution_hires(enable, width, height, hr_scale, hr_resize_x, hr_resize_y):
@@ -76,8 +77,6 @@ def create_accordions():
                     value="",
                     elem_id="txtimg_hr_finalres",
                     label="Upscaled resolution",
-                    interactive=False,
-                    min_width=0,
                 )
 
             with FormRow(elem_id="txt2img_hires_fix_row1", variant="compact"):
@@ -213,7 +212,7 @@ def create_accordions():
                 inputs=[hr_cfg],
                 outputs=[hr_negative_prompt],
                 queue=False,
-                show_progress=False,
+                show_progress="hidden",
             )
 
         scripts.scripts_txt2img.setup_ui_for_section(category)
@@ -490,7 +489,7 @@ def create_interface():
                 js="submit_txt2img_upscale",
                 inputs=txt2img_upscale_inputs,
                 outputs=txt2img_outputs,
-                show_progress=False,
+                show_progress="hidden",
             ).then(
                 fn=select_gallery_image,
                 js="selected_gallery_index",

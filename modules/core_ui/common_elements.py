@@ -1,16 +1,18 @@
 import csv
 import dataclasses
-import json
 import html
+import json
 import os
 from contextlib import nullcontext
+from typing import Iterator
 
 import gradio as gr
 from PIL import Image
 
-from modules import call_queue, shared, ui_tempdir, util, shared_items
-from modules.ui_components import ToolButton
 import modules.infotext_utils as parameters_copypaste
+from modules import call_queue, scripts, shared, shared_items, ui_tempdir, util
+from modules.infotext_utils import image_from_url_text
+from modules.ui_components import ToolButton
 
 folder_symbol = "\U0001f4c2"  # 📂
 refresh_symbol = "\U0001f504"  # 🔄
@@ -134,7 +136,7 @@ def save_files(js_data, images: list[tuple[Image.Image, str]], do_make_zip, inde
                 data["infotexts"][image_index], []
             )
             parsed_infotexts.append(parameters)
-            fullfn, txt_fullfn = modules.images.save_image(
+            fullfn, txt_fullfn = images.save_image(
                 image,
                 path,
                 "",
@@ -174,7 +176,7 @@ def save_files(js_data, images: list[tuple[Image.Image, str]], do_make_zip, inde
     # Make Zip
     if do_make_zip:
         p.all_seeds = [parameters["Seed"] for parameters in parsed_infotexts]
-        namegen = modules.images.FilenameGenerator(
+        namegen = images.FilenameGenerator(
             p, parsed_infotexts[0]["Seed"], parsed_infotexts[0]["Prompt"], image, True
         )
         zip_filename = namegen.apply(
@@ -198,15 +200,14 @@ def save_files(js_data, images: list[tuple[Image.Image, str]], do_make_zip, inde
 
 @dataclasses.dataclass
 class OutputPanel:
-    gallery:gr.Gallery|None
-    generation_info:gr.Textbox|None
-    infotext:gr.HTML|None
-    html_log:gr.HTML|None
-    button_upscale:ToolButton|None
+    gallery: gr.Gallery | None
+    generation_info: gr.Textbox | None
+    infotext: gr.HTML | None
+    html_log: gr.HTML | None
+    button_upscale: ToolButton | None
 
 
 def create_output_panel(tabname, outdir, toprow=None):
-
     def open_folder(f, images=None, index=None):
         if shared.cmd_opts.hide_ui_dir_config:
             return
@@ -378,9 +379,9 @@ def create_output_panel(tabname, outdir, toprow=None):
 
             paste_field_names = []
             if tabname == "txt2img":
-                paste_field_names = modules.scripts.scripts_txt2img.paste_field_names
+                paste_field_names = scripts.scripts_txt2img.paste_field_names
             elif tabname == "img2img":
-                paste_field_names = modules.scripts.scripts_img2img.paste_field_names
+                paste_field_names = scripts.scripts_img2img.paste_field_names
 
             for paste_tabname, paste_button in buttons.items():
                 parameters_copypaste.register_paste_params_button(
@@ -457,6 +458,7 @@ def ordered_ui_categories() -> Iterator[str]:
         key=lambda x: user_order.get(x[1], x[0] * 2 + 0),
     ):
         yield category
+
 
 def create_override_settings_dropdown(tabname, row):
     dropdown = gr.Dropdown(

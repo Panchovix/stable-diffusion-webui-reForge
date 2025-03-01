@@ -1,21 +1,18 @@
-from functools import reduce
 import warnings
+from functools import reduce
 
-
-from modules import gradio_extensions
+import modules.processing_scripts.comments as comments
+import modules.shared as shared
 from modules import (
-    sd_models,
-    script_callbacks,
     extra_networks,
+    gradio_extensions,
+    prompt_parser,
+    script_callbacks,
+    sd_models,
     ui_settings,
 )
-
-from modules.shared import opts
-
-import modules.shared as shared
-from modules import prompt_parser
 from modules.sd_hijack import model_hijack
-import modules.processing_scripts.comments as comments
+from modules.shared import opts
 
 create_setting_component = ui_settings.create_setting_component
 
