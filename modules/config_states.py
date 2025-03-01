@@ -137,7 +137,7 @@ def restore_webui_config(config):
         errors.report(f"Error reading webui git info from {script_path}", exc_info=True)
         return
     if webui_repo is None:
-        errors.report(f"No .git file found.")
+        errors.report("No .git file found.")
         return
     try:
         webui_repo.git.fetch(all=True)

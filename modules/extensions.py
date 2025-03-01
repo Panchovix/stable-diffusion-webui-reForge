@@ -6,9 +6,10 @@ import os
 import threading
 import re
 
-from modules import shared, errors, cache, scripts
+from modules import shared, errors, scripts
 from modules.gitpython_hack import Repo
 from modules.paths_internal import extensions_dir, extensions_builtin_dir, script_path  # noqa: F401
+from modules.utils import cache
 from modules_forge.config import always_disabled_extensions
 
 extensions: list[Extension] = []

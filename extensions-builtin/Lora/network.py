@@ -6,8 +6,9 @@ import enum
 import torch.nn as nn
 import torch.nn.functional as F
 
-from modules import sd_models, cache, errors, hashes, shared
+from modules import sd_models, errors, hashes, shared
 import modules.models.sd3.mmdit
+from modules.utils import cache
 
 NetworkWeights = namedtuple(
     "NetworkWeights", ["network_key", "sd_key", "w", "sd_module"]

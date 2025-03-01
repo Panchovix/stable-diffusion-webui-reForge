@@ -82,20 +82,19 @@ def dumps(
         "sort_keys": [False, sort_keys],
     }
     # Extract non default arguments
-    non_default = dict(
-        [
-            (arguments[0], arguments[1][0] != arguments[1][1])
-            for arguments in kwargs.items()
-        ]
-    )
+    non_default = [
+        arguments[0]
+        for arguments in kwargs.items()
+        if arguments[1][0] != arguments[1][1]
+    ]
     if orjson:
         orjson_flags = 0
         if non_default:
             # Special case some arguments that is discardable.
             if "ensure_ascii" in non_default:
-                non_default.pop("ensure_ascii")
+                non_default.remove("ensure_ascii")
             if "sort_keys" in non_default:
-                non_default.pop("sort_keys")
+                non_default.remove("sort_keys")
                 orjson_flags |= orjson.OPT_SORT_KEYS
             if "indent" in non_default:
                 orjson_flags |= orjson.OPT_INDENT_2

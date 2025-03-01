@@ -15,11 +15,9 @@ import modules.shared as shared
 from modules_forge.forge_sampler import sampling_prepare, sampling_cleanup
 
 if opts.sd_sampling == "A1111":
-    import k_diffusion
     from k_diffusion import sampling
     from k_diffusion.external import CompVisDenoiser, CompVisVDenoiser
 elif opts.sd_sampling == "ldm patched (Comfy)":
-    import ldm_patched.k_diffusion
     from ldm_patched.k_diffusion import sampling
     from ldm_patched.k_diffusion.external import CompVisDenoiser, CompVisVDenoiser
 

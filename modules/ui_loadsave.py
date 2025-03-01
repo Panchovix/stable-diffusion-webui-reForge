@@ -4,7 +4,7 @@ import os
 import gradio as gr
 
 from modules import errors
-from modules.ui_components import ToolButton, InputAccordion, InputAccordionImpl
+from modules.ui_components import ToolButton, InputAccordionImpl
 
 
 def radio_choices(

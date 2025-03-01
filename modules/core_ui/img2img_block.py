@@ -839,4 +839,4 @@ def create_interface():
         ui_extra_networks.setup_ui(extra_networks_ui_img2img, output_panel.gallery)
 
         extra_tabs.__exit__()
-    return img2img_interface
+    return img2img_interface, image_cfg_scale

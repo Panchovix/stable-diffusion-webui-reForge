@@ -643,4 +643,4 @@ def create_interface():
         ui_extra_networks.setup_ui(extra_networks_ui, output_panel.gallery)
 
         extra_tabs.__exit__()
-    return txt2img_interface, txt2img_preview_params
+    return txt2img_interface, txt2img_preview_params, dummy_component

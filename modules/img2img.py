@@ -2,8 +2,7 @@ import os
 from contextlib import closing
 from pathlib import Path
 
-import numpy as np
-from PIL import Image, ImageOps, ImageFilter, ImageEnhance, UnidentifiedImageError
+from PIL import Image, ImageOps, ImageFilter, UnidentifiedImageError
 import gradio as gr
 
 from modules import images  # as imgutil

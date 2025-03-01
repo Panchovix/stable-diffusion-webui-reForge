@@ -3,11 +3,8 @@ import logging
 import os
 import sys
 import warnings
-import os
 
-from threading import Thread
 
-from modules import gradio_extensions
 from modules.timer import startup_timer
 
 
@@ -49,7 +46,6 @@ def imports():
         startup_timer.record("setup paths")
 
         import ldm.modules.encoders.modules  # noqa: F401
-        import ldm.modules.diffusionmodules.model
 
         startup_timer.record("import ldm")
 

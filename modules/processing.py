@@ -1,6 +1,8 @@
 from __future__ import annotations
 from modules.shared import opts
 
+# XXX: We should probably not import *
+# - Ristellise
 if opts.sd_processing == "reForge OG":
     from processing_processors.forge import *
 

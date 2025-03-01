@@ -22,7 +22,6 @@ from modules import (
     sd_hijack_checkpoint,
     errors,
     hashes,
-    cache,
 )
 import modules.textual_inversion.dataset
 from modules.textual_inversion.learn_schedule import LearnRateScheduler
@@ -35,6 +34,7 @@ from modules.textual_inversion.image_embedding import (
     caption_image_overlay,
 )
 from modules.textual_inversion.saving_settings import save_settings_to_file
+from modules.utils import cache
 
 
 TextualInversionTemplate = namedtuple("TextualInversionTemplate", ["name", "path"])

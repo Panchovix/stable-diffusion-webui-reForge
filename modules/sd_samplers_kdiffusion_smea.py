@@ -1,6 +1,6 @@
 import ldm_patched.k_diffusion.sampling as sampling
 import torch
-from tqdm.auto import trange, tqdm
+from tqdm.auto import trange
 import modules.shared
 
 

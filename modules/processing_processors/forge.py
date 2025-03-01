@@ -25,7 +25,6 @@ from modules import (
     prompt_parser,
     masking,
     sd_samplers,
-    lowvram,
     infotext_utils,
     extra_networks,
     sd_vae_approx,

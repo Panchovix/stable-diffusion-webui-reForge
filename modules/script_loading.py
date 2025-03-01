@@ -1,6 +1,5 @@
-import os, sys
+import os
 import importlib.util
-import sys
 
 from modules import errors
 

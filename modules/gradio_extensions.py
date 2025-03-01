@@ -1,5 +1,4 @@
 import inspect
-import types
 import warnings
 from functools import wraps
 
@@ -195,7 +194,7 @@ class Dependency(gr.events.Dependency):
         def then(*xargs, js=None, _js=None, **xkwargs):
             if _js:
                 warnings.warn(
-                    f"_js is deprecated.", GradioDeprecationWarning, stacklevel=2
+                    "_js is deprecated.", GradioDeprecationWarning, stacklevel=2
                 )
                 xkwargs["js"] = _js
 
@@ -213,7 +212,8 @@ gr.Box = gr.Group
 def patched_url_ok(url: str) -> bool:
     # Retry for longer i guess.
     print("Testing URL:", url)
-    import httpx, time
+    import httpx
+    import time
 
     start_slice = time.monotonic()
     try:

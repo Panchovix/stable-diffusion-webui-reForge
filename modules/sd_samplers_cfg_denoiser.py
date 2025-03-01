@@ -370,7 +370,6 @@ elif opts.sd_sampler_cfg_denoiser == "reForgeDev":
     from modules.shared import opts, state
     import modules.shared as shared
     from modules.script_callbacks import CFGDenoiserParams, cfg_denoiser_callback
-    from modules.script_callbacks import CFGDenoisedParams, cfg_denoised_callback
     from modules.script_callbacks import AfterCFGCallbackParams, cfg_after_cfg_callback
     from modules_forge import forge_sampler
     from ldm_patched.modules.samplers import sampling_function

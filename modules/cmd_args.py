@@ -1,6 +1,5 @@
 import argparse
 import modules.utils.speedjson as json
-import os
 from modules.paths_internal import (
     normalized_filepath,
     models_path,

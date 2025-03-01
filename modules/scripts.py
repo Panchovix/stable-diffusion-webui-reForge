@@ -1152,7 +1152,7 @@ class ScriptRunner:
                     f"Error running after_component: {script.filename}", exc_info=True
                 )
 
-    def script(self, title):
+    def script(self, title: str):
         return self.title_map.get(title.lower())
 
     def reload_sources(self, cache):
