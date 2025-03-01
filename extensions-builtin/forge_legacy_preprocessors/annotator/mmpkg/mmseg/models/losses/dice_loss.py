@@ -1,5 +1,6 @@
 """Modified from https://github.com/LikeLy-Journey/SegmenTron/blob/master/
 segmentron/solver/loss.py (Apache-2.0 License)"""
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -9,13 +10,9 @@ from .utils import get_class_weight, weighted_loss
 
 
 @weighted_loss
-def dice_loss(pred,
-              target,
-              valid_mask,
-              smooth=1,
-              exponent=2,
-              class_weight=None,
-              ignore_index=255):
+def dice_loss(
+    pred, target, valid_mask, smooth=1, exponent=2, class_weight=None, ignore_index=255
+):
     assert pred.shape[0] == target.shape[0]
     total_loss = 0
     num_classes = pred.shape[1]
@@ -26,7 +23,8 @@ def dice_loss(pred,
                 target[..., i],
                 valid_mask=valid_mask,
                 smooth=smooth,
-                exponent=exponent)
+                exponent=exponent,
+            )
             if class_weight is not None:
                 dice_loss *= class_weight[i]
             total_loss += dice_loss
@@ -69,14 +67,16 @@ class DiceLoss(nn.Module):
         ignore_index (int | None): The label index to be ignored. Default: 255.
     """
 
-    def __init__(self,
-                 smooth=1,
-                 exponent=2,
-                 reduction='mean',
-                 class_weight=None,
-                 loss_weight=1.0,
-                 ignore_index=255,
-                 **kwards):
+    def __init__(
+        self,
+        smooth=1,
+        exponent=2,
+        reduction="mean",
+        class_weight=None,
+        loss_weight=1.0,
+        ignore_index=255,
+        **kwards,
+    ):
         super(DiceLoss, self).__init__()
         self.smooth = smooth
         self.exponent = exponent
@@ -85,15 +85,9 @@ class DiceLoss(nn.Module):
         self.loss_weight = loss_weight
         self.ignore_index = ignore_index
 
-    def forward(self,
-                pred,
-                target,
-                avg_factor=None,
-                reduction_override=None,
-                **kwards):
-        assert reduction_override in (None, 'none', 'mean', 'sum')
-        reduction = (
-            reduction_override if reduction_override else self.reduction)
+    def forward(self, pred, target, avg_factor=None, reduction_override=None, **kwards):
+        assert reduction_override in (None, "none", "mean", "sum")
+        reduction = reduction_override if reduction_override else self.reduction
         if self.class_weight is not None:
             class_weight = pred.new_tensor(self.class_weight)
         else:
@@ -102,8 +96,8 @@ class DiceLoss(nn.Module):
         pred = F.softmax(pred, dim=1)
         num_classes = pred.shape[1]
         one_hot_target = F.one_hot(
-            torch.clamp(target.long(), 0, num_classes - 1),
-            num_classes=num_classes)
+            torch.clamp(target.long(), 0, num_classes - 1), num_classes=num_classes
+        )
         valid_mask = (target != self.ignore_index).long()
 
         loss = self.loss_weight * dice_loss(
@@ -115,5 +109,6 @@ class DiceLoss(nn.Module):
             smooth=self.smooth,
             exponent=self.exponent,
             class_weight=class_weight,
-            ignore_index=self.ignore_index)
+            ignore_index=self.ignore_index,
+        )
         return loss

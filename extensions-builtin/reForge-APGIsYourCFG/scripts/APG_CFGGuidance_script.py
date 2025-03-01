@@ -7,6 +7,7 @@ import gradio as gr
 from modules import script_callbacks, scripts
 from APGIsYourCFG.nodes_APGImYourCFGNow import APG_ImYourCFGNow
 
+
 class APGIsNowYourCFGScript(scripts.Script):
     def __init__(self):
         # APG parameters
@@ -56,18 +57,17 @@ class APGIsNowYourCFGScript(scripts.Script):
                     value=self.apg_norm_thr,
                 )
                 apg_eta = gr.Slider(
-                    label="APG Eta", 
-                    minimum=0.0, 
-                    maximum=2.0, 
-                    step=0.1, 
-                    value=self.apg_eta
+                    label="APG Eta",
+                    minimum=0.0,
+                    maximum=2.0,
+                    step=0.1,
+                    value=self.apg_eta,
                 )
-            
+
             # Guidance Limiter Section
             gr.HTML("<br><p><b>Guidance Limiter Settings</b></p>")
             guidance_limiter_enabled = gr.Checkbox(
-                label="Enable Guidance Limiter",
-                value=self.guidance_limiter_enabled
+                label="Enable Guidance Limiter", value=self.guidance_limiter_enabled
             )
             with gr.Group(visible=True):
                 guidance_sigma_start = gr.Slider(
@@ -75,18 +75,26 @@ class APGIsNowYourCFGScript(scripts.Script):
                     minimum=-1.0,
                     maximum=10000.0,
                     step=0.01,
-                    value=self.guidance_sigma_start
+                    value=self.guidance_sigma_start,
                 )
                 guidance_sigma_end = gr.Slider(
                     label="Guidance Sigma End",
                     minimum=-1.0,
                     maximum=10000.0,
                     step=0.01,
-                    value=self.guidance_sigma_end
+                    value=self.guidance_sigma_end,
                 )
 
-        return (apg_enabled, apg_momentum, apg_adaptive_momentum, apg_norm_thr, apg_eta,
-                guidance_limiter_enabled, guidance_sigma_start, guidance_sigma_end)
+        return (
+            apg_enabled,
+            apg_momentum,
+            apg_adaptive_momentum,
+            apg_norm_thr,
+            apg_eta,
+            guidance_limiter_enabled,
+            guidance_sigma_start,
+            guidance_sigma_end,
+        )
 
     def process_before_every_sampling(self, p, *args, **kwargs):
         if len(args) >= 8:
@@ -142,43 +150,53 @@ class APGIsNowYourCFGScript(scripts.Script):
             "eta": self.apg_eta if self.apg_enabled else 1.0,
             # Guidance limiter parameters (only applied if limiter is enabled)
             "guidance_limiter": self.guidance_limiter_enabled,
-            "guidance_sigma_start": self.guidance_sigma_start if self.guidance_limiter_enabled else -1,
-            "guidance_sigma_end": self.guidance_sigma_end if self.guidance_limiter_enabled else -1,
+            "guidance_sigma_start": self.guidance_sigma_start
+            if self.guidance_limiter_enabled
+            else -1,
+            "guidance_sigma_end": self.guidance_sigma_end
+            if self.guidance_limiter_enabled
+            else -1,
         }
 
         unet = APG_ImYourCFGNow().patch(unet, **patch_params)[0]
 
         p.sd_model.forge_objects.unet = unet
-        
+
         # Only include enabled features in generation params
         args = {}
         if self.apg_enabled:
-            args.update({
-                "apgisyourcfg_enabled": True,
-                "apgisyourcfg_momentum": self.apg_moment,
-                "apgisyourcfg_adaptive_momentum": self.apg_adaptive_moment,
-                "apgisyourcfg_norm_thr": self.apg_norm_thr,
-                "apgisyourcfg_eta": self.apg_eta,
-            })
+            args.update(
+                {
+                    "apgisyourcfg_enabled": True,
+                    "apgisyourcfg_momentum": self.apg_moment,
+                    "apgisyourcfg_adaptive_momentum": self.apg_adaptive_moment,
+                    "apgisyourcfg_norm_thr": self.apg_norm_thr,
+                    "apgisyourcfg_eta": self.apg_eta,
+                }
+            )
         if self.guidance_limiter_enabled:
-            args.update({
-                "guidance_limiter_enabled": True,
-                "guidance_sigma_start": self.guidance_sigma_start,
-                "guidance_sigma_end": self.guidance_sigma_end,
-            })
-            
+            args.update(
+                {
+                    "guidance_limiter_enabled": True,
+                    "guidance_sigma_start": self.guidance_sigma_start,
+                    "guidance_sigma_end": self.guidance_sigma_end,
+                }
+            )
+
         p.extra_generation_params.update(args)
-        str_args:str = ", ".join([f"{k}:\"{v}\"" for k,v in args.items()])
-        logging.debug("WOLOLO: \"APG is now your CFG!\"")
+        str_args: str = ", ".join([f'{k}:"{v}"' for k, v in args.items()])
+        logging.debug('WOLOLO: "APG is now your CFG!"')
         logging.debug(str_args)
 
         return
+
 
 # XYZ plot functionality
 def set_value(p, x: Any, xs: Any, *, field: str):
     if not hasattr(p, "_apg_xyz"):
         p._apg_xyz = {}
     p._apg_xyz[field] = x
+
 
 def make_axis_on_xyz_grid():
     xyz_grid = None
@@ -195,7 +213,7 @@ def make_axis_on_xyz_grid():
             "(APG) APG Enabled",
             str,
             partial(set_value, field="apg_enabled"),
-            choices=lambda: ["True", "False"]
+            choices=lambda: ["True", "False"],
         ),
         xyz_grid.AxisOption(
             "(APG) APG Momentum",
@@ -221,7 +239,7 @@ def make_axis_on_xyz_grid():
             "(APG) Guidance Limiter Enabled",
             str,
             partial(set_value, field="guidance_limiter_enabled"),
-            choices=lambda: ["True", "False"]
+            choices=lambda: ["True", "False"],
         ),
         xyz_grid.AxisOption(
             "(APG) Guidance Sigma Start",
@@ -238,6 +256,7 @@ def make_axis_on_xyz_grid():
     if not any(x.label.startswith("(APG)") for x in xyz_grid.axis_options):
         xyz_grid.axis_options.extend(axis)
 
+
 def on_before_ui():
     try:
         make_axis_on_xyz_grid()
@@ -247,5 +266,6 @@ def on_before_ui():
             f"[-] APG Script: xyz_grid error:\n{error}",
             file=sys.stderr,
         )
+
 
 script_callbacks.on_before_ui(on_before_ui)

@@ -18,9 +18,13 @@ class SAGForForge(scripts.Script):
 
     def ui(self, *args, **kwargs):
         with gr.Accordion(open=False, label=self.title()):
-            enabled = gr.Checkbox(label='Enabled', value=False)
-            scale = gr.Slider(label='Scale', minimum=-2.0, maximum=5.0, step=0.01, value=0.5)
-            blur_sigma = gr.Slider(label='Blur Sigma', minimum=0.0, maximum=10.0, step=0.01, value=2.0)
+            enabled = gr.Checkbox(label="Enabled", value=False)
+            scale = gr.Slider(
+                label="Scale", minimum=-2.0, maximum=5.0, step=0.01, value=0.5
+            )
+            blur_sigma = gr.Slider(
+                label="Blur Sigma", minimum=0.0, maximum=10.0, step=0.01, value=2.0
+            )
 
         return enabled, scale, blur_sigma
 
@@ -36,10 +40,8 @@ class SAGForForge(scripts.Script):
 
         p.sd_model.forge_objects.unet = unet
 
-        p.extra_generation_params.update(dict(
-            sag_enabled=enabled,
-            sag_scale=scale,
-            sag_blur_sigma=blur_sigma
-        ))
+        p.extra_generation_params.update(
+            dict(sag_enabled=enabled, sag_scale=scale, sag_blur_sigma=blur_sigma)
+        )
 
         return

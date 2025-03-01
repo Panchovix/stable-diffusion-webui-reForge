@@ -33,10 +33,26 @@ class ScriptPostprocessingSplitOversized(scripts_postprocessing.ScriptPostproces
     order = 4000
 
     def ui(self):
-        with ui_components.InputAccordion(False, label="Split oversized images") as enable:
+        with ui_components.InputAccordion(
+            False, label="Split oversized images"
+        ) as enable:
             with gr.Row():
-                split_threshold = gr.Slider(label='Threshold', value=0.5, minimum=0.0, maximum=1.0, step=0.05, elem_id=self.elem_id_suffix("postprocess_split_threshold"))
-                overlap_ratio = gr.Slider(label='Overlap ratio', value=0.2, minimum=0.0, maximum=0.9, step=0.05, elem_id=self.elem_id_suffix("postprocess_overlap_ratio"))
+                split_threshold = gr.Slider(
+                    label="Threshold",
+                    value=0.5,
+                    minimum=0.0,
+                    maximum=1.0,
+                    step=0.05,
+                    elem_id=self.elem_id_suffix("postprocess_split_threshold"),
+                )
+                overlap_ratio = gr.Slider(
+                    label="Overlap ratio",
+                    value=0.2,
+                    minimum=0.0,
+                    maximum=0.9,
+                    step=0.05,
+                    elem_id=self.elem_id_suffix("postprocess_overlap_ratio"),
+                )
 
         return {
             "enable": enable,
@@ -44,7 +60,13 @@ class ScriptPostprocessingSplitOversized(scripts_postprocessing.ScriptPostproces
             "overlap_ratio": overlap_ratio,
         }
 
-    def process(self, pp: scripts_postprocessing.PostprocessedImage, enable, split_threshold, overlap_ratio):
+    def process(
+        self,
+        pp: scripts_postprocessing.PostprocessedImage,
+        enable,
+        split_threshold,
+        overlap_ratio,
+    ):
         if not enable:
             return
 
@@ -68,4 +90,3 @@ class ScriptPostprocessingSplitOversized(scripts_postprocessing.ScriptPostproces
 
         pp.image = result
         pp.extra_images = [pp.create_copy(x) for x in others]
-

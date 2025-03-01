@@ -2,35 +2,49 @@ import torch
 from typing import Dict, Optional
 import ldm_patched.ldm.modules.diffusionmodules.mmdit
 
+
 class ControlNet(ldm_patched.ldm.modules.diffusionmodules.mmdit.MMDiT):
     def __init__(
         self,
-        num_blocks = None,
-        control_latent_channels = None,
-        dtype = None,
-        device = None,
-        operations = None,
+        num_blocks=None,
+        control_latent_channels=None,
+        dtype=None,
+        device=None,
+        operations=None,
         **kwargs,
     ):
-        super().__init__(dtype=dtype, device=device, operations=operations, final_layer=False, num_blocks=num_blocks, **kwargs)
+        super().__init__(
+            dtype=dtype,
+            device=device,
+            operations=operations,
+            final_layer=False,
+            num_blocks=num_blocks,
+            **kwargs,
+        )
         # controlnet_blocks
         self.controlnet_blocks = torch.nn.ModuleList([])
         for _ in range(len(self.joint_blocks)):
-            self.controlnet_blocks.append(operations.Linear(self.hidden_size, self.hidden_size, device=device, dtype=dtype))
+            self.controlnet_blocks.append(
+                operations.Linear(
+                    self.hidden_size, self.hidden_size, device=device, dtype=dtype
+                )
+            )
 
         if control_latent_channels is None:
             control_latent_channels = self.in_channels
 
-        self.pos_embed_input = ldm_patched.ldm.modules.diffusionmodules.mmdit.PatchEmbed(
-            None,
-            self.patch_size,
-            control_latent_channels,
-            self.hidden_size,
-            bias=True,
-            strict_img_size=False,
-            dtype=dtype,
-            device=device,
-            operations=operations
+        self.pos_embed_input = (
+            ldm_patched.ldm.modules.diffusionmodules.mmdit.PatchEmbed(
+                None,
+                self.patch_size,
+                control_latent_channels,
+                self.hidden_size,
+                bias=True,
+                strict_img_size=False,
+                dtype=dtype,
+                device=device,
+                operations=operations,
+            )
         )
 
     def forward(
@@ -39,17 +53,18 @@ class ControlNet(ldm_patched.ldm.modules.diffusionmodules.mmdit.MMDiT):
         timesteps: torch.Tensor,
         y: Optional[torch.Tensor] = None,
         context: Optional[torch.Tensor] = None,
-        hint = None,
+        hint=None,
     ) -> torch.Tensor:
-
-        #weird sd3 controlnet specific stuff
+        # weird sd3 controlnet specific stuff
         y = torch.zeros_like(y)
 
         if self.context_processor is not None:
             context = self.context_processor(context)
 
         hw = x.shape[-2:]
-        x = self.x_embedder(x) + self.cropped_pos_embed(hw, device=x.device).to(dtype=x.dtype, device=x.device)
+        x = self.x_embedder(x) + self.cropped_pos_embed(hw, device=x.device).to(
+            dtype=x.dtype, device=x.device
+        )
         x += self.pos_embed_input(hint)
 
         c = self.t_embedder(timesteps, dtype=x.dtype)

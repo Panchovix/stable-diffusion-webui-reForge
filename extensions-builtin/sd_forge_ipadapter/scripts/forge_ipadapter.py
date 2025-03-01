@@ -1,4 +1,8 @@
-from modules_forge.supported_preprocessor import PreprocessorClipVision, Preprocessor, PreprocessorParameter
+from modules_forge.supported_preprocessor import (
+    PreprocessorClipVision,
+    Preprocessor,
+    PreprocessorParameter,
+)
 from modules_forge.shared import add_supported_preprocessor
 from modules_forge.forge_util import numpy_to_pytorch
 from modules_forge.shared import add_supported_control_model
@@ -14,11 +18,19 @@ opInsightFaceLoader = InsightFaceLoader().load_insight_face
 class PreprocessorClipVisionForIPAdapter(PreprocessorClipVision):
     def __init__(self, name, url, filename):
         super().__init__(name, url, filename)
-        self.tags = ['IP-Adapter']
-        self.model_filename_filters = ['IP-Adapter', 'IP_Adapter']
+        self.tags = ["IP-Adapter"]
+        self.model_filename_filters = ["IP-Adapter", "IP_Adapter"]
         self.sorting_priority = 20
 
-    def __call__(self, input_image, resolution, slider_1=None, slider_2=None, slider_3=None, **kwargs):
+    def __call__(
+        self,
+        input_image,
+        resolution,
+        slider_1=None,
+        slider_2=None,
+        slider_3=None,
+        **kwargs,
+    ):
         cond = dict(
             clip_vision=self.load_clipvision(),
             image=numpy_to_pytorch(input_image),
@@ -30,7 +42,9 @@ class PreprocessorClipVisionForIPAdapter(PreprocessorClipVision):
         return cond
 
 
-class PreprocessorClipVisionWithInsightFaceForIPAdapter(PreprocessorClipVisionForIPAdapter):
+class PreprocessorClipVisionWithInsightFaceForIPAdapter(
+    PreprocessorClipVisionForIPAdapter
+):
     def __init__(self, name, url, filename):
         super().__init__(name, url, filename)
         self.cached_insightface = None
@@ -40,7 +54,15 @@ class PreprocessorClipVisionWithInsightFaceForIPAdapter(PreprocessorClipVisionFo
             self.cached_insightface = opInsightFaceLoader()[0]
         return self.cached_insightface
 
-    def __call__(self, input_image, resolution, slider_1=None, slider_2=None, slider_3=None, **kwargs):
+    def __call__(
+        self,
+        input_image,
+        resolution,
+        slider_1=None,
+        slider_2=None,
+        slider_3=None,
+        **kwargs,
+    ):
         cond = dict(
             clip_vision=self.load_clipvision(),
             insightface=self.load_insightface(),
@@ -57,8 +79,8 @@ class PreprocessorInsightFaceForInstantID(Preprocessor):
     def __init__(self, name):
         super().__init__()
         self.name = name
-        self.tags = ['Instant-ID']
-        self.model_filename_filters = ['Instant-ID', 'Instant_ID']
+        self.tags = ["Instant-ID"]
+        self.model_filename_filters = ["Instant-ID", "Instant_ID"]
         self.sorting_priority = 20
         self.slider_resolution = PreprocessorParameter(visible=False)
         self.corp_image_with_a1111_mask_when_in_img2img_inpaint_tab = False
@@ -68,10 +90,18 @@ class PreprocessorInsightFaceForInstantID(Preprocessor):
 
     def load_insightface(self):
         if self.cached_insightface is None:
-            self.cached_insightface = opInsightFaceLoader(name='antelopev2')[0]
+            self.cached_insightface = opInsightFaceLoader(name="antelopev2")[0]
         return self.cached_insightface
 
-    def __call__(self, input_image, resolution, slider_1=None, slider_2=None, slider_3=None, **kwargs):
+    def __call__(
+        self,
+        input_image,
+        resolution,
+        slider_1=None,
+        slider_2=None,
+        slider_3=None,
+        **kwargs,
+    ):
         cond = dict(
             clip_vision=None,
             insightface=self.load_insightface(),
@@ -80,32 +110,40 @@ class PreprocessorInsightFaceForInstantID(Preprocessor):
             noise=0.0,
             embeds=None,
             unfold_batch=False,
-            instant_id=True
+            instant_id=True,
         )
         return cond
 
 
-add_supported_preprocessor(PreprocessorClipVisionForIPAdapter(
-    name='CLIP-ViT-H (IPAdapter)',
-    url='https://huggingface.co/h94/IP-Adapter/resolve/main/models/image_encoder/model.safetensors',
-    filename='CLIP-ViT-H-14.safetensors'
-))
+add_supported_preprocessor(
+    PreprocessorClipVisionForIPAdapter(
+        name="CLIP-ViT-H (IPAdapter)",
+        url="https://huggingface.co/h94/IP-Adapter/resolve/main/models/image_encoder/model.safetensors",
+        filename="CLIP-ViT-H-14.safetensors",
+    )
+)
 
-add_supported_preprocessor(PreprocessorClipVisionForIPAdapter(
-    name='CLIP-ViT-bigG (IPAdapter)',
-    url='https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/image_encoder/model.safetensors',
-    filename='CLIP-ViT-bigG.safetensors'
-))
+add_supported_preprocessor(
+    PreprocessorClipVisionForIPAdapter(
+        name="CLIP-ViT-bigG (IPAdapter)",
+        url="https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/image_encoder/model.safetensors",
+        filename="CLIP-ViT-bigG.safetensors",
+    )
+)
 
-add_supported_preprocessor(PreprocessorClipVisionWithInsightFaceForIPAdapter(
-    name='InsightFace+CLIP-H (IPAdapter)',
-    url='https://huggingface.co/h94/IP-Adapter/resolve/main/models/image_encoder/model.safetensors',
-    filename='CLIP-ViT-H-14.safetensors'
-))
+add_supported_preprocessor(
+    PreprocessorClipVisionWithInsightFaceForIPAdapter(
+        name="InsightFace+CLIP-H (IPAdapter)",
+        url="https://huggingface.co/h94/IP-Adapter/resolve/main/models/image_encoder/model.safetensors",
+        filename="CLIP-ViT-H-14.safetensors",
+    )
+)
 
-add_supported_preprocessor(PreprocessorInsightFaceForInstantID(
-    name='InsightFace (InstantID)',
-))
+add_supported_preprocessor(
+    PreprocessorInsightFaceForInstantID(
+        name="InsightFace (InstantID)",
+    )
+)
 
 
 class IPAdapterPatcher(ControlModelPatcher):
@@ -127,7 +165,7 @@ class IPAdapterPatcher(ControlModelPatcher):
 
         model_filename = Path(ckpt_path).name.lower()
         o = IPAdapterPatcher(model, model_filename)
-        if 'v2' in model_filename:
+        if "v2" in model_filename:
             o.faceid_v2 = True
             o.weight_v2 = True
 
@@ -139,7 +177,7 @@ class IPAdapterPatcher(ControlModelPatcher):
         self.model_filename = model_filename
         self.faceid_v2 = False
         self.weight_v2 = False
-        self.target_blocks= None,
+        self.target_blocks = (None,)
         return
 
     def process_before_every_sampling(self, process, cond, mask, *args, **kwargs):

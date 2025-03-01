@@ -6,11 +6,12 @@ from .template import (
     get_model,
 )
 
+
 @disable_in_cq
 def test_kohya_hrfix_with_sd15_controlnet():
     APITestTemplate(
         "test_kohya_hrfix_with_sd15_controlnet",
-        "txt2img", 
+        "txt2img",
         payload_overrides={
             "prompt": "a cat",
             "steps": 20,

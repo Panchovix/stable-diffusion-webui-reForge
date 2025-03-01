@@ -102,9 +102,10 @@ class ScriptPostprocessing:
     def image_changed(self):
         pass
 
-    tab_name = ''  # used by ScriptPostprocessingForMainUI
-    replace_pattern = re.compile(r'\s')
-    rm_pattern = re.compile(r'[^a-z_0-9]')
+    tab_name = ""  # used by ScriptPostprocessingForMainUI
+    replace_pattern = re.compile(r"\s")
+    rm_pattern = re.compile(r"[^a-z_0-9]")
+
     def elem_id(self, item_id):
         """
         Helper function to generate id for a HTML element
@@ -114,14 +115,15 @@ class ScriptPostprocessing:
         tab_name will be set to '_img2img' or '_txt2img' if use by ScriptPostprocessingForMainUI
         Extensions should use this function to generate element IDs
         """
-        return self.elem_id_suffix(f'extras_{self.name.lower()}_{item_id}')
+        return self.elem_id_suffix(f"extras_{self.name.lower()}_{item_id}")
+
     def elem_id_suffix(self, base_id):
         """
         Append tab_name to the base_id
         Extensions that already have specific there element IDs and wish to keep their IDs the same when possible should use this function
         """
-        base_id = self.rm_pattern.sub('', self.replace_pattern.sub('_', base_id))
-        return f'{base_id}{self.tab_name}'
+        base_id = self.rm_pattern.sub("", self.replace_pattern.sub("_", base_id))
+        return f"{base_id}{self.tab_name}"
 
 
 def wrap_call(func, filename, funcname, *args, default=None, **kwargs):
@@ -163,6 +165,7 @@ class ScriptPostprocessingRunner:
     def scripts_in_preferred_order(self):
         if self.scripts is None:
             import modules.scripts
+
             self.initialize_scripts(modules.scripts.postprocessing_scripts_data)
 
         scripts_order = shared.opts.postprocessing_operation_order
@@ -175,8 +178,20 @@ class ScriptPostprocessingRunner:
 
             return len(self.scripts)
 
-        filtered_scripts = [script for script in self.scripts if script.name not in scripts_filter_out and not script.main_ui_only]
-        script_scores = {script.name: (script_score(script.name), script.order, script.name, original_index) for original_index, script in enumerate(filtered_scripts)}
+        filtered_scripts = [
+            script
+            for script in self.scripts
+            if script.name not in scripts_filter_out and not script.main_ui_only
+        ]
+        script_scores = {
+            script.name: (
+                script_score(script.name),
+                script.order,
+                script.name,
+                original_index,
+            )
+            for original_index, script in enumerate(filtered_scripts)
+        }
 
         return sorted(filtered_scripts, key=lambda x: script_scores[x.name])
 
@@ -196,7 +211,7 @@ class ScriptPostprocessingRunner:
         scripts = []
 
         for script in self.scripts_in_preferred_order():
-            script_args = args[script.args_from:script.args_to]
+            script_args = args[script.args_from : script.args_to]
 
             process_args = {}
             for (name, _component), value in zip(script.controls.items(), script_args):
@@ -216,7 +231,6 @@ class ScriptPostprocessingRunner:
             shared.state.job = script.name
 
             for single_image in all_images.copy():
-
                 if not single_image.disable_processing:
                     script.process(single_image, **process_args)
 
@@ -241,7 +255,6 @@ class ScriptPostprocessingRunner:
         for script in scripts:
             script_args_dict = scripts_args.get(script.name, None)
             if script_args_dict is not None:
-
                 for i, name in enumerate(script.controls):
                     args[script.args_from + i] = script_args_dict.get(name, None)
 
@@ -250,4 +263,3 @@ class ScriptPostprocessingRunner:
     def image_changed(self):
         for script in self.scripts_in_preferred_order():
             script.image_changed()
-

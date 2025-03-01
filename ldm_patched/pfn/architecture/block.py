@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+
 try:
     from typing import Literal
 except ImportError:

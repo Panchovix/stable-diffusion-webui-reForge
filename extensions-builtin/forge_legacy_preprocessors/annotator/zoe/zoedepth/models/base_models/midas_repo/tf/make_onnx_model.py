@@ -1,5 +1,5 @@
-"""Compute depth maps for images in the input folder.
-"""
+"""Compute depth maps for images in the input folder."""
+
 import os
 import ntpath
 import glob
@@ -13,25 +13,35 @@ from torchvision import transforms
 from shutil import copyfile
 import fileinput
 import sys
-sys.path.append(os.getcwd() + '/..')
-                 
+
+sys.path.append(os.getcwd() + "/..")
+
+
 def modify_file():
-    modify_filename = '../midas/blocks.py'
-    copyfile(modify_filename, modify_filename+'.bak')
+    modify_filename = "../midas/blocks.py"
+    copyfile(modify_filename, modify_filename + ".bak")
 
-    with open(modify_filename, 'r') as file :
-      filedata = file.read()
+    with open(modify_filename, "r") as file:
+        filedata = file.read()
 
-    filedata = filedata.replace('align_corners=True', 'align_corners=False')
-    filedata = filedata.replace('import torch.nn as nn', 'import torch.nn as nn\nimport torchvision.models as models')
-    filedata = filedata.replace('torch.hub.load("facebookresearch/WSL-Images", "resnext101_32x8d_wsl")', 'models.resnext101_32x8d()')
+    filedata = filedata.replace("align_corners=True", "align_corners=False")
+    filedata = filedata.replace(
+        "import torch.nn as nn",
+        "import torch.nn as nn\nimport torchvision.models as models",
+    )
+    filedata = filedata.replace(
+        'torch.hub.load("facebookresearch/WSL-Images", "resnext101_32x8d_wsl")',
+        "models.resnext101_32x8d()",
+    )
 
-    with open(modify_filename, 'w') as file:
-      file.write(filedata)
-      
+    with open(modify_filename, "w") as file:
+        file.write(filedata)
+
+
 def restore_file():
-    modify_filename = '../midas/blocks.py'
-    copyfile(modify_filename+'.bak', modify_filename)
+    modify_filename = "../midas/blocks.py"
+    copyfile(modify_filename + ".bak", modify_filename)
+
 
 modify_file()
 
@@ -42,8 +52,8 @@ restore_file()
 
 
 class MidasNet_preprocessing(MidasNet):
-    """Network for monocular depth estimation.
-    """
+    """Network for monocular depth estimation."""
+
     def forward(self, x):
         """Forward pass.
 
@@ -72,15 +82,15 @@ def run(model_path):
     # select device
 
     # load network
-    #model = MidasNet(model_path, non_negative=True)
+    # model = MidasNet(model_path, non_negative=True)
     model = MidasNet_preprocessing(model_path, non_negative=True)
 
     model.eval()
-    
+
     print("start processing")
 
     # input
-    img_input = np.zeros((3, 384, 384), np.float32)  
+    img_input = np.zeros((3, 384, 384), np.float32)
 
     # compute
     with torch.no_grad():
@@ -98,8 +108,13 @@ def run(model_path):
             .numpy()
         )
 
-    torch.onnx.export(model, sample, ntpath.basename(model_path).rsplit('.', 1)[0]+'.onnx', opset_version=9)    
-    
+    torch.onnx.export(
+        model,
+        sample,
+        ntpath.basename(model_path).rsplit(".", 1)[0] + ".onnx",
+        opset_version=9,
+    )
+
     print("finished")
 
 
@@ -107,6 +122,6 @@ if __name__ == "__main__":
     # set paths
     # MODEL_PATH = "model.pt"
     MODEL_PATH = "../model-f6b98070.pt"
-    
+
     # compute depth maps
     run(MODEL_PATH)

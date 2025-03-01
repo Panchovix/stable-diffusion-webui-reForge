@@ -144,7 +144,7 @@ def encode_poses_as_json(
     """
 
     def compress_keypoints(
-        keypoints: Union[List[Keypoint], None]
+        keypoints: Union[List[Keypoint], None],
     ) -> Union[List[float], None]:
         if not keypoints:
             return None

@@ -14,7 +14,7 @@ from modules.ui_components import ToolButton
 save_symbol = "\U0001f4be"  # 💾
 delete_symbol = "\U0001f5d1\ufe0f"  # 🗑️
 refresh_symbol = "\U0001f504"  # 🔄
-reset_symbol = "\U000021A9"  # ↩
+reset_symbol = "\U000021a9"  # ↩
 
 NEW_PRESET = "New Preset"
 
@@ -100,19 +100,18 @@ class ControlNetPresetUI(object):
         *ui_states,
     ):
         def init_with_ui_states(*ui_states) -> ControlNetUnit:
-            return ControlNetUnit(**{
-                field: value
-                for field, value in zip(ControlNetUnit.infotext_fields(), ui_states)
-            })
+            return ControlNetUnit(
+                **{
+                    field: value
+                    for field, value in zip(ControlNetUnit.infotext_fields(), ui_states)
+                }
+            )
 
         def apply_preset(name: str, control_type: str, *ui_states):
             if name == NEW_PRESET:
                 return (
                     gr.update(visible=False),
-                    *(
-                        (gr.skip(),)
-                        * (len(ControlNetUnit.infotext_fields()) + 1)
-                    ),
+                    *((gr.skip(),) * (len(ControlNetUnit.infotext_fields()) + 1)),
                 )
 
             assert name in ControlNetPresetUI.presets
@@ -132,10 +131,7 @@ class ControlNetPresetUI(object):
             if vars(current_unit) == vars(preset_unit):
                 return (
                     gr.update(visible=False),
-                    *(
-                        (gr.skip(),)
-                        * (len(ControlNetUnit.infotext_fields()) + 1)
-                    ),
+                    *((gr.skip(),) * (len(ControlNetUnit.infotext_fields()) + 1)),
                 )
 
             unit = preset_unit
@@ -184,9 +180,7 @@ class ControlNetPresetUI(object):
             if name == NEW_PRESET:
                 return gr.update(visible=True), gr.update(), gr.update()
 
-            ControlNetPresetUI.save_preset(
-                name, init_with_ui_states(*ui_states)
-            )
+            ControlNetPresetUI.save_preset(name, init_with_ui_states(*ui_states))
             return (
                 gr.update(),  # name dialog
                 gr.update(choices=ControlNetPresetUI.dropdown_choices(), value=name),
@@ -229,9 +223,7 @@ class ControlNetPresetUI(object):
                 logger.warn(f"Cannot save preset with reserved name '{NEW_PRESET}'")
                 return gr.update(visible=False), gr.update()
 
-            ControlNetPresetUI.save_preset(
-                new_name, init_with_ui_states(*ui_states)
-            )
+            ControlNetPresetUI.save_preset(new_name, init_with_ui_states(*ui_states))
             return gr.update(visible=False), gr.update(
                 choices=ControlNetPresetUI.dropdown_choices(), value=new_name
             )

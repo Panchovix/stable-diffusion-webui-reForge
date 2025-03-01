@@ -7,12 +7,13 @@ from einops import rearrange, repeat
 from ldm_patched.ldm.modules.attention import optimized_attention
 import ldm_patched.modules.samplers
 
+
 # from comfy/ldm/modules/attention.py
 # but modified to return attention scores as well as output
 def attention_basic_with_sim(q, k, v, heads, mask=None, attn_precision=None):
     b, _, dim_head = q.shape
     dim_head //= heads
-    scale = dim_head ** -0.5
+    scale = dim_head**-0.5
 
     h = heads
     q, k, v = map(
@@ -26,22 +27,22 @@ def attention_basic_with_sim(q, k, v, heads, mask=None, attn_precision=None):
 
     # force cast to fp32 to avoid overflowing
     if attn_precision == torch.float32:
-        sim = einsum('b i d, b j d -> b i j', q.float(), k.float()) * scale
+        sim = einsum("b i d, b j d -> b i j", q.float(), k.float()) * scale
     else:
-        sim = einsum('b i d, b j d -> b i j', q, k) * scale
+        sim = einsum("b i d, b j d -> b i j", q, k) * scale
 
     del q, k
 
     if mask is not None:
-        mask = rearrange(mask, 'b ... -> b (...)')
+        mask = rearrange(mask, "b ... -> b (...)")
         max_neg_value = -torch.finfo(sim.dtype).max
-        mask = repeat(mask, 'b j -> (b h) () j', h=h)
+        mask = repeat(mask, "b j -> (b h) () j", h=h)
         sim.masked_fill_(~mask, max_neg_value)
 
     # attention, what we cannot get enough of
     sim = sim.softmax(dim=-1)
 
-    out = einsum('b i j, b j d -> b i d', sim.to(v.dtype), v)
+    out = einsum("b i j, b j d -> b i d", sim.to(v.dtype), v)
     out = (
         out.unsqueeze(0)
         .reshape(b, heads, -1, dim_head)
@@ -49,6 +50,7 @@ def attention_basic_with_sim(q, k, v, heads, mask=None, attn_precision=None):
         .reshape(b, -1, heads * dim_head)
     )
     return (out, sim)
+
 
 def create_blur_map(x0, attn, sigma=3.0, threshold=1.0):
     # reshape and GAP the attention map
@@ -73,17 +75,14 @@ def create_blur_map(x0, attn, sigma=3.0, threshold=1.0):
     y = total // x
 
     # Reshape
-    mask = (
-        mask.reshape(b, x, y)
-        .unsqueeze(1)
-        .type(attn.dtype)
-    )
+    mask = mask.reshape(b, x, y).unsqueeze(1).type(attn.dtype)
     # Upsample
     mask = F.interpolate(mask, (lh, lw))
 
     blurred = gaussian_blur_2d(x0, kernel_size=9, sigma=sigma)
     blurred = blurred * mask + x0 * (1 - mask)
     return blurred
+
 
 def gaussian_blur_2d(img, kernel_size, sigma):
     ksize_half = (kernel_size - 1) * 0.5
@@ -104,13 +103,24 @@ def gaussian_blur_2d(img, kernel_size, sigma):
     img = F.conv2d(img, kernel2d, groups=img.shape[-3])
     return img
 
+
 class SelfAttentionGuidance:
     @classmethod
     def INPUT_TYPES(s):
-        return {"required": { "model": ("MODEL",),
-                             "scale": ("FLOAT", {"default": 0.5, "min": -2.0, "max": 5.0, "step": 0.01}),
-                             "blur_sigma": ("FLOAT", {"default": 2.0, "min": 0.0, "max": 10.0, "step": 0.1}),
-                              }}
+        return {
+            "required": {
+                "model": ("MODEL",),
+                "scale": (
+                    "FLOAT",
+                    {"default": 0.5, "min": -2.0, "max": 5.0, "step": 0.01},
+                ),
+                "blur_sigma": (
+                    "FLOAT",
+                    {"default": 2.0, "min": 0.0, "max": 10.0, "step": 0.1},
+                ),
+            }
+        }
+
     RETURN_TYPES = ("MODEL",)
     FUNCTION = "patch"
 
@@ -132,13 +142,19 @@ class SelfAttentionGuidance:
             if 1 in cond_or_uncond:
                 uncond_index = cond_or_uncond.index(1)
                 # do the entire attention operation, but save the attention scores to attn_scores
-                (out, sim) = attention_basic_with_sim(q, k, v, heads=heads, attn_precision=extra_options["attn_precision"])
+                (out, sim) = attention_basic_with_sim(
+                    q, k, v, heads=heads, attn_precision=extra_options["attn_precision"]
+                )
                 # when using a higher batch size, I BELIEVE the result batch dimension is [uc1, ... ucn, c1, ... cn]
                 n_slices = heads * b
-                attn_scores = sim[n_slices * uncond_index:n_slices * (uncond_index+1)]
+                attn_scores = sim[
+                    n_slices * uncond_index : n_slices * (uncond_index + 1)
+                ]
                 return out
             else:
-                return optimized_attention(q, k, v, heads=heads, attn_precision=extra_options["attn_precision"])
+                return optimized_attention(
+                    q, k, v, heads=heads, attn_precision=extra_options["attn_precision"]
+                )
 
         def post_cfg_function(args):
             nonlocal attn_scores
@@ -154,23 +170,30 @@ class SelfAttentionGuidance:
             sigma = args["sigma"]
             model_options = args["model_options"]
             x = args["input"]
-            if min(cfg_result.shape[2:]) <= 4: #skip when too small to add padding
+            if min(cfg_result.shape[2:]) <= 4:  # skip when too small to add padding
                 return cfg_result
 
             # create the adversarially blurred image
-            degraded = create_blur_map(uncond_pred, uncond_attn, sag_sigma, sag_threshold)
+            degraded = create_blur_map(
+                uncond_pred, uncond_attn, sag_sigma, sag_threshold
+            )
             degraded_noised = degraded + x - uncond_pred
             # call into the UNet
-            (sag,) = ldm_patched.modules.samplers.calc_cond_batch(model, [uncond], degraded_noised, sigma, model_options)
+            (sag,) = ldm_patched.modules.samplers.calc_cond_batch(
+                model, [uncond], degraded_noised, sigma, model_options
+            )
             return cfg_result + (degraded - sag) * sag_scale
 
-        m.set_model_sampler_post_cfg_function(post_cfg_function, disable_cfg1_optimization=True)
+        m.set_model_sampler_post_cfg_function(
+            post_cfg_function, disable_cfg1_optimization=True
+        )
 
         # from diffusers:
         # unet.mid_block.attentions[0].transformer_blocks[0].attn1.patch
         m.set_model_attn1_replace(attn_and_record, "middle", 0, 0)
 
-        return (m, )
+        return (m,)
+
 
 NODE_CLASS_MAPPINGS = {
     "SelfAttentionGuidance": SelfAttentionGuidance,

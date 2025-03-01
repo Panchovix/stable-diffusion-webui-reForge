@@ -1,4 +1,3 @@
-import os
 import tempfile
 from collections import namedtuple
 from pathlib import Path
@@ -15,7 +14,7 @@ Savedfile = namedtuple("Savedfile", ["name"])
 
 def register_tmp_file(gradio, filename):
     if hasattr(gradio, 'temp_file_sets'):  # gradio 3.15
-        gradio.temp_file_sets[0] = gradio.temp_file_sets[0] | {os.path.abspath(filename)}
+        gradio.temp_file_sets[0] = gradio.temp_file_sets[0] | {os.path.abspath()}
 
     if hasattr(gradio, 'temp_dirs'):  # gradio 3.9
         gradio.temp_dirs = gradio.temp_dirs | {os.path.abspath(os.path.dirname(filename))}
@@ -32,8 +31,8 @@ def check_tmp_file(gradio, filename):
 
 
 def save_pil_to_file(self, pil_image, dir=None, format="png"):
-    already_saved_as = getattr(pil_image, 'already_saved_as', None)
-    if already_saved_as and os.path.isfile(already_saved_as):
+    already_saved_as: = getattr(pil_image, 'already_saved_as', None)
+    if already_saved_as and Path(already_saved_as).is_file():
         register_tmp_file(shared.demo, already_saved_as)
         filename_with_mtime = f'{already_saved_as}?{os.path.getmtime(already_saved_as)}'
         register_tmp_file(shared.demo, filename_with_mtime)

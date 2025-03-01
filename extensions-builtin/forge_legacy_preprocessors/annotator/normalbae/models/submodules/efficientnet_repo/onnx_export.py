@@ -1,4 +1,4 @@
-""" ONNX export script
+"""ONNX export script
 
 Export PyTorch models as ONNX graphs.
 
@@ -18,6 +18,7 @@ Please do your research and search ONNX and PyTorch issue tracker before asking 
 
 Copyright 2020 Ross Wightman
 """
+
 import argparse
 import torch
 import numpy as np
@@ -25,31 +26,77 @@ import numpy as np
 import onnx
 import geffnet
 
-parser = argparse.ArgumentParser(description='PyTorch ImageNet Validation')
-parser.add_argument('output', metavar='ONNX_FILE',
-                    help='output model filename')
-parser.add_argument('--model', '-m', metavar='MODEL', default='mobilenetv3_large_100',
-                    help='model architecture (default: mobilenetv3_large_100)')
-parser.add_argument('--opset', type=int, default=10,
-                    help='ONNX opset to use (default: 10)')
-parser.add_argument('--keep-init', action='store_true', default=False,
-                    help='Keep initializers as input. Needed for Caffe2 compatible export in newer PyTorch/ONNX.')
-parser.add_argument('--aten-fallback', action='store_true', default=False,
-                    help='Fallback to ATEN ops. Helps fix AdaptiveAvgPool issue with Caffe2 in newer PyTorch/ONNX.')
-parser.add_argument('--dynamic-size', action='store_true', default=False,
-                    help='Export model width dynamic width/height. Not recommended for "tf" models with SAME padding.')
-parser.add_argument('-b', '--batch-size', default=1, type=int,
-                    metavar='N', help='mini-batch size (default: 1)')
-parser.add_argument('--img-size', default=None, type=int,
-                    metavar='N', help='Input image dimension, uses model default if empty')
-parser.add_argument('--mean', type=float, nargs='+', default=None, metavar='MEAN',
-                    help='Override mean pixel value of dataset')
-parser.add_argument('--std', type=float,  nargs='+', default=None, metavar='STD',
-                    help='Override std deviation of of dataset')
-parser.add_argument('--num-classes', type=int, default=1000,
-                    help='Number classes in dataset')
-parser.add_argument('--checkpoint', default='', type=str, metavar='PATH',
-                    help='path to checkpoint (default: none)')
+parser = argparse.ArgumentParser(description="PyTorch ImageNet Validation")
+parser.add_argument("output", metavar="ONNX_FILE", help="output model filename")
+parser.add_argument(
+    "--model",
+    "-m",
+    metavar="MODEL",
+    default="mobilenetv3_large_100",
+    help="model architecture (default: mobilenetv3_large_100)",
+)
+parser.add_argument(
+    "--opset", type=int, default=10, help="ONNX opset to use (default: 10)"
+)
+parser.add_argument(
+    "--keep-init",
+    action="store_true",
+    default=False,
+    help="Keep initializers as input. Needed for Caffe2 compatible export in newer PyTorch/ONNX.",
+)
+parser.add_argument(
+    "--aten-fallback",
+    action="store_true",
+    default=False,
+    help="Fallback to ATEN ops. Helps fix AdaptiveAvgPool issue with Caffe2 in newer PyTorch/ONNX.",
+)
+parser.add_argument(
+    "--dynamic-size",
+    action="store_true",
+    default=False,
+    help='Export model width dynamic width/height. Not recommended for "tf" models with SAME padding.',
+)
+parser.add_argument(
+    "-b",
+    "--batch-size",
+    default=1,
+    type=int,
+    metavar="N",
+    help="mini-batch size (default: 1)",
+)
+parser.add_argument(
+    "--img-size",
+    default=None,
+    type=int,
+    metavar="N",
+    help="Input image dimension, uses model default if empty",
+)
+parser.add_argument(
+    "--mean",
+    type=float,
+    nargs="+",
+    default=None,
+    metavar="MEAN",
+    help="Override mean pixel value of dataset",
+)
+parser.add_argument(
+    "--std",
+    type=float,
+    nargs="+",
+    default=None,
+    metavar="STD",
+    help="Override std deviation of of dataset",
+)
+parser.add_argument(
+    "--num-classes", type=int, default=1000, help="Number classes in dataset"
+)
+parser.add_argument(
+    "--checkpoint",
+    default="",
+    type=str,
+    metavar="PATH",
+    help="path to checkpoint (default: none)",
+)
 
 
 def main():
@@ -68,11 +115,15 @@ def main():
         in_chans=3,
         pretrained=args.pretrained,
         checkpoint_path=args.checkpoint,
-        exportable=True)
+        exportable=True,
+    )
 
     model.eval()
 
-    example_input = torch.randn((args.batch_size, 3, args.img_size or 224, args.img_size or 224), requires_grad=True)
+    example_input = torch.randn(
+        (args.batch_size, 3, args.img_size or 224, args.img_size or 224),
+        requires_grad=True,
+    )
 
     # Run model once before export trace, sets padding for models with Conv2dSameExport. This means
     # that the padding for models with Conv2dSameExport (most models with tf_ prefix) is fixed for
@@ -85,19 +136,28 @@ def main():
     print("==> Exporting model to ONNX format at '{}'".format(args.output))
     input_names = ["input0"]
     output_names = ["output0"]
-    dynamic_axes = {'input0': {0: 'batch'}, 'output0': {0: 'batch'}}
+    dynamic_axes = {"input0": {0: "batch"}, "output0": {0: "batch"}}
     if args.dynamic_size:
-        dynamic_axes['input0'][2] = 'height'
-        dynamic_axes['input0'][3] = 'width'
+        dynamic_axes["input0"][2] = "height"
+        dynamic_axes["input0"][3] = "width"
     if args.aten_fallback:
         export_type = torch.onnx.OperatorExportTypes.ONNX_ATEN_FALLBACK
     else:
         export_type = torch.onnx.OperatorExportTypes.ONNX
 
     torch_out = torch.onnx._export(
-        model, example_input, args.output, export_params=True, verbose=True, input_names=input_names,
-        output_names=output_names, keep_initializers_as_inputs=args.keep_init, dynamic_axes=dynamic_axes,
-        opset_version=args.opset, operator_export_type=export_type)
+        model,
+        example_input,
+        args.output,
+        export_params=True,
+        verbose=True,
+        input_names=input_names,
+        output_names=output_names,
+        keep_initializers_as_inputs=args.keep_init,
+        dynamic_axes=dynamic_axes,
+        opset_version=args.opset,
+        operator_export_type=export_type,
+    )
 
     print("==> Loading and checking exported model from '{}'".format(args.output))
     onnx_model = onnx.load(args.output)
@@ -106,9 +166,14 @@ def main():
 
     if args.keep_init and args.aten_fallback:
         import caffe2.python.onnx.backend as onnx_caffe2
+
         # Caffe2 loading only works properly in newer PyTorch/ONNX combos when
         # keep_initializers_as_inputs and aten_fallback are set to True.
-        print("==> Loading model into Caffe2 backend and comparing forward pass.".format(args.output))
+        print(
+            "==> Loading model into Caffe2 backend and comparing forward pass.".format(
+                args.output
+            )
+        )
         caffe2_backend = onnx_caffe2.prepare(onnx_model)
         B = {onnx_model.graph.input[0].name: x.data.numpy()}
         c2_out = caffe2_backend.run(B)[0]
@@ -116,5 +181,5 @@ def main():
         print("==> Passed")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

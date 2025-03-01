@@ -41,40 +41,59 @@ def _get_rel_pos_bias(self, window_size):
     old_num_relative_distance = self.num_relative_distance
     new_num_relative_distance = new_height * new_width + 3
 
-    old_sub_table = old_relative_position_bias_table[:old_num_relative_distance - 3]
+    old_sub_table = old_relative_position_bias_table[: old_num_relative_distance - 3]
 
-    old_sub_table = old_sub_table.reshape(1, old_width, old_height, -1).permute(0, 3, 1, 2)
-    new_sub_table = F.interpolate(old_sub_table, size=(int(new_height), int(new_width)), mode="bilinear")
-    new_sub_table = new_sub_table.permute(0, 2, 3, 1).reshape(new_num_relative_distance - 3, -1)
+    old_sub_table = old_sub_table.reshape(1, old_width, old_height, -1).permute(
+        0, 3, 1, 2
+    )
+    new_sub_table = F.interpolate(
+        old_sub_table, size=(int(new_height), int(new_width)), mode="bilinear"
+    )
+    new_sub_table = new_sub_table.permute(0, 2, 3, 1).reshape(
+        new_num_relative_distance - 3, -1
+    )
 
     new_relative_position_bias_table = torch.cat(
-        [new_sub_table, old_relative_position_bias_table[old_num_relative_distance - 3:]])
+        [
+            new_sub_table,
+            old_relative_position_bias_table[old_num_relative_distance - 3 :],
+        ]
+    )
 
     key = str(window_size[1]) + "," + str(window_size[0])
     if key not in self.relative_position_indices.keys():
         self.relative_position_indices[key] = gen_relative_position_index(window_size)
 
     relative_position_bias = new_relative_position_bias_table[
-        self.relative_position_indices[key].view(-1)].view(
-        window_size[0] * window_size[1] + 1,
-        window_size[0] * window_size[1] + 1, -1)  # Wh*Ww,Wh*Ww,nH
-    relative_position_bias = relative_position_bias.permute(2, 0, 1).contiguous()  # nH, Wh*Ww, Wh*Ww
+        self.relative_position_indices[key].view(-1)
+    ].view(
+        window_size[0] * window_size[1] + 1, window_size[0] * window_size[1] + 1, -1
+    )  # Wh*Ww,Wh*Ww,nH
+    relative_position_bias = relative_position_bias.permute(
+        2, 0, 1
+    ).contiguous()  # nH, Wh*Ww, Wh*Ww
     return relative_position_bias.unsqueeze(0)
 
 
-def attention_forward(self, x, resolution, shared_rel_pos_bias: Optional[torch.Tensor] = None):
+def attention_forward(
+    self, x, resolution, shared_rel_pos_bias: Optional[torch.Tensor] = None
+):
     """
     Modification of timm.models.beit.py: Attention.forward to support arbitrary window sizes.
     """
     B, N, C = x.shape
 
-    qkv_bias = torch.cat((self.q_bias, self.k_bias, self.v_bias)) if self.q_bias is not None else None
+    qkv_bias = (
+        torch.cat((self.q_bias, self.k_bias, self.v_bias))
+        if self.q_bias is not None
+        else None
+    )
     qkv = F.linear(input=x, weight=self.qkv.weight, bias=qkv_bias)
     qkv = qkv.reshape(B, N, 3, self.num_heads, -1).permute(2, 0, 3, 1, 4)
     q, k, v = qkv.unbind(0)  # make torchscript happy (cannot use tensor as tuple)
 
     q = q * self.scale
-    attn = (q @ k.transpose(-2, -1))
+    attn = q @ k.transpose(-2, -1)
 
     if self.relative_position_bias_table is not None:
         window_size = tuple(np.array(resolution) // 16)
@@ -91,18 +110,28 @@ def attention_forward(self, x, resolution, shared_rel_pos_bias: Optional[torch.T
     return x
 
 
-def block_forward(self, x, resolution, shared_rel_pos_bias: Optional[torch.Tensor] = None):
+def block_forward(
+    self, x, resolution, shared_rel_pos_bias: Optional[torch.Tensor] = None
+):
     """
     Modification of timm.models.beit.py: Block.forward to support arbitrary window sizes.
     """
-    if hasattr(self, 'drop_path1') and not hasattr(self, 'drop_path'):
+    if hasattr(self, "drop_path1") and not hasattr(self, "drop_path"):
         self.drop_path = self.drop_path1
     if self.gamma_1 is None:
-        x = x + self.drop_path(self.attn(self.norm1(x), resolution, shared_rel_pos_bias=shared_rel_pos_bias))
+        x = x + self.drop_path(
+            self.attn(
+                self.norm1(x), resolution, shared_rel_pos_bias=shared_rel_pos_bias
+            )
+        )
         x = x + self.drop_path(self.mlp(self.norm2(x)))
     else:
-        x = x + self.drop_path(self.gamma_1 * self.attn(self.norm1(x), resolution,
-                                                        shared_rel_pos_bias=shared_rel_pos_bias))
+        x = x + self.drop_path(
+            self.gamma_1
+            * self.attn(
+                self.norm1(x), resolution, shared_rel_pos_bias=shared_rel_pos_bias
+            )
+        )
         x = x + self.drop_path(self.gamma_2 * self.mlp(self.norm2(x)))
     return x
 
@@ -130,20 +159,32 @@ def beit_forward_features(self, x):
 
 
 def _make_beit_backbone(
-        model,
-        features=[96, 192, 384, 768],
-        size=[384, 384],
-        hooks=[0, 4, 8, 11],
-        vit_features=768,
-        use_readout="ignore",
-        start_index=1,
-        start_index_readout=1,
+    model,
+    features=[96, 192, 384, 768],
+    size=[384, 384],
+    hooks=[0, 4, 8, 11],
+    vit_features=768,
+    use_readout="ignore",
+    start_index=1,
+    start_index_readout=1,
 ):
-    backbone = make_backbone_default(model, features, size, hooks, vit_features, use_readout, start_index,
-                                     start_index_readout)
+    backbone = make_backbone_default(
+        model,
+        features,
+        size,
+        hooks,
+        vit_features,
+        use_readout,
+        start_index,
+        start_index_readout,
+    )
 
-    backbone.model.patch_embed.forward = types.MethodType(patch_embed_forward, backbone.model.patch_embed)
-    backbone.model.forward_features = types.MethodType(beit_forward_features, backbone.model)
+    backbone.model.patch_embed.forward = types.MethodType(
+        patch_embed_forward, backbone.model.patch_embed
+    )
+    backbone.model.forward_features = types.MethodType(
+        beit_forward_features, backbone.model
+    )
 
     for block in backbone.model.blocks:
         attn = block.attn

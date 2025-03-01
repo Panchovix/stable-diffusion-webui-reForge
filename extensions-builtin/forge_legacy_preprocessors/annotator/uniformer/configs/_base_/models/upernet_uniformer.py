@@ -1,20 +1,21 @@
 # model settings
-norm_cfg = dict(type='BN', requires_grad=True)
+norm_cfg = dict(type="BN", requires_grad=True)
 model = dict(
-    type='EncoderDecoder',
+    type="EncoderDecoder",
     pretrained=None,
     backbone=dict(
-        type='UniFormer',
+        type="UniFormer",
         embed_dim=[64, 128, 320, 512],
         layers=[3, 4, 8, 3],
         head_dim=64,
-        mlp_ratio=4.,
+        mlp_ratio=4.0,
         qkv_bias=True,
-        drop_rate=0.,
-        attn_drop_rate=0.,
-        drop_path_rate=0.1),
+        drop_rate=0.0,
+        attn_drop_rate=0.0,
+        drop_path_rate=0.1,
+    ),
     decode_head=dict(
-        type='UPerHead',
+        type="UPerHead",
         in_channels=[64, 128, 320, 512],
         in_index=[0, 1, 2, 3],
         pool_scales=(1, 2, 3, 6),
@@ -23,10 +24,10 @@ model = dict(
         num_classes=19,
         norm_cfg=norm_cfg,
         align_corners=False,
-        loss_decode=dict(
-            type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0)),
+        loss_decode=dict(type="CrossEntropyLoss", use_sigmoid=False, loss_weight=1.0),
+    ),
     auxiliary_head=dict(
-        type='FCNHead',
+        type="FCNHead",
         in_channels=320,
         in_index=2,
         channels=256,
@@ -36,8 +37,9 @@ model = dict(
         num_classes=19,
         norm_cfg=norm_cfg,
         align_corners=False,
-        loss_decode=dict(
-            type='CrossEntropyLoss', use_sigmoid=False, loss_weight=0.4)),
+        loss_decode=dict(type="CrossEntropyLoss", use_sigmoid=False, loss_weight=0.4),
+    ),
     # model training and testing settings
     train_cfg=dict(),
-    test_cfg=dict(mode='whole'))
+    test_cfg=dict(mode="whole"),
+)

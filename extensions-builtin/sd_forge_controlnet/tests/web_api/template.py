@@ -16,11 +16,13 @@ from PIL import Image
 
 def disable_in_cq(func):
     """Skips the decorated test func in CQ run."""
+
     @functools.wraps(func)
     def wrapped_func(*args, **kwargs):
         if APITestTemplate.is_cq_run:
             pytest.skip()
         return func(*args, **kwargs)
+
     return wrapped_func
 
 
@@ -51,7 +53,9 @@ def read_image(img_path: Path) -> str:
     return encoded_image
 
 
-def read_image_dir(img_dir: Path, suffixes=('.png', '.jpg', '.jpeg', '.webp')) -> List[str]:
+def read_image_dir(
+    img_dir: Path, suffixes=(".png", ".jpg", ".jpeg", ".webp")
+) -> List[str]:
     """Try read all images in given img_dir."""
     img_dir = str(img_dir)
     images = []
@@ -80,6 +84,7 @@ backlight,(ugly:1.331), (duplicate:1.331), (morbid:1.21), (mutilated:1.21),
 (bad proportions:1.331), extra limbs, (missing arms:1.331), (extra legs:1.331),
 (fused fingers:1.61051), (too many fingers:1.61051), (unclear eyes:1.331), bad hands,
 missing fingers, extra digit, bad body, easynegative, nsfw"""
+
 
 class StableDiffusionVersion(Enum):
     """The version family of stable diffusion model."""
@@ -132,7 +137,11 @@ class APITestTemplate:
             {
                 **default_unit,
                 **unit_override,
-                **({"image": input_image} if gen_type == "txt2img" and input_image is not None else {}),
+                **(
+                    {"image": input_image}
+                    if gen_type == "txt2img" and input_image is not None
+                    else {}
+                ),
             }
             for unit_override in unit_overrides
         ]
@@ -144,7 +153,9 @@ class APITestTemplate:
         else:
             return self.exec_local(*args, **kwargs)
 
-    def exec_cq(self, expected_output_num: Optional[int] = None, *args, **kwargs) -> bool:
+    def exec_cq(
+        self, expected_output_num: Optional[int] = None, *args, **kwargs
+    ) -> bool:
         """Execute test in CQ environment."""
         res = requests.post(url=self.url, json=self.payload)
         if res.status_code != 200:
@@ -157,7 +168,10 @@ class APITestTemplate:
             return False
 
         if expected_output_num is None:
-            expected_output_num = self.payload["n_iter"] * self.payload["batch_size"] + self.active_unit_count
+            expected_output_num = (
+                self.payload["n_iter"] * self.payload["batch_size"]
+                + self.active_unit_count
+            )
 
         if len(response["images"]) != expected_output_num:
             print(f"{len(response['images'])} != {expected_output_num}")
@@ -199,8 +213,9 @@ class APITestTemplate:
                 if not expect_same_image(
                     img1,
                     img2,
-                    diff_img_path=str(test_result_dir
-                    / img_file_name.replace(".png", "_diff.png")),
+                    diff_img_path=str(
+                        test_result_dir / img_file_name.replace(".png", "_diff.png")
+                    ),
                 ):
                     failed = True
         return not failed
@@ -226,7 +241,7 @@ def expect_same_image(img1, img2, diff_img_path: str) -> bool:
 
 
 def get_model(model_name: str) -> str:
-    """ Find an available model with specified model name."""
+    """Find an available model with specified model name."""
     if model_name.lower() == "none":
         return "None"
 
@@ -236,9 +251,7 @@ def get_model(model_name: str) -> str:
         raise ValueError("No model available")
 
     candidates = [
-        model
-        for model in result["model_list"]
-        if model_name.lower() in model.lower()
+        model for model in result["model_list"] if model_name.lower() in model.lower()
     ]
 
     if not candidates:

@@ -16,7 +16,9 @@ from torch.nn import functional as F
 from annotator.oneformer.detectron2.utils.env import TORCH_VERSION
 
 
-def shapes_to_tensor(x: List[int], device: Optional[torch.device] = None) -> torch.Tensor:
+def shapes_to_tensor(
+    x: List[int], device: Optional[torch.device] = None
+) -> torch.Tensor:
     """
     Turn a list of integer scalars or integer Tensor scalars into a vector,
     in a way that's both traceable and scriptable.
@@ -27,9 +29,9 @@ def shapes_to_tensor(x: List[int], device: Optional[torch.device] = None) -> tor
     if torch.jit.is_scripting():
         return torch.as_tensor(x, device=device)
     if torch.jit.is_tracing():
-        assert all(
-            [isinstance(t, torch.Tensor) for t in x]
-        ), "Shape should be tensor during tracing!"
+        assert all([isinstance(t, torch.Tensor) for t in x]), (
+            "Shape should be tensor during tracing!"
+        )
         # as_tensor should not be used in tracing because it records a constant
         ret = torch.stack(x)
         if ret.device != device:  # avoid recording a hard-coded device if not necessary
@@ -120,12 +122,18 @@ class Conv2d(torch.nn.Conv2d):
                 with warnings.catch_warnings(record=True):
                     if x.numel() == 0 and self.training:
                         # https://github.com/pytorch/pytorch/issues/12013
-                        assert not isinstance(
-                            self.norm, torch.nn.SyncBatchNorm
-                        ), "SyncBatchNorm does not support empty inputs!"
+                        assert not isinstance(self.norm, torch.nn.SyncBatchNorm), (
+                            "SyncBatchNorm does not support empty inputs!"
+                        )
 
         x = F.conv2d(
-            x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups
+            x,
+            self.weight,
+            self.bias,
+            self.stride,
+            self.padding,
+            self.dilation,
+            self.groups,
         )
         if self.norm is not None:
             x = self.norm(x)

@@ -12,7 +12,7 @@ class PerceptualLoss(nn.Module):
 
     def __init__(self, weights=[1.0, 1.0, 1.0, 1.0, 1.0]):
         super(PerceptualLoss, self).__init__()
-        self.add_module('vgg', VGG19())
+        self.add_module("vgg", VGG19())
         self.criterion = torch.nn.L1Loss()
         self.weights = weights
 
@@ -21,12 +21,21 @@ class PerceptualLoss(nn.Module):
         x_vgg, y_vgg = self.vgg(x), self.vgg(y)
 
         content_loss = 0.0
-        content_loss += self.weights[0] * self.criterion(x_vgg['relu1_1'], y_vgg['relu1_1'])
-        content_loss += self.weights[1] * self.criterion(x_vgg['relu2_1'], y_vgg['relu2_1'])
-        content_loss += self.weights[2] * self.criterion(x_vgg['relu3_1'], y_vgg['relu3_1'])
-        content_loss += self.weights[3] * self.criterion(x_vgg['relu4_1'], y_vgg['relu4_1'])
-        content_loss += self.weights[4] * self.criterion(x_vgg['relu5_1'], y_vgg['relu5_1'])
-
+        content_loss += self.weights[0] * self.criterion(
+            x_vgg["relu1_1"], y_vgg["relu1_1"]
+        )
+        content_loss += self.weights[1] * self.criterion(
+            x_vgg["relu2_1"], y_vgg["relu2_1"]
+        )
+        content_loss += self.weights[2] * self.criterion(
+            x_vgg["relu3_1"], y_vgg["relu3_1"]
+        )
+        content_loss += self.weights[3] * self.criterion(
+            x_vgg["relu4_1"], y_vgg["relu4_1"]
+        )
+        content_loss += self.weights[4] * self.criterion(
+            x_vgg["relu5_1"], y_vgg["relu5_1"]
+        )
 
         return content_loss
 
@@ -131,25 +140,21 @@ class VGG19(torch.nn.Module):
         relu5_4 = self.relu5_4(relu5_3)
 
         out = {
-            'relu1_1': relu1_1,
-            'relu1_2': relu1_2,
-
-            'relu2_1': relu2_1,
-            'relu2_2': relu2_2,
-
-            'relu3_1': relu3_1,
-            'relu3_2': relu3_2,
-            'relu3_3': relu3_3,
-            'relu3_4': relu3_4,
-
-            'relu4_1': relu4_1,
-            'relu4_2': relu4_2,
-            'relu4_3': relu4_3,
-            'relu4_4': relu4_4,
-
-            'relu5_1': relu5_1,
-            'relu5_2': relu5_2,
-            'relu5_3': relu5_3,
-            'relu5_4': relu5_4,
+            "relu1_1": relu1_1,
+            "relu1_2": relu1_2,
+            "relu2_1": relu2_1,
+            "relu2_2": relu2_2,
+            "relu3_1": relu3_1,
+            "relu3_2": relu3_2,
+            "relu3_3": relu3_3,
+            "relu3_4": relu3_4,
+            "relu4_1": relu4_1,
+            "relu4_2": relu4_2,
+            "relu4_3": relu4_3,
+            "relu4_4": relu4_4,
+            "relu5_1": relu5_1,
+            "relu5_2": relu5_2,
+            "relu5_3": relu5_3,
+            "relu5_4": relu5_4,
         }
         return out

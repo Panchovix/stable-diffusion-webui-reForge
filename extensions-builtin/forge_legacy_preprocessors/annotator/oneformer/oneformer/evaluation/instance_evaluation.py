@@ -22,7 +22,10 @@ import annotator.oneformer.detectron2.utils.comm as comm
 from annotator.oneformer.detectron2.config import CfgNode
 from annotator.oneformer.detectron2.data import MetadataCatalog
 from annotator.oneformer.detectron2.data.datasets.coco import convert_to_coco_json
-from annotator.oneformer.detectron2.evaluation.coco_evaluation import COCOEvaluator, _evaluate_predictions_on_coco
+from annotator.oneformer.detectron2.evaluation.coco_evaluation import (
+    COCOEvaluator,
+    _evaluate_predictions_on_coco,
+)
 from annotator.oneformer.detectron2.evaluation.fast_eval_api import COCOeval_opt
 from annotator.oneformer.detectron2.structures import Boxes, BoxMode, pairwise_iou
 from annotator.oneformer.detectron2.utils.file_io import PathManager
@@ -53,7 +56,9 @@ class InstanceSegEvaluator(COCOEvaluator):
 
         # unmap the category ids for COCO
         if hasattr(self._metadata, "thing_dataset_id_to_contiguous_id"):
-            dataset_id_to_contiguous_id = self._metadata.thing_dataset_id_to_contiguous_id
+            dataset_id_to_contiguous_id = (
+                self._metadata.thing_dataset_id_to_contiguous_id
+            )
             # all_contiguous_ids = list(dataset_id_to_contiguous_id.values())
             # num_classes = len(all_contiguous_ids)
             # assert min(all_contiguous_ids) == 0 and max(all_contiguous_ids) == num_classes - 1

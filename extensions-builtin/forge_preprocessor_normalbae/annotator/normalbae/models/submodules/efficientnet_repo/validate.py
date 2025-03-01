@@ -15,52 +15,122 @@ from utils import accuracy, AverageMeter
 
 has_native_amp = False
 try:
-    if getattr(torch.cuda.amp, 'autocast') is not None:
+    if getattr(torch.cuda.amp, "autocast") is not None:
         has_native_amp = True
 except AttributeError:
     pass
 
 torch.backends.cudnn.benchmark = True
 
-parser = argparse.ArgumentParser(description='PyTorch ImageNet Validation')
-parser.add_argument('data', metavar='DIR',
-                    help='path to dataset')
-parser.add_argument('--model', '-m', metavar='MODEL', default='spnasnet1_00',
-                    help='model architecture (default: dpn92)')
-parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
-                    help='number of data loading workers (default: 2)')
-parser.add_argument('-b', '--batch-size', default=256, type=int,
-                    metavar='N', help='mini-batch size (default: 256)')
-parser.add_argument('--img-size', default=None, type=int,
-                    metavar='N', help='Input image dimension, uses model default if empty')
-parser.add_argument('--mean', type=float, nargs='+', default=None, metavar='MEAN',
-                    help='Override mean pixel value of dataset')
-parser.add_argument('--std', type=float,  nargs='+', default=None, metavar='STD',
-                    help='Override std deviation of of dataset')
-parser.add_argument('--crop-pct', type=float, default=None, metavar='PCT',
-                    help='Override default crop pct of 0.875')
-parser.add_argument('--interpolation', default='', type=str, metavar='NAME',
-                    help='Image resize interpolation type (overrides model)')
-parser.add_argument('--num-classes', type=int, default=1000,
-                    help='Number classes in dataset')
-parser.add_argument('--print-freq', '-p', default=10, type=int,
-                    metavar='N', help='print frequency (default: 10)')
-parser.add_argument('--checkpoint', default='', type=str, metavar='PATH',
-                    help='path to latest checkpoint (default: none)')
-parser.add_argument('--pretrained', dest='pretrained', action='store_true',
-                    help='use pre-trained model')
-parser.add_argument('--torchscript', dest='torchscript', action='store_true',
-                    help='convert model torchscript for inference')
-parser.add_argument('--num-gpu', type=int, default=1,
-                    help='Number of GPUS to use')
-parser.add_argument('--tf-preprocessing', dest='tf_preprocessing', action='store_true',
-                    help='use tensorflow mnasnet preporcessing')
-parser.add_argument('--no-cuda', dest='no_cuda', action='store_true',
-                    help='')
-parser.add_argument('--channels-last', action='store_true', default=False,
-                    help='Use channels_last memory layout')
-parser.add_argument('--amp', action='store_true', default=False,
-                    help='Use native Torch AMP mixed precision.')
+parser = argparse.ArgumentParser(description="PyTorch ImageNet Validation")
+parser.add_argument("data", metavar="DIR", help="path to dataset")
+parser.add_argument(
+    "--model",
+    "-m",
+    metavar="MODEL",
+    default="spnasnet1_00",
+    help="model architecture (default: dpn92)",
+)
+parser.add_argument(
+    "-j",
+    "--workers",
+    default=4,
+    type=int,
+    metavar="N",
+    help="number of data loading workers (default: 2)",
+)
+parser.add_argument(
+    "-b",
+    "--batch-size",
+    default=256,
+    type=int,
+    metavar="N",
+    help="mini-batch size (default: 256)",
+)
+parser.add_argument(
+    "--img-size",
+    default=None,
+    type=int,
+    metavar="N",
+    help="Input image dimension, uses model default if empty",
+)
+parser.add_argument(
+    "--mean",
+    type=float,
+    nargs="+",
+    default=None,
+    metavar="MEAN",
+    help="Override mean pixel value of dataset",
+)
+parser.add_argument(
+    "--std",
+    type=float,
+    nargs="+",
+    default=None,
+    metavar="STD",
+    help="Override std deviation of of dataset",
+)
+parser.add_argument(
+    "--crop-pct",
+    type=float,
+    default=None,
+    metavar="PCT",
+    help="Override default crop pct of 0.875",
+)
+parser.add_argument(
+    "--interpolation",
+    default="",
+    type=str,
+    metavar="NAME",
+    help="Image resize interpolation type (overrides model)",
+)
+parser.add_argument(
+    "--num-classes", type=int, default=1000, help="Number classes in dataset"
+)
+parser.add_argument(
+    "--print-freq",
+    "-p",
+    default=10,
+    type=int,
+    metavar="N",
+    help="print frequency (default: 10)",
+)
+parser.add_argument(
+    "--checkpoint",
+    default="",
+    type=str,
+    metavar="PATH",
+    help="path to latest checkpoint (default: none)",
+)
+parser.add_argument(
+    "--pretrained", dest="pretrained", action="store_true", help="use pre-trained model"
+)
+parser.add_argument(
+    "--torchscript",
+    dest="torchscript",
+    action="store_true",
+    help="convert model torchscript for inference",
+)
+parser.add_argument("--num-gpu", type=int, default=1, help="Number of GPUS to use")
+parser.add_argument(
+    "--tf-preprocessing",
+    dest="tf_preprocessing",
+    action="store_true",
+    help="use tensorflow mnasnet preporcessing",
+)
+parser.add_argument("--no-cuda", dest="no_cuda", action="store_true", help="")
+parser.add_argument(
+    "--channels-last",
+    action="store_true",
+    default=False,
+    help="Use channels_last memory layout",
+)
+parser.add_argument(
+    "--amp",
+    action="store_true",
+    default=False,
+    help="Use native Torch AMP mixed precision.",
+)
 
 
 def main():
@@ -72,7 +142,9 @@ def main():
     amp_autocast = suppress  # do nothing
     if args.amp:
         if not has_native_amp:
-            print("Native Torch AMP is not available (requires torch >= 1.6), using FP32.")
+            print(
+                "Native Torch AMP is not available (requires torch >= 1.6), using FP32."
+            )
         else:
             amp_autocast = torch.cuda.amp.autocast
 
@@ -83,7 +155,8 @@ def main():
         in_chans=3,
         pretrained=args.pretrained,
         checkpoint_path=args.checkpoint,
-        scriptable=args.torchscript)
+        scriptable=args.torchscript,
+    )
 
     if args.channels_last:
         model = model.to(memory_format=torch.channels_last)
@@ -92,8 +165,10 @@ def main():
         torch.jit.optimized_execution(True)
         model = torch.jit.script(model)
 
-    print('Model %s created, param count: %d' %
-          (args.model, sum([m.numel() for m in model.parameters()])))
+    print(
+        "Model %s created, param count: %d"
+        % (args.model, sum([m.numel() for m in model.parameters()]))
+    )
 
     data_config = resolve_data_config(model, args)
 
@@ -101,22 +176,25 @@ def main():
 
     if not args.no_cuda:
         if args.num_gpu > 1:
-            model = torch.nn.DataParallel(model, device_ids=list(range(args.num_gpu))).cuda()
+            model = torch.nn.DataParallel(
+                model, device_ids=list(range(args.num_gpu))
+            ).cuda()
         else:
             model = model.cuda()
         criterion = criterion.cuda()
 
     loader = create_loader(
         Dataset(args.data, load_bytes=args.tf_preprocessing),
-        input_size=data_config['input_size'],
+        input_size=data_config["input_size"],
         batch_size=args.batch_size,
         use_prefetcher=not args.no_cuda,
-        interpolation=data_config['interpolation'],
-        mean=data_config['mean'],
-        std=data_config['std'],
+        interpolation=data_config["interpolation"],
+        mean=data_config["mean"],
+        std=data_config["std"],
         num_workers=args.workers,
-        crop_pct=data_config['crop_pct'],
-        tensorflow_preprocessing=args.tf_preprocessing)
+        crop_pct=data_config["crop_pct"],
+        tensorflow_preprocessing=args.tf_preprocessing,
+    )
 
     batch_time = AverageMeter()
     losses = AverageMeter()
@@ -149,18 +227,28 @@ def main():
             end = time.time()
 
             if i % args.print_freq == 0:
-                print('Test: [{0}/{1}]\t'
-                      'Time {batch_time.val:.3f} ({batch_time.avg:.3f}, {rate_avg:.3f}/s) \t'
-                      'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
-                      'Prec@1 {top1.val:.3f} ({top1.avg:.3f})\t'
-                      'Prec@5 {top5.val:.3f} ({top5.avg:.3f})'.format(
-                    i, len(loader), batch_time=batch_time,
-                    rate_avg=input.size(0) / batch_time.avg,
-                    loss=losses, top1=top1, top5=top5))
+                print(
+                    "Test: [{0}/{1}]\t"
+                    "Time {batch_time.val:.3f} ({batch_time.avg:.3f}, {rate_avg:.3f}/s) \t"
+                    "Loss {loss.val:.4f} ({loss.avg:.4f})\t"
+                    "Prec@1 {top1.val:.3f} ({top1.avg:.3f})\t"
+                    "Prec@5 {top5.val:.3f} ({top5.avg:.3f})".format(
+                        i,
+                        len(loader),
+                        batch_time=batch_time,
+                        rate_avg=input.size(0) / batch_time.avg,
+                        loss=losses,
+                        top1=top1,
+                        top5=top5,
+                    )
+                )
 
-    print(' * Prec@1 {top1.avg:.3f} ({top1a:.3f}) Prec@5 {top5.avg:.3f} ({top5a:.3f})'.format(
-        top1=top1, top1a=100-top1.avg, top5=top5, top5a=100.-top5.avg))
+    print(
+        " * Prec@1 {top1.avg:.3f} ({top1a:.3f}) Prec@5 {top5.avg:.3f} ({top5a:.3f})".format(
+            top1=top1, top1a=100 - top1.avg, top5=top5, top5a=100.0 - top5.avg
+        )
+    )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

@@ -24,13 +24,18 @@ class LamaInpainting:
         modelpath = os.path.join(self.model_dir, "ControlNetLama.pth")
         if not os.path.exists(modelpath):
             from modules.modelloader import load_file_from_url
+
             load_file_from_url(remote_model_path, model_dir=self.model_dir)
-        config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.yaml')
-        cfg = yaml.safe_load(open(config_path, 'rt'))
+        config_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "config.yaml"
+        )
+        cfg = yaml.safe_load(open(config_path, "rt"))
         cfg = OmegaConf.create(cfg)
         cfg.training_model.predict_only = True
-        cfg.visualizer.kind = 'noop'
-        self.model = load_checkpoint(cfg, os.path.abspath(modelpath), strict=False, map_location='cpu')
+        cfg.visualizer.kind = "noop"
+        self.model = load_checkpoint(
+            cfg, os.path.abspath(modelpath), strict=False, map_location="cpu"
+        )
         self.model = self.model.to(self.device)
         self.model.eval()
 
@@ -50,9 +55,9 @@ class LamaInpainting:
             mask = (mask > 0.5).float()
             color = color * (1 - mask)
             image_feed = torch.cat([color, mask], dim=2)
-            image_feed = rearrange(image_feed, 'h w c -> 1 c h w')
+            image_feed = rearrange(image_feed, "h w c -> 1 c h w")
             result = self.model(image_feed)[0]
-            result = rearrange(result, 'c h w -> h w c')
+            result = rearrange(result, "c h w -> h w c")
             result = result * mask + color * (1 - mask)
             result *= 255.0
             return result.detach().cpu().numpy().clip(0, 255).astype(np.uint8)

@@ -18,12 +18,24 @@ PoseLandmark = mp.solutions.drawing_styles.PoseLandmark
 min_face_size_pixels: int = 64
 f_thick = 2
 f_rad = 1
-right_iris_draw = DrawingSpec(color=(10, 200, 250), thickness=f_thick, circle_radius=f_rad)
-right_eye_draw = DrawingSpec(color=(10, 200, 180), thickness=f_thick, circle_radius=f_rad)
-right_eyebrow_draw = DrawingSpec(color=(10, 220, 180), thickness=f_thick, circle_radius=f_rad)
-left_iris_draw = DrawingSpec(color=(250, 200, 10), thickness=f_thick, circle_radius=f_rad)
-left_eye_draw = DrawingSpec(color=(180, 200, 10), thickness=f_thick, circle_radius=f_rad)
-left_eyebrow_draw = DrawingSpec(color=(180, 220, 10), thickness=f_thick, circle_radius=f_rad)
+right_iris_draw = DrawingSpec(
+    color=(10, 200, 250), thickness=f_thick, circle_radius=f_rad
+)
+right_eye_draw = DrawingSpec(
+    color=(10, 200, 180), thickness=f_thick, circle_radius=f_rad
+)
+right_eyebrow_draw = DrawingSpec(
+    color=(10, 220, 180), thickness=f_thick, circle_radius=f_rad
+)
+left_iris_draw = DrawingSpec(
+    color=(250, 200, 10), thickness=f_thick, circle_radius=f_rad
+)
+left_eye_draw = DrawingSpec(
+    color=(180, 200, 10), thickness=f_thick, circle_radius=f_rad
+)
+left_eyebrow_draw = DrawingSpec(
+    color=(180, 220, 10), thickness=f_thick, circle_radius=f_rad
+)
 mouth_draw = DrawingSpec(color=(10, 180, 10), thickness=f_thick, circle_radius=f_rad)
 head_draw = DrawingSpec(color=(10, 200, 10), thickness=f_thick, circle_radius=f_rad)
 
@@ -55,17 +67,16 @@ def draw_pupils(image, landmark_list, drawing_spec, halfwidth: int = 2):
         raise ValueError("Input image must be H,W,C.")
     image_rows, image_cols, image_channels = image.shape
     if image_channels != 3:  # BGR channels
-        raise ValueError('Input image must contain three channel bgr data.')
+        raise ValueError("Input image must contain three channel bgr data.")
     for idx, landmark in enumerate(landmark_list.landmark):
-        if (
-                (landmark.HasField('visibility') and landmark.visibility < 0.9) or
-                (landmark.HasField('presence') and landmark.presence < 0.5)
+        if (landmark.HasField("visibility") and landmark.visibility < 0.9) or (
+            landmark.HasField("presence") and landmark.presence < 0.5
         ):
             continue
         if landmark.x >= 1.0 or landmark.x < 0 or landmark.y >= 1.0 or landmark.y < 0:
             continue
-        image_x = int(image_cols*landmark.x)
-        image_y = int(image_rows*landmark.y)
+        image_x = int(image_cols * landmark.x)
+        image_y = int(image_rows * landmark.y)
         draw_color = None
         if isinstance(drawing_spec, Mapping):
             if drawing_spec.get(idx) is None:
@@ -74,7 +85,11 @@ def draw_pupils(image, landmark_list, drawing_spec, halfwidth: int = 2):
                 draw_color = drawing_spec[idx].color
         elif isinstance(drawing_spec, DrawingSpec):
             draw_color = drawing_spec.color
-        image[image_y-halfwidth:image_y+halfwidth, image_x-halfwidth:image_x+halfwidth, :] = draw_color
+        image[
+            image_y - halfwidth : image_y + halfwidth,
+            image_x - halfwidth : image_x + halfwidth,
+            :,
+        ] = draw_color
 
 
 def reverse_channels(image):
@@ -84,24 +99,20 @@ def reverse_channels(image):
     return image[:, :, ::-1]
 
 
-def generate_annotation(
-        img_rgb,
-        max_faces: int,
-        min_confidence: float
-):
+def generate_annotation(img_rgb, max_faces: int, min_confidence: float):
     """
     Find up to 'max_faces' inside the provided input image.
     If min_face_size_pixels is provided and nonzero it will be used to filter faces that occupy less than this many
     pixels in the image.
     """
     with mp_face_mesh.FaceMesh(
-            static_image_mode=True,
-            max_num_faces=max_faces,
-            refine_landmarks=True,
-            min_detection_confidence=min_confidence,
+        static_image_mode=True,
+        max_num_faces=max_faces,
+        refine_landmarks=True,
+        min_detection_confidence=min_confidence,
     ) as facemesh:
         img_height, img_width, img_channels = img_rgb.shape
-        assert(img_channels == 3)
+        assert img_channels == 3
 
         results = facemesh.process(img_rgb).multi_face_landmarks
 
@@ -145,7 +156,7 @@ def generate_annotation(
                 face_landmarks,
                 connections=face_connection_spec.keys(),
                 landmark_drawing_spec=None,
-                connection_drawing_spec=face_connection_spec
+                connection_drawing_spec=face_connection_spec,
             )
             draw_pupils(empty, face_landmarks, iris_landmark_spec, 2)
 

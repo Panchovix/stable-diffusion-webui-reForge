@@ -22,17 +22,18 @@ from ..parallel import is_module_wrapper
 from ..utils import mkdir_or_exist
 from .dist_utils import get_dist_info
 
-ENV_MMCV_HOME = 'MMCV_HOME'
-ENV_XDG_CACHE_HOME = 'XDG_CACHE_HOME'
-DEFAULT_CACHE_DIR = '~/.cache'
+ENV_MMCV_HOME = "MMCV_HOME"
+ENV_XDG_CACHE_HOME = "XDG_CACHE_HOME"
+DEFAULT_CACHE_DIR = "~/.cache"
 
 
 def _get_mmcv_home():
     mmcv_home = os.path.expanduser(
         os.getenv(
             ENV_MMCV_HOME,
-            os.path.join(
-                os.getenv(ENV_XDG_CACHE_HOME, DEFAULT_CACHE_DIR), 'mmcv')))
+            os.path.join(os.getenv(ENV_XDG_CACHE_HOME, DEFAULT_CACHE_DIR), "mmcv"),
+        )
+    )
 
     mkdir_or_exist(mmcv_home)
     return mmcv_home
@@ -58,46 +59,50 @@ def load_state_dict(module, state_dict, strict=False, logger=None):
     all_missing_keys = []
     err_msg = []
 
-    metadata = getattr(state_dict, '_metadata', None)
+    metadata = getattr(state_dict, "_metadata", None)
     state_dict = state_dict.copy()
     if metadata is not None:
         state_dict._metadata = metadata
 
     # use _load_from_state_dict to enable checkpoint version control
-    def load(module, prefix=''):
+    def load(module, prefix=""):
         # recursively check parallel module in case that the model has a
         # complicated structure, e.g., nn.Module(nn.Module(DDP))
         if is_module_wrapper(module):
             module = module.module
-        local_metadata = {} if metadata is None else metadata.get(
-            prefix[:-1], {})
-        module._load_from_state_dict(state_dict, prefix, local_metadata, True,
-                                     all_missing_keys, unexpected_keys,
-                                     err_msg)
+        local_metadata = {} if metadata is None else metadata.get(prefix[:-1], {})
+        module._load_from_state_dict(
+            state_dict,
+            prefix,
+            local_metadata,
+            True,
+            all_missing_keys,
+            unexpected_keys,
+            err_msg,
+        )
         for name, child in module._modules.items():
             if child is not None:
-                load(child, prefix + name + '.')
+                load(child, prefix + name + ".")
 
     load(module)
     load = None  # break load->load reference cycle
 
     # ignore "num_batches_tracked" of BN layers
-    missing_keys = [
-        key for key in all_missing_keys if 'num_batches_tracked' not in key
-    ]
+    missing_keys = [key for key in all_missing_keys if "num_batches_tracked" not in key]
 
     if unexpected_keys:
-        err_msg.append('unexpected key in source '
-                       f'state_dict: {", ".join(unexpected_keys)}\n')
+        err_msg.append(
+            f"unexpected key in source state_dict: {', '.join(unexpected_keys)}\n"
+        )
     if missing_keys:
         err_msg.append(
-            f'missing keys in source state_dict: {", ".join(missing_keys)}\n')
+            f"missing keys in source state_dict: {', '.join(missing_keys)}\n"
+        )
 
     rank, _ = get_dist_info()
     if len(err_msg) > 0 and rank == 0:
-        err_msg.insert(
-            0, 'The model and loaded state dict do not match exactly\n')
-        err_msg = '\n'.join(err_msg)
+        err_msg.insert(0, "The model and loaded state dict do not match exactly\n")
+        err_msg = "\n".join(err_msg)
         if strict:
             raise RuntimeError(err_msg)
         elif logger is not None:
@@ -111,19 +116,19 @@ def get_torchvision_models():
     for _, name, ispkg in pkgutil.walk_packages(torchvision.models.__path__):
         if ispkg:
             continue
-        _zoo = import_module(f'torchvision.models.{name}')
-        if hasattr(_zoo, 'model_urls'):
-            _urls = getattr(_zoo, 'model_urls')
+        _zoo = import_module(f"torchvision.models.{name}")
+        if hasattr(_zoo, "model_urls"):
+            _urls = getattr(_zoo, "model_urls")
             model_urls.update(_urls)
     return model_urls
 
 
 def get_external_models():
     mmcv_home = _get_mmcv_home()
-    default_json_path = osp.join(mmcv.__path__[0], 'model_zoo/open_mmlab.json')
+    default_json_path = osp.join(mmcv.__path__[0], "model_zoo/open_mmlab.json")
     default_urls = load_file(default_json_path)
     assert isinstance(default_urls, dict)
-    external_json_path = osp.join(mmcv_home, 'open_mmlab.json')
+    external_json_path = osp.join(mmcv_home, "open_mmlab.json")
     if osp.exists(external_json_path):
         external_urls = load_file(external_json_path)
         assert isinstance(external_urls, dict)
@@ -133,15 +138,14 @@ def get_external_models():
 
 
 def get_mmcls_models():
-    mmcls_json_path = osp.join(mmcv.__path__[0], 'model_zoo/mmcls.json')
+    mmcls_json_path = osp.join(mmcv.__path__[0], "model_zoo/mmcls.json")
     mmcls_urls = load_file(mmcls_json_path)
 
     return mmcls_urls
 
 
 def get_deprecated_model_names():
-    deprecate_json_path = osp.join(mmcv.__path__[0],
-                                   'model_zoo/deprecated.json')
+    deprecate_json_path = osp.join(mmcv.__path__[0], "model_zoo/deprecated.json")
     deprecate_urls = load_file(deprecate_json_path)
     assert isinstance(deprecate_urls, dict)
 
@@ -149,10 +153,10 @@ def get_deprecated_model_names():
 
 
 def _process_mmcls_checkpoint(checkpoint):
-    state_dict = checkpoint['state_dict']
+    state_dict = checkpoint["state_dict"]
     new_state_dict = OrderedDict()
     for k, v in state_dict.items():
-        if k.startswith('backbone.'):
+        if k.startswith("backbone."):
             new_state_dict[k[9:]] = v
     new_checkpoint = dict(state_dict=new_state_dict)
 
@@ -175,11 +179,13 @@ class CheckpointLoader:
                 cls._schemes[prefix] = loader
             else:
                 raise KeyError(
-                    f'{prefix} is already registered as a loader backend, '
-                    'add "force=True" if you want to override it')
+                    f"{prefix} is already registered as a loader backend, "
+                    'add "force=True" if you want to override it'
+                )
         # sort, longer prefixes take priority
         cls._schemes = OrderedDict(
-            sorted(cls._schemes.items(), key=lambda t: t[0], reverse=True))
+            sorted(cls._schemes.items(), key=lambda t: t[0], reverse=True)
+        )
 
     @classmethod
     def register_scheme(cls, prefixes, loader=None, force=False):
@@ -241,11 +247,12 @@ class CheckpointLoader:
         checkpoint_loader = cls._get_checkpoint_loader(filename)
         class_name = checkpoint_loader.__name__
         mmcv.print_log(
-            f'load checkpoint from {class_name[10:]} path: {filename}', logger)
+            f"load checkpoint from {class_name[10:]} path: {filename}", logger
+        )
         return checkpoint_loader(filename, map_location)
 
 
-@CheckpointLoader.register_scheme(prefixes='')
+@CheckpointLoader.register_scheme(prefixes="")
 def load_from_local(filename, map_location):
     """load checkpoint by local file path.
 
@@ -258,12 +265,12 @@ def load_from_local(filename, map_location):
     """
 
     if not osp.isfile(filename):
-        raise IOError(f'{filename} is not a checkpoint file')
+        raise IOError(f"{filename} is not a checkpoint file")
     checkpoint = torch.load(filename, map_location=map_location)
     return checkpoint
 
 
-@CheckpointLoader.register_scheme(prefixes=('http://', 'https://'))
+@CheckpointLoader.register_scheme(prefixes=("http://", "https://"))
 def load_from_http(filename, map_location=None, model_dir=None):
     """load checkpoint through HTTP or HTTPS scheme path. In distributed
     setting, this function only download checkpoint at local rank 0.
@@ -279,19 +286,21 @@ def load_from_http(filename, map_location=None, model_dir=None):
         dict or OrderedDict: The loaded checkpoint.
     """
     rank, world_size = get_dist_info()
-    rank = int(os.environ.get('LOCAL_RANK', rank))
+    rank = int(os.environ.get("LOCAL_RANK", rank))
     if rank == 0:
         checkpoint = model_zoo.load_url(
-            filename, model_dir=model_dir, map_location=map_location)
+            filename, model_dir=model_dir, map_location=map_location
+        )
     if world_size > 1:
         torch.distributed.barrier()
         if rank > 0:
             checkpoint = model_zoo.load_url(
-                filename, model_dir=model_dir, map_location=map_location)
+                filename, model_dir=model_dir, map_location=map_location
+            )
     return checkpoint
 
 
-@CheckpointLoader.register_scheme(prefixes='pavi://')
+@CheckpointLoader.register_scheme(prefixes="pavi://")
 def load_from_pavi(filename, map_location=None):
     """load checkpoint through the file path prefixed with pavi. In distributed
     setting, this function download ckpt at all ranks to different temporary
@@ -305,15 +314,15 @@ def load_from_pavi(filename, map_location=None):
     Returns:
         dict or OrderedDict: The loaded checkpoint.
     """
-    assert filename.startswith('pavi://'), \
-        f'Expected filename startswith `pavi://`, but get {filename}'
+    assert filename.startswith("pavi://"), (
+        f"Expected filename startswith `pavi://`, but get {filename}"
+    )
     model_path = filename[7:]
 
     try:
         from pavi import modelcloud
     except ImportError:
-        raise ImportError(
-            'Please install pavi to load checkpoint from modelcloud.')
+        raise ImportError("Please install pavi to load checkpoint from modelcloud.")
 
     model = modelcloud.get(model_path)
     with TemporaryDirectory() as tmp_dir:
@@ -323,8 +332,8 @@ def load_from_pavi(filename, map_location=None):
     return checkpoint
 
 
-@CheckpointLoader.register_scheme(prefixes='s3://')
-def load_from_ceph(filename, map_location=None, backend='petrel'):
+@CheckpointLoader.register_scheme(prefixes="s3://")
+def load_from_ceph(filename, map_location=None, backend="petrel"):
     """load checkpoint through the file path prefixed with s3.  In distributed
     setting, this function download ckpt at all ranks to different temporary
     directories.
@@ -342,13 +351,14 @@ def load_from_ceph(filename, map_location=None, backend='petrel'):
     Returns:
         dict or OrderedDict: The loaded checkpoint.
     """
-    allowed_backends = ['ceph', 'petrel']
+    allowed_backends = ["ceph", "petrel"]
     if backend not in allowed_backends:
-        raise ValueError(f'Load from Backend {backend} is not supported.')
+        raise ValueError(f"Load from Backend {backend} is not supported.")
 
-    if backend == 'ceph':
+    if backend == "ceph":
         warnings.warn(
-            'CephBackend will be deprecated, please use PetrelBackend instead')
+            "CephBackend will be deprecated, please use PetrelBackend instead"
+        )
 
     # CephClient and PetrelBackend have the same prefix 's3://' and the latter
     # will be chosen as default. If PetrelBackend can not be instantiated
@@ -364,7 +374,7 @@ def load_from_ceph(filename, map_location=None, backend='petrel'):
     return checkpoint
 
 
-@CheckpointLoader.register_scheme(prefixes=('modelzoo://', 'torchvision://'))
+@CheckpointLoader.register_scheme(prefixes=("modelzoo://", "torchvision://"))
 def load_from_torchvision(filename, map_location=None):
     """load checkpoint through the file path prefixed with modelzoo or
     torchvision.
@@ -378,16 +388,18 @@ def load_from_torchvision(filename, map_location=None):
         dict or OrderedDict: The loaded checkpoint.
     """
     model_urls = get_torchvision_models()
-    if filename.startswith('modelzoo://'):
-        warnings.warn('The URL scheme of "modelzoo://" is deprecated, please '
-                      'use "torchvision://" instead')
+    if filename.startswith("modelzoo://"):
+        warnings.warn(
+            'The URL scheme of "modelzoo://" is deprecated, please '
+            'use "torchvision://" instead'
+        )
         model_name = filename[11:]
     else:
         model_name = filename[14:]
     return load_from_http(model_urls[model_name], map_location=map_location)
 
 
-@CheckpointLoader.register_scheme(prefixes=('open-mmlab://', 'openmmlab://'))
+@CheckpointLoader.register_scheme(prefixes=("open-mmlab://", "openmmlab://"))
 def load_from_openmmlab(filename, map_location=None):
     """load checkpoint through the file path prefixed with open-mmlab or
     openmmlab.
@@ -403,31 +415,33 @@ def load_from_openmmlab(filename, map_location=None):
     """
 
     model_urls = get_external_models()
-    prefix_str = 'open-mmlab://'
+    prefix_str = "open-mmlab://"
     if filename.startswith(prefix_str):
         model_name = filename[13:]
     else:
         model_name = filename[12:]
-        prefix_str = 'openmmlab://'
+        prefix_str = "openmmlab://"
 
     deprecated_urls = get_deprecated_model_names()
     if model_name in deprecated_urls:
-        warnings.warn(f'{prefix_str}{model_name} is deprecated in favor '
-                      f'of {prefix_str}{deprecated_urls[model_name]}')
+        warnings.warn(
+            f"{prefix_str}{model_name} is deprecated in favor "
+            f"of {prefix_str}{deprecated_urls[model_name]}"
+        )
         model_name = deprecated_urls[model_name]
     model_url = model_urls[model_name]
     # check if is url
-    if model_url.startswith(('http://', 'https://')):
+    if model_url.startswith(("http://", "https://")):
         checkpoint = load_from_http(model_url, map_location=map_location)
     else:
         filename = osp.join(_get_mmcv_home(), model_url)
         if not osp.isfile(filename):
-            raise IOError(f'{filename} is not a checkpoint file')
+            raise IOError(f"{filename} is not a checkpoint file")
         checkpoint = torch.load(filename, map_location=map_location)
     return checkpoint
 
 
-@CheckpointLoader.register_scheme(prefixes='mmcls://')
+@CheckpointLoader.register_scheme(prefixes="mmcls://")
 def load_from_mmcls(filename, map_location=None):
     """load checkpoint through the file path prefixed with mmcls.
 
@@ -441,8 +455,7 @@ def load_from_mmcls(filename, map_location=None):
 
     model_urls = get_mmcls_models()
     model_name = filename[8:]
-    checkpoint = load_from_http(
-        model_urls[model_name], map_location=map_location)
+    checkpoint = load_from_http(model_urls[model_name], map_location=map_location)
     checkpoint = _process_mmcls_checkpoint(checkpoint)
     return checkpoint
 
@@ -483,29 +496,30 @@ def _load_checkpoint_with_prefix(prefix, filename, map_location=None):
 
     checkpoint = _load_checkpoint(filename, map_location=map_location)
 
-    if 'state_dict' in checkpoint:
-        state_dict = checkpoint['state_dict']
+    if "state_dict" in checkpoint:
+        state_dict = checkpoint["state_dict"]
     else:
         state_dict = checkpoint
-    if not prefix.endswith('.'):
-        prefix += '.'
+    if not prefix.endswith("."):
+        prefix += "."
     prefix_len = len(prefix)
 
     state_dict = {
-        k[prefix_len:]: v
-        for k, v in state_dict.items() if k.startswith(prefix)
+        k[prefix_len:]: v for k, v in state_dict.items() if k.startswith(prefix)
     }
 
-    assert state_dict, f'{prefix} is not in the pretrained model'
+    assert state_dict, f"{prefix} is not in the pretrained model"
     return state_dict
 
 
-def load_checkpoint(model,
-                    filename,
-                    map_location=None,
-                    strict=False,
-                    logger=None,
-                    revise_keys=[(r'^module\.', '')]):
+def load_checkpoint(
+    model,
+    filename,
+    map_location=None,
+    strict=False,
+    logger=None,
+    revise_keys=[(r"^module\.", "")],
+):
     """Load checkpoint from a file or URI.
 
     Args:
@@ -528,20 +542,17 @@ def load_checkpoint(model,
     checkpoint = _load_checkpoint(filename, map_location, logger)
     # OrderedDict is a subclass of dict
     if not isinstance(checkpoint, dict):
-        raise RuntimeError(
-            f'No state_dict found in checkpoint file {filename}')
+        raise RuntimeError(f"No state_dict found in checkpoint file {filename}")
     # get state_dict from checkpoint
-    if 'state_dict' in checkpoint:
-        state_dict = checkpoint['state_dict']
+    if "state_dict" in checkpoint:
+        state_dict = checkpoint["state_dict"]
     else:
         state_dict = checkpoint
 
     # strip prefix of state_dict
-    metadata = getattr(state_dict, '_metadata', OrderedDict())
+    metadata = getattr(state_dict, "_metadata", OrderedDict())
     for p, r in revise_keys:
-        state_dict = OrderedDict(
-            {re.sub(p, r, k): v
-             for k, v in state_dict.items()})
+        state_dict = OrderedDict({re.sub(p, r, k): v for k, v in state_dict.items()})
     # Keep metadata in state_dict
     state_dict._metadata = metadata
 
@@ -563,7 +574,7 @@ def weights_to_cpu(state_dict):
     for key, val in state_dict.items():
         state_dict_cpu[key] = val.cpu()
     # Keep metadata in state_dict
-    state_dict_cpu._metadata = getattr(state_dict, '_metadata', OrderedDict())
+    state_dict_cpu._metadata = getattr(state_dict, "_metadata", OrderedDict())
     return state_dict_cpu
 
 
@@ -587,7 +598,7 @@ def _save_to_state_dict(module, destination, prefix, keep_vars):
             destination[prefix + name] = buf if keep_vars else buf.detach()
 
 
-def get_state_dict(module, destination=None, prefix='', keep_vars=False):
+def get_state_dict(module, destination=None, prefix="", keep_vars=False):
     """Returns a dictionary containing a whole state of the module.
 
     Both parameters and persistent buffers (e.g. running averages) are
@@ -617,13 +628,11 @@ def get_state_dict(module, destination=None, prefix='', keep_vars=False):
     if destination is None:
         destination = OrderedDict()
         destination._metadata = OrderedDict()
-    destination._metadata[prefix[:-1]] = local_metadata = dict(
-        version=module._version)
+    destination._metadata[prefix[:-1]] = local_metadata = dict(version=module._version)
     _save_to_state_dict(module, destination, prefix, keep_vars)
     for name, child in module._modules.items():
         if child is not None:
-            get_state_dict(
-                child, destination, prefix + name + '.', keep_vars=keep_vars)
+            get_state_dict(child, destination, prefix + name + ".", keep_vars=keep_vars)
     for hook in module._state_dict_hooks.values():
         hook_result = hook(module, destination, prefix, local_metadata)
         if hook_result is not None:
@@ -631,11 +640,7 @@ def get_state_dict(module, destination=None, prefix='', keep_vars=False):
     return destination
 
 
-def save_checkpoint(model,
-                    filename,
-                    optimizer=None,
-                    meta=None,
-                    file_client_args=None):
+def save_checkpoint(model, filename, optimizer=None, meta=None, file_client_args=None):
     """Save checkpoint to file.
 
     The checkpoint will have 3 fields: ``meta``, ``state_dict`` and
@@ -654,39 +659,36 @@ def save_checkpoint(model,
     if meta is None:
         meta = {}
     elif not isinstance(meta, dict):
-        raise TypeError(f'meta must be a dict or None, but got {type(meta)}')
+        raise TypeError(f"meta must be a dict or None, but got {type(meta)}")
     meta.update(mmcv_version=mmcv.__version__, time=time.asctime())
 
     if is_module_wrapper(model):
         model = model.module
 
-    if hasattr(model, 'CLASSES') and model.CLASSES is not None:
+    if hasattr(model, "CLASSES") and model.CLASSES is not None:
         # save class name to the meta
         meta.update(CLASSES=model.CLASSES)
 
-    checkpoint = {
-        'meta': meta,
-        'state_dict': weights_to_cpu(get_state_dict(model))
-    }
+    checkpoint = {"meta": meta, "state_dict": weights_to_cpu(get_state_dict(model))}
     # save optimizer state dict in the checkpoint
     if isinstance(optimizer, Optimizer):
-        checkpoint['optimizer'] = optimizer.state_dict()
+        checkpoint["optimizer"] = optimizer.state_dict()
     elif isinstance(optimizer, dict):
-        checkpoint['optimizer'] = {}
+        checkpoint["optimizer"] = {}
         for name, optim in optimizer.items():
-            checkpoint['optimizer'][name] = optim.state_dict()
+            checkpoint["optimizer"][name] = optim.state_dict()
 
-    if filename.startswith('pavi://'):
+    if filename.startswith("pavi://"):
         if file_client_args is not None:
             raise ValueError(
                 'file_client_args should be "None" if filename starts with'
-                f'"pavi://", but got {file_client_args}')
+                f'"pavi://", but got {file_client_args}'
+            )
         try:
             from pavi import modelcloud
             from pavi import exception
         except ImportError:
-            raise ImportError(
-                'Please install pavi to load checkpoint from modelcloud.')
+            raise ImportError("Please install pavi to load checkpoint from modelcloud.")
         model_path = filename[7:]
         root = modelcloud.Folder()
         model_dir, model_name = osp.split(model_path)
@@ -696,7 +698,7 @@ def save_checkpoint(model,
             model = root.create_training_model(model_dir)
         with TemporaryDirectory() as tmp_dir:
             checkpoint_file = osp.join(tmp_dir, model_name)
-            with open(checkpoint_file, 'wb') as f:
+            with open(checkpoint_file, "wb") as f:
                 torch.save(checkpoint, f)
                 f.flush()
             model.create_file(checkpoint_file, name=model_name)

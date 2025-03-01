@@ -1,10 +1,11 @@
-#Modified/simplified version of the node from: https://github.com/pamparamm/sd-perturbed-attention
-#If you want the one with more options see the above repo.
+# Modified/simplified version of the node from: https://github.com/pamparamm/sd-perturbed-attention
+# If you want the one with more options see the above repo.
 
-#My modified one here is more basic but has less chances of breaking with ComfyUI updates.
+# My modified one here is more basic but has less chances of breaking with ComfyUI updates.
 
 import ldm_patched.modules.model_patcher
 import ldm_patched.modules.samplers
+
 
 class PerturbedAttentionGuidance:
     @classmethod
@@ -12,7 +13,16 @@ class PerturbedAttentionGuidance:
         return {
             "required": {
                 "model": ("MODEL",),
-                "scale": ("FLOAT", {"default": 3.0, "min": 0.0, "max": 100.0, "step": 0.1, "round": 0.01}),
+                "scale": (
+                    "FLOAT",
+                    {
+                        "default": 3.0,
+                        "min": 0.0,
+                        "max": 100.0,
+                        "step": 0.1,
+                        "round": 0.01,
+                    },
+                ),
             }
         }
 
@@ -42,14 +52,27 @@ class PerturbedAttentionGuidance:
                 return cfg_result
 
             # Replace Self-attention with PAG
-            model_options = ldm_patched.modules.model_patcher.set_model_options_patch_replace(model_options, perturbed_attention, "attn1", unet_block, unet_block_id)
-            (pag,) = ldm_patched.modules.samplers.calc_cond_batch(model, [cond], x, sigma, model_options)
+            model_options = (
+                ldm_patched.modules.model_patcher.set_model_options_patch_replace(
+                    model_options,
+                    perturbed_attention,
+                    "attn1",
+                    unet_block,
+                    unet_block_id,
+                )
+            )
+            (pag,) = ldm_patched.modules.samplers.calc_cond_batch(
+                model, [cond], x, sigma, model_options
+            )
 
             return cfg_result + (cond_pred - pag) * scale
 
-        m.set_model_sampler_post_cfg_function(post_cfg_function, disable_cfg1_optimization=True)
+        m.set_model_sampler_post_cfg_function(
+            post_cfg_function, disable_cfg1_optimization=True
+        )
 
         return (m,)
+
 
 NODE_CLASS_MAPPINGS = {
     "PerturbedAttentionGuidance": PerturbedAttentionGuidance,

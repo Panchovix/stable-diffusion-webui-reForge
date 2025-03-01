@@ -173,9 +173,9 @@ def get_readout_oper(vit_features, features, use_readout, start_index=1):
             ProjectReadout(vit_features, start_index) for out_feat in features
         ]
     else:
-        assert (
-            False
-        ), "wrong operation for readout token, use_readout can be 'ignore', 'add', or 'project'"
+        assert False, (
+            "wrong operation for readout token, use_readout can be 'ignore', 'add', or 'project'"
+        )
 
     return readout_oper
 

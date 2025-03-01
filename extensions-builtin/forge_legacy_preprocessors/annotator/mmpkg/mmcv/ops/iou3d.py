@@ -3,10 +3,10 @@ import torch
 
 from ..utils import ext_loader
 
-ext_module = ext_loader.load_ext('_ext', [
-    'iou3d_boxes_iou_bev_forward', 'iou3d_nms_forward',
-    'iou3d_nms_normal_forward'
-])
+ext_module = ext_loader.load_ext(
+    "_ext",
+    ["iou3d_boxes_iou_bev_forward", "iou3d_nms_forward", "iou3d_nms_normal_forward"],
+)
 
 
 def boxes_iou_bev(boxes_a, boxes_b):
@@ -19,11 +19,11 @@ def boxes_iou_bev(boxes_a, boxes_b):
     Returns:
         ans_iou (torch.Tensor): IoU result with shape (M, N).
     """
-    ans_iou = boxes_a.new_zeros(
-        torch.Size((boxes_a.shape[0], boxes_b.shape[0])))
+    ans_iou = boxes_a.new_zeros(torch.Size((boxes_a.shape[0], boxes_b.shape[0])))
 
-    ext_module.iou3d_boxes_iou_bev_forward(boxes_a.contiguous(),
-                                           boxes_b.contiguous(), ans_iou)
+    ext_module.iou3d_boxes_iou_bev_forward(
+        boxes_a.contiguous(), boxes_b.contiguous(), ans_iou
+    )
 
     return ans_iou
 
@@ -47,7 +47,7 @@ def nms_bev(boxes, scores, thresh, pre_max_size=None, post_max_size=None):
     Returns:
         torch.Tensor: Indexes after NMS.
     """
-    assert boxes.size(1) == 5, 'Input boxes shape should be [N, 5]'
+    assert boxes.size(1) == 5, "Input boxes shape should be [N, 5]"
     order = scores.sort(0, descending=True)[1]
 
     if pre_max_size is not None:
@@ -75,7 +75,7 @@ def nms_normal_bev(boxes, scores, thresh):
     Returns:
         torch.Tensor: Remaining indices with scores in descending order.
     """
-    assert boxes.shape[1] == 5, 'Input boxes shape should be [N, 5]'
+    assert boxes.shape[1] == 5, "Input boxes shape should be [N, 5]"
     order = scores.sort(0, descending=True)[1]
 
     boxes = boxes[order].contiguous()

@@ -1,4 +1,4 @@
-import os        
+import os
 import json
 import gradio as gr
 import functools
@@ -121,12 +121,12 @@ class A1111Context:
 
 class ControlNetUiGroup(object):
     refresh_symbol = "\U0001f504"  # 🔄
-    switch_values_symbol = "\U000021C5"  # ⇅
-    camera_symbol = "\U0001F4F7"  # 📷
-    reverse_symbol = "\U000021C4"  # ⇄
+    switch_values_symbol = "\U000021c5"  # ⇅
+    camera_symbol = "\U0001f4f7"  # 📷
+    reverse_symbol = "\U000021c4"  # ⇄
     tossup_symbol = "\u2934"
-    trigger_symbol = "\U0001F4A5"  # 💥
-    open_symbol = "\U0001F4DD"  # 📝
+    trigger_symbol = "\U0001f4a5"  # 💥
+    open_symbol = "\U0001f4dd"  # 📝
 
     tooltips = {
         "🔄": "Refresh",
@@ -234,7 +234,7 @@ class ControlNetUiGroup(object):
         self.hr_option = None
         self.ipa_block_weight = None
         self.ipa_block_weight_selector = None
-        self.ipa_block_weight_save_button = None                                                  
+        self.ipa_block_weight_save_button = None
         self.batch_image_dir_state = None
         self.output_dir_state = None
         self.advanced_weighting = gr.State(None)
@@ -271,7 +271,7 @@ class ControlNetUiGroup(object):
                                 elem_classes=["cnet-image"],
                                 contrast_scribbles=True,
                                 height=300,
-                                numpy=True
+                                numpy=True,
                             )
                             self.openpose_editor.render_upload()
 
@@ -284,7 +284,7 @@ class ControlNetUiGroup(object):
                                 height=300,
                                 no_scribbles=True,
                                 no_upload=True,
-                                numpy=True
+                                numpy=True,
                             )
 
                             with gr.Group(
@@ -308,12 +308,12 @@ class ControlNetUiGroup(object):
                                 elem_id=f"{elem_id_tabname}_{tabname}_mask_image",
                                 elem_classes=["cnet-mask-image"],
                                 height=300,
-                                scribble_color='#FFFFFF',
+                                scribble_color="#FFFFFF",
                                 scribble_width=1,
                                 scribble_alpha_fixed=True,
                                 scribble_color_fixed=True,
                                 scribble_softness_fixed=True,
-                                numpy=True
+                                numpy=True,
                             )
 
                 with gr.Tab(label="Batch Folder") as self.batch_tab:
@@ -334,8 +334,7 @@ class ControlNetUiGroup(object):
                     with gr.Row():
                         self.batch_input_gallery = MultiInputsGallery()
                         self.batch_mask_gallery = MultiInputsGallery(
-                            visible=False,
-                            elem_classes=["cnet-mask-gallery-group"]
+                            visible=False, elem_classes=["cnet-mask-gallery-group"]
                         )
 
                 with gr.Tab(label="Multi-Inputs") as self.multi_inputs_upload_tab:
@@ -562,15 +561,16 @@ class ControlNetUiGroup(object):
                 elem_classes=["cnet-ipa-preset-save"],
                 tooltip="Save Custom Preset",
                 visible=False,
-            )                                               
-            
+            )
+
         IPA_CW_PATH = os.path.join("tmp", "ipa_custom_block_weight.txt")
+
         def toggle_ipa_controlls(choice):
             if choice == "IP-Adapter":
                 return gr.update(visible=True)
             else:
                 return gr.update(visible=False)
-                
+
         def handle_dropdown_selection(alias):
             if "Custom" not in alias:
                 return external_code.ipa_block_weight_presets.get(alias, "")
@@ -580,23 +580,39 @@ class ControlNetUiGroup(object):
                         return file.readline().strip()
                 else:
                     return ""
-                    
+
         def fn_save_ipa_custom(value):
             with open(IPA_CW_PATH, "w") as file:
                 file.write(value)
-            return gr.Dropdown.update(value=list(external_code.ipa_block_weight_presets.keys())[-1])
-                
-        self.type_filter.change(toggle_ipa_controlls, inputs=self.type_filter, outputs=self.ipa_block_weight)
-        self.type_filter.change(toggle_ipa_controlls, inputs=self.type_filter, outputs=self.ipa_block_weight_selector)
-        self.type_filter.change(toggle_ipa_controlls, inputs=self.type_filter, outputs=self.ipa_block_weight_save_button)                                                                                                                    
-        self.ipa_block_weight_selector.change(handle_dropdown_selection,inputs=self.ipa_block_weight_selector,outputs=self.ipa_block_weight)
+            return gr.Dropdown.update(
+                value=list(external_code.ipa_block_weight_presets.keys())[-1]
+            )
+
+        self.type_filter.change(
+            toggle_ipa_controlls, inputs=self.type_filter, outputs=self.ipa_block_weight
+        )
+        self.type_filter.change(
+            toggle_ipa_controlls,
+            inputs=self.type_filter,
+            outputs=self.ipa_block_weight_selector,
+        )
+        self.type_filter.change(
+            toggle_ipa_controlls,
+            inputs=self.type_filter,
+            outputs=self.ipa_block_weight_save_button,
+        )
+        self.ipa_block_weight_selector.change(
+            handle_dropdown_selection,
+            inputs=self.ipa_block_weight_selector,
+            outputs=self.ipa_block_weight,
+        )
         self.ipa_block_weight_save_button.click(
             fn=fn_save_ipa_custom,
             inputs=self.ipa_block_weight,
             outputs=self.ipa_block_weight_selector,
             show_progress=False,
         )
-            
+
         self.resize_mode = gr.Radio(
             choices=[e.value for e in external_code.ResizeMode],
             value=self.default_unit.resize_mode.value,
@@ -614,7 +630,7 @@ class ControlNetUiGroup(object):
             elem_classes="controlnet_hr_option_radio",
             visible=False,
         )
-        
+
         # self.loopback = gr.Checkbox(
         #     label="[Batch Loopback] Automatically send generated images to this ControlNet unit in batch generation",
         #     value=self.default_unit.loopback,
@@ -660,11 +676,11 @@ class ControlNetUiGroup(object):
         )
 
         unit = gr.State(self.default_unit)
+
         def create_unit(*args):
-            return ControlNetUnit.from_dict({
-                k: v
-                for k, v in zip(vars(ControlNetUnit()).keys(), args)
-            })
+            return ControlNetUnit.from_dict(
+                {k: v for k, v in zip(vars(ControlNetUnit()).keys(), args)}
+            )
 
         for comp in unit_args + (self.dummy_gradio_update_trigger,):
             event_subscribers = []
@@ -681,9 +697,7 @@ class ControlNetUiGroup(object):
                 event_subscribers.append(comp.clear)
 
             for event_subscriber in event_subscribers:
-                event_subscriber(
-                    fn=create_unit, inputs=list(unit_args), outputs=unit
-                )
+                event_subscriber(fn=create_unit, inputs=list(unit_args), outputs=unit)
 
         (
             ControlNetUiGroup.a1111_context.img2img_submit_button
@@ -738,7 +752,6 @@ class ControlNetUiGroup(object):
 
     def register_build_sliders(self):
         def build_sliders(module: str, pp: bool):
-
             logger.debug(
                 f"Prevent update slider value: {self.prevent_next_n_slider_value_update}"
             )
@@ -746,10 +759,12 @@ class ControlNetUiGroup(object):
 
             preprocessor = global_state.get_preprocessor(module)
 
-            slider_resolution_kwargs = preprocessor.slider_resolution.gradio_update_kwargs.copy()
+            slider_resolution_kwargs = (
+                preprocessor.slider_resolution.gradio_update_kwargs.copy()
+            )
 
             if pp:
-                slider_resolution_kwargs['visible'] = False
+                slider_resolution_kwargs["visible"] = False
 
             grs = [
                 gr.update(**slider_resolution_kwargs),
@@ -792,7 +807,7 @@ class ControlNetUiGroup(object):
             default_preprocessor = filtered_preprocessor_list[0]
             default_controlnet_name = filtered_controlnet_names[0]
 
-            if k != 'All':
+            if k != "All":
                 if len(filtered_preprocessor_list) > 1:
                     default_preprocessor = filtered_preprocessor_list[1]
                 if len(filtered_controlnet_names) > 1:
@@ -835,7 +850,9 @@ class ControlNetUiGroup(object):
         )
 
     def register_run_annotator(self):
-        def run_annotator(image,mask, module, pres, pthr_a, pthr_b, t2i_w, t2i_h, pp, rm):
+        def run_annotator(
+            image, mask, module, pres, pthr_a, pthr_b, t2i_w, t2i_h, pp, rm
+        ):
             if image is None:
                 return (
                     gr.update(value=None, visible=True),
@@ -1016,6 +1033,7 @@ class ControlNetUiGroup(object):
 
     def register_shift_upload_mask(self):
         """Controls whether the upload mask input should be visible."""
+
         def on_checkbox_click(checked: bool, canvas_height: int, canvas_width: int):
             if not checked:
                 # Clear mask inputs if unchecked.
@@ -1027,11 +1045,13 @@ class ControlNetUiGroup(object):
                     gr.update(value=None, visible=False),
                     # Multi mask upload gallery.
                     gr.update(visible=False),
-                    gr.update(value=None)
+                    gr.update(value=None),
                 )
             else:
                 # Init an empty canvas the same size as the generation target.
-                empty_canvas = np.zeros(shape=(canvas_height, canvas_width, 3), dtype=np.uint8)
+                empty_canvas = np.zeros(
+                    shape=(canvas_height, canvas_width, 3), dtype=np.uint8
+                )
                 return (
                     # Single mask upload.
                     gr.update(visible=True),
@@ -1131,8 +1151,11 @@ class ControlNetUiGroup(object):
                 event_subscriber(
                     fn=clear_preview,
                     inputs=self.use_preview_as_input,
-                    outputs=[self.use_preview_as_input, self.generated_image.background],
-                    show_progress=False
+                    outputs=[
+                        self.use_preview_as_input,
+                        self.generated_image.background,
+                    ],
+                    show_progress=False,
                 )
 
     def register_multi_images_upload(self):

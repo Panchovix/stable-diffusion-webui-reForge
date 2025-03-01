@@ -74,55 +74,65 @@ class EvalHook(Hook):
     # tasks, downstream repos may need to overwrite the following inner
     # variable accordingly.
 
-    rule_map = {'greater': lambda x, y: x > y, 'less': lambda x, y: x < y}
-    init_value_map = {'greater': -inf, 'less': inf}
+    rule_map = {"greater": lambda x, y: x > y, "less": lambda x, y: x < y}
+    init_value_map = {"greater": -inf, "less": inf}
     _default_greater_keys = [
-        'acc', 'top', 'AR@', 'auc', 'precision', 'mAP', 'mDice', 'mIoU',
-        'mAcc', 'aAcc'
+        "acc",
+        "top",
+        "AR@",
+        "auc",
+        "precision",
+        "mAP",
+        "mDice",
+        "mIoU",
+        "mAcc",
+        "aAcc",
     ]
-    _default_less_keys = ['loss']
+    _default_less_keys = ["loss"]
 
-    def __init__(self,
-                 dataloader,
-                 start=None,
-                 interval=1,
-                 by_epoch=True,
-                 save_best=None,
-                 rule=None,
-                 test_fn=None,
-                 greater_keys=None,
-                 less_keys=None,
-                 out_dir=None,
-                 file_client_args=None,
-                 **eval_kwargs):
+    def __init__(
+        self,
+        dataloader,
+        start=None,
+        interval=1,
+        by_epoch=True,
+        save_best=None,
+        rule=None,
+        test_fn=None,
+        greater_keys=None,
+        less_keys=None,
+        out_dir=None,
+        file_client_args=None,
+        **eval_kwargs,
+    ):
         if not isinstance(dataloader, DataLoader):
-            raise TypeError(f'dataloader must be a pytorch DataLoader, '
-                            f'but got {type(dataloader)}')
+            raise TypeError(
+                f"dataloader must be a pytorch DataLoader, but got {type(dataloader)}"
+            )
 
         if interval <= 0:
-            raise ValueError(f'interval must be a positive number, '
-                             f'but got {interval}')
+            raise ValueError(f"interval must be a positive number, but got {interval}")
 
-        assert isinstance(by_epoch, bool), '``by_epoch`` should be a boolean'
+        assert isinstance(by_epoch, bool), "``by_epoch`` should be a boolean"
 
         if start is not None and start < 0:
-            raise ValueError(f'The evaluation start epoch {start} is smaller '
-                             f'than 0')
+            raise ValueError(f"The evaluation start epoch {start} is smaller than 0")
 
         self.dataloader = dataloader
         self.interval = interval
         self.start = start
         self.by_epoch = by_epoch
 
-        assert isinstance(save_best, str) or save_best is None, \
-            '""save_best"" should be a str or None ' \
-            f'rather than {type(save_best)}'
+        assert isinstance(save_best, str) or save_best is None, (
+            f'""save_best"" should be a str or None rather than {type(save_best)}'
+        )
         self.save_best = save_best
         self.eval_kwargs = eval_kwargs
         self.initial_flag = True
 
         if test_fn is None:
             from annotator.mmpkg.mmcv.engine import single_gpu_test
+
             self.test_fn = single_gpu_test
         else:
             self.test_fn = test_fn
@@ -131,7 +141,7 @@ class EvalHook(Hook):
             self.greater_keys = self._default_greater_keys
         else:
             if not isinstance(greater_keys, (list, tuple)):
-                greater_keys = (greater_keys, )
+                greater_keys = (greater_keys,)
             assert is_seq_of(greater_keys, str)
             self.greater_keys = greater_keys
 
@@ -139,7 +149,7 @@ class EvalHook(Hook):
             self.less_keys = self._default_less_keys
         else:
             if not isinstance(less_keys, (list, tuple)):
-                less_keys = (less_keys, )
+                less_keys = (less_keys,)
             assert is_seq_of(less_keys, str)
             self.less_keys = less_keys
 
@@ -171,11 +181,10 @@ class EvalHook(Hook):
                 comparison rule.
         """
         if rule not in self.rule_map and rule is not None:
-            raise KeyError(f'rule must be greater, less or None, '
-                           f'but got {rule}.')
+            raise KeyError(f"rule must be greater, less or None, but got {rule}.")
 
         if rule is None:
-            if key_indicator != 'auto':
+            if key_indicator != "auto":
                 # `_lc` here means we use the lower case of keys for
                 # case-insensitive matching
                 key_indicator_lc = key_indicator.lower()
@@ -183,17 +192,19 @@ class EvalHook(Hook):
                 less_keys = [key.lower() for key in self.less_keys]
 
                 if key_indicator_lc in greater_keys:
-                    rule = 'greater'
+                    rule = "greater"
                 elif key_indicator_lc in less_keys:
-                    rule = 'less'
+                    rule = "less"
                 elif any(key in key_indicator_lc for key in greater_keys):
-                    rule = 'greater'
+                    rule = "greater"
                 elif any(key in key_indicator_lc for key in less_keys):
-                    rule = 'less'
+                    rule = "less"
                 else:
-                    raise ValueError(f'Cannot infer the rule for key '
-                                     f'{key_indicator}, thus a specific rule '
-                                     f'must be specified.')
+                    raise ValueError(
+                        f"Cannot infer the rule for key "
+                        f"{key_indicator}, thus a specific rule "
+                        f"must be specified."
+                    )
         self.rule = rule
         self.key_indicator = key_indicator
         if self.rule is not None:
@@ -203,8 +214,7 @@ class EvalHook(Hook):
         if not self.out_dir:
             self.out_dir = runner.work_dir
 
-        self.file_client = FileClient.infer_client(self.file_client_args,
-                                                   self.out_dir)
+        self.file_client = FileClient.infer_client(self.file_client_args, self.out_dir)
 
         # if `self.out_dir` is not equal to `runner.work_dir`, it means that
         # `self.out_dir` is set so the final `self.out_dir` is the
@@ -214,16 +224,18 @@ class EvalHook(Hook):
             basename = osp.basename(runner.work_dir.rstrip(osp.sep))
             self.out_dir = self.file_client.join_path(self.out_dir, basename)
             runner.logger.info(
-                (f'The best checkpoint will be saved to {self.out_dir} by '
-                 f'{self.file_client.name}'))
+                (
+                    f"The best checkpoint will be saved to {self.out_dir} by "
+                    f"{self.file_client.name}"
+                )
+            )
 
         if self.save_best is not None:
             if runner.meta is None:
-                warnings.warn('runner.meta is None. Creating an empty one.')
+                warnings.warn("runner.meta is None. Creating an empty one.")
                 runner.meta = dict()
-            runner.meta.setdefault('hook_msgs', dict())
-            self.best_ckpt_path = runner.meta['hook_msgs'].get(
-                'best_ckpt', None)
+            runner.meta.setdefault("hook_msgs", dict())
+            self.best_ckpt_path = runner.meta["hook_msgs"].get("best_ckpt", None)
 
     def before_train_iter(self, runner):
         """Evaluate the model only at the start of training by iteration."""
@@ -269,7 +281,7 @@ class EvalHook(Hook):
     def _do_evaluate(self, runner):
         """perform evaluation and save ckpt."""
         results = self.test_fn(runner.model, self.dataloader)
-        runner.log_buffer.output['eval_iter_num'] = len(self.dataloader)
+        runner.log_buffer.output["eval_iter_num"] = len(self.dataloader)
         key_score = self.evaluate(runner, results)
         # the key_score may be `None` so it needs to skip the action to save
         # the best checkpoint
@@ -319,37 +331,37 @@ class EvalHook(Hook):
         best checkpoint into ``work_dir``.
         """
         if self.by_epoch:
-            current = f'epoch_{runner.epoch + 1}'
-            cur_type, cur_time = 'epoch', runner.epoch + 1
+            current = f"epoch_{runner.epoch + 1}"
+            cur_type, cur_time = "epoch", runner.epoch + 1
         else:
-            current = f'iter_{runner.iter + 1}'
-            cur_type, cur_time = 'iter', runner.iter + 1
+            current = f"iter_{runner.iter + 1}"
+            cur_type, cur_time = "iter", runner.iter + 1
 
-        best_score = runner.meta['hook_msgs'].get(
-            'best_score', self.init_value_map[self.rule])
+        best_score = runner.meta["hook_msgs"].get(
+            "best_score", self.init_value_map[self.rule]
+        )
         if self.compare_func(key_score, best_score):
             best_score = key_score
-            runner.meta['hook_msgs']['best_score'] = best_score
+            runner.meta["hook_msgs"]["best_score"] = best_score
 
-            if self.best_ckpt_path and self.file_client.isfile(
-                    self.best_ckpt_path):
+            if self.best_ckpt_path and self.file_client.isfile(self.best_ckpt_path):
                 self.file_client.remove(self.best_ckpt_path)
                 runner.logger.info(
-                    (f'The previous best checkpoint {self.best_ckpt_path} was '
-                     'removed'))
+                    (f"The previous best checkpoint {self.best_ckpt_path} was removed")
+                )
 
-            best_ckpt_name = f'best_{self.key_indicator}_{current}.pth'
+            best_ckpt_name = f"best_{self.key_indicator}_{current}.pth"
             self.best_ckpt_path = self.file_client.join_path(
-                self.out_dir, best_ckpt_name)
-            runner.meta['hook_msgs']['best_ckpt'] = self.best_ckpt_path
+                self.out_dir, best_ckpt_name
+            )
+            runner.meta["hook_msgs"]["best_ckpt"] = self.best_ckpt_path
 
-            runner.save_checkpoint(
-                self.out_dir, best_ckpt_name, create_symlink=False)
+            runner.save_checkpoint(self.out_dir, best_ckpt_name, create_symlink=False)
+            runner.logger.info(f"Now best checkpoint is saved as {best_ckpt_name}.")
             runner.logger.info(
-                f'Now best checkpoint is saved as {best_ckpt_name}.')
-            runner.logger.info(
-                f'Best {self.key_indicator} is {best_score:0.4f} '
-                f'at {cur_time} {cur_type}.')
+                f"Best {self.key_indicator} is {best_score:0.4f} "
+                f"at {cur_time} {cur_type}."
+            )
 
     def evaluate(self, runner, results):
         """Evaluate the results.
@@ -359,7 +371,8 @@ class EvalHook(Hook):
             results (list): Output results.
         """
         eval_res = self.dataloader.dataset.evaluate(
-            results, logger=runner.logger, **self.eval_kwargs)
+            results, logger=runner.logger, **self.eval_kwargs
+        )
 
         for name, val in eval_res.items():
             runner.log_buffer.output[name] = val
@@ -372,11 +385,12 @@ class EvalHook(Hook):
             # https://github.com/open-mmlab/mmdetection/issues/6265.
             if not eval_res:
                 warnings.warn(
-                    'Since `eval_res` is an empty dict, the behavior to save '
-                    'the best checkpoint will be skipped in this evaluation.')
+                    "Since `eval_res` is an empty dict, the behavior to save "
+                    "the best checkpoint will be skipped in this evaluation."
+                )
                 return None
 
-            if self.key_indicator == 'auto':
+            if self.key_indicator == "auto":
                 # infer from eval_results
                 self._init_rule(self.rule, list(eval_res.keys())[0])
             return eval_res[self.key_indicator]
@@ -436,25 +450,27 @@ class DistEvalHook(EvalHook):
             the dataset.
     """
 
-    def __init__(self,
-                 dataloader,
-                 start=None,
-                 interval=1,
-                 by_epoch=True,
-                 save_best=None,
-                 rule=None,
-                 test_fn=None,
-                 greater_keys=None,
-                 less_keys=None,
-                 broadcast_bn_buffer=True,
-                 tmpdir=None,
-                 gpu_collect=False,
-                 out_dir=None,
-                 file_client_args=None,
-                 **eval_kwargs):
-
+    def __init__(
+        self,
+        dataloader,
+        start=None,
+        interval=1,
+        by_epoch=True,
+        save_best=None,
+        rule=None,
+        test_fn=None,
+        greater_keys=None,
+        less_keys=None,
+        broadcast_bn_buffer=True,
+        tmpdir=None,
+        gpu_collect=False,
+        out_dir=None,
+        file_client_args=None,
+        **eval_kwargs,
+    ):
         if test_fn is None:
             from annotator.mmpkg.mmcv.engine import multi_gpu_test
+
             test_fn = multi_gpu_test
 
         super().__init__(
@@ -469,7 +485,8 @@ class DistEvalHook(EvalHook):
             less_keys=less_keys,
             out_dir=out_dir,
             file_client_args=file_client_args,
-            **eval_kwargs)
+            **eval_kwargs,
+        )
 
         self.broadcast_bn_buffer = broadcast_bn_buffer
         self.tmpdir = tmpdir
@@ -485,23 +502,20 @@ class DistEvalHook(EvalHook):
         if self.broadcast_bn_buffer:
             model = runner.model
             for name, module in model.named_modules():
-                if isinstance(module,
-                              _BatchNorm) and module.track_running_stats:
+                if isinstance(module, _BatchNorm) and module.track_running_stats:
                     dist.broadcast(module.running_var, 0)
                     dist.broadcast(module.running_mean, 0)
 
         tmpdir = self.tmpdir
         if tmpdir is None:
-            tmpdir = osp.join(runner.work_dir, '.eval_hook')
+            tmpdir = osp.join(runner.work_dir, ".eval_hook")
 
         results = self.test_fn(
-            runner.model,
-            self.dataloader,
-            tmpdir=tmpdir,
-            gpu_collect=self.gpu_collect)
+            runner.model, self.dataloader, tmpdir=tmpdir, gpu_collect=self.gpu_collect
+        )
         if runner.rank == 0:
-            print('\n')
-            runner.log_buffer.output['eval_iter_num'] = len(self.dataloader)
+            print("\n")
+            runner.log_buffer.output["eval_iter_num"] = len(self.dataloader)
             key_score = self.evaluate(runner, results)
             # the key_score may be `None` so it needs to skip the action to
             # save the best checkpoint

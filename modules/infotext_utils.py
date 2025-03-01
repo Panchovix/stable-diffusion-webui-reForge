@@ -8,10 +8,21 @@ import sys
 
 import gradio as gr
 from modules.paths import data_path
-from modules import shared, ui_tempdir, script_callbacks, processing, infotext_versions, images, prompt_parser, errors
+from modules import (
+    shared,
+    ui_tempdir,
+    script_callbacks,
+    processing,
+    infotext_versions,
+    images,
+    prompt_parser,
+    errors,
+)
 from PIL import Image
 
-sys.modules['modules.generation_parameters_copypaste'] = sys.modules[__name__]  # alias for old name
+sys.modules["modules.generation_parameters_copypaste"] = sys.modules[
+    __name__
+]  # alias for old name
 
 re_param_code = r'\s*(\w[\w \-/]+):\s*("(?:\\.|[^\\"])+"|[^,]*)(?:,|$)'
 re_param = re.compile(re_param_code)
@@ -21,7 +32,16 @@ type_of_gr_update = type(gr.update())
 
 
 class ParamBinding:
-    def __init__(self, paste_button, tabname, source_text_component=None, source_image_component=None, source_tabname=None, override_settings_component=None, paste_field_names=None):
+    def __init__(
+        self,
+        paste_button,
+        tabname,
+        source_text_component=None,
+        source_image_component=None,
+        source_tabname=None,
+        override_settings_component=None,
+        paste_field_names=None,
+    ):
         self.paste_button = paste_button
         self.tabname = tabname
         self.source_text_component = source_text_component
@@ -54,7 +74,7 @@ def reset():
 
 
 def quote(text):
-    if ',' not in str(text) and '\n' not in str(text) and ':' not in str(text):
+    if "," not in str(text) and "\n" not in str(text) and ":" not in str(text):
         return text
 
     return json.dumps(text, ensure_ascii=False)
@@ -74,15 +94,22 @@ def image_from_url_text(filedata):
     if filedata is None:
         return None
 
-    if type(filedata) == list and filedata and type(filedata[0]) == dict and filedata[0].get("is_file", False):
+    if (
+        type(filedata) == list
+        and filedata
+        and type(filedata[0]) == dict
+        and filedata[0].get("is_file", False)
+    ):
         filedata = filedata[0]
 
     if type(filedata) == dict and filedata.get("is_file", False):
         filename = filedata["name"]
         is_in_right_dir = ui_tempdir.check_tmp_file(shared.demo, filename)
-        assert is_in_right_dir, 'trying to open image file outside of allowed directories'
+        assert is_in_right_dir, (
+            "trying to open image file outside of allowed directories"
+        )
 
-        filename = filename.rsplit('?', 1)[0]
+        filename = filename.rsplit("?", 1)[0]
         return images.read(filename)
 
     if type(filedata) == list:
@@ -92,27 +119,31 @@ def image_from_url_text(filedata):
         filedata = filedata[0]
 
     if filedata.startswith("data:image/png;base64,"):
-        filedata = filedata[len("data:image/png;base64,"):]
+        filedata = filedata[len("data:image/png;base64,") :]
 
-    filedata = base64.decodebytes(filedata.encode('utf-8'))
+    filedata = base64.decodebytes(filedata.encode("utf-8"))
     image = images.read(io.BytesIO(filedata))
     return image
 
 
 def add_paste_fields(tabname, init_img, fields, override_settings_component=None):
-
     if fields:
         for i in range(len(fields)):
             if not isinstance(fields[i], PasteField):
                 fields[i] = PasteField(*fields[i])
 
-    paste_fields[tabname] = {"init_img": init_img, "fields": fields, "override_settings_component": override_settings_component}
+    paste_fields[tabname] = {
+        "init_img": init_img,
+        "fields": fields,
+        "override_settings_component": override_settings_component,
+    }
 
     # backwards compatibility for existing extensions
     import modules.ui
-    if tabname == 'txt2img':
+
+    if tabname == "txt2img":
         modules.ui.txt2img_paste_fields = fields
-    elif tabname == 'img2img':
+    elif tabname == "img2img":
         modules.ui.img2img_paste_fields = fields
 
 
@@ -126,10 +157,24 @@ def create_buttons(tabs_list):
 def bind_buttons(buttons, send_image, send_generate_info):
     """old function for backwards compatibility; do not use this, use register_paste_params_button"""
     for tabname, button in buttons.items():
-        source_text_component = send_generate_info if isinstance(send_generate_info, gr.components.Component) else None
-        source_tabname = send_generate_info if isinstance(send_generate_info, str) else None
+        source_text_component = (
+            send_generate_info
+            if isinstance(send_generate_info, gr.components.Component)
+            else None
+        )
+        source_tabname = (
+            send_generate_info if isinstance(send_generate_info, str) else None
+        )
 
-        register_paste_params_button(ParamBinding(paste_button=button, tabname=tabname, source_text_component=source_text_component, source_image_component=send_image, source_tabname=source_tabname))
+        register_paste_params_button(
+            ParamBinding(
+                paste_button=button,
+                tabname=tabname,
+                source_text_component=source_text_component,
+                source_image_component=send_image,
+                source_tabname=source_tabname,
+            )
+        )
 
 
 def register_paste_params_button(binding: ParamBinding):
@@ -142,36 +187,77 @@ def connect_paste_params_buttons():
             continue
         destination_image_component = paste_fields[binding.tabname]["init_img"]
         fields = paste_fields[binding.tabname]["fields"]
-        override_settings_component = binding.override_settings_component or paste_fields[binding.tabname]["override_settings_component"]
+        override_settings_component = (
+            binding.override_settings_component
+            or paste_fields[binding.tabname]["override_settings_component"]
+        )
 
-        destination_width_component = next(iter([field for field, name in fields if name == "Size-1"] if fields else []), None)
-        destination_height_component = next(iter([field for field, name in fields if name == "Size-2"] if fields else []), None)
+        destination_width_component = next(
+            iter(
+                [field for field, name in fields if name == "Size-1"] if fields else []
+            ),
+            None,
+        )
+        destination_height_component = next(
+            iter(
+                [field for field, name in fields if name == "Size-2"] if fields else []
+            ),
+            None,
+        )
 
         if binding.source_image_component and destination_image_component:
-            need_send_dementions = destination_width_component and binding.tabname != 'inpaint'
+            need_send_dementions = (
+                destination_width_component and binding.tabname != "inpaint"
+            )
             if isinstance(binding.source_image_component, gr.Gallery):
-                func = send_image_and_dimensions if need_send_dementions else image_from_url_text
+                func = (
+                    send_image_and_dimensions
+                    if need_send_dementions
+                    else image_from_url_text
+                )
                 jsfunc = "extract_image_from_gallery"
             else:
-                func = send_image_and_dimensions if need_send_dementions else lambda x: x
+                func = (
+                    send_image_and_dimensions if need_send_dementions else lambda x: x
+                )
                 jsfunc = None
 
             binding.paste_button.click(
                 fn=func,
                 js=jsfunc,
                 inputs=[binding.source_image_component],
-                outputs=[destination_image_component, destination_width_component, destination_height_component] if need_send_dementions else [destination_image_component],
+                outputs=[
+                    destination_image_component,
+                    destination_width_component,
+                    destination_height_component,
+                ]
+                if need_send_dementions
+                else [destination_image_component],
                 show_progress=False,
             )
 
         if binding.source_text_component is not None and fields is not None:
-            connect_paste(binding.paste_button, fields, binding.source_text_component, override_settings_component, binding.tabname)
+            connect_paste(
+                binding.paste_button,
+                fields,
+                binding.source_text_component,
+                override_settings_component,
+                binding.tabname,
+            )
 
         if binding.source_tabname is not None and fields is not None:
-            paste_field_names = ['Prompt', 'Negative prompt', 'Steps', 'Face restoration'] + (["Seed"] if shared.opts.send_seed else []) + binding.paste_field_names
+            paste_field_names = (
+                ["Prompt", "Negative prompt", "Steps", "Face restoration"]
+                + (["Seed"] if shared.opts.send_seed else [])
+                + binding.paste_field_names
+            )
             binding.paste_button.click(
                 fn=lambda *x: x,
-                inputs=[field for field, name in paste_fields[binding.source_tabname]["fields"] if name in paste_field_names],
+                inputs=[
+                    field
+                    for field, name in paste_fields[binding.source_tabname]["fields"]
+                    if name in paste_field_names
+                ],
                 outputs=[field for field, name in fields if name in paste_field_names],
                 show_progress=False,
             )
@@ -188,12 +274,12 @@ def connect_paste_params_buttons():
 def send_image_and_dimensions(x):
     if isinstance(x, Image.Image):
         img = x
-        if img.mode == 'RGBA':
-            img = img.convert('RGB')
+        if img.mode == "RGBA":
+            img = img.convert("RGB")
     else:
         img = image_from_url_text(x)
-        if img is not None and img.mode == 'RGBA':
-            img = img.convert('RGB')
+        if img is not None and img.mode == "RGBA":
+            img = img.convert("RGB")
 
     if shared.opts.send_size and isinstance(img, Image.Image):
         w = img.width
@@ -209,16 +295,16 @@ def restore_old_hires_fix_params(res):
     """for infotexts that specify old First pass size parameter, convert it into
     width, height, and hr scale"""
 
-    firstpass_width = res.get('First pass size-1', None)
-    firstpass_height = res.get('First pass size-2', None)
+    firstpass_width = res.get("First pass size-1", None)
+    firstpass_height = res.get("First pass size-2", None)
 
     if shared.opts.use_old_hires_fix_width_height:
         hires_width = int(res.get("Hires resize-1", 0))
         hires_height = int(res.get("Hires resize-2", 0))
 
         if hires_width and hires_height:
-            res['Size-1'] = hires_width
-            res['Size-2'] = hires_height
+            res["Size-1"] = hires_width
+            res["Size-2"] = hires_height
             return
 
     if firstpass_width is None or firstpass_height is None:
@@ -229,23 +315,25 @@ def restore_old_hires_fix_params(res):
     height = int(res.get("Size-2", 512))
 
     if firstpass_width == 0 or firstpass_height == 0:
-        firstpass_width, firstpass_height = processing.old_hires_fix_first_pass_dimensions(width, height)
+        firstpass_width, firstpass_height = (
+            processing.old_hires_fix_first_pass_dimensions(width, height)
+        )
 
-    res['Size-1'] = firstpass_width
-    res['Size-2'] = firstpass_height
-    res['Hires resize-1'] = width
-    res['Hires resize-2'] = height
+    res["Size-1"] = firstpass_width
+    res["Size-2"] = firstpass_height
+    res["Hires resize-1"] = width
+    res["Hires resize-2"] = height
 
 
 def parse_generation_parameters(x: str, skip_fields: list[str] | None = None):
     """parses generation parameters string, the one you see in text field under the picture in UI:
-```
-girl with an artist's beret, determined, blue eyes, desert scene, computer monitors, heavy makeup, by Alphonse Mucha and Charlie Bowater, ((eyeshadow)), (coquettish), detailed, intricate
-Negative prompt: ugly, fat, obese, chubby, (((deformed))), [blurry], bad anatomy, disfigured, poorly drawn face, mutation, mutated, (extra_limb), (ugly), (poorly drawn hands), messy drawing
-Steps: 20, Sampler: Euler a, CFG scale: 7, Seed: 965400086, Size: 512x512, Model hash: 45dee52b
-```
+    ```
+    girl with an artist's beret, determined, blue eyes, desert scene, computer monitors, heavy makeup, by Alphonse Mucha and Charlie Bowater, ((eyeshadow)), (coquettish), detailed, intricate
+    Negative prompt: ugly, fat, obese, chubby, (((deformed))), [blurry], bad anatomy, disfigured, poorly drawn face, mutation, mutated, (extra_limb), (ugly), (poorly drawn hands), messy drawing
+    Steps: 20, Sampler: Euler a, CFG scale: 7, Seed: 965400086, Size: 512x512, Model hash: 45dee52b
+    ```
 
-    returns a dict with field values
+        returns a dict with field values
     """
     if skip_fields is None:
         skip_fields = shared.opts.infotext_skip_pasting
@@ -260,7 +348,7 @@ Steps: 20, Sampler: Euler a, CFG scale: 7, Seed: 965400086, Size: 512x512, Model
     *lines, lastline = x.strip().split("\n")
     if len(re_param.findall(lastline)) < 3:
         lines.append(lastline)
-        lastline = ''
+        lastline = ""
 
     for line in lines:
         line = line.strip()
@@ -284,24 +372,47 @@ Steps: 20, Sampler: Euler a, CFG scale: 7, Seed: 965400086, Size: 512x512, Model
             else:
                 res[k] = v
         except Exception:
-            print(f"Error parsing \"{k}: {v}\"")
+            print(f'Error parsing "{k}: {v}"')
 
     # Extract styles from prompt
     if shared.opts.infotext_styles != "Ignore":
-        found_styles, prompt_no_styles, negative_prompt_no_styles = shared.prompt_styles.extract_styles_from_prompt(prompt, negative_prompt)
+        found_styles, prompt_no_styles, negative_prompt_no_styles = (
+            shared.prompt_styles.extract_styles_from_prompt(prompt, negative_prompt)
+        )
 
         same_hr_styles = True
-        if ("Hires prompt" in res or "Hires negative prompt" in res) and (infotext_ver > infotext_versions.v180_hr_styles if (infotext_ver := infotext_versions.parse_version(res.get("Version"))) else True):
-            hr_prompt, hr_negative_prompt = res.get("Hires prompt", prompt), res.get("Hires negative prompt", negative_prompt)
-            hr_found_styles, hr_prompt_no_styles, hr_negative_prompt_no_styles = shared.prompt_styles.extract_styles_from_prompt(hr_prompt, hr_negative_prompt)
+        if ("Hires prompt" in res or "Hires negative prompt" in res) and (
+            infotext_ver > infotext_versions.v180_hr_styles
+            if (infotext_ver := infotext_versions.parse_version(res.get("Version")))
+            else True
+        ):
+            hr_prompt, hr_negative_prompt = (
+                res.get("Hires prompt", prompt),
+                res.get("Hires negative prompt", negative_prompt),
+            )
+            hr_found_styles, hr_prompt_no_styles, hr_negative_prompt_no_styles = (
+                shared.prompt_styles.extract_styles_from_prompt(
+                    hr_prompt, hr_negative_prompt
+                )
+            )
             if same_hr_styles := found_styles == hr_found_styles:
-                res["Hires prompt"] = '' if hr_prompt_no_styles == prompt_no_styles else hr_prompt_no_styles
-                res['Hires negative prompt'] = '' if hr_negative_prompt_no_styles == negative_prompt_no_styles else hr_negative_prompt_no_styles
+                res["Hires prompt"] = (
+                    ""
+                    if hr_prompt_no_styles == prompt_no_styles
+                    else hr_prompt_no_styles
+                )
+                res["Hires negative prompt"] = (
+                    ""
+                    if hr_negative_prompt_no_styles == negative_prompt_no_styles
+                    else hr_negative_prompt_no_styles
+                )
 
         if same_hr_styles:
             prompt, negative_prompt = prompt_no_styles, negative_prompt_no_styles
-            if (shared.opts.infotext_styles == "Apply if any" and found_styles) or shared.opts.infotext_styles == "Apply":
-                res['Styles array'] = found_styles
+            if (
+                shared.opts.infotext_styles == "Apply if any" and found_styles
+            ) or shared.opts.infotext_styles == "Apply":
+                res["Styles array"] = found_styles
 
     res["Prompt"] = prompt
     res["Negative prompt"] = negative_prompt
@@ -312,7 +423,9 @@ Steps: 20, Sampler: Euler a, CFG scale: 7, Seed: 965400086, Size: 512x512, Model
 
     hypernet = res.get("Hypernet", None)
     if hypernet is not None:
-        res["Prompt"] += f"""<hypernet:{hypernet}:{res.get("Hypernet strength", "1.0")}>"""
+        res["Prompt"] += (
+            f"""<hypernet:{hypernet}:{res.get("Hypernet strength", "1.0")}>"""
+        )
 
     if "Hires resize-1" not in res:
         res["Hires resize-1"] = 0
@@ -337,7 +450,7 @@ Steps: 20, Sampler: Euler a, CFG scale: 7, Seed: 965400086, Size: 512x512, Model
         res["Mask mode"] = "Inpaint masked"
 
     if "Masked content" not in res:
-        res["Masked content"] = 'original'
+        res["Masked content"] = "original"
 
     if "Inpaint area" not in res:
         res["Inpaint area"] = "Whole picture"
@@ -377,7 +490,9 @@ Steps: 20, Sampler: Euler a, CFG scale: 7, Seed: 965400086, Size: 512x512, Model
 
     prompt_attention = prompt_parser.parse_prompt_attention(prompt)
     prompt_attention += prompt_parser.parse_prompt_attention(negative_prompt)
-    prompt_uses_emphasis = len(prompt_attention) != len([p for p in prompt_attention if p[1] == 1.0 or p[0] == 'BREAK'])
+    prompt_uses_emphasis = len(prompt_attention) != len(
+        [p for p in prompt_attention if p[1] == 1.0 or p[0] == "BREAK"]
+    )
     if "Emphasis" not in res and prompt_uses_emphasis:
         res["Emphasis"] = "Original"
 
@@ -393,7 +508,7 @@ Steps: 20, Sampler: Euler a, CFG scale: 7, Seed: 965400086, Size: 512x512, Model
 
 
 infotext_to_setting_name_mapping = [
-    ('VAE/TE', 'forge_additional_modules'),
+    ("VAE/TE", "forge_additional_modules"),
 ]
 """Mapping of infotext labels to setting names. Only left for backwards compatibility - use OptionInfo(..., infotext='...') instead.
 Example content:
@@ -406,6 +521,7 @@ infotext_to_setting_name_mapping = [
 ]
 """
 from ast import literal_eval
+
 
 def create_override_settings_dict(text_pairs):
     """creates processing's override_settings parameters from gradio's multiselect
@@ -428,7 +544,11 @@ def create_override_settings_dict(text_pairs):
 
         params[k] = v.strip()
 
-    mapping = [(info.infotext, k) for k, info in shared.opts.data_labels.items() if info.infotext]
+    mapping = [
+        (info.infotext, k)
+        for k, info in shared.opts.data_labels.items()
+        if info.infotext
+    ]
     for param_name, setting_name in mapping + infotext_to_setting_name_mapping:
         value = params.get(param_name, None)
 
@@ -463,7 +583,11 @@ def get_override_settings(params, *, skip_fields=None):
 
     res = []
 
-    mapping = [(info.infotext, k) for k, info in shared.opts.data_labels.items() if info.infotext]
+    mapping = [
+        (info.infotext, k)
+        for k, info in shared.opts.data_labels.items()
+        if info.infotext
+    ]
     for param_name, setting_name in mapping + infotext_to_setting_name_mapping:
         if param_name in (skip_fields or {}):
             continue
@@ -472,7 +596,10 @@ def get_override_settings(params, *, skip_fields=None):
         if v is None:
             continue
 
-        if setting_name == "sd_model_checkpoint" and shared.opts.disable_weights_auto_swap:
+        if (
+            setting_name == "sd_model_checkpoint"
+            and shared.opts.disable_weights_auto_swap
+        ):
             continue
 
         v = shared.opts.cast_value(setting_name, v)
@@ -486,9 +613,15 @@ def get_override_settings(params, *, skip_fields=None):
     return res
 
 
-def connect_paste(button, paste_fields, input_comp, override_settings_component, tabname):
+def connect_paste(
+    button, paste_fields, input_comp, override_settings_component, tabname
+):
     def paste_func(prompt):
-        if not prompt and not shared.cmd_opts.hide_ui_dir_config and not shared.cmd_opts.no_prompt_history:
+        if (
+            not prompt
+            and not shared.cmd_opts.hide_ui_dir_config
+            and not shared.cmd_opts.no_prompt_history
+        ):
             filename = os.path.join(data_path, "params.txt")
             try:
                 with open(filename, "r", encoding="utf8") as file:
@@ -537,9 +670,14 @@ def connect_paste(button, paste_fields, input_comp, override_settings_component,
         def paste_settings(params):
             vals = get_override_settings(params, skip_fields=already_handled_fields)
 
-            vals_pairs = [f"{infotext_text}: {value}" for infotext_text, setting_name, value in vals]
+            vals_pairs = [
+                f"{infotext_text}: {value}"
+                for infotext_text, setting_name, value in vals
+            ]
 
-            return gr.Dropdown.update(value=vals_pairs, choices=vals_pairs, visible=bool(vals_pairs))
+            return gr.Dropdown.update(
+                value=vals_pairs, choices=vals_pairs, visible=bool(vals_pairs)
+            )
 
         paste_fields = paste_fields + [(override_settings_component, paste_settings)]
 
@@ -556,4 +694,3 @@ def connect_paste(button, paste_fields, input_comp, override_settings_component,
         outputs=[],
         show_progress=False,
     )
-

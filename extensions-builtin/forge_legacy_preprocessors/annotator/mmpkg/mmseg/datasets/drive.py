@@ -14,14 +14,15 @@ class DRIVEDataset(CustomDataset):
     '_manual1.png'.
     """
 
-    CLASSES = ('background', 'vessel')
+    CLASSES = ("background", "vessel")
 
     PALETTE = [[120, 120, 120], [6, 230, 230]]
 
     def __init__(self, **kwargs):
         super(DRIVEDataset, self).__init__(
-            img_suffix='.png',
-            seg_map_suffix='_manual1.png',
+            img_suffix=".png",
+            seg_map_suffix="_manual1.png",
             reduce_zero_label=False,
-            **kwargs)
+            **kwargs,
+        )
         assert osp.exists(self.img_dir)

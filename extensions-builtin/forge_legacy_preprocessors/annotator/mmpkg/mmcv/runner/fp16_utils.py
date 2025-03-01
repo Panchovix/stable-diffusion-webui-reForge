@@ -41,13 +41,13 @@ def cast_tensor_type(inputs, src_type, dst_type):
     elif isinstance(inputs, np.ndarray):
         return inputs
     elif isinstance(inputs, abc.Mapping):
-        return type(inputs)({
-            k: cast_tensor_type(v, src_type, dst_type)
-            for k, v in inputs.items()
-        })
+        return type(inputs)(
+            {k: cast_tensor_type(v, src_type, dst_type) for k, v in inputs.items()}
+        )
     elif isinstance(inputs, abc.Iterable):
         return type(inputs)(
-            cast_tensor_type(item, src_type, dst_type) for item in inputs)
+            cast_tensor_type(item, src_type, dst_type) for item in inputs
+        )
     else:
         return inputs
 
@@ -86,15 +86,15 @@ def auto_fp16(apply_to=None, out_fp32=False):
     """
 
     def auto_fp16_wrapper(old_func):
-
         @functools.wraps(old_func)
         def new_func(*args, **kwargs):
             # check if the module has set the attribute `fp16_enabled`, if not,
             # just fallback to the original method.
             if not isinstance(args[0], torch.nn.Module):
-                raise TypeError('@auto_fp16 can only be used to decorate the '
-                                'method of nn.Module')
-            if not (hasattr(args[0], 'fp16_enabled') and args[0].fp16_enabled):
+                raise TypeError(
+                    "@auto_fp16 can only be used to decorate the method of nn.Module"
+                )
+            if not (hasattr(args[0], "fp16_enabled") and args[0].fp16_enabled):
                 return old_func(*args, **kwargs)
 
             # get the arg spec of the decorated method
@@ -105,11 +105,12 @@ def auto_fp16(apply_to=None, out_fp32=False):
             new_args = []
             # NOTE: default args are not taken into consideration
             if args:
-                arg_names = args_info.args[:len(args)]
+                arg_names = args_info.args[: len(args)]
                 for i, arg_name in enumerate(arg_names):
                     if arg_name in args_to_cast:
                         new_args.append(
-                            cast_tensor_type(args[i], torch.float, torch.half))
+                            cast_tensor_type(args[i], torch.float, torch.half)
+                        )
                     else:
                         new_args.append(args[i])
             # convert the kwargs that need to be processed
@@ -118,12 +119,14 @@ def auto_fp16(apply_to=None, out_fp32=False):
                 for arg_name, arg_value in kwargs.items():
                     if arg_name in args_to_cast:
                         new_kwargs[arg_name] = cast_tensor_type(
-                            arg_value, torch.float, torch.half)
+                            arg_value, torch.float, torch.half
+                        )
                     else:
                         new_kwargs[arg_name] = arg_value
             # apply converted arguments to the decorated method
-            if (TORCH_VERSION != 'parrots' and
-                    digit_version(TORCH_VERSION) >= digit_version('1.6.0')):
+            if TORCH_VERSION != "parrots" and digit_version(
+                TORCH_VERSION
+            ) >= digit_version("1.6.0"):
                 with autocast(enabled=True):
                     output = old_func(*new_args, **new_kwargs)
             else:
@@ -174,15 +177,15 @@ def force_fp32(apply_to=None, out_fp16=False):
     """
 
     def force_fp32_wrapper(old_func):
-
         @functools.wraps(old_func)
         def new_func(*args, **kwargs):
             # check if the module has set the attribute `fp16_enabled`, if not,
             # just fallback to the original method.
             if not isinstance(args[0], torch.nn.Module):
-                raise TypeError('@force_fp32 can only be used to decorate the '
-                                'method of nn.Module')
-            if not (hasattr(args[0], 'fp16_enabled') and args[0].fp16_enabled):
+                raise TypeError(
+                    "@force_fp32 can only be used to decorate the method of nn.Module"
+                )
+            if not (hasattr(args[0], "fp16_enabled") and args[0].fp16_enabled):
                 return old_func(*args, **kwargs)
             # get the arg spec of the decorated method
             args_info = getfullargspec(old_func)
@@ -191,11 +194,12 @@ def force_fp32(apply_to=None, out_fp16=False):
             # convert the args that need to be processed
             new_args = []
             if args:
-                arg_names = args_info.args[:len(args)]
+                arg_names = args_info.args[: len(args)]
                 for i, arg_name in enumerate(arg_names):
                     if arg_name in args_to_cast:
                         new_args.append(
-                            cast_tensor_type(args[i], torch.half, torch.float))
+                            cast_tensor_type(args[i], torch.half, torch.float)
+                        )
                     else:
                         new_args.append(args[i])
             # convert the kwargs that need to be processed
@@ -204,12 +208,14 @@ def force_fp32(apply_to=None, out_fp16=False):
                 for arg_name, arg_value in kwargs.items():
                     if arg_name in args_to_cast:
                         new_kwargs[arg_name] = cast_tensor_type(
-                            arg_value, torch.half, torch.float)
+                            arg_value, torch.half, torch.float
+                        )
                     else:
                         new_kwargs[arg_name] = arg_value
             # apply converted arguments to the decorated method
-            if (TORCH_VERSION != 'parrots' and
-                    digit_version(TORCH_VERSION) >= digit_version('1.6.0')):
+            if TORCH_VERSION != "parrots" and digit_version(
+                TORCH_VERSION
+            ) >= digit_version("1.6.0"):
                 with autocast(enabled=False):
                     output = old_func(*new_args, **new_kwargs)
             else:
@@ -227,7 +233,8 @@ def force_fp32(apply_to=None, out_fp16=False):
 def allreduce_grads(params, coalesce=True, bucket_size_mb=-1):
     warnings.warning(
         '"mmcv.runner.fp16_utils.allreduce_grads" is deprecated, and will be '
-        'removed in v2.8. Please switch to "mmcv.runner.allreduce_grads')
+        'removed in v2.8. Please switch to "mmcv.runner.allreduce_grads'
+    )
     _allreduce_grads(params, coalesce=coalesce, bucket_size_mb=bucket_size_mb)
 
 
@@ -248,15 +255,16 @@ def wrap_fp16_model(model):
     Args:
         model (nn.Module): Model in FP32.
     """
-    if (TORCH_VERSION == 'parrots'
-            or digit_version(TORCH_VERSION) < digit_version('1.6.0')):
+    if TORCH_VERSION == "parrots" or digit_version(TORCH_VERSION) < digit_version(
+        "1.6.0"
+    ):
         # convert model to fp16
         model.half()
         # patch the normalization layers to make it work in fp32 mode
         patch_norm_fp32(model)
     # set `fp16_enabled` flag
     for m in model.modules():
-        if hasattr(m, 'fp16_enabled'):
+        if hasattr(m, "fp16_enabled"):
             m.fp16_enabled = True
 
 
@@ -272,9 +280,10 @@ def patch_norm_fp32(module):
     """
     if isinstance(module, (nn.modules.batchnorm._BatchNorm, nn.GroupNorm)):
         module.float()
-        if isinstance(module, nn.GroupNorm) or torch.__version__ < '1.3':
-            module.forward = patch_forward_method(module.forward, torch.half,
-                                                  torch.float)
+        if isinstance(module, nn.GroupNorm) or torch.__version__ < "1.3":
+            module.forward = patch_forward_method(
+                module.forward, torch.half, torch.float
+            )
     for child in module.children():
         patch_norm_fp32(child)
     return module
@@ -294,8 +303,10 @@ def patch_forward_method(func, src_type, dst_type, convert_output=True):
     """
 
     def new_forward(*args, **kwargs):
-        output = func(*cast_tensor_type(args, src_type, dst_type),
-                      **cast_tensor_type(kwargs, src_type, dst_type))
+        output = func(
+            *cast_tensor_type(args, src_type, dst_type),
+            **cast_tensor_type(kwargs, src_type, dst_type),
+        )
         if convert_output:
             output = cast_tensor_type(output, dst_type, src_type)
         return output
@@ -332,15 +343,12 @@ class LossScaler:
             overflow to wait before increasing the loss scale. Default: 1000.
     """
 
-    def __init__(self,
-                 init_scale=2**32,
-                 mode='dynamic',
-                 scale_factor=2.,
-                 scale_window=1000):
+    def __init__(
+        self, init_scale=2**32, mode="dynamic", scale_factor=2.0, scale_window=1000
+    ):
         self.cur_scale = init_scale
         self.cur_iter = 0
-        assert mode in ('dynamic',
-                        'static'), 'mode can only be dynamic or static'
+        assert mode in ("dynamic", "static"), "mode can only be dynamic or static"
         self.mode = mode
         self.last_overflow_iter = -1
         self.scale_factor = scale_factor
@@ -348,7 +356,7 @@ class LossScaler:
 
     def has_overflow(self, params):
         """Check if params contain overflow."""
-        if self.mode != 'dynamic':
+        if self.mode != "dynamic":
             return False
         for p in params:
             if p.grad is not None and LossScaler._has_inf_or_nan(p.grad.data):
@@ -360,25 +368,27 @@ class LossScaler:
         try:
             cpu_sum = float(x.float().sum())
         except RuntimeError as instance:
-            if 'value cannot be converted' not in instance.args[0]:
+            if "value cannot be converted" not in instance.args[0]:
                 raise
             return True
         else:
-            if cpu_sum == float('inf') or cpu_sum == -float('inf') \
-                    or cpu_sum != cpu_sum:
+            if (
+                cpu_sum == float("inf")
+                or cpu_sum == -float("inf")
+                or cpu_sum != cpu_sum
+            ):
                 return True
             return False
 
     def update_scale(self, overflow):
         """update the current loss scale value when overflow happens."""
-        if self.mode != 'dynamic':
+        if self.mode != "dynamic":
             return
         if overflow:
             self.cur_scale = max(self.cur_scale / self.scale_factor, 1)
             self.last_overflow_iter = self.cur_iter
         else:
-            if (self.cur_iter - self.last_overflow_iter) % \
-                    self.scale_window == 0:
+            if (self.cur_iter - self.last_overflow_iter) % self.scale_window == 0:
                 self.cur_scale *= self.scale_factor
         self.cur_iter += 1
 
@@ -390,7 +400,8 @@ class LossScaler:
             mode=self.mode,
             last_overflow_iter=self.last_overflow_iter,
             scale_factor=self.scale_factor,
-            scale_window=self.scale_window)
+            scale_window=self.scale_window,
+        )
 
     def load_state_dict(self, state_dict):
         """Loads the loss_scaler state dict.
@@ -398,12 +409,12 @@ class LossScaler:
         Args:
            state_dict (dict): scaler state.
         """
-        self.cur_scale = state_dict['cur_scale']
-        self.cur_iter = state_dict['cur_iter']
-        self.mode = state_dict['mode']
-        self.last_overflow_iter = state_dict['last_overflow_iter']
-        self.scale_factor = state_dict['scale_factor']
-        self.scale_window = state_dict['scale_window']
+        self.cur_scale = state_dict["cur_scale"]
+        self.cur_iter = state_dict["cur_iter"]
+        self.mode = state_dict["mode"]
+        self.last_overflow_iter = state_dict["last_overflow_iter"]
+        self.scale_factor = state_dict["scale_factor"]
+        self.scale_window = state_dict["scale_window"]
 
     @property
     def loss_scale(self):

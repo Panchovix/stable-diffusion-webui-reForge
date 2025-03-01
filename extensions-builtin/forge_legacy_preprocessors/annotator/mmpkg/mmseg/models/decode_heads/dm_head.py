@@ -1,7 +1,11 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from annotator.mmpkg.mmcv.cnn import ConvModule, build_activation_layer, build_norm_layer
+from annotator.mmpkg.mmcv.cnn import (
+    ConvModule,
+    build_activation_layer,
+    build_norm_layer,
+)
 
 from ..builder import HEADS
 from .decode_head import BaseDecodeHead
@@ -21,8 +25,9 @@ class DCM(nn.Module):
         act_cfg (dict): Config of activation layers.
     """
 
-    def __init__(self, filter_size, fusion, in_channels, channels, conv_cfg,
-                 norm_cfg, act_cfg):
+    def __init__(
+        self, filter_size, fusion, in_channels, channels, conv_cfg, norm_cfg, act_cfg
+    ):
         super(DCM, self).__init__()
         self.filter_size = filter_size
         self.fusion = fusion
@@ -31,8 +36,7 @@ class DCM(nn.Module):
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
         self.act_cfg = act_cfg
-        self.filter_gen_conv = nn.Conv2d(self.in_channels, self.channels, 1, 1,
-                                         0)
+        self.filter_gen_conv = nn.Conv2d(self.in_channels, self.channels, 1, 1, 0)
 
         self.input_redu_conv = ConvModule(
             self.in_channels,
@@ -40,7 +44,8 @@ class DCM(nn.Module):
             1,
             conv_cfg=self.conv_cfg,
             norm_cfg=self.norm_cfg,
-            act_cfg=self.act_cfg)
+            act_cfg=self.act_cfg,
+        )
 
         if self.norm_cfg is not None:
             self.norm = build_norm_layer(self.norm_cfg, self.channels)[1]
@@ -55,25 +60,28 @@ class DCM(nn.Module):
                 1,
                 conv_cfg=self.conv_cfg,
                 norm_cfg=self.norm_cfg,
-                act_cfg=self.act_cfg)
+                act_cfg=self.act_cfg,
+            )
 
     def forward(self, x):
         """Forward function."""
         generated_filter = self.filter_gen_conv(
-            F.adaptive_avg_pool2d(x, self.filter_size))
+            F.adaptive_avg_pool2d(x, self.filter_size)
+        )
         x = self.input_redu_conv(x)
         b, c, h, w = x.shape
         # [1, b * c, h, w], c = self.channels
         x = x.view(1, b * c, h, w)
         # [b * c, 1, filter_size, filter_size]
-        generated_filter = generated_filter.view(b * c, 1, self.filter_size,
-                                                 self.filter_size)
+        generated_filter = generated_filter.view(
+            b * c, 1, self.filter_size, self.filter_size
+        )
         pad = (self.filter_size - 1) // 2
         if (self.filter_size - 1) % 2 == 0:
             p2d = (pad, pad, pad, pad)
         else:
             p2d = (pad + 1, pad, pad + 1, pad)
-        x = F.pad(input=x, pad=p2d, mode='constant', value=0)
+        x = F.pad(input=x, pad=p2d, mode="constant", value=0)
         # [1, b * c, h, w]
         output = F.conv2d(input=x, weight=generated_filter, groups=b * c)
         # [b, c, h, w]
@@ -111,13 +119,16 @@ class DMHead(BaseDecodeHead):
         dcm_modules = []
         for filter_size in self.filter_sizes:
             dcm_modules.append(
-                DCM(filter_size,
+                DCM(
+                    filter_size,
                     self.fusion,
                     self.in_channels,
                     self.channels,
                     conv_cfg=self.conv_cfg,
                     norm_cfg=self.norm_cfg,
-                    act_cfg=self.act_cfg))
+                    act_cfg=self.act_cfg,
+                )
+            )
         self.dcm_modules = nn.ModuleList(dcm_modules)
         self.bottleneck = ConvModule(
             self.in_channels + len(filter_sizes) * self.channels,
@@ -126,7 +137,8 @@ class DMHead(BaseDecodeHead):
             padding=1,
             conv_cfg=self.conv_cfg,
             norm_cfg=self.norm_cfg,
-            act_cfg=self.act_cfg)
+            act_cfg=self.act_cfg,
+        )
 
     def forward(self, inputs):
         """Forward function."""

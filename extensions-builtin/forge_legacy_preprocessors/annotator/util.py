@@ -41,7 +41,7 @@ def HWC3(x):
 def make_noise_disk(H, W, C, F):
     noise = np.random.uniform(low=0, high=1, size=((H // F) + 2, (W // F) + 2, C))
     noise = cv2.resize(noise, (W + 2 * F, H + 2 * F), interpolation=cv2.INTER_CUBIC)
-    noise = noise[F: F + H, F: F + W]
+    noise = noise[F : F + H, F : F + W]
     noise -= np.min(noise)
     noise /= np.max(noise)
     if C == 1:

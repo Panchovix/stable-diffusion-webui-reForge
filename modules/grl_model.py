@@ -33,16 +33,16 @@ class UpscalerGRL(Upscaler):
             filename = path
         return modelloader.load_spandrel_model(
             filename,
-            device=('cpu' if devices.device_grl.type == 'mps' else None),
+            device=("cpu" if devices.device_grl.type == "mps" else None),
             prefer_half=(not cmd_opts.no_half and not cmd_opts.upcast_sampling),
-            expected_architecture='GRL',
+            expected_architecture="GRL",
         )
 
 
 def grl_upscale(model, img):
-        return upscale_with_model(
-            model,
-            img,
-            tile_size=opts.GRL_tile,
-            tile_overlap=opts.GRL_tile_overlap,
-        )
+    return upscale_with_model(
+        model,
+        img,
+        tile_size=opts.GRL_tile,
+        tile_overlap=opts.GRL_tile_overlap,
+    )

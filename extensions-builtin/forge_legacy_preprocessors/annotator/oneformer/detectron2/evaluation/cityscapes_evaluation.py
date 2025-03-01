@@ -36,14 +36,16 @@ class CityscapesEvaluator(DatasetEvaluator):
         self._temp_dir = self._working_dir.name
         # All workers will write to the same results directory
         # TODO this does not work in distributed training
-        assert (
-            comm.get_local_size() == comm.get_world_size()
-        ), "CityscapesEvaluator currently do not work with multiple machines."
+        assert comm.get_local_size() == comm.get_world_size(), (
+            "CityscapesEvaluator currently do not work with multiple machines."
+        )
         self._temp_dir = comm.all_gather(self._temp_dir)[0]
         if self._temp_dir != self._working_dir.name:
             self._working_dir.cleanup()
         self._logger.info(
-            "Writing cityscapes results to temporary directory {} ...".format(self._temp_dir)
+            "Writing cityscapes results to temporary directory {} ...".format(
+                self._temp_dir
+            )
         )
 
 
@@ -81,7 +83,9 @@ class CityscapesInstanceEvaluator(CityscapesEvaluator):
 
                         Image.fromarray(mask * 255).save(png_filename)
                         fout.write(
-                            "{} {} {}\n".format(os.path.basename(png_filename), class_id, score)
+                            "{} {} {}\n".format(
+                                os.path.basename(png_filename), class_id, score
+                            )
                         )
             else:
                 # Cityscapes requires a prediction file for every ground truth image.
@@ -105,20 +109,26 @@ class CityscapesInstanceEvaluator(CityscapesEvaluator):
         cityscapes_eval.args.predictionWalk = None
         cityscapes_eval.args.JSONOutput = False
         cityscapes_eval.args.colorized = False
-        cityscapes_eval.args.gtInstancesFile = os.path.join(self._temp_dir, "gtInstances.json")
+        cityscapes_eval.args.gtInstancesFile = os.path.join(
+            self._temp_dir, "gtInstances.json"
+        )
 
         # These lines are adopted from
         # https://github.com/mcordts/cityscapesScripts/blob/master/cityscapesscripts/evaluation/evalInstanceLevelSemanticLabeling.py # noqa
         gt_dir = PathManager.get_local_path(self._metadata.gt_dir)
-        groundTruthImgList = glob.glob(os.path.join(gt_dir, "*", "*_gtFine_instanceIds.png"))
-        assert len(
-            groundTruthImgList
-        ), "Cannot find any ground truth images to use for evaluation. Searched for: {}".format(
-            cityscapes_eval.args.groundTruthSearch
+        groundTruthImgList = glob.glob(
+            os.path.join(gt_dir, "*", "*_gtFine_instanceIds.png")
+        )
+        assert len(groundTruthImgList), (
+            "Cannot find any ground truth images to use for evaluation. Searched for: {}".format(
+                cityscapes_eval.args.groundTruthSearch
+            )
         )
         predictionImgList = []
         for gt in groundTruthImgList:
-            predictionImgList.append(cityscapes_eval.getPrediction(gt, cityscapes_eval.args))
+            predictionImgList.append(
+                cityscapes_eval.getPrediction(gt, cityscapes_eval.args)
+            )
         results = cityscapes_eval.evaluateImgLists(
             predictionImgList, groundTruthImgList, cityscapes_eval.args
         )["averages"]
@@ -174,15 +184,19 @@ class CityscapesSemSegEvaluator(CityscapesEvaluator):
         # These lines are adopted from
         # https://github.com/mcordts/cityscapesScripts/blob/master/cityscapesscripts/evaluation/evalPixelLevelSemanticLabeling.py # noqa
         gt_dir = PathManager.get_local_path(self._metadata.gt_dir)
-        groundTruthImgList = glob.glob(os.path.join(gt_dir, "*", "*_gtFine_labelIds.png"))
-        assert len(
-            groundTruthImgList
-        ), "Cannot find any ground truth images to use for evaluation. Searched for: {}".format(
-            cityscapes_eval.args.groundTruthSearch
+        groundTruthImgList = glob.glob(
+            os.path.join(gt_dir, "*", "*_gtFine_labelIds.png")
+        )
+        assert len(groundTruthImgList), (
+            "Cannot find any ground truth images to use for evaluation. Searched for: {}".format(
+                cityscapes_eval.args.groundTruthSearch
+            )
         )
         predictionImgList = []
         for gt in groundTruthImgList:
-            predictionImgList.append(cityscapes_eval.getPrediction(cityscapes_eval.args, gt))
+            predictionImgList.append(
+                cityscapes_eval.getPrediction(cityscapes_eval.args, gt)
+            )
         results = cityscapes_eval.evaluateImgLists(
             predictionImgList, groundTruthImgList, cityscapes_eval.args
         )

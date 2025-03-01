@@ -1,7 +1,7 @@
 # pylint: skip-file
 # type: ignore
-"""Modified from https://github.com/wzhouxiff/RestoreFormer
-"""
+"""Modified from https://github.com/wzhouxiff/RestoreFormer"""
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -167,7 +167,7 @@ class ResnetBlock(nn.Module):
         out_channels=None,
         conv_shortcut=False,
         dropout,
-        temb_channels=512
+        temb_channels=512,
     ):
         super().__init__()
         self.in_channels = in_channels
@@ -225,9 +225,9 @@ class MultiHeadAttnBlock(nn.Module):
         self.in_channels = in_channels
         self.head_size = head_size
         self.att_size = in_channels // head_size
-        assert (
-            in_channels % head_size == 0
-        ), "The size of head should be divided by the number of channels."
+        assert in_channels % head_size == 0, (
+            "The size of head should be divided by the number of channels."
+        )
 
         self.norm1 = Normalize(in_channels)
         self.norm2 = Normalize(in_channels)
@@ -305,7 +305,7 @@ class MultiHeadEncoder(nn.Module):
         double_z=True,
         enable_mid=True,
         head_size=1,
-        **ignore_kwargs
+        **ignore_kwargs,
     ):
         super().__init__()
         self.ch = ch
@@ -430,7 +430,7 @@ class MultiHeadDecoder(nn.Module):
         give_pre_end=False,
         enable_mid=True,
         head_size=1,
-        **ignorekwargs
+        **ignorekwargs,
     ):
         super().__init__()
         self.ch = ch
@@ -557,7 +557,7 @@ class MultiHeadDecoderTransformer(nn.Module):
         give_pre_end=False,
         enable_mid=True,
         head_size=1,
-        **ignorekwargs
+        **ignorekwargs,
     ):
         super().__init__()
         self.ch = ch

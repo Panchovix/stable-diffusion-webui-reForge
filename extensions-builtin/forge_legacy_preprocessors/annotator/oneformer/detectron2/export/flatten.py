@@ -6,7 +6,10 @@ import torch
 from torch import nn
 
 from annotator.oneformer.detectron2.structures import Boxes, Instances, ROIMasks
-from annotator.oneformer.detectron2.utils.registry import _convert_target_to_string, locate
+from annotator.oneformer.detectron2.utils.registry import (
+    _convert_target_to_string,
+    locate,
+)
 
 from .torchscript_patch import patch_builtin_len
 
@@ -54,9 +57,9 @@ class Schema:
     def _split(values, sizes):
         if len(sizes):
             expected_len = sum(sizes)
-            assert (
-                len(values) == expected_len
-            ), f"Values has length {len(values)} but expect length {expected_len}."
+            assert len(values) == expected_len, (
+                f"Values has length {len(values)} but expect length {expected_len}."
+            )
         ret = []
         for k in range(len(sizes)):
             begin, end = sum(sizes[:k]), sum(sizes[: k + 1])
@@ -66,14 +69,17 @@ class Schema:
 
 @dataclass
 class ListSchema(Schema):
-    schemas: List[Schema]  # the schemas that define how to flatten each element in the list
+    schemas: List[
+        Schema
+    ]  # the schemas that define how to flatten each element in the list
     sizes: List[int]  # the flattened length of each element
 
     def __call__(self, values):
         values = self._split(values, self.sizes)
         if len(values) != len(self.schemas):
             raise ValueError(
-                f"Values has length {len(values)} but schemas " f"has length {len(self.schemas)}!"
+                f"Values has length {len(values)} but schemas "
+                f"has length {len(self.schemas)}!"
             )
         values = [m(v) for m, v in zip(self.schemas, values)]
         return list(values)
@@ -247,7 +253,9 @@ class TracingAdapter(nn.Module):
                 generalizing the traced graph to new inputs.
         """
         super().__init__()
-        if isinstance(model, (nn.parallel.distributed.DistributedDataParallel, nn.DataParallel)):
+        if isinstance(
+            model, (nn.parallel.distributed.DistributedDataParallel, nn.DataParallel)
+        ):
             model = model.module
         self.model = model
         if not isinstance(inputs, tuple):

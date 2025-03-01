@@ -66,11 +66,21 @@ ADE20K_150_CATEGORIES = [
     {"color": [140, 140, 140], "id": 48, "isthing": 0, "name": "skyscraper"},
     {"color": [250, 10, 15], "id": 49, "isthing": 1, "name": "fireplace"},
     {"color": [20, 255, 0], "id": 50, "isthing": 1, "name": "refrigerator, icebox"},
-    {"color": [31, 255, 0], "id": 51, "isthing": 0, "name": "grandstand, covered stand"},
+    {
+        "color": [31, 255, 0],
+        "id": 51,
+        "isthing": 0,
+        "name": "grandstand, covered stand",
+    },
     {"color": [255, 31, 0], "id": 52, "isthing": 0, "name": "path"},
     {"color": [255, 224, 0], "id": 53, "isthing": 1, "name": "stairs"},
     {"color": [153, 255, 0], "id": 54, "isthing": 0, "name": "runway"},
-    {"color": [0, 0, 255], "id": 55, "isthing": 1, "name": "case, display case, showcase, vitrine"},
+    {
+        "color": [0, 0, 255],
+        "id": 55,
+        "isthing": 1,
+        "name": "case, display case, showcase, vitrine",
+    },
     {
         "color": [255, 71, 0],
         "id": 56,
@@ -104,14 +114,24 @@ ADE20K_150_CATEGORIES = [
     {"color": [173, 255, 0], "id": 76, "isthing": 1, "name": "boat"},
     {"color": [0, 255, 153], "id": 77, "isthing": 0, "name": "bar"},
     {"color": [255, 92, 0], "id": 78, "isthing": 1, "name": "arcade machine"},
-    {"color": [255, 0, 255], "id": 79, "isthing": 0, "name": "hovel, hut, hutch, shack, shanty"},
+    {
+        "color": [255, 0, 255],
+        "id": 79,
+        "isthing": 0,
+        "name": "hovel, hut, hutch, shack, shanty",
+    },
     {"color": [255, 0, 245], "id": 80, "isthing": 1, "name": "bus"},
     {"color": [255, 0, 102], "id": 81, "isthing": 1, "name": "towel"},
     {"color": [255, 173, 0], "id": 82, "isthing": 1, "name": "light"},
     {"color": [255, 0, 20], "id": 83, "isthing": 1, "name": "truck"},
     {"color": [255, 184, 184], "id": 84, "isthing": 0, "name": "tower"},
     {"color": [0, 31, 255], "id": 85, "isthing": 1, "name": "chandelier"},
-    {"color": [0, 255, 61], "id": 86, "isthing": 1, "name": "awning, sunshade, sunblind"},
+    {
+        "color": [0, 255, 61],
+        "id": 86,
+        "isthing": 1,
+        "name": "awning, sunshade, sunblind",
+    },
     {"color": [0, 71, 255], "id": 87, "isthing": 1, "name": "street lamp"},
     {"color": [255, 0, 204], "id": 88, "isthing": 1, "name": "booth"},
     {"color": [0, 255, 194], "id": 89, "isthing": 1, "name": "tv"},
@@ -139,7 +159,12 @@ ADE20K_150_CATEGORIES = [
         "name": "ottoman, pouf, pouffe, puff, hassock",
     },
     {"color": [0, 255, 10], "id": 98, "isthing": 1, "name": "bottle"},
-    {"color": [255, 112, 0], "id": 99, "isthing": 0, "name": "buffet, counter, sideboard"},
+    {
+        "color": [255, 112, 0],
+        "id": 99,
+        "isthing": 0,
+        "name": "buffet, counter, sideboard",
+    },
     {
         "color": [143, 255, 0],
         "id": 100,
@@ -252,7 +277,9 @@ def load_ade20k_panoptic_json(json_file, image_dir, gt_dir, semseg_dir, meta):
         # different extension, and images have extension ".jpg" for COCO. Need
         # to make image extension a user-provided argument if we extend this
         # function to support other COCO-like datasets.
-        image_file = os.path.join(image_dir, os.path.splitext(ann["file_name"])[0] + ".jpg")
+        image_file = os.path.join(
+            image_dir, os.path.splitext(ann["file_name"])[0] + ".jpg"
+        )
         label_file = os.path.join(gt_dir, ann["file_name"])
         sem_label_file = os.path.join(semseg_dir, ann["file_name"])
         segments_info = [_convert_category_id(x, meta) for x in ann["segments_info"]]
@@ -273,7 +300,13 @@ def load_ade20k_panoptic_json(json_file, image_dir, gt_dir, semseg_dir, meta):
 
 
 def register_ade20k_panoptic(
-    name, metadata, image_root, panoptic_root, semantic_root, panoptic_json, instances_json=None,
+    name,
+    metadata,
+    image_root,
+    panoptic_root,
+    semantic_root,
+    panoptic_json,
+    instances_json=None,
 ):
     """
     Register a "standard" version of ADE20k panoptic segmentation dataset named `name`.

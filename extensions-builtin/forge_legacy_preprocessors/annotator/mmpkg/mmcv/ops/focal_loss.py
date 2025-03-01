@@ -6,34 +6,34 @@ from torch.autograd.function import once_differentiable
 
 from ..utils import ext_loader
 
-ext_module = ext_loader.load_ext('_ext', [
-    'sigmoid_focal_loss_forward', 'sigmoid_focal_loss_backward',
-    'softmax_focal_loss_forward', 'softmax_focal_loss_backward'
-])
+ext_module = ext_loader.load_ext(
+    "_ext",
+    [
+        "sigmoid_focal_loss_forward",
+        "sigmoid_focal_loss_backward",
+        "softmax_focal_loss_forward",
+        "softmax_focal_loss_backward",
+    ],
+)
 
 
 class SigmoidFocalLossFunction(Function):
-
     @staticmethod
     def symbolic(g, input, target, gamma, alpha, weight, reduction):
         return g.op(
-            'mmcv::MMCVSigmoidFocalLoss',
+            "mmcv::MMCVSigmoidFocalLoss",
             input,
             target,
             gamma_f=gamma,
             alpha_f=alpha,
             weight_f=weight,
-            reduction_s=reduction)
+            reduction_s=reduction,
+        )
 
     @staticmethod
-    def forward(ctx,
-                input,
-                target,
-                gamma=2.0,
-                alpha=0.25,
-                weight=None,
-                reduction='mean'):
-
+    def forward(
+        ctx, input, target, gamma=2.0, alpha=0.25, weight=None, reduction="mean"
+    ):
         assert isinstance(target, (torch.LongTensor, torch.cuda.LongTensor))
         assert input.dim() == 2
         assert target.dim() == 1
@@ -43,7 +43,7 @@ class SigmoidFocalLossFunction(Function):
         else:
             assert weight.dim() == 1
             assert input.size(1) == weight.size(0)
-        ctx.reduction_dict = {'none': 0, 'mean': 1, 'sum': 2}
+        ctx.reduction_dict = {"none": 0, "mean": 1, "sum": 2}
         assert reduction in ctx.reduction_dict.keys()
 
         ctx.gamma = float(gamma)
@@ -53,10 +53,11 @@ class SigmoidFocalLossFunction(Function):
         output = input.new_zeros(input.size())
 
         ext_module.sigmoid_focal_loss_forward(
-            input, target, weight, output, gamma=ctx.gamma, alpha=ctx.alpha)
-        if ctx.reduction == ctx.reduction_dict['mean']:
+            input, target, weight, output, gamma=ctx.gamma, alpha=ctx.alpha
+        )
+        if ctx.reduction == ctx.reduction_dict["mean"]:
             output = output.sum() / input.size(0)
-        elif ctx.reduction == ctx.reduction_dict['sum']:
+        elif ctx.reduction == ctx.reduction_dict["sum"]:
             output = output.sum()
         ctx.save_for_backward(input, target, weight)
         return output
@@ -69,15 +70,11 @@ class SigmoidFocalLossFunction(Function):
         grad_input = input.new_zeros(input.size())
 
         ext_module.sigmoid_focal_loss_backward(
-            input,
-            target,
-            weight,
-            grad_input,
-            gamma=ctx.gamma,
-            alpha=ctx.alpha)
+            input, target, weight, grad_input, gamma=ctx.gamma, alpha=ctx.alpha
+        )
 
         grad_input *= grad_output
-        if ctx.reduction == ctx.reduction_dict['mean']:
+        if ctx.reduction == ctx.reduction_dict["mean"]:
             grad_input /= input.size(0)
         return grad_input, None, None, None, None, None
 
@@ -86,48 +83,43 @@ sigmoid_focal_loss = SigmoidFocalLossFunction.apply
 
 
 class SigmoidFocalLoss(nn.Module):
-
-    def __init__(self, gamma, alpha, weight=None, reduction='mean'):
+    def __init__(self, gamma, alpha, weight=None, reduction="mean"):
         super(SigmoidFocalLoss, self).__init__()
         self.gamma = gamma
         self.alpha = alpha
-        self.register_buffer('weight', weight)
+        self.register_buffer("weight", weight)
         self.reduction = reduction
 
     def forward(self, input, target):
-        return sigmoid_focal_loss(input, target, self.gamma, self.alpha,
-                                  self.weight, self.reduction)
+        return sigmoid_focal_loss(
+            input, target, self.gamma, self.alpha, self.weight, self.reduction
+        )
 
     def __repr__(self):
         s = self.__class__.__name__
-        s += f'(gamma={self.gamma}, '
-        s += f'alpha={self.alpha}, '
-        s += f'reduction={self.reduction})'
+        s += f"(gamma={self.gamma}, "
+        s += f"alpha={self.alpha}, "
+        s += f"reduction={self.reduction})"
         return s
 
 
 class SoftmaxFocalLossFunction(Function):
-
     @staticmethod
     def symbolic(g, input, target, gamma, alpha, weight, reduction):
         return g.op(
-            'mmcv::MMCVSoftmaxFocalLoss',
+            "mmcv::MMCVSoftmaxFocalLoss",
             input,
             target,
             gamma_f=gamma,
             alpha_f=alpha,
             weight_f=weight,
-            reduction_s=reduction)
+            reduction_s=reduction,
+        )
 
     @staticmethod
-    def forward(ctx,
-                input,
-                target,
-                gamma=2.0,
-                alpha=0.25,
-                weight=None,
-                reduction='mean'):
-
+    def forward(
+        ctx, input, target, gamma=2.0, alpha=0.25, weight=None, reduction="mean"
+    ):
         assert isinstance(target, (torch.LongTensor, torch.cuda.LongTensor))
         assert input.dim() == 2
         assert target.dim() == 1
@@ -137,7 +129,7 @@ class SoftmaxFocalLossFunction(Function):
         else:
             assert weight.dim() == 1
             assert input.size(1) == weight.size(0)
-        ctx.reduction_dict = {'none': 0, 'mean': 1, 'sum': 2}
+        ctx.reduction_dict = {"none": 0, "mean": 1, "sum": 2}
         assert reduction in ctx.reduction_dict.keys()
 
         ctx.gamma = float(gamma)
@@ -153,16 +145,12 @@ class SoftmaxFocalLossFunction(Function):
 
         output = input.new_zeros(input.size(0))
         ext_module.softmax_focal_loss_forward(
-            input_softmax,
-            target,
-            weight,
-            output,
-            gamma=ctx.gamma,
-            alpha=ctx.alpha)
+            input_softmax, target, weight, output, gamma=ctx.gamma, alpha=ctx.alpha
+        )
 
-        if ctx.reduction == ctx.reduction_dict['mean']:
+        if ctx.reduction == ctx.reduction_dict["mean"]:
             output = output.sum() / input.size(0)
-        elif ctx.reduction == ctx.reduction_dict['sum']:
+        elif ctx.reduction == ctx.reduction_dict["sum"]:
             output = output.sum()
         ctx.save_for_backward(input_softmax, target, weight)
         return output
@@ -180,10 +168,11 @@ class SoftmaxFocalLossFunction(Function):
             buff,
             grad_input,
             gamma=ctx.gamma,
-            alpha=ctx.alpha)
+            alpha=ctx.alpha,
+        )
 
         grad_input *= grad_output
-        if ctx.reduction == ctx.reduction_dict['mean']:
+        if ctx.reduction == ctx.reduction_dict["mean"]:
             grad_input /= input_softmax.size(0)
         return grad_input, None, None, None, None, None
 
@@ -192,21 +181,21 @@ softmax_focal_loss = SoftmaxFocalLossFunction.apply
 
 
 class SoftmaxFocalLoss(nn.Module):
-
-    def __init__(self, gamma, alpha, weight=None, reduction='mean'):
+    def __init__(self, gamma, alpha, weight=None, reduction="mean"):
         super(SoftmaxFocalLoss, self).__init__()
         self.gamma = gamma
         self.alpha = alpha
-        self.register_buffer('weight', weight)
+        self.register_buffer("weight", weight)
         self.reduction = reduction
 
     def forward(self, input, target):
-        return softmax_focal_loss(input, target, self.gamma, self.alpha,
-                                  self.weight, self.reduction)
+        return softmax_focal_loss(
+            input, target, self.gamma, self.alpha, self.weight, self.reduction
+        )
 
     def __repr__(self):
         s = self.__class__.__name__
-        s += f'(gamma={self.gamma}, '
-        s += f'alpha={self.alpha}, '
-        s += f'reduction={self.reduction})'
+        s += f"(gamma={self.gamma}, "
+        s += f"alpha={self.alpha}, "
+        s += f"reduction={self.reduction})"
         return s

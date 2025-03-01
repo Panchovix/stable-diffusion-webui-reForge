@@ -57,19 +57,23 @@ class StableDiffusionVersion(Enum):
         return StableDiffusionVersion.UNKNOWN
 
     def encoder_block_num(self) -> int:
-        if self in (StableDiffusionVersion.SD1x, StableDiffusionVersion.SD2x, StableDiffusionVersion.UNKNOWN):
+        if self in (
+            StableDiffusionVersion.SD1x,
+            StableDiffusionVersion.SD2x,
+            StableDiffusionVersion.UNKNOWN,
+        ):
             return 12
         else:
-            return 9 # SDXL
+            return 9  # SDXL
 
     def controlnet_layer_num(self) -> int:
         return self.encoder_block_num() + 1
 
     def is_compatible_with(self, other: "StableDiffusionVersion") -> bool:
-        """ Incompatible only when one of version is SDXL and other is not. """
+        """Incompatible only when one of version is SDXL and other is not."""
         return (
-            any(v == StableDiffusionVersion.UNKNOWN for v in [self, other]) or
-            sum(v == StableDiffusionVersion.SDXL for v in [self, other]) != 1
+            any(v == StableDiffusionVersion.UNKNOWN for v in [self, other])
+            or sum(v == StableDiffusionVersion.SDXL for v in [self, other]) != 1
         )
 
 
@@ -82,6 +86,7 @@ class InputMode(Enum):
     # Input is a directory. 1 generation. Each generation takes N input image
     # from the directory.
     MERGE = "merge"
+
 
 class ControlModelType(Enum):
     """
@@ -138,7 +143,8 @@ class ControlModelType(Enum):
             }
             or self.is_controlnet
         )
-    
+
+
 class AutoMachine(Enum):
     """
     Lvmin's algorithm for Attention/AdaIn AutoMachine States.
@@ -148,10 +154,12 @@ class AutoMachine(Enum):
     Write = "Write"
     StyleAlign = "StyleAlign"
 
+
 class UnetBlockType(Enum):
     INPUT = "input"
     OUTPUT = "output"
     MIDDLE = "middle"
+
 
 class TransformerID(NamedTuple):
     block_type: UnetBlockType
@@ -178,9 +186,11 @@ class TransformerIDResult(NamedTuple):
             key=lambda i: i.transformer_index,
         )
 
+
 class PuLIDMode(Enum):
     FIDELITY = "Fidelity"
     STYLE = "Extremely style"
+
 
 class ControlNetUnionControlType(Enum):
     """
@@ -203,7 +213,7 @@ class ControlNetUnionControlType(Enum):
 
     @staticmethod
     def all_tags() -> List[str]:
-        """ Tags can be handled by union ControlNet """
+        """Tags can be handled by union ControlNet"""
         return [
             "openpose",
             "depth",

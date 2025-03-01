@@ -10,7 +10,12 @@ from omegaconf import DictConfig, OmegaConf
 from torch import Tensor, nn
 
 from annotator.oneformer.detectron2.layers import ShapeSpec
-from annotator.oneformer.detectron2.structures import BitMasks, Boxes, ImageList, Instances
+from annotator.oneformer.detectron2.structures import (
+    BitMasks,
+    Boxes,
+    ImageList,
+    Instances,
+)
 from annotator.oneformer.detectron2.utils.events import get_event_storage
 
 from .backbone import Backbone
@@ -101,9 +106,9 @@ class MMDetBackbone(Backbone):
         outs = self.backbone(x)
         if self.neck is not None:
             outs = self.neck(outs)
-        assert isinstance(
-            outs, (list, tuple)
-        ), "mmdet backbone should return a list/tuple of tensors!"
+        assert isinstance(outs, (list, tuple)), (
+            "mmdet backbone should return a list/tuple of tensors!"
+        )
         if len(outs) != len(self._output_shapes):
             raise ValueError(
                 "Length of output_shapes does not match outputs from the mmdet backbone: "
@@ -148,16 +153,20 @@ class MMDetDetector(nn.Module):
         self.detector.init_weights()
         self.size_divisibility = size_divisibility
 
-        self.register_buffer("pixel_mean", torch.tensor(pixel_mean).view(-1, 1, 1), False)
+        self.register_buffer(
+            "pixel_mean", torch.tensor(pixel_mean).view(-1, 1, 1), False
+        )
         self.register_buffer("pixel_std", torch.tensor(pixel_std).view(-1, 1, 1), False)
-        assert (
-            self.pixel_mean.shape == self.pixel_std.shape
-        ), f"{self.pixel_mean} and {self.pixel_std} have different shapes!"
+        assert self.pixel_mean.shape == self.pixel_std.shape, (
+            f"{self.pixel_mean} and {self.pixel_std} have different shapes!"
+        )
 
     def forward(self, batched_inputs: List[Dict[str, torch.Tensor]]):
         images = [x["image"].to(self.device) for x in batched_inputs]
         images = [(x - self.pixel_mean) / self.pixel_std for x in images]
-        images = ImageList.from_tensors(images, size_divisibility=self.size_divisibility).tensor
+        images = ImageList.from_tensors(
+            images, size_divisibility=self.size_divisibility
+        ).tensor
         metas = []
         rescale = {"height" in x for x in batched_inputs}
         if len(rescale) != 1:
@@ -187,7 +196,10 @@ class MMDetDetector(nn.Module):
         if self.training:
             gt_instances = [x["instances"].to(self.device) for x in batched_inputs]
             if gt_instances[0].has("gt_masks"):
-                from mmdet.core import PolygonMasks as mm_PolygonMasks, BitmapMasks as mm_BitMasks
+                from mmdet.core import (
+                    PolygonMasks as mm_PolygonMasks,
+                    BitmapMasks as mm_BitMasks,
+                )
 
                 def convert_mask(m, shape):
                     # mmdet mask format
@@ -196,7 +208,9 @@ class MMDetDetector(nn.Module):
                     else:
                         return mm_PolygonMasks(m.polygons, shape[0], shape[1])
 
-                gt_masks = [convert_mask(x.gt_masks, x.image_size) for x in gt_instances]
+                gt_masks = [
+                    convert_mask(x.gt_masks, x.image_size) for x in gt_instances
+                ]
                 losses_and_metrics = self.detector.forward_train(
                     images,
                     metas,
@@ -238,7 +252,8 @@ def _convert_mmdet_result(result, shape: Tuple[int, int]) -> Instances:
     bboxes = torch.from_numpy(np.vstack(bbox_result))  # Nx5
     bboxes, scores = bboxes[:, :4], bboxes[:, -1]
     labels = [
-        torch.full((bbox.shape[0],), i, dtype=torch.int32) for i, bbox in enumerate(bbox_result)
+        torch.full((bbox.shape[0],), i, dtype=torch.int32)
+        for i, bbox in enumerate(bbox_result)
     ]
     labels = torch.cat(labels)
     inst = Instances(shape)
@@ -248,7 +263,9 @@ def _convert_mmdet_result(result, shape: Tuple[int, int]) -> Instances:
 
     if segm_result is not None and len(labels) > 0:
         segm_result = list(itertools.chain(*segm_result))
-        segm_result = [torch.from_numpy(x) if isinstance(x, np.ndarray) else x for x in segm_result]
+        segm_result = [
+            torch.from_numpy(x) if isinstance(x, np.ndarray) else x for x in segm_result
+        ]
         segm_result = torch.stack(segm_result, dim=0)
         inst.pred_masks = segm_result
     return inst

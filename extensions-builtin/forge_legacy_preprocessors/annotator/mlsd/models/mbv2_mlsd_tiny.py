@@ -3,28 +3,28 @@ import sys
 import torch
 import torch.nn as nn
 import torch.utils.model_zoo as model_zoo
-from  torch.nn import  functional as F
+from torch.nn import functional as F
 
 
 class BlockTypeA(nn.Module):
-    def __init__(self, in_c1, in_c2, out_c1, out_c2, upscale = True):
+    def __init__(self, in_c1, in_c2, out_c1, out_c2, upscale=True):
         super(BlockTypeA, self).__init__()
         self.conv1 = nn.Sequential(
             nn.Conv2d(in_c2, out_c2, kernel_size=1),
             nn.BatchNorm2d(out_c2),
-            nn.ReLU(inplace=True)
+            nn.ReLU(inplace=True),
         )
         self.conv2 = nn.Sequential(
             nn.Conv2d(in_c1, out_c1, kernel_size=1),
             nn.BatchNorm2d(out_c1),
-            nn.ReLU(inplace=True)
+            nn.ReLU(inplace=True),
         )
         self.upscale = upscale
 
     def forward(self, a, b):
         b = self.conv1(b)
         a = self.conv2(a)
-        b = F.interpolate(b, scale_factor=2.0, mode='bilinear', align_corners=True)
+        b = F.interpolate(b, scale_factor=2.0, mode="bilinear", align_corners=True)
         return torch.cat((a, b), dim=1)
 
 
@@ -32,14 +32,14 @@ class BlockTypeB(nn.Module):
     def __init__(self, in_c, out_c):
         super(BlockTypeB, self).__init__()
         self.conv1 = nn.Sequential(
-            nn.Conv2d(in_c, in_c,  kernel_size=3, padding=1),
+            nn.Conv2d(in_c, in_c, kernel_size=3, padding=1),
             nn.BatchNorm2d(in_c),
-            nn.ReLU()
+            nn.ReLU(),
         )
         self.conv2 = nn.Sequential(
             nn.Conv2d(in_c, out_c, kernel_size=3, padding=1),
             nn.BatchNorm2d(out_c),
-            nn.ReLU()
+            nn.ReLU(),
         )
 
     def forward(self, x):
@@ -47,18 +47,19 @@ class BlockTypeB(nn.Module):
         x = self.conv2(x)
         return x
 
+
 class BlockTypeC(nn.Module):
     def __init__(self, in_c, out_c):
         super(BlockTypeC, self).__init__()
         self.conv1 = nn.Sequential(
-            nn.Conv2d(in_c, in_c,  kernel_size=3, padding=5, dilation=5),
+            nn.Conv2d(in_c, in_c, kernel_size=3, padding=5, dilation=5),
             nn.BatchNorm2d(in_c),
-            nn.ReLU()
+            nn.ReLU(),
         )
         self.conv2 = nn.Sequential(
-            nn.Conv2d(in_c, in_c,  kernel_size=3, padding=1),
+            nn.Conv2d(in_c, in_c, kernel_size=3, padding=1),
             nn.BatchNorm2d(in_c),
-            nn.ReLU()
+            nn.ReLU(),
         )
         self.conv3 = nn.Conv2d(in_c, out_c, kernel_size=1)
 
@@ -67,6 +68,7 @@ class BlockTypeC(nn.Module):
         x = self.conv2(x)
         x = self.conv3(x)
         return x
+
 
 def _make_divisible(v, divisor, min_value=None):
     """
@@ -92,7 +94,7 @@ class ConvBNReLU(nn.Sequential):
     def __init__(self, in_planes, out_planes, kernel_size=3, stride=1, groups=1):
         self.channel_pad = out_planes - in_planes
         self.stride = stride
-        #padding = (kernel_size - 1) // 2
+        # padding = (kernel_size - 1) // 2
 
         # TFLite uses slightly different padding than PyTorch
         if stride == 2:
@@ -101,18 +103,25 @@ class ConvBNReLU(nn.Sequential):
             padding = (kernel_size - 1) // 2
 
         super(ConvBNReLU, self).__init__(
-            nn.Conv2d(in_planes, out_planes, kernel_size, stride, padding, groups=groups, bias=False),
+            nn.Conv2d(
+                in_planes,
+                out_planes,
+                kernel_size,
+                stride,
+                padding,
+                groups=groups,
+                bias=False,
+            ),
             nn.BatchNorm2d(out_planes),
-            nn.ReLU6(inplace=True)
+            nn.ReLU6(inplace=True),
         )
         self.max_pool = nn.MaxPool2d(kernel_size=stride, stride=stride)
-
 
     def forward(self, x):
         # TFLite uses  different padding
         if self.stride == 2:
             x = F.pad(x, (0, 1, 0, 1), "constant", 0)
-            #print(x.shape)
+            # print(x.shape)
 
         for module in self:
             if not isinstance(module, nn.MaxPool2d):
@@ -133,13 +142,15 @@ class InvertedResidual(nn.Module):
         if expand_ratio != 1:
             # pw
             layers.append(ConvBNReLU(inp, hidden_dim, kernel_size=1))
-        layers.extend([
-            # dw
-            ConvBNReLU(hidden_dim, hidden_dim, stride=stride, groups=hidden_dim),
-            # pw-linear
-            nn.Conv2d(hidden_dim, oup, 1, 1, 0, bias=False),
-            nn.BatchNorm2d(oup),
-        ])
+        layers.extend(
+            [
+                # dw
+                ConvBNReLU(hidden_dim, hidden_dim, stride=stride, groups=hidden_dim),
+                # pw-linear
+                nn.Conv2d(hidden_dim, oup, 1, 1, 0, bias=False),
+                nn.BatchNorm2d(oup),
+            ]
+        )
         self.conv = nn.Sequential(*layers)
 
     def forward(self, x):
@@ -175,26 +186,35 @@ class MobileNetV2(nn.Module):
             [6, 24, 2, 2],
             [6, 32, 3, 2],
             [6, 64, 4, 2],
-            #[6, 96, 3, 1],
-            #[6, 160, 3, 2],
-            #[6, 320, 1, 1],
+            # [6, 96, 3, 1],
+            # [6, 160, 3, 2],
+            # [6, 320, 1, 1],
         ]
 
         # only check the first element, assuming user knows t,c,n,s are required
-        if len(inverted_residual_setting) == 0 or len(inverted_residual_setting[0]) != 4:
-            raise ValueError("inverted_residual_setting should be non-empty "
-                             "or a 4-element list, got {}".format(inverted_residual_setting))
+        if (
+            len(inverted_residual_setting) == 0
+            or len(inverted_residual_setting[0]) != 4
+        ):
+            raise ValueError(
+                "inverted_residual_setting should be non-empty "
+                "or a 4-element list, got {}".format(inverted_residual_setting)
+            )
 
         # building first layer
         input_channel = _make_divisible(input_channel * width_mult, round_nearest)
-        self.last_channel = _make_divisible(last_channel * max(1.0, width_mult), round_nearest)
+        self.last_channel = _make_divisible(
+            last_channel * max(1.0, width_mult), round_nearest
+        )
         features = [ConvBNReLU(4, input_channel, stride=2)]
         # building inverted residual blocks
         for t, c, n, s in inverted_residual_setting:
             output_channel = _make_divisible(c * width_mult, round_nearest)
             for i in range(n):
                 stride = s if i == 0 else 1
-                features.append(block(input_channel, output_channel, stride, expand_ratio=t))
+                features.append(
+                    block(input_channel, output_channel, stride, expand_ratio=t)
+                )
                 input_channel = output_channel
         self.features = nn.Sequential(*features)
 
@@ -202,7 +222,7 @@ class MobileNetV2(nn.Module):
         # weight initialization
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out')
+                nn.init.kaiming_normal_(m.weight, mode="fan_out")
                 if m.bias is not None:
                     nn.init.zeros_(m.bias)
             elif isinstance(m, nn.BatchNorm2d):
@@ -212,7 +232,7 @@ class MobileNetV2(nn.Module):
                 nn.init.normal_(m.weight, 0, 0.01)
                 nn.init.zeros_(m.bias)
 
-        #if pretrained:
+        # if pretrained:
         #    self._load_pretrained_model()
 
     def _forward_impl(self, x):
@@ -229,12 +249,13 @@ class MobileNetV2(nn.Module):
         c2, c3, c4 = fpn_features
         return c2, c3, c4
 
-
     def forward(self, x):
         return self._forward_impl(x)
 
     def _load_pretrained_model(self):
-        pretrain_dict = model_zoo.load_url('https://download.pytorch.org/models/mobilenet_v2-b0353104.pth')
+        pretrain_dict = model_zoo.load_url(
+            "https://download.pytorch.org/models/mobilenet_v2-b0353104.pth"
+        )
         model_dict = {}
         state_dict = self.state_dict()
         for k, v in pretrain_dict.items():
@@ -250,12 +271,10 @@ class MobileV2_MLSD_Tiny(nn.Module):
 
         self.backbone = MobileNetV2(pretrained=True)
 
-        self.block12 = BlockTypeA(in_c1= 32, in_c2= 64,
-                                  out_c1= 64, out_c2=64)
+        self.block12 = BlockTypeA(in_c1=32, in_c2=64, out_c1=64, out_c2=64)
         self.block13 = BlockTypeB(128, 64)
 
-        self.block14 = BlockTypeA(in_c1 = 24,  in_c2 = 64,
-                                  out_c1= 32,  out_c2= 32)
+        self.block14 = BlockTypeA(in_c1=24, in_c2=64, out_c1=32, out_c2=32)
         self.block15 = BlockTypeB(64, 64)
 
         self.block16 = BlockTypeC(64, 16)
@@ -269,7 +288,7 @@ class MobileV2_MLSD_Tiny(nn.Module):
         x = self.block15(x)
         x = self.block16(x)
         x = x[:, 7:, :, :]
-        #print(x.shape)
-        x = F.interpolate(x, scale_factor=2.0, mode='bilinear', align_corners=True)
+        # print(x.shape)
+        x = F.interpolate(x, scale_factor=2.0, mode="bilinear", align_corners=True)
 
         return x

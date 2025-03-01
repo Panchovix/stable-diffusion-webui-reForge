@@ -2,7 +2,14 @@ from __future__ import annotations
 import functools
 import logging
 
-from modules import sd_samplers_kdiffusion, sd_samplers_timesteps, sd_samplers_lcm, shared, sd_samplers_common, sd_schedulers
+from modules import (
+    sd_samplers_kdiffusion,
+    sd_samplers_timesteps,
+    sd_samplers_lcm,
+    shared,
+    sd_samplers_common,
+    sd_schedulers,
+)
 
 # imports for functions that previously were here and are used by other modules
 samples_to_image_grid = sd_samplers_common.samples_to_image_grid
@@ -13,7 +20,7 @@ all_samplers = [
     *sd_samplers_kdiffusion.samplers_data_k_diffusion,
     *sd_samplers_timesteps.samplers_data_timesteps,
     *sd_samplers_lcm.samplers_data_lcm,
-    *forge_alter_samplers.samplers_data_alter
+    *forge_alter_samplers.samplers_data_alter,
 ]
 all_samplers_map = {x.name: x for x in all_samplers}
 
@@ -35,7 +42,7 @@ def find_sampler_config(name):
 def create_sampler(name, model, scheduler=None):
     config = find_sampler_config(name)
 
-    assert config is not None, f'bad sampler name: {name}'
+    assert config is not None, f"bad sampler name: {name}"
 
     if model.is_sdxl and config.options.get("no_sdxl", False):
         raise Exception(f"Sampler {config.name} is not supported for SDXL")
@@ -84,12 +91,16 @@ def get_hr_sampler_and_scheduler(d: dict):
     sampler = d.get("Sampler") if hr_sampler == "Use same sampler" else hr_sampler
 
     hr_scheduler = d.get("Hires schedule type", "Use same scheduler")
-    scheduler = d.get("Schedule type") if hr_scheduler == "Use same scheduler" else hr_scheduler
+    scheduler = (
+        d.get("Schedule type") if hr_scheduler == "Use same scheduler" else hr_scheduler
+    )
 
     sampler, scheduler = get_sampler_and_scheduler(sampler, scheduler)
 
     sampler = sampler if sampler != d.get("Sampler") else "Use same sampler"
-    scheduler = scheduler if scheduler != d.get("Schedule type") else "Use same scheduler"
+    scheduler = (
+        scheduler if scheduler != d.get("Schedule type") else "Use same scheduler"
+    )
 
     return sampler, scheduler
 
@@ -105,12 +116,17 @@ def get_hr_scheduler_from_infotext(d: dict):
 @functools.cache
 def get_sampler_and_scheduler(sampler_name, scheduler_name, *, convert_automatic=True):
     default_sampler = samplers[0]
-    found_scheduler = sd_schedulers.schedulers_map.get(scheduler_name, sd_schedulers.schedulers[0])
+    found_scheduler = sd_schedulers.schedulers_map.get(
+        scheduler_name, sd_schedulers.schedulers[0]
+    )
 
     name = sampler_name or default_sampler.name
 
     # Check if it's a forge_alter sampler
-    is_forge_alter = any(sampler.name.lower() == name.lower() for sampler in forge_alter_samplers.samplers_data_alter)
+    is_forge_alter = any(
+        sampler.name.lower() == name.lower()
+        for sampler in forge_alter_samplers.samplers_data_alter
+    )
 
     if not is_forge_alter:
         # Existing logic for A1111 samplers
@@ -120,17 +136,27 @@ def get_sampler_and_scheduler(sampler_name, scheduler_name, *, convert_automatic
             for name_option in name_options:
                 if name.lower().endswith(" " + name_option.lower()):
                     found_scheduler = scheduler
-                    name = name[0:-(len(name_option) + 1)]
+                    name = name[0 : -(len(name_option) + 1)]
                     break
 
         sampler = all_samplers_map.get(name, default_sampler)
 
         # revert back to Automatic if it's the default scheduler for the selected sampler
-        if convert_automatic and sampler.options.get('scheduler', None) == found_scheduler.name:
+        if (
+            convert_automatic
+            and sampler.options.get("scheduler", None) == found_scheduler.name
+        ):
             found_scheduler = sd_schedulers.schedulers[0]
     else:
         # Logic for forge_alter samplers
-        sampler = next((s for s in forge_alter_samplers.samplers_data_alter if s.name.lower() == name.lower()), default_sampler)
+        sampler = next(
+            (
+                s
+                for s in forge_alter_samplers.samplers_data_alter
+                if s.name.lower() == name.lower()
+            ),
+            default_sampler,
+        )
         forge_schedulers = {
             "Normal": "normal",
             "Karras": "karras",
@@ -155,23 +181,29 @@ def get_sampler_and_scheduler(sampler_name, scheduler_name, *, convert_automatic
             "Phi": "phi",
             "Laplace": "laplace",
             "Karras Dynamic": "karras_dynamic",
-            "Align Your Steps Custom": "ays_custom"
+            "Align Your Steps Custom": "ays_custom",
         }
-        
+
         if scheduler_name in forge_schedulers:
-            found_scheduler = sd_schedulers.Scheduler(forge_schedulers[scheduler_name], scheduler_name, None)
+            found_scheduler = sd_schedulers.Scheduler(
+                forge_schedulers[scheduler_name], scheduler_name, None
+            )
         else:
             # Default to 'normal' if the selected scheduler is not available in forge_alter
-            found_scheduler = sd_schedulers.Scheduler('normal', 'Normal', None)
+            found_scheduler = sd_schedulers.Scheduler("normal", "Normal", None)
 
     return sampler.name, found_scheduler.label
 
 
 def fix_p_invalid_sampler_and_scheduler(p):
     i_sampler_name, i_scheduler = p.sampler_name, p.scheduler
-    p.sampler_name, p.scheduler = get_sampler_and_scheduler(p.sampler_name, p.scheduler, convert_automatic=False)
+    p.sampler_name, p.scheduler = get_sampler_and_scheduler(
+        p.sampler_name, p.scheduler, convert_automatic=False
+    )
     if p.sampler_name != i_sampler_name or i_scheduler != p.scheduler:
-        logging.warning(f'Sampler Scheduler autocorrection: "{i_sampler_name}" -> "{p.sampler_name}", "{i_scheduler}" -> "{p.scheduler}"')
+        logging.warning(
+            f'Sampler Scheduler autocorrection: "{i_sampler_name}" -> "{p.sampler_name}", "{i_scheduler}" -> "{p.scheduler}"'
+        )
 
 
 set_samplers()

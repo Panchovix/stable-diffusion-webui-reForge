@@ -5,11 +5,11 @@ import torch.nn.functional as F
 from ..utils import xavier_init
 from .registry import UPSAMPLE_LAYERS
 
-UPSAMPLE_LAYERS.register_module('nearest', module=nn.Upsample)
-UPSAMPLE_LAYERS.register_module('bilinear', module=nn.Upsample)
+UPSAMPLE_LAYERS.register_module("nearest", module=nn.Upsample)
+UPSAMPLE_LAYERS.register_module("bilinear", module=nn.Upsample)
 
 
-@UPSAMPLE_LAYERS.register_module(name='pixel_shuffle')
+@UPSAMPLE_LAYERS.register_module(name="pixel_shuffle")
 class PixelShufflePack(nn.Module):
     """Pixel Shuffle upsample layer.
 
@@ -24,8 +24,7 @@ class PixelShufflePack(nn.Module):
             channels.
     """
 
-    def __init__(self, in_channels, out_channels, scale_factor,
-                 upsample_kernel):
+    def __init__(self, in_channels, out_channels, scale_factor, upsample_kernel):
         super(PixelShufflePack, self).__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -35,11 +34,12 @@ class PixelShufflePack(nn.Module):
             self.in_channels,
             self.out_channels * scale_factor * scale_factor,
             self.upsample_kernel,
-            padding=(self.upsample_kernel - 1) // 2)
+            padding=(self.upsample_kernel - 1) // 2,
+        )
         self.init_weights()
 
     def init_weights(self):
-        xavier_init(self.upsample_conv, distribution='uniform')
+        xavier_init(self.upsample_conv, distribution="uniform")
 
     def forward(self, x):
         x = self.upsample_conv(x)
@@ -66,19 +66,18 @@ def build_upsample_layer(cfg, *args, **kwargs):
         nn.Module: Created upsample layer.
     """
     if not isinstance(cfg, dict):
-        raise TypeError(f'cfg must be a dict, but got {type(cfg)}')
-    if 'type' not in cfg:
-        raise KeyError(
-            f'the cfg dict must contain the key "type", but got {cfg}')
+        raise TypeError(f"cfg must be a dict, but got {type(cfg)}")
+    if "type" not in cfg:
+        raise KeyError(f'the cfg dict must contain the key "type", but got {cfg}')
     cfg_ = cfg.copy()
 
-    layer_type = cfg_.pop('type')
+    layer_type = cfg_.pop("type")
     if layer_type not in UPSAMPLE_LAYERS:
-        raise KeyError(f'Unrecognized upsample type {layer_type}')
+        raise KeyError(f"Unrecognized upsample type {layer_type}")
     else:
         upsample = UPSAMPLE_LAYERS.get(layer_type)
 
     if upsample is nn.Upsample:
-        cfg_['mode'] = layer_type
+        cfg_["mode"] = layer_type
     layer = upsample(*args, **kwargs, **cfg_)
     return layer

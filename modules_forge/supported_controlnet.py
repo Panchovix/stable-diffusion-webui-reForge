@@ -1,6 +1,11 @@
 import os
 import torch
-from ldm_patched.modules.controlnet import ControlLora, ControlNet, load_t2i_adapter, ControlBase
+from ldm_patched.modules.controlnet import (
+    ControlLora,
+    ControlNet,
+    load_t2i_adapter,
+    ControlBase,
+)
 from ldm_patched.modules.model_patcher import ModelPatcher
 from ldm_patched.modules import model_management, utils, ops, model_detection
 from ldm_patched.controlnet import cldm
@@ -34,6 +39,7 @@ class ControlModelPatcher:
     def process_after_every_sampling(self, process, params, *args, **kwargs):
         return
 
+
 class ControlNetPatcher(ControlModelPatcher):
     @staticmethod
     def try_build_from_state_dict(controlnet_data, ckpt_path):
@@ -41,9 +47,13 @@ class ControlNetPatcher(ControlModelPatcher):
             return ControlNetPatcher(ControlLora(controlnet_data))
 
         controlnet_config = None
-        if "controlnet_cond_embedding.conv_in.weight" in controlnet_data:  # diffusers format
+        if (
+            "controlnet_cond_embedding.conv_in.weight" in controlnet_data
+        ):  # diffusers format
             unet_dtype = model_management.unet_dtype()
-            controlnet_config = model_detection.unet_config_from_diffusers_unet(controlnet_data, unet_dtype)
+            controlnet_config = model_detection.unet_config_from_diffusers_unet(
+                controlnet_data, unet_dtype
+            )
             diffusers_keys = utils.unet_to_diffusers(controlnet_config)
             diffusers_keys["controlnet_mid_block.weight"] = "middle_block_out.0.weight"
             diffusers_keys["controlnet_mid_block.bias"] = "middle_block_out.0.bias"
@@ -67,7 +77,9 @@ class ControlNetPatcher(ControlModelPatcher):
                     if count == 0:
                         k_in = "controlnet_cond_embedding.conv_in{}".format(s)
                     else:
-                        k_in = "controlnet_cond_embedding.blocks.{}{}".format(count - 1, s)
+                        k_in = "controlnet_cond_embedding.blocks.{}{}".format(
+                            count - 1, s
+                        )
                     k_out = "input_hint_block.{}{}".format(count * 2, s)
                     if k_in not in controlnet_data:
                         k_in = "controlnet_cond_embedding.conv_out{}".format(s)
@@ -83,9 +95,9 @@ class ControlNetPatcher(ControlModelPatcher):
                 print("leftover keys:", leftover_keys)
             controlnet_data = new_sd
 
-        pth_key = 'control_model.zero_convs.0.0.weight'
+        pth_key = "control_model.zero_convs.0.0.weight"
         pth = False
-        key = 'zero_convs.0.0.weight'
+        key = "zero_convs.0.0.weight"
         if pth_key in controlnet_data:
             pth = True
             key = pth_key
@@ -100,8 +112,10 @@ class ControlNetPatcher(ControlModelPatcher):
 
         if controlnet_config is None:
             unet_dtype = model_management.unet_dtype()
-            controlnet_config = model_detection.model_config_from_unet(controlnet_data, prefix, True).unet_config
-            controlnet_config['dtype'] = unet_dtype
+            controlnet_config = model_detection.model_config_from_unet(
+                controlnet_data, prefix, True
+            ).unet_config
+            controlnet_config["dtype"] = unet_dtype
 
         load_device = model_management.get_torch_device()
         manual_cast_dtype = model_management.unet_manual_cast(unet_dtype, load_device)
@@ -109,20 +123,28 @@ class ControlNetPatcher(ControlModelPatcher):
             controlnet_config["operations"] = manual_cast
 
         controlnet_config.pop("out_channels")
-        controlnet_config["hint_channels"] = controlnet_data["{}input_hint_block.0.weight".format(prefix)].shape[1]
+        controlnet_config["hint_channels"] = controlnet_data[
+            "{}input_hint_block.0.weight".format(prefix)
+        ].shape[1]
         control_model = cldm.ControlNet(**controlnet_config)
 
         if pth:
-            if 'difference' in controlnet_data:
-                print("WARNING: Your controlnet model is diff version rather than official float16 model. "
-                      "Please use an official float16/float32 model for robust performance.")
+            if "difference" in controlnet_data:
+                print(
+                    "WARNING: Your controlnet model is diff version rather than official float16 model. "
+                    "Please use an official float16/float32 model for robust performance."
+                )
+
             class WeightsLoader(torch.nn.Module):
                 pass
+
             w = WeightsLoader()
             w.control_model = control_model
             missing, unexpected = w.load_state_dict(controlnet_data, strict=False)
         else:
-            missing, unexpected = control_model.load_state_dict(controlnet_data, strict=False)
+            missing, unexpected = control_model.load_state_dict(
+                controlnet_data, strict=False
+            )
         print(missing, unexpected)
 
         global_average_pooling = False
@@ -130,8 +152,12 @@ class ControlNetPatcher(ControlModelPatcher):
         if filename.endswith("_shuffle") or filename.endswith("_shuffle_fp16"):
             global_average_pooling = True
 
-        control = ControlNet(control_model, global_average_pooling=global_average_pooling, load_device=load_device,
-                             manual_cast_dtype=manual_cast_dtype)
+        control = ControlNet(
+            control_model,
+            global_average_pooling=global_average_pooling,
+            load_device=load_device,
+            manual_cast_dtype=manual_cast_dtype,
+        )
         return ControlNetPatcher(control)
 
     def __init__(self, model_patcher):
@@ -158,7 +184,7 @@ class ControlNetPatcher(ControlModelPatcher):
             negative_advanced_weighting=self.negative_advanced_weighting,
             advanced_frame_weighting=self.advanced_frame_weighting,
             advanced_sigma_weighting=self.advanced_sigma_weighting,
-            advanced_mask_weighting=self.advanced_mask_weighting
+            advanced_mask_weighting=self.advanced_mask_weighting,
         )
         process.sd_model.forge_objects.unet = unet
         return
@@ -168,5 +194,6 @@ class ControlNetPatcher(ControlModelPatcher):
 
     def process_after_running_preprocessors(self, process, params, *args, **kwargs):
         return
-    
+
+
 add_supported_control_model(ControlNetPatcher)

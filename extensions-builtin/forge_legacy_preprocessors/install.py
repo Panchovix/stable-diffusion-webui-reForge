@@ -64,7 +64,9 @@ def install_requirements(req_file):
                 )
 
 
-def try_install_from_wheel(pkg_name: str, wheel_url: str, version: Optional[str] = None):
+def try_install_from_wheel(
+    pkg_name: str, wheel_url: str, version: Optional[str] = None
+):
     current_version = get_installed_version(pkg_name)
     if current_version is not None:
         # No version requirement.

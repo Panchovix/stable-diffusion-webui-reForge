@@ -11,6 +11,7 @@ Copy-paste from torch.nn.Transformer with modifications:
     * extra LN at the end of encoder is removed
     * decoder returns a stack of activations from all decoding layers
 """
+
 import copy
 from typing import List, Optional
 
@@ -38,7 +39,9 @@ class Transformer(nn.Module):
             d_model, nhead, dim_feedforward, dropout, activation, normalize_before
         )
         encoder_norm = nn.LayerNorm(d_model) if normalize_before else None
-        self.encoder = TransformerEncoder(encoder_layer, num_encoder_layers, encoder_norm)
+        self.encoder = TransformerEncoder(
+            encoder_layer, num_encoder_layers, encoder_norm
+        )
 
         decoder_layer = TransformerDecoderLayer(
             d_model, nhead, dim_feedforward, dropout, activation, normalize_before
@@ -69,15 +72,19 @@ class Transformer(nn.Module):
         query_embed = query_embed.unsqueeze(1).repeat(1, bs, 1)
         if mask is not None:
             mask = mask.flatten(1)
-            
+
         if task_token is None:
             tgt = torch.zeros_like(query_embed)
         else:
             tgt = task_token.repeat(query_embed.shape[0], 1, 1)
-   
+
         memory = self.encoder(src, src_key_padding_mask=mask, pos=pos_embed)
         hs = self.decoder(
-            tgt, memory, memory_key_padding_mask=mask, pos=pos_embed, query_pos=query_embed
+            tgt,
+            memory,
+            memory_key_padding_mask=mask,
+            pos=pos_embed,
+            query_pos=query_embed,
         )
         return hs.transpose(1, 2), memory.permute(1, 2, 0).view(bs, c, h, w)
 
@@ -100,7 +107,10 @@ class TransformerEncoder(nn.Module):
 
         for layer in self.layers:
             output = layer(
-                output, src_mask=mask, src_key_padding_mask=src_key_padding_mask, pos=pos
+                output,
+                src_mask=mask,
+                src_key_padding_mask=src_key_padding_mask,
+                pos=pos,
             )
 
         if self.norm is not None:

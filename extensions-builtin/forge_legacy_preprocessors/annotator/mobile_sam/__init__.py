@@ -10,10 +10,13 @@ from annotator.util import load_model
 from annotator.annotator_path import models_path
 
 from controlnet_aux import SamDetector
-from controlnet_aux.segment_anything import sam_model_registry, SamAutomaticMaskGenerator
+from controlnet_aux.segment_anything import (
+    sam_model_registry,
+    SamAutomaticMaskGenerator,
+)
+
 
 class SamDetector_Aux(SamDetector):
-
     model_dir = os.path.join(models_path, "mobile_sam")
 
     def __init__(self, mask_generator: SamAutomaticMaskGenerator, sam):
@@ -43,7 +46,20 @@ class SamDetector_Aux(SamDetector):
 
         return cls(mask_generator, sam)
 
-    def __call__(self, input_image: Union[np.ndarray, Image.Image]=None, detect_resolution=512, image_resolution=512, output_type="cv2", **kwargs) -> np.ndarray:
+    def __call__(
+        self,
+        input_image: Union[np.ndarray, Image.Image] = None,
+        detect_resolution=512,
+        image_resolution=512,
+        output_type="cv2",
+        **kwargs,
+    ) -> np.ndarray:
         self.model.to(self.device)
-        image = super().__call__(input_image=input_image, detect_resolution=detect_resolution, image_resolution=image_resolution, output_type=output_type, **kwargs)
+        image = super().__call__(
+            input_image=input_image,
+            detect_resolution=detect_resolution,
+            image_resolution=image_resolution,
+            output_type=output_type,
+            **kwargs,
+        )
         return np.array(image).astype(np.uint8)

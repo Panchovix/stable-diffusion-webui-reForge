@@ -14,14 +14,15 @@ class ChaseDB1Dataset(CustomDataset):
     '_1stHO.png'.
     """
 
-    CLASSES = ('background', 'vessel')
+    CLASSES = ("background", "vessel")
 
     PALETTE = [[120, 120, 120], [6, 230, 230]]
 
     def __init__(self, **kwargs):
         super(ChaseDB1Dataset, self).__init__(
-            img_suffix='.png',
-            seg_map_suffix='_1stHO.png',
+            img_suffix=".png",
+            seg_map_suffix="_1stHO.png",
             reduce_zero_label=False,
-            **kwargs)
+            **kwargs,
+        )
         assert osp.exists(self.img_dir)

@@ -54,20 +54,20 @@ class ResizeMode(Enum):
 
 
 resize_mode_aliases = {
-    'Inner Fit (Scale to Fit)': 'Crop and Resize',
-    'Outer Fit (Shrink to Fit)': 'Resize and Fill',
-    'Scale to Fit (Inner Fit)': 'Crop and Resize',
-    'Envelope (Outer Fit)': 'Resize and Fill',
+    "Inner Fit (Scale to Fit)": "Crop and Resize",
+    "Outer Fit (Shrink to Fit)": "Resize and Fill",
+    "Scale to Fit (Inner Fit)": "Crop and Resize",
+    "Envelope (Outer Fit)": "Resize and Fill",
 }
 
 ipa_block_weight_presets = {
-    "Default"               : "1, 1, 1, 1, 1.0, 1, 1, 1, 1, 1, 1",
-    "Style"                 : "0, 0, 1, 0, 0.0, 0, 1, 0, 0, 0, 0",
-    "Style (Strong)"        : "1, 1, 1, 0, 0.0, 0, 1, 1, 1, 1, 1",
-    "Composition"           : "0, 0, 0, 0, 0.0, 1, 0, 0, 0, 0, 0", 
-    "Composition (Strong)"  : "0, 0, 0, 1, 0.0, 1, 0, 0, 0, 0, 0", 
-    "Style+Composition"     : "0, 0, 1, 1, 0.0, 1, 1, 0, 0, 0, 0", 
-    "Custom"                : "",
+    "Default": "1, 1, 1, 1, 1.0, 1, 1, 1, 1, 1, 1",
+    "Style": "0, 0, 1, 0, 0.0, 0, 1, 0, 0, 0, 0",
+    "Style (Strong)": "1, 1, 1, 0, 0.0, 0, 1, 1, 1, 1, 1",
+    "Composition": "0, 0, 0, 0, 0.0, 1, 0, 0, 0, 0, 0",
+    "Composition (Strong)": "0, 0, 0, 1, 0.0, 1, 0, 0, 0, 0, 0",
+    "Style+Composition": "0, 0, 1, 1, 0.0, 1, 1, 0, 0, 0, 0",
+    "Custom": "",
 }
 
 
@@ -84,12 +84,14 @@ def resize_mode_from_value(value: Union[str, int, ResizeMode]) -> ResizeMode:
         try:
             return list(ResizeMode)[value]
         except IndexError:
-            print(f'Unrecognized ResizeMode int value {value}. Fall back to RESIZE.')
+            print(f"Unrecognized ResizeMode int value {value}. Fall back to RESIZE.")
             return ResizeMode.RESIZE
     elif isinstance(value, ResizeMode):
         return value
     else:
-        raise TypeError(f"ResizeMode value must be str, int, or ResizeMode, not {type(value)}")
+        raise TypeError(
+            f"ResizeMode value must be str, int, or ResizeMode, not {type(value)}"
+        )
 
 
 def control_mode_from_value(value: Union[str, int, ControlMode]) -> ControlMode:
@@ -97,18 +99,22 @@ def control_mode_from_value(value: Union[str, int, ControlMode]) -> ControlMode:
         try:
             return ControlMode(value)
         except ValueError:
-            print(f'Unrecognized ControlMode string value "{value}". Fall back to BALANCED.')
+            print(
+                f'Unrecognized ControlMode string value "{value}". Fall back to BALANCED.'
+            )
             return ControlMode.BALANCED
     elif isinstance(value, int):
         try:
             return [e for e in ControlMode][value]
         except IndexError:
-            print(f'Unrecognized ControlMode int value {value}. Fall back to BALANCED.')
+            print(f"Unrecognized ControlMode int value {value}. Fall back to BALANCED.")
             return ControlMode.BALANCED
     elif isinstance(value, ControlMode):
         return value
     else:
-        raise TypeError(f"ControlMode value must be str, int, or ControlMode, not {type(value)}")
+        raise TypeError(
+            f"ControlMode value must be str, int, or ControlMode, not {type(value)}"
+        )
 
 
 def visualize_inpaint_mask(img):
@@ -122,10 +128,10 @@ def visualize_inpaint_mask(img):
 
 
 def pixel_perfect_resolution(
-        image: np.ndarray,
-        target_H: int,
-        target_W: int,
-        resize_mode: ResizeMode,
+    image: np.ndarray,
+    target_H: int,
+    target_W: int,
+    resize_mode: ResizeMode,
 ) -> int:
     """
     Calculate the estimated resolution for resizing an image while preserving aspect ratio.
@@ -180,6 +186,7 @@ class GradioImageMaskPair(TypedDict):
         "mask": np.ndarray,
     }
     """
+
     image: np.ndarray
     mask: np.ndarray
 
@@ -200,6 +207,7 @@ class ControlNetUnit:
     - Add a new item in `ControlNetUnit.infotext_fields`.
     API-only fields cannot appear in infotext.
     """
+
     # Following fields should only be used in the UI.
     # ====== Start of UI only fields ======
     # Specifies the input mode for the unit, defaulting to a simple mode.
@@ -207,9 +215,9 @@ class ControlNetUnit:
     # Determines whether to use the preview image as input; defaults to False.
     use_preview_as_input: bool = False
     # Directory path for batch processing of images.
-    batch_image_dir: str = ''
+    batch_image_dir: str = ""
     # Directory path for batch processing of masks.
-    batch_mask_dir: str = ''
+    batch_mask_dir: str = ""
     # Optional list of gallery images for batch input; defaults to None.
     batch_input_gallery: Optional[List[str]] = None
     # Optional list of gallery masks for batch processing; defaults to None.
@@ -307,7 +315,7 @@ class ControlNetUnit:
             **{k: v for k, v in d.items() if k in vars(ControlNetUnit)}
         )
         if isinstance(unit.image, str):
-            img = np.array(api.decode_base64_to_image(unit.image)).astype('uint8')
+            img = np.array(api.decode_base64_to_image(unit.image)).astype("uint8")
             unit.image = {
                 "image": img,
                 "mask": np.zeros_like(img),
@@ -316,7 +324,7 @@ class ControlNetUnit:
         # If we do, then remove this comment and then fix it here.
         # - Ristellise
         if isinstance(unit.mask_image, str):
-            mask = np.array(api.decode_base64_to_image(unit.mask_image)).astype('uint8')
+            mask = np.array(api.decode_base64_to_image(unit.mask_image)).astype("uint8")
             if unit.image is not None:
                 # Attach mask on image if ControlNet has input image.
                 assert isinstance(unit.image, dict)
@@ -346,7 +354,7 @@ def to_base64_nparray(encoding: str):
     Convert a base64 image into the image type the extension uses
     """
 
-    return np.array(api.decode_base64_to_image(encoding)).astype('uint8')
+    return np.array(api.decode_base64_to_image(encoding)).astype("uint8")
 
 
 def get_max_models_num():
@@ -356,6 +364,7 @@ def get_max_models_num():
 
     max_models_num = shared.opts.data.get("control_net_unit_count", 3)
     return max_models_num
+
 
 def to_processing_unit(unit: Union[Dict[str, Any], ControlNetUnit]) -> ControlNetUnit:
     """

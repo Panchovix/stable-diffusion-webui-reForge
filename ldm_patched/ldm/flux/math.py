@@ -4,6 +4,7 @@ from torch import Tensor
 from ldm_patched.ldm.modules.attention import optimized_attention
 import ldm_patched.modules.model_management
 
+
 def attention(q: Tensor, k: Tensor, v: Tensor, pe: Tensor) -> Tensor:
     q, k = apply_rope(q, k, pe)
 
@@ -14,15 +15,24 @@ def attention(q: Tensor, k: Tensor, v: Tensor, pe: Tensor) -> Tensor:
 
 def rope(pos: Tensor, dim: int, theta: int) -> Tensor:
     assert dim % 2 == 0
-    if ldm_patched.modules.model_management.is_device_mps(pos.device) or ldm_patched.modules.model_management.is_intel_xpu():
+    if (
+        ldm_patched.modules.model_management.is_device_mps(pos.device)
+        or ldm_patched.modules.model_management.is_intel_xpu()
+    ):
         device = torch.device("cpu")
     else:
         device = pos.device
 
-    scale = torch.linspace(0, (dim - 2) / dim, steps=dim//2, dtype=torch.float64, device=device)
+    scale = torch.linspace(
+        0, (dim - 2) / dim, steps=dim // 2, dtype=torch.float64, device=device
+    )
     omega = 1.0 / (theta**scale)
-    out = torch.einsum("...n,d->...nd", pos.to(dtype=torch.float32, device=device), omega)
-    out = torch.stack([torch.cos(out), -torch.sin(out), torch.sin(out), torch.cos(out)], dim=-1)
+    out = torch.einsum(
+        "...n,d->...nd", pos.to(dtype=torch.float32, device=device), omega
+    )
+    out = torch.stack(
+        [torch.cos(out), -torch.sin(out), torch.sin(out), torch.cos(out)], dim=-1
+    )
     out = rearrange(out, "b n d (i j) -> b n d i j", i=2, j=2)
     return out.to(dtype=torch.float32, device=pos.device)
 

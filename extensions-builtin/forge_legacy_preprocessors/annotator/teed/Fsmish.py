@@ -17,4 +17,4 @@ def smish(input):
     mish(x) = x * tanh(softplus(x)) = x * tanh(ln(1 + exp(sigmoid(x))))
     See additional documentation for mish class.
     """
-    return input * torch.tanh(torch.log(1+torch.sigmoid(input)))
+    return input * torch.tanh(torch.log(1 + torch.sigmoid(input)))

@@ -81,9 +81,9 @@ def convert_scripted_instances(instances):
     """
     Convert a scripted Instances object to a regular :class:`Instances` object
     """
-    assert hasattr(
-        instances, "image_size"
-    ), f"Expect an Instances object, but got {type(instances)}!"
+    assert hasattr(instances, "image_size"), (
+        f"Expect an Instances object, but got {type(instances)}!"
+    )
     ret = Instances(instances.image_size)
     for name in instances._field_names:
         val = getattr(instances, "_" + name, None)
@@ -205,7 +205,9 @@ def register_custom_op_onnx_export(
     print(f"_register_custom_op_onnx_export({opname}, {opset_version}) succeeded.")
 
 
-def unregister_custom_op_onnx_export(opname: str, opset_version: int, min_version: str) -> None:
+def unregister_custom_op_onnx_export(
+    opname: str, opset_version: int, min_version: str
+) -> None:
     """
     Unregister PyTorch's symbolic `opname`-`opset_version` for ONNX export.
     The un-registration is performed only when PyTorch's version is < `min_version`
@@ -216,7 +218,9 @@ def unregister_custom_op_onnx_export(opname: str, opset_version: int, min_versio
     # TODO: _unregister_custom_op_symbolic is introduced PyTorch>=1.10
     #       Remove after PyTorch 1.10+ is used by ALL detectron2's CI
     try:
-        from torch.onnx import unregister_custom_op_symbolic as _unregister_custom_op_symbolic
+        from torch.onnx import (
+            unregister_custom_op_symbolic as _unregister_custom_op_symbolic,
+        )
     except ImportError:
 
         def _unregister_custom_op_symbolic(symbolic_name, opset_version):
@@ -230,7 +234,10 @@ def unregister_custom_op_onnx_export(opname: str, opset_version: int, min_versio
                     ns, op_name = get_ns_op_name_from_custom_op(symbolic_name)
                 except ImportError as import_error:
                     if not bool(
-                        re.match(r"^[a-zA-Z0-9-_]*::[a-zA-Z-_]+[a-zA-Z0-9-_]*$", symbolic_name)
+                        re.match(
+                            r"^[a-zA-Z0-9-_]*::[a-zA-Z-_]+[a-zA-Z0-9-_]*$",
+                            symbolic_name,
+                        )
                     ):
                         raise ValueError(
                             f"Invalid symbolic name {symbolic_name}. Must be `domain::name`"
@@ -238,7 +245,9 @@ def unregister_custom_op_onnx_export(opname: str, opset_version: int, min_versio
 
                     ns, op_name = symbolic_name.split("::")
                     if ns == "onnx":
-                        raise ValueError(f"{ns} domain cannot be modified.") from import_error
+                        raise ValueError(
+                            f"{ns} domain cannot be modified."
+                        ) from import_error
 
                     if ns == "aten":
                         ns = ""
@@ -302,7 +311,10 @@ def skipIfUnsupportedMinTorchVersion(min_version):
     """
     Skips tests for PyTorch versions older than min_version.
     """
-    reason = f"module 'torch' has __version__ {torch.__version__}" f", required is: {min_version}"
+    reason = (
+        f"module 'torch' has __version__ {torch.__version__}"
+        f", required is: {min_version}"
+    )
     return unittest.skipIf(not min_torch_version(min_version), reason)
 
 
@@ -381,8 +393,9 @@ def _pytorch1111_symbolic_opset9_to(g, self, *args):
 
 
 # TODO: Remove after PyTorch 1.11.1+ is used by detectron2's CI
-def _pytorch1111_symbolic_opset9_repeat_interleave(g, self, repeats, dim=None, output_size=None):
-
+def _pytorch1111_symbolic_opset9_repeat_interleave(
+    g, self, repeats, dim=None, output_size=None
+):
     # from torch.onnx.symbolic_helper import ScalarType
     from torch.onnx.symbolic_opset9 import expand, unsqueeze
 
@@ -390,7 +403,9 @@ def _pytorch1111_symbolic_opset9_repeat_interleave(g, self, repeats, dim=None, o
     # if dim is None flatten
     # By default, use the flattened input array, and return a flat output array
     if sym_help._is_none(dim):
-        input = sym_help._reshape_helper(g, self, g.op("Constant", value_t=torch.tensor([-1])))
+        input = sym_help._reshape_helper(
+            g, self, g.op("Constant", value_t=torch.tensor([-1]))
+        )
         dim = 0
     else:
         dim = sym_help._maybe_get_scalar(dim)
@@ -400,15 +415,15 @@ def _pytorch1111_symbolic_opset9_repeat_interleave(g, self, repeats, dim=None, o
     input_sizes = sym_help._get_tensor_sizes(input)
     if repeats_dim is None:
         raise RuntimeError(
-            "Unsupported: ONNX export of repeat_interleave for unknown " "repeats rank."
+            "Unsupported: ONNX export of repeat_interleave for unknown repeats rank."
         )
     if repeats_sizes is None:
         raise RuntimeError(
-            "Unsupported: ONNX export of repeat_interleave for unknown " "repeats size."
+            "Unsupported: ONNX export of repeat_interleave for unknown repeats size."
         )
     if input_sizes is None:
         raise RuntimeError(
-            "Unsupported: ONNX export of repeat_interleave for unknown " "input size."
+            "Unsupported: ONNX export of repeat_interleave for unknown input size."
         )
 
     input_sizes_temp = input_sizes.copy()
@@ -429,7 +444,9 @@ def _pytorch1111_symbolic_opset9_repeat_interleave(g, self, repeats, dim=None, o
             )
         else:
             reps = input_sizes[dim]
-            repeats = expand(g, repeats, g.op("Constant", value_t=torch.tensor([reps])), None)
+            repeats = expand(
+                g, repeats, g.op("Constant", value_t=torch.tensor([reps])), None
+            )
 
     # Cases where repeats is a 1 dim Tensor
     elif repeats_dim == 1:
@@ -444,9 +461,9 @@ def _pytorch1111_symbolic_opset9_repeat_interleave(g, self, repeats, dim=None, o
             return sym_help._onnx_opset_unsupported_detailed(
                 "repeat_interleave", 9, 13, "Unsupported for cases with dynamic repeats"
             )
-        assert (
-            repeats_sizes[0] == input_sizes[dim]
-        ), "repeats must have the same size as input along dim"
+        assert repeats_sizes[0] == input_sizes[dim], (
+            "repeats must have the same size as input along dim"
+        )
         reps = repeats_sizes[0]
     else:
         raise RuntimeError("repeats must be 0-dim or 1-dim tensor")

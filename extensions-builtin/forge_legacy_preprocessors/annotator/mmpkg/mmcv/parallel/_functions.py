@@ -11,8 +11,8 @@ def scatter(input, devices, streams=None):
     if isinstance(input, list):
         chunk_size = (len(input) - 1) // len(devices) + 1
         outputs = [
-            scatter(input[i], [devices[i // chunk_size]],
-                    [streams[i // chunk_size]]) for i in range(len(input))
+            scatter(input[i], [devices[i // chunk_size]], [streams[i // chunk_size]])
+            for i in range(len(input))
         ]
         return outputs
     elif isinstance(input, torch.Tensor):
@@ -28,7 +28,7 @@ def scatter(input, devices, streams=None):
             output = output.unsqueeze(0)
         return output
     else:
-        raise Exception(f'Unknown type {type(input)}.')
+        raise Exception(f"Unknown type {type(input)}.")
 
 
 def synchronize_stream(output, devices, streams):
@@ -36,8 +36,9 @@ def synchronize_stream(output, devices, streams):
         chunk_size = len(output) // len(devices)
         for i in range(len(devices)):
             for j in range(chunk_size):
-                synchronize_stream(output[i * chunk_size + j], [devices[i]],
-                                   [streams[i]])
+                synchronize_stream(
+                    output[i * chunk_size + j], [devices[i]], [streams[i]]
+                )
     elif isinstance(output, torch.Tensor):
         if output.numel() != 0:
             with torch.cuda.device(devices[0]):
@@ -45,7 +46,7 @@ def synchronize_stream(output, devices, streams):
                 main_stream.wait_stream(streams[0])
                 output.record_stream(main_stream)
     else:
-        raise Exception(f'Unknown type {type(output)}.')
+        raise Exception(f"Unknown type {type(output)}.")
 
 
 def get_input_device(input):
@@ -58,11 +59,10 @@ def get_input_device(input):
     elif isinstance(input, torch.Tensor):
         return input.get_device() if input.is_cuda else -1
     else:
-        raise Exception(f'Unknown type {type(input)}.')
+        raise Exception(f"Unknown type {type(input)}.")
 
 
 class Scatter:
-
     @staticmethod
     def forward(target_gpus, input):
         input_device = get_input_device(input)

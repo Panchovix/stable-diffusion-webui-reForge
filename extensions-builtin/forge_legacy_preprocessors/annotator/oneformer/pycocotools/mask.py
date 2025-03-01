@@ -1,4 +1,4 @@
-__author__ = 'tsungyi'
+__author__ = "tsungyi"
 
 # import annotator.oneformer.pycocotools._mask as _mask
 
@@ -77,6 +77,7 @@ __author__ = 'tsungyi'
 # merge       = _mask.merge
 # frPyObjects = _mask.frPyObjects
 
+
 def encode(bimask):
     pass
     # if len(bimask.shape) == 3:
@@ -85,6 +86,7 @@ def encode(bimask):
     #     h, w = bimask.shape
     #     return _mask.encode(bimask.reshape((h, w, 1), order='F'))[0]
 
+
 def decode(rleObjs):
     pass
     # if type(rleObjs) == list:
@@ -92,12 +94,14 @@ def decode(rleObjs):
     # else:
     #     return _mask.decode([rleObjs])[:,:,0]
 
+
 def area(rleObjs):
     pass
     # if type(rleObjs) == list:
     #     return _mask.area(rleObjs)
     # else:
     #     return _mask.area([rleObjs])[0]
+
 
 def toBbox(rleObjs):
     pass

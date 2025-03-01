@@ -7,6 +7,7 @@ from RescaleCFG.nodes_AltRescaleCFG import AltRescaleCFG
 from functools import partial
 from typing import Any
 
+
 class RescaleCFGScript(scripts.Script):
     def __init__(self):
         self.enabled = False
@@ -28,14 +29,17 @@ class RescaleCFGScript(scripts.Script):
             version = gr.Dropdown(
                 label="RescaleCFG Version",
                 choices=["Normal", "Alternative"],
-                value=self.version
+                value=self.version,
             )
-            multiplier = gr.Slider(label="RescaleCFG Multiplier", minimum=0.0, maximum=1.0, step=0.01, value=self.multiplier)
+            multiplier = gr.Slider(
+                label="RescaleCFG Multiplier",
+                minimum=0.0,
+                maximum=1.0,
+                step=0.01,
+                value=self.multiplier,
+            )
 
-        enabled.change(
-            lambda x: self.update_enabled(x),
-            inputs=[enabled]
-        )
+        enabled.change(lambda x: self.update_enabled(x), inputs=[enabled])
 
         return (enabled, version, multiplier)
 
@@ -46,7 +50,9 @@ class RescaleCFGScript(scripts.Script):
         if len(args) >= 3:
             self.enabled, self.version, self.multiplier = args[:3]
         else:
-            logging.warning("Not enough arguments provided to process_before_every_sampling")
+            logging.warning(
+                "Not enough arguments provided to process_before_every_sampling"
+            )
             return
 
         xyz = getattr(p, "_rescale_xyz", {})
@@ -72,20 +78,26 @@ class RescaleCFGScript(scripts.Script):
             unet = RescaleCFG().patch(unet, self.multiplier)[0]
 
         p.sd_model.forge_objects.unet = unet
-        p.extra_generation_params.update({
-            "rescale_cfg_enabled": True,
-            "rescale_cfg_version": self.version,
-            "rescale_cfg_multiplier": self.multiplier,
-        })
+        p.extra_generation_params.update(
+            {
+                "rescale_cfg_enabled": True,
+                "rescale_cfg_version": self.version,
+                "rescale_cfg_multiplier": self.multiplier,
+            }
+        )
 
-        logging.debug(f"RescaleCFG: Enabled: {self.enabled}, Version: {self.version}, Multiplier: {self.multiplier}")
+        logging.debug(
+            f"RescaleCFG: Enabled: {self.enabled}, Version: {self.version}, Multiplier: {self.multiplier}"
+        )
 
         return
+
 
 def set_value(p, x: Any, xs: Any, *, field: str):
     if not hasattr(p, "_rescale_xyz"):
         p._rescale_xyz = {}
     p._rescale_xyz[field] = x
+
 
 def make_axis_on_xyz_grid():
     xyz_grid = None
@@ -102,13 +114,13 @@ def make_axis_on_xyz_grid():
             "(RescaleCFG) Enabled",
             str,
             partial(set_value, field="enabled"),
-            choices=lambda: ["True", "False"]
+            choices=lambda: ["True", "False"],
         ),
         xyz_grid.AxisOption(
             "(RescaleCFG) Version",
             str,
             partial(set_value, field="version"),
-            choices=lambda: ["Normal", "Alternative"]
+            choices=lambda: ["Normal", "Alternative"],
         ),
         xyz_grid.AxisOption(
             "(RescaleCFG) Multiplier",
@@ -120,6 +132,7 @@ def make_axis_on_xyz_grid():
     if not any(x.label.startswith("(RescaleCFG)") for x in xyz_grid.axis_options):
         xyz_grid.axis_options.extend(axis)
 
+
 def on_before_ui():
     try:
         make_axis_on_xyz_grid()
@@ -129,5 +142,6 @@ def on_before_ui():
             f"[-] RescaleCFG Script: xyz_grid error:\n{error}",
             file=sys.stderr,
         )
+
 
 script_callbacks.on_before_ui(on_before_ui)

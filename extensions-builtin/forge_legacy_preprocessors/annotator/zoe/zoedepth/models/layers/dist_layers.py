@@ -27,10 +27,10 @@ import torch.nn as nn
 
 
 def log_binom(n, k, eps=1e-7):
-    """ log(nCk) using stirling approximation """
+    """log(nCk) using stirling approximation"""
     n = n + eps
     k = k + eps
-    return n * torch.log(n) - k * torch.log(k) - (n-k) * torch.log(n-k+eps)
+    return n * torch.log(n) - k * torch.log(k) - (n - k) * torch.log(n - k + eps)
 
 
 class LogBinomial(nn.Module):
@@ -43,12 +43,10 @@ class LogBinomial(nn.Module):
         super().__init__()
         self.K = n_classes
         self.act = act
-        self.register_buffer('k_idx', torch.arange(
-            0, n_classes).view(1, -1, 1, 1))
-        self.register_buffer('K_minus_1', torch.Tensor(
-            [self.K-1]).view(1, -1, 1, 1))
+        self.register_buffer("k_idx", torch.arange(0, n_classes).view(1, -1, 1, 1))
+        self.register_buffer("K_minus_1", torch.Tensor([self.K - 1]).view(1, -1, 1, 1))
 
-    def forward(self, x, t=1., eps=1e-4):
+    def forward(self, x, t=1.0, eps=1e-4):
         """Compute log binomial distribution for x
 
         Args:
@@ -64,13 +62,26 @@ class LogBinomial(nn.Module):
 
         one_minus_x = torch.clamp(1 - x, eps, 1)
         x = torch.clamp(x, eps, 1)
-        y = log_binom(self.K_minus_1, self.k_idx) + self.k_idx * \
-            torch.log(x) + (self.K - 1 - self.k_idx) * torch.log(one_minus_x)
-        return self.act(y/t, dim=1)
+        y = (
+            log_binom(self.K_minus_1, self.k_idx)
+            + self.k_idx * torch.log(x)
+            + (self.K - 1 - self.k_idx) * torch.log(one_minus_x)
+        )
+        return self.act(y / t, dim=1)
 
 
 class ConditionalLogBinomial(nn.Module):
-    def __init__(self, in_features, condition_dim, n_classes=256, bottleneck_factor=2, p_eps=1e-4, max_temp=50, min_temp=1e-7, act=torch.softmax):
+    def __init__(
+        self,
+        in_features,
+        condition_dim,
+        n_classes=256,
+        bottleneck_factor=2,
+        p_eps=1e-4,
+        max_temp=50,
+        min_temp=1e-7,
+        act=torch.softmax,
+    ):
         """Conditional Log Binomial distribution
 
         Args:
@@ -89,12 +100,17 @@ class ConditionalLogBinomial(nn.Module):
         self.log_binomial_transform = LogBinomial(n_classes, act=act)
         bottleneck = (in_features + condition_dim) // bottleneck_factor
         self.mlp = nn.Sequential(
-            nn.Conv2d(in_features + condition_dim, bottleneck,
-                      kernel_size=1, stride=1, padding=0),
+            nn.Conv2d(
+                in_features + condition_dim,
+                bottleneck,
+                kernel_size=1,
+                stride=1,
+                padding=0,
+            ),
             nn.GELU(),
             # 2 for p linear norm, 2 for t linear norm
-            nn.Conv2d(bottleneck, 2+2, kernel_size=1, stride=1, padding=0),
-            nn.Softplus()
+            nn.Conv2d(bottleneck, 2 + 2, kernel_size=1, stride=1, padding=0),
+            nn.Softplus(),
         )
 
     def forward(self, x, cond):

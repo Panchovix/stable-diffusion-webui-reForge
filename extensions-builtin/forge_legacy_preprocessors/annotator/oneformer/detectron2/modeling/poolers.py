@@ -5,7 +5,13 @@ import torch
 from torch import nn
 from torchvision.ops import RoIPool
 
-from annotator.oneformer.detectron2.layers import ROIAlign, ROIAlignRotated, cat, nonzero_tuple, shapes_to_tensor
+from annotator.oneformer.detectron2.layers import (
+    ROIAlign,
+    ROIAlignRotated,
+    cat,
+    nonzero_tuple,
+    shapes_to_tensor,
+)
 from annotator.oneformer.detectron2.structures import Boxes
 from annotator.oneformer.detectron2.utils.tracing import assert_fx_safe, is_fx_tracing
 
@@ -61,7 +67,9 @@ def assign_boxes_to_levels(
 
 # script the module to avoid hardcoded device type
 @torch.jit.script_if_tracing
-def _convert_boxes_to_pooler_format(boxes: torch.Tensor, sizes: torch.Tensor) -> torch.Tensor:
+def _convert_boxes_to_pooler_format(
+    boxes: torch.Tensor, sizes: torch.Tensor
+) -> torch.Tensor:
     sizes = sizes.to(device=boxes.device)
     indices = torch.repeat_interleave(
         torch.arange(len(sizes), dtype=boxes.dtype, device=boxes.device), sizes
@@ -163,14 +171,20 @@ class ROIPooler(nn.Module):
         if pooler_type == "ROIAlign":
             self.level_poolers = nn.ModuleList(
                 ROIAlign(
-                    output_size, spatial_scale=scale, sampling_ratio=sampling_ratio, aligned=False
+                    output_size,
+                    spatial_scale=scale,
+                    sampling_ratio=sampling_ratio,
+                    aligned=False,
                 )
                 for scale in scales
             )
         elif pooler_type == "ROIAlignV2":
             self.level_poolers = nn.ModuleList(
                 ROIAlign(
-                    output_size, spatial_scale=scale, sampling_ratio=sampling_ratio, aligned=True
+                    output_size,
+                    spatial_scale=scale,
+                    sampling_ratio=sampling_ratio,
+                    aligned=True,
                 )
                 for scale in scales
             )
@@ -180,7 +194,9 @@ class ROIPooler(nn.Module):
             )
         elif pooler_type == "ROIAlignRotated":
             self.level_poolers = nn.ModuleList(
-                ROIAlignRotated(output_size, spatial_scale=scale, sampling_ratio=sampling_ratio)
+                ROIAlignRotated(
+                    output_size, spatial_scale=scale, sampling_ratio=sampling_ratio
+                )
                 for scale in scales
             )
         else:
@@ -195,9 +211,9 @@ class ROIPooler(nn.Module):
         ), "Featuremap stride is not power of 2!"
         self.min_level = int(min_level)
         self.max_level = int(max_level)
-        assert (
-            len(scales) == self.max_level - self.min_level + 1
-        ), "[ROIPooler] Sizes of input featuremaps do not form a pyramid!"
+        assert len(scales) == self.max_level - self.min_level + 1, (
+            "[ROIPooler] Sizes of input featuremaps do not form a pyramid!"
+        )
         assert 0 <= self.min_level and self.min_level <= self.max_level
         self.canonical_level = canonical_level
         assert canonical_box_size > 0
@@ -246,13 +262,19 @@ class ROIPooler(nn.Module):
             return self.level_poolers[0](x[0], pooler_fmt_boxes)
 
         level_assignments = assign_boxes_to_levels(
-            box_lists, self.min_level, self.max_level, self.canonical_box_size, self.canonical_level
+            box_lists,
+            self.min_level,
+            self.max_level,
+            self.canonical_box_size,
+            self.canonical_level,
         )
 
         num_channels = x[0].shape[1]
         output_size = self.output_size[0]
 
-        output = _create_zeros(pooler_fmt_boxes, num_channels, output_size, output_size, x[0])
+        output = _create_zeros(
+            pooler_fmt_boxes, num_channels, output_size, output_size, x[0]
+        )
 
         for level, pooler in enumerate(self.level_poolers):
             inds = nonzero_tuple(level_assignments == level)[0]

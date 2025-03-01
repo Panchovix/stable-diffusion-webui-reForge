@@ -1,8 +1,13 @@
 import torch
 import torch.nn as nn
 import torch.utils.checkpoint as cp
-from annotator.mmpkg.mmcv.cnn import (ConvModule, build_conv_layer, build_norm_layer,
-                      constant_init, kaiming_init)
+from annotator.mmpkg.mmcv.cnn import (
+    ConvModule,
+    build_conv_layer,
+    build_norm_layer,
+    constant_init,
+    kaiming_init,
+)
 from annotator.mmpkg.mmcv.runner import load_checkpoint
 from annotator.mmpkg.mmcv.utils.parrots_wrapper import _BatchNorm
 
@@ -31,11 +36,13 @@ class GlobalContextExtractor(nn.Module):
         self.with_cp = with_cp
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.fc = nn.Sequential(
-            nn.Linear(channel, channel // reduction), nn.ReLU(inplace=True),
-            nn.Linear(channel // reduction, channel), nn.Sigmoid())
+            nn.Linear(channel, channel // reduction),
+            nn.ReLU(inplace=True),
+            nn.Linear(channel // reduction, channel),
+            nn.Sigmoid(),
+        )
 
     def forward(self, x):
-
         def _inner_forward(x):
             num_batch, num_channel = x.size()[:2]
             y = self.avg_pool(x).view(num_batch, num_channel)
@@ -75,24 +82,26 @@ class ContextGuidedBlock(nn.Module):
             memory while slowing down the training speed. Default: False.
     """
 
-    def __init__(self,
-                 in_channels,
-                 out_channels,
-                 dilation=2,
-                 reduction=16,
-                 skip_connect=True,
-                 downsample=False,
-                 conv_cfg=None,
-                 norm_cfg=dict(type='BN', requires_grad=True),
-                 act_cfg=dict(type='PReLU'),
-                 with_cp=False):
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        dilation=2,
+        reduction=16,
+        skip_connect=True,
+        downsample=False,
+        conv_cfg=None,
+        norm_cfg=dict(type="BN", requires_grad=True),
+        act_cfg=dict(type="PReLU"),
+        with_cp=False,
+    ):
         super(ContextGuidedBlock, self).__init__()
         self.with_cp = with_cp
         self.downsample = downsample
 
         channels = out_channels if downsample else out_channels // 2
-        if 'type' in act_cfg and act_cfg['type'] == 'PReLU':
-            act_cfg['num_parameters'] = channels
+        if "type" in act_cfg and act_cfg["type"] == "PReLU":
+            act_cfg["num_parameters"] = channels
         kernel_size = 3 if downsample else 1
         stride = 2 if downsample else 1
         padding = (kernel_size - 1) // 2
@@ -105,7 +114,8 @@ class ContextGuidedBlock(nn.Module):
             padding,
             conv_cfg=conv_cfg,
             norm_cfg=norm_cfg,
-            act_cfg=act_cfg)
+            act_cfg=act_cfg,
+        )
 
         self.f_loc = build_conv_layer(
             conv_cfg,
@@ -114,7 +124,8 @@ class ContextGuidedBlock(nn.Module):
             kernel_size=3,
             padding=1,
             groups=channels,
-            bias=False)
+            bias=False,
+        )
         self.f_sur = build_conv_layer(
             conv_cfg,
             channels,
@@ -123,24 +134,21 @@ class ContextGuidedBlock(nn.Module):
             padding=dilation,
             groups=channels,
             dilation=dilation,
-            bias=False)
+            bias=False,
+        )
 
         self.bn = build_norm_layer(norm_cfg, 2 * channels)[1]
         self.activate = nn.PReLU(2 * channels)
 
         if downsample:
             self.bottleneck = build_conv_layer(
-                conv_cfg,
-                2 * channels,
-                out_channels,
-                kernel_size=1,
-                bias=False)
+                conv_cfg, 2 * channels, out_channels, kernel_size=1, bias=False
+            )
 
         self.skip_connect = skip_connect and not downsample
         self.f_glo = GlobalContextExtractor(out_channels, reduction, with_cp)
 
     def forward(self, x):
-
         def _inner_forward(x):
             out = self.conv1x1(x)
             loc = self.f_loc(out)
@@ -212,23 +220,23 @@ class CGNet(nn.Module):
             memory while slowing down the training speed. Default: False.
     """
 
-    def __init__(self,
-                 in_channels=3,
-                 num_channels=(32, 64, 128),
-                 num_blocks=(3, 21),
-                 dilations=(2, 4),
-                 reductions=(8, 16),
-                 conv_cfg=None,
-                 norm_cfg=dict(type='BN', requires_grad=True),
-                 act_cfg=dict(type='PReLU'),
-                 norm_eval=False,
-                 with_cp=False):
-
+    def __init__(
+        self,
+        in_channels=3,
+        num_channels=(32, 64, 128),
+        num_blocks=(3, 21),
+        dilations=(2, 4),
+        reductions=(8, 16),
+        conv_cfg=None,
+        norm_cfg=dict(type="BN", requires_grad=True),
+        act_cfg=dict(type="PReLU"),
+        norm_eval=False,
+        with_cp=False,
+    ):
         super(CGNet, self).__init__()
         self.in_channels = in_channels
         self.num_channels = num_channels
-        assert isinstance(self.num_channels, tuple) and len(
-            self.num_channels) == 3
+        assert isinstance(self.num_channels, tuple) and len(self.num_channels) == 3
         self.num_blocks = num_blocks
         assert isinstance(self.num_blocks, tuple) and len(self.num_blocks) == 2
         self.dilations = dilations
@@ -238,8 +246,8 @@ class CGNet(nn.Module):
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
         self.act_cfg = act_cfg
-        if 'type' in self.act_cfg and self.act_cfg['type'] == 'PReLU':
-            self.act_cfg['num_parameters'] = num_channels[0]
+        if "type" in self.act_cfg and self.act_cfg["type"] == "PReLU":
+            self.act_cfg["num_parameters"] = num_channels[0]
         self.norm_eval = norm_eval
         self.with_cp = with_cp
 
@@ -255,7 +263,9 @@ class CGNet(nn.Module):
                     padding=1,
                     conv_cfg=conv_cfg,
                     norm_cfg=norm_cfg,
-                    act_cfg=act_cfg))
+                    act_cfg=act_cfg,
+                )
+            )
             cur_channels = num_channels[0]
 
         self.inject_2x = InputInjection(1)  # down-sample for Input, factor=2
@@ -263,8 +273,8 @@ class CGNet(nn.Module):
 
         cur_channels += in_channels
         self.norm_prelu_0 = nn.Sequential(
-            build_norm_layer(norm_cfg, cur_channels)[1],
-            nn.PReLU(cur_channels))
+            build_norm_layer(norm_cfg, cur_channels)[1], nn.PReLU(cur_channels)
+        )
 
         # stage 1
         self.level1 = nn.ModuleList()
@@ -279,12 +289,14 @@ class CGNet(nn.Module):
                     conv_cfg=conv_cfg,
                     norm_cfg=norm_cfg,
                     act_cfg=act_cfg,
-                    with_cp=with_cp))  # CG block
+                    with_cp=with_cp,
+                )
+            )  # CG block
 
         cur_channels = 2 * num_channels[1] + in_channels
         self.norm_prelu_1 = nn.Sequential(
-            build_norm_layer(norm_cfg, cur_channels)[1],
-            nn.PReLU(cur_channels))
+            build_norm_layer(norm_cfg, cur_channels)[1], nn.PReLU(cur_channels)
+        )
 
         # stage 2
         self.level2 = nn.ModuleList()
@@ -299,12 +311,14 @@ class CGNet(nn.Module):
                     conv_cfg=conv_cfg,
                     norm_cfg=norm_cfg,
                     act_cfg=act_cfg,
-                    with_cp=with_cp))  # CG block
+                    with_cp=with_cp,
+                )
+            )  # CG block
 
         cur_channels = 2 * num_channels[2]
         self.norm_prelu_2 = nn.Sequential(
-            build_norm_layer(norm_cfg, cur_channels)[1],
-            nn.PReLU(cur_channels))
+            build_norm_layer(norm_cfg, cur_channels)[1], nn.PReLU(cur_channels)
+        )
 
     def forward(self, x):
         output = []
@@ -354,7 +368,7 @@ class CGNet(nn.Module):
                 elif isinstance(m, nn.PReLU):
                     constant_init(m, 0)
         else:
-            raise TypeError('pretrained must be a str or None')
+            raise TypeError("pretrained must be a str or None")
 
     def train(self, mode=True):
         """Convert the model into training mode will keeping the normalization

@@ -19,17 +19,17 @@ def get_host_info():
     Return empty string if exception raised, e.g. ``getpass.getuser()`` will
     lead to error in docker container
     """
-    host = ''
+    host = ""
     try:
-        host = f'{getuser()}@{gethostname()}'
+        host = f"{getuser()}@{gethostname()}"
     except Exception as e:
-        warnings.warn(f'Host or user not found: {str(e)}')
+        warnings.warn(f"Host or user not found: {str(e)}")
     finally:
         return host
 
 
 def get_time_str():
-    return time.strftime('%Y%m%d_%H%M%S', time.localtime())
+    return time.strftime("%Y%m%d_%H%M%S", time.localtime())
 
 
 def obj_from_dict(info, parent=None, default_args=None):
@@ -49,18 +49,17 @@ def obj_from_dict(info, parent=None, default_args=None):
     Returns:
         any type: Object built from the dict.
     """
-    assert isinstance(info, dict) and 'type' in info
+    assert isinstance(info, dict) and "type" in info
     assert isinstance(default_args, dict) or default_args is None
     args = info.copy()
-    obj_type = args.pop('type')
+    obj_type = args.pop("type")
     if mmcv.is_str(obj_type):
         if parent is not None:
             obj_type = getattr(parent, obj_type)
         else:
             obj_type = sys.modules[obj_type]
     elif not isinstance(obj_type, type):
-        raise TypeError('type must be a str or valid type, but '
-                        f'got {type(obj_type)}')
+        raise TypeError(f"type must be a str or valid type, but got {type(obj_type)}")
     if default_args is not None:
         for name, value in default_args.items():
             args.setdefault(name, value)
@@ -87,7 +86,7 @@ def set_random_seed(seed, deterministic=False, use_rank_shift=False):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-    os.environ['PYTHONHASHSEED'] = str(seed)
+    os.environ["PYTHONHASHSEED"] = str(seed)
     if deterministic:
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False

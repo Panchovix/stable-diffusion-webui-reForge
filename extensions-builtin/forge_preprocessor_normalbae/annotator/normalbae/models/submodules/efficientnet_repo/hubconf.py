@@ -1,4 +1,4 @@
-dependencies = ['torch', 'math']
+dependencies = ["torch", "math"]
 
 from geffnet import efficientnet_b0
 from geffnet import efficientnet_b1
@@ -81,4 +81,3 @@ from geffnet import tf_mobilenetv3_large_minimal_100
 from geffnet import tf_mobilenetv3_small_075
 from geffnet import tf_mobilenetv3_small_100
 from geffnet import tf_mobilenetv3_small_minimal_100
-

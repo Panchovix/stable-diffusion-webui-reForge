@@ -6,45 +6,92 @@
 Tiny AutoEncoder for Stable Diffusion
 (DNN for encoding / decoding SD's latent space)
 """
+
 import torch
 import torch.nn as nn
 
 import ldm_patched.modules.utils
 import ldm_patched.modules.ops
 
+
 def conv(n_in, n_out, **kwargs):
-    return ldm_patched.modules.ops.disable_weight_init.Conv2d(n_in, n_out, 3, padding=1, **kwargs)
+    return ldm_patched.modules.ops.disable_weight_init.Conv2d(
+        n_in, n_out, 3, padding=1, **kwargs
+    )
+
 
 class Clamp(nn.Module):
     def forward(self, x):
         return torch.tanh(x / 3) * 3
 
+
 class Block(nn.Module):
     def __init__(self, n_in, n_out):
         super().__init__()
-        self.conv = nn.Sequential(conv(n_in, n_out), nn.ReLU(), conv(n_out, n_out), nn.ReLU(), conv(n_out, n_out))
-        self.skip = ldm_patched.modules.ops.disable_weight_init.Conv2d(n_in, n_out, 1, bias=False) if n_in != n_out else nn.Identity()
+        self.conv = nn.Sequential(
+            conv(n_in, n_out),
+            nn.ReLU(),
+            conv(n_out, n_out),
+            nn.ReLU(),
+            conv(n_out, n_out),
+        )
+        self.skip = (
+            ldm_patched.modules.ops.disable_weight_init.Conv2d(
+                n_in, n_out, 1, bias=False
+            )
+            if n_in != n_out
+            else nn.Identity()
+        )
         self.fuse = nn.ReLU()
+
     def forward(self, x):
         return self.fuse(self.conv(x) + self.skip(x))
 
+
 def Encoder():
     return nn.Sequential(
-        conv(3, 64), Block(64, 64),
-        conv(64, 64, stride=2, bias=False), Block(64, 64), Block(64, 64), Block(64, 64),
-        conv(64, 64, stride=2, bias=False), Block(64, 64), Block(64, 64), Block(64, 64),
-        conv(64, 64, stride=2, bias=False), Block(64, 64), Block(64, 64), Block(64, 64),
+        conv(3, 64),
+        Block(64, 64),
+        conv(64, 64, stride=2, bias=False),
+        Block(64, 64),
+        Block(64, 64),
+        Block(64, 64),
+        conv(64, 64, stride=2, bias=False),
+        Block(64, 64),
+        Block(64, 64),
+        Block(64, 64),
+        conv(64, 64, stride=2, bias=False),
+        Block(64, 64),
+        Block(64, 64),
+        Block(64, 64),
         conv(64, 4),
     )
 
+
 def Decoder():
     return nn.Sequential(
-        Clamp(), conv(4, 64), nn.ReLU(),
-        Block(64, 64), Block(64, 64), Block(64, 64), nn.Upsample(scale_factor=2), conv(64, 64, bias=False),
-        Block(64, 64), Block(64, 64), Block(64, 64), nn.Upsample(scale_factor=2), conv(64, 64, bias=False),
-        Block(64, 64), Block(64, 64), Block(64, 64), nn.Upsample(scale_factor=2), conv(64, 64, bias=False),
-        Block(64, 64), conv(64, 3),
+        Clamp(),
+        conv(4, 64),
+        nn.ReLU(),
+        Block(64, 64),
+        Block(64, 64),
+        Block(64, 64),
+        nn.Upsample(scale_factor=2),
+        conv(64, 64, bias=False),
+        Block(64, 64),
+        Block(64, 64),
+        Block(64, 64),
+        nn.Upsample(scale_factor=2),
+        conv(64, 64, bias=False),
+        Block(64, 64),
+        Block(64, 64),
+        Block(64, 64),
+        nn.Upsample(scale_factor=2),
+        conv(64, 64, bias=False),
+        Block(64, 64),
+        conv(64, 3),
     )
+
 
 class TAESD(nn.Module):
     latent_magnitude = 3
@@ -57,9 +104,13 @@ class TAESD(nn.Module):
         self.taesd_decoder = Decoder()
         self.vae_scale = torch.nn.Parameter(torch.tensor(1.0))
         if encoder_path is not None:
-            self.taesd_encoder.load_state_dict(ldm_patched.modules.utils.load_torch_file(encoder_path, safe_load=True))
+            self.taesd_encoder.load_state_dict(
+                ldm_patched.modules.utils.load_torch_file(encoder_path, safe_load=True)
+            )
         if decoder_path is not None:
-            self.taesd_decoder.load_state_dict(ldm_patched.modules.utils.load_torch_file(decoder_path, safe_load=True))
+            self.taesd_decoder.load_state_dict(
+                ldm_patched.modules.utils.load_torch_file(decoder_path, safe_load=True)
+            )
 
     @staticmethod
     def scale_latents(x):

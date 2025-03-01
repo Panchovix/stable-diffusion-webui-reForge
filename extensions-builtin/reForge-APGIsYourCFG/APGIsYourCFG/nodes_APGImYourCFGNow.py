@@ -95,8 +95,26 @@ class APG_ImYourCFGNow:
                     },
                 ),
                 "guidance_limiter": ("BOOLEAN", {"default": False}),
-                "guidance_sigma_start": ("FLOAT", {"default": 5.42, "min": -1.0, "max": 10000.0, "step": 0.01, "round": False}),
-                "guidance_sigma_end": ("FLOAT", {"default": 0.28, "min": -1.0, "max": 10000.0, "step": 0.01, "round": False}),
+                "guidance_sigma_start": (
+                    "FLOAT",
+                    {
+                        "default": 5.42,
+                        "min": -1.0,
+                        "max": 10000.0,
+                        "step": 0.01,
+                        "round": False,
+                    },
+                ),
+                "guidance_sigma_end": (
+                    "FLOAT",
+                    {
+                        "default": 0.28,
+                        "min": -1.0,
+                        "max": 10000.0,
+                        "step": 0.01,
+                        "round": False,
+                    },
+                ),
                 "print_data": (
                     "BOOLEAN",
                     {
@@ -135,8 +153,9 @@ class APG_ImYourCFGNow:
             cond_scale = args["cond_scale"]
 
             if guidance_limiter:
-                if (guidance_sigma_start >= 0 and sigma[0] >  guidance_sigma_start) or \
-                   (guidance_sigma_end   >= 0 and sigma[0] <= guidance_sigma_end):
+                if (guidance_sigma_start >= 0 and sigma[0] > guidance_sigma_start) or (
+                    guidance_sigma_end >= 0 and sigma[0] <= guidance_sigma_end
+                ):
                     if print_data:
                         print(f" guidance limiter active (sigma: {sigma[0]})")
                     return uncond + (cond - uncond)
@@ -175,7 +194,7 @@ class APG_ImYourCFGNow:
             )
 
         m = model.clone()
-        m.set_model_sampler_cfg_function(apg_function, extras==extras)
+        m.set_model_sampler_cfg_function(apg_function, extras == extras)
         m.model_options["disable_cfg1_optimization"] = False
 
         return (m,)

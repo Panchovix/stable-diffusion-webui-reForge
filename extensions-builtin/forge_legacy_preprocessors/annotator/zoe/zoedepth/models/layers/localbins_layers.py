@@ -27,7 +27,9 @@ import torch.nn as nn
 
 
 class SeedBinRegressor(nn.Module):
-    def __init__(self, in_features, n_bins=16, mlp_dim=256, min_depth=1e-3, max_depth=10):
+    def __init__(
+        self, in_features, n_bins=16, mlp_dim=256, min_depth=1e-3, max_depth=10
+    ):
         """Bin center regressor network. Bin centers are bounded on (min_depth, max_depth) interval.
 
         Args:
@@ -46,7 +48,7 @@ class SeedBinRegressor(nn.Module):
             nn.Conv2d(in_features, mlp_dim, 1, 1, 0),
             nn.ReLU(inplace=True),
             nn.Conv2d(mlp_dim, n_bins, 1, 1, 0),
-            nn.ReLU(inplace=True)
+            nn.ReLU(inplace=True),
         )
 
     def forward(self, x):
@@ -57,11 +59,11 @@ class SeedBinRegressor(nn.Module):
         eps = 1e-3
         B = B + eps
         B_widths_normed = B / B.sum(dim=1, keepdim=True)
-        B_widths = (self.max_depth - self.min_depth) * \
-            B_widths_normed  # .shape NCHW
+        B_widths = (self.max_depth - self.min_depth) * B_widths_normed  # .shape NCHW
         # pad has the form (left, right, top, bottom, front, back)
         B_widths = nn.functional.pad(
-            B_widths, (0, 0, 0, 0, 1, 0), mode='constant', value=self.min_depth)
+            B_widths, (0, 0, 0, 0, 1, 0), mode="constant", value=self.min_depth
+        )
         B_edges = torch.cumsum(B_widths, dim=1)  # .shape NCHW
 
         B_centers = 0.5 * (B_edges[:, :-1, ...] + B_edges[:, 1:, ...])
@@ -69,7 +71,9 @@ class SeedBinRegressor(nn.Module):
 
 
 class SeedBinRegressorUnnormed(nn.Module):
-    def __init__(self, in_features, n_bins=16, mlp_dim=256, min_depth=1e-3, max_depth=10):
+    def __init__(
+        self, in_features, n_bins=16, mlp_dim=256, min_depth=1e-3, max_depth=10
+    ):
         """Bin center regressor network. Bin centers are unbounded
 
         Args:
@@ -85,7 +89,7 @@ class SeedBinRegressorUnnormed(nn.Module):
             nn.Conv2d(in_features, mlp_dim, 1, 1, 0),
             nn.ReLU(inplace=True),
             nn.Conv2d(mlp_dim, n_bins, 1, 1, 0),
-            nn.Softplus()
+            nn.Softplus(),
         )
 
     def forward(self, x):
@@ -117,9 +121,16 @@ class Projector(nn.Module):
         return self._net(x)
 
 
-
 class LinearSplitter(nn.Module):
-    def __init__(self, in_features, prev_nbins, split_factor=2, mlp_dim=128, min_depth=1e-3, max_depth=10):
+    def __init__(
+        self,
+        in_features,
+        prev_nbins,
+        split_factor=2,
+        mlp_dim=128,
+        min_depth=1e-3,
+        max_depth=10,
+    ):
         super().__init__()
 
         self.prev_nbins = prev_nbins
@@ -131,17 +142,21 @@ class LinearSplitter(nn.Module):
             nn.Conv2d(in_features, mlp_dim, 1, 1, 0),
             nn.GELU(),
             nn.Conv2d(mlp_dim, prev_nbins * split_factor, 1, 1, 0),
-            nn.ReLU()
+            nn.ReLU(),
         )
-    
-    def forward(self, x, b_prev, prev_b_embedding=None, interpolate=True, is_for_query=False):
+
+    def forward(
+        self, x, b_prev, prev_b_embedding=None, interpolate=True, is_for_query=False
+    ):
         """
         x : feature block; shape - n, c, h, w
         b_prev : previous bin widths normed; shape - n, prev_nbins, h, w
         """
         if prev_b_embedding is not None:
             if interpolate:
-                prev_b_embedding = nn.functional.interpolate(prev_b_embedding, x.shape[-2:], mode='bilinear', align_corners=True)
+                prev_b_embedding = nn.functional.interpolate(
+                    prev_b_embedding, x.shape[-2:], mode="bilinear", align_corners=True
+                )
             x = x + prev_b_embedding
         S = self._net(x)
         eps = 1e-3
@@ -150,20 +165,25 @@ class LinearSplitter(nn.Module):
         S = S.view(n, self.prev_nbins, self.split_factor, h, w)
         S_normed = S / S.sum(dim=2, keepdim=True)  # fractional splits
 
-        b_prev = nn.functional.interpolate(b_prev, (h,w), mode='bilinear', align_corners=True)
-        
+        b_prev = nn.functional.interpolate(
+            b_prev, (h, w), mode="bilinear", align_corners=True
+        )
 
         b_prev = b_prev / b_prev.sum(dim=1, keepdim=True)  # renormalize for gurantees
         # print(b_prev.shape, S_normed.shape)
         # if is_for_query:(1).expand(-1, b_prev.size(0)//n, -1, -1, -1, -1).flatten(0,1)  # TODO ? can replace all this with a single torch.repeat?
         b = b_prev.unsqueeze(2) * S_normed
-        b = b.flatten(1,2)  # .shape n, prev_nbins * split_factor, h, w
+        b = b.flatten(1, 2)  # .shape n, prev_nbins * split_factor, h, w
 
         # calculate bin centers for loss calculation
-        B_widths = (self.max_depth - self.min_depth) * b  # .shape N, nprev * splitfactor, H, W
+        B_widths = (
+            self.max_depth - self.min_depth
+        ) * b  # .shape N, nprev * splitfactor, H, W
         # pad has the form (left, right, top, bottom, front, back)
-        B_widths = nn.functional.pad(B_widths, (0,0,0,0,1,0), mode='constant', value=self.min_depth)
+        B_widths = nn.functional.pad(
+            B_widths, (0, 0, 0, 0, 1, 0), mode="constant", value=self.min_depth
+        )
         B_edges = torch.cumsum(B_widths, dim=1)  # .shape NCHW
 
-        B_centers = 0.5 * (B_edges[:, :-1, ...] + B_edges[:,1:,...])
+        B_centers = 0.5 * (B_edges[:, :-1, ...] + B_edges[:, 1:, ...])
         return b, B_centers

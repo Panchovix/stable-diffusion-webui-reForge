@@ -26,11 +26,15 @@ class ControlNetExampleForge(scripts.Script):
 
     def ui(self, *args, **kwargs):
         with gr.Accordion(open=False, label=self.title()):
-            gr.HTML('This is an example controlnet extension for developers.')
-            gr.HTML('You see this extension because you used --show-controlnet-example')
-            input_image = gr.Image(source='upload', type='numpy')
-            funny_slider = gr.Slider(label='This slider does nothing. It just shows you how to transfer parameters.',
-                                     minimum=0.0, maximum=1.0, value=0.5)
+            gr.HTML("This is an example controlnet extension for developers.")
+            gr.HTML("You see this extension because you used --show-controlnet-example")
+            input_image = gr.Image(source="upload", type="numpy")
+            funny_slider = gr.Slider(
+                label="This slider does nothing. It just shows you how to transfer parameters.",
+                minimum=0.0,
+                maximum=1.0,
+                value=0.5,
+            )
 
         return input_image, funny_slider
 
@@ -49,14 +53,14 @@ class ControlNetExampleForge(scripts.Script):
         #     file_name='sai_xl_canny_256lora.safetensors'
         # )
         controlnet_canny_path = load_file_from_url(
-            url='https://huggingface.co/lllyasviel/fav_models/resolve/main/fav/control_v11p_sd15_canny_fp16.safetensors',
+            url="https://huggingface.co/lllyasviel/fav_models/resolve/main/fav/control_v11p_sd15_canny_fp16.safetensors",
             model_dir=controlnet_dir,
-            file_name='control_v11p_sd15_canny_fp16.safetensors'
+            file_name="control_v11p_sd15_canny_fp16.safetensors",
         )
-        print('The model [control_v11p_sd15_canny_fp16.safetensors] download finished.')
+        print("The model [control_v11p_sd15_canny_fp16.safetensors] download finished.")
 
         self.model = load_controlnet(controlnet_canny_path)
-        print('Controlnet loaded.')
+        print("Controlnet loaded.")
 
         return
 
@@ -69,26 +73,28 @@ class ControlNetExampleForge(scripts.Script):
         if input_image is None or self.model is None:
             return
 
-        B, C, H, W = kwargs['noise'].shape  # latent_shape
+        B, C, H, W = kwargs["noise"].shape  # latent_shape
         height = H * 8
         width = W * 8
         batch_size = p.batch_size
 
-        preprocessor = supported_preprocessors['canny']
+        preprocessor = supported_preprocessors["canny"]
 
         # detect control at certain resolution
         control_image = preprocessor(
-            input_image, resolution=512, slider_1=100, slider_2=200, slider_3=None)
+            input_image, resolution=512, slider_1=100, slider_2=200, slider_3=None
+        )
 
         # here we just use nearest neighbour to align input shape.
         # You may want crop and resize, or crop and fill, or others.
         control_image = cv2.resize(
-            control_image, (width, height), interpolation=cv2.INTER_NEAREST)
+            control_image, (width, height), interpolation=cv2.INTER_NEAREST
+        )
 
         # Output preprocessor result. Now called every sampling. Cache in your own way.
         p.extra_result_images.append(control_image)
 
-        print('Preprocessor Canny finished.')
+        print("Preprocessor Canny finished.")
 
         control_image_bchw = numpy_to_pytorch(control_image).movedim(-1, 1)
 
@@ -99,14 +105,40 @@ class ControlNetExampleForge(scripts.Script):
         # Below is an example for stronger control in middle block.
         # This is helpful for some high-res fix passes. (p.is_hr_pass)
         positive_advanced_weighting = {
-            'input': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2],
-            'middle': [1.0],
-            'output': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2]
+            "input": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2],
+            "middle": [1.0],
+            "output": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2],
         }
         negative_advanced_weighting = {
-            'input': [0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95, 1.05, 1.15, 1.25],
-            'middle': [1.05],
-            'output': [0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95, 1.05, 1.15, 1.25]
+            "input": [
+                0.15,
+                0.25,
+                0.35,
+                0.45,
+                0.55,
+                0.65,
+                0.75,
+                0.85,
+                0.95,
+                1.05,
+                1.15,
+                1.25,
+            ],
+            "middle": [1.05],
+            "output": [
+                0.15,
+                0.25,
+                0.35,
+                0.45,
+                0.55,
+                0.65,
+                0.75,
+                0.85,
+                0.95,
+                1.05,
+                1.15,
+                1.25,
+            ],
         }
 
         # The advanced_frame_weighting is a weight applied to each image in a batch.
@@ -114,7 +146,9 @@ class ControlNetExampleForge(scripts.Script):
         # For example, if batch size is 5, the below list is [0.2, 0.4, 0.6, 0.8, 1.0]
         # If you view the 5 images as 5 frames in a video, this will lead to
         # progressively stronger control over time.
-        advanced_frame_weighting = [float(i + 1) / float(batch_size) for i in range(batch_size)]
+        advanced_frame_weighting = [
+            float(i + 1) / float(batch_size) for i in range(batch_size)
+        ]
 
         # The advanced_sigma_weighting allows you to dynamically compute control
         # weights given diffusion timestep (sigma).
@@ -136,21 +170,29 @@ class ControlNetExampleForge(scripts.Script):
         advanced_sigma_weighting = None
         advanced_mask_weighting = None
 
-        unet = apply_controlnet_advanced(unet=unet, controlnet=self.model, image_bchw=control_image_bchw,
-                                         strength=0.6, start_percent=0.0, end_percent=0.8,
-                                         positive_advanced_weighting=positive_advanced_weighting,
-                                         negative_advanced_weighting=negative_advanced_weighting,
-                                         advanced_frame_weighting=advanced_frame_weighting,
-                                         advanced_sigma_weighting=advanced_sigma_weighting,
-                                         advanced_mask_weighting=advanced_mask_weighting)
+        unet = apply_controlnet_advanced(
+            unet=unet,
+            controlnet=self.model,
+            image_bchw=control_image_bchw,
+            strength=0.6,
+            start_percent=0.0,
+            end_percent=0.8,
+            positive_advanced_weighting=positive_advanced_weighting,
+            negative_advanced_weighting=negative_advanced_weighting,
+            advanced_frame_weighting=advanced_frame_weighting,
+            advanced_sigma_weighting=advanced_sigma_weighting,
+            advanced_mask_weighting=advanced_mask_weighting,
+        )
 
         p.sd_model.forge_objects.unet = unet
 
         # Below codes will add some logs to the texts below the image outputs on UI.
         # The extra_generation_params does not influence results.
-        p.extra_generation_params.update(dict(
-            controlnet_info='You should see these texts below output images!',
-        ))
+        p.extra_generation_params.update(
+            dict(
+                controlnet_info="You should see these texts below output images!",
+            )
+        )
 
         return
 

@@ -64,4 +64,3 @@ if args_parser.args.cuda_stream:
     current_stream = get_current_stream()
     mover_stream = get_new_stream()
     using_stream = current_stream is not None and mover_stream is not None
-

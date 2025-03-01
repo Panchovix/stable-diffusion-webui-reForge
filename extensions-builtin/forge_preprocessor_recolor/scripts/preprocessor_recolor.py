@@ -10,8 +10,8 @@ class PreprocessorRecolor(Preprocessor):
         super().__init__()
         self.name = name
         self.use_intensity = False
-        self.tags = ['Recolor']
-        self.model_filename_filters = ['color', 'recolor', 'grey', 'gray']
+        self.tags = ["Recolor"]
+        self.model_filename_filters = ["color", "recolor", "grey", "gray"]
         self.slider_resolution = PreprocessorParameter(visible=False)
         self.slider_1 = PreprocessorParameter(
             visible=True,
@@ -19,11 +19,19 @@ class PreprocessorRecolor(Preprocessor):
             value=1.0,
             minimum=0.1,
             maximum=2.0,
-            step=0.001
+            step=0.001,
         )
         self.current_cond = None
 
-    def __call__(self, input_image, resolution, slider_1=None, slider_2=None, slider_3=None, **kwargs):
+    def __call__(
+        self,
+        input_image,
+        resolution,
+        slider_1=None,
+        slider_2=None,
+        slider_3=None,
+        **kwargs,
+    ):
         gamma = slider_1
 
         if self.use_intensity:
@@ -33,7 +41,7 @@ class PreprocessorRecolor(Preprocessor):
             result = cv2.cvtColor(input_image, cv2.COLOR_BGR2LAB)
             result = result[:, :, 0].astype(np.float32) / 255.0
 
-        result = result ** gamma
+        result = result**gamma
         result = (result * 255.0).clip(0, 255).astype(np.uint8)
         result = cv2.cvtColor(result, cv2.COLOR_GRAY2RGB)
         return result
@@ -56,12 +64,10 @@ class PreprocessorRecolor(Preprocessor):
         return
 
 
-add_supported_preprocessor(PreprocessorRecolor(
-    name="recolor_intensity",
-    use_intensity=True
-))
+add_supported_preprocessor(
+    PreprocessorRecolor(name="recolor_intensity", use_intensity=True)
+)
 
-add_supported_preprocessor(PreprocessorRecolor(
-    name="recolor_luminance",
-    use_intensity=False
-))
+add_supported_preprocessor(
+    PreprocessorRecolor(name="recolor_luminance", use_intensity=False)
+)

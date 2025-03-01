@@ -11,18 +11,40 @@ from modules_forge.forge_util import numpy_to_pytorch
 
 
 class PreprocessorParameter:
-    def __init__(self, minimum=0.0, maximum=1.0, step=0.01, label='Parameter 1', value=0.5, visible=False, **kwargs):
+    def __init__(
+        self,
+        minimum=0.0,
+        maximum=1.0,
+        step=0.01,
+        label="Parameter 1",
+        value=0.5,
+        visible=False,
+        **kwargs,
+    ):
         self.gradio_update_kwargs = dict(
-            minimum=minimum, maximum=maximum, step=step, label=label, value=value, visible=visible, **kwargs
+            minimum=minimum,
+            maximum=maximum,
+            step=step,
+            label=label,
+            value=value,
+            visible=visible,
+            **kwargs,
         )
 
 
 class Preprocessor:
     def __init__(self):
-        self.name = 'PreprocessorBase'
+        self.name = "PreprocessorBase"
         self.tags = []
         self.model_filename_filters = []
-        self.slider_resolution = PreprocessorParameter(label='Resolution', minimum=128, maximum=2048, value=512, step=8, visible=True)
+        self.slider_resolution = PreprocessorParameter(
+            label="Resolution",
+            minimum=128,
+            maximum=2048,
+            value=512,
+            step=8,
+            visible=True,
+        )
         self.slider_1 = PreprocessorParameter()
         self.slider_2 = PreprocessorParameter()
         self.slider_3 = PreprocessorParameter()
@@ -35,11 +57,18 @@ class Preprocessor:
         self.use_soft_projection_in_hr_fix = False
         self.expand_mask_when_resize_and_fill = False
 
-    def setup_model_patcher(self, model, load_device=None, offload_device=None, dtype=torch.float32, **kwargs):
+    def setup_model_patcher(
+        self,
+        model,
+        load_device=None,
+        offload_device=None,
+        dtype=torch.float32,
+        **kwargs,
+    ):
         if load_device is None:
             load_device = model_management.get_torch_device()
         if offload_device is None:
-            offload_device = torch.device('cpu')
+            offload_device = torch.device("cpu")
         if not model_management.should_use_fp16(load_device):
             dtype = torch.float32
         model.eval()
@@ -48,8 +77,8 @@ class Preprocessor:
             model=model,
             load_device=load_device,
             offload_device=offload_device,
-            weight_inplace_update=kwargs.get('weight_inplace_update', False),
-            current_device=kwargs.get('current_device', None)
+            weight_inplace_update=kwargs.get("weight_inplace_update", False),
+            current_device=kwargs.get("current_device", None),
         )
         return self.model_patcher
 
@@ -59,7 +88,10 @@ class Preprocessor:
 
     def send_tensor_to_model_device(self, x):
         if self.model_patcher:
-            return x.to(device=self.model_patcher.model.device, dtype=self.model_patcher.model_dtype())
+            return x.to(
+                device=self.model_patcher.model.device,
+                dtype=self.model_patcher.model_dtype(),
+            )
         return x
 
     def process_after_running_preprocessors(self, process, params, *args, **kwargs):
@@ -71,31 +103,64 @@ class Preprocessor:
     def process_after_every_sampling(self, process, params, *args, **kwargs):
         return
 
-    def __call__(self, input_image, resolution, slider_1=None, slider_2=None, slider_3=None, input_mask=None, **kwargs):
+    def __call__(
+        self,
+        input_image,
+        resolution,
+        slider_1=None,
+        slider_2=None,
+        slider_3=None,
+        input_mask=None,
+        **kwargs,
+    ):
         return input_image
 
 
 class PreprocessorNone(Preprocessor):
     def __init__(self):
         super().__init__()
-        self.name = 'None'
+        self.name = "None"
         self.sorting_priority = 10
 
 
 class PreprocessorCanny(Preprocessor):
     def __init__(self):
         super().__init__()
-        self.name = 'canny'
-        self.tags = ['Canny']
-        self.model_filename_filters = ['canny']
-        self.slider_1 = PreprocessorParameter(minimum=0, maximum=256, step=1, value=100, label='Low Threshold', visible=True)
-        self.slider_2 = PreprocessorParameter(minimum=0, maximum=256, step=1, value=200, label='High Threshold', visible=True)
+        self.name = "canny"
+        self.tags = ["Canny"]
+        self.model_filename_filters = ["canny"]
+        self.slider_1 = PreprocessorParameter(
+            minimum=0,
+            maximum=256,
+            step=1,
+            value=100,
+            label="Low Threshold",
+            visible=True,
+        )
+        self.slider_2 = PreprocessorParameter(
+            minimum=0,
+            maximum=256,
+            step=1,
+            value=200,
+            label="High Threshold",
+            visible=True,
+        )
         self.sorting_priority = 100
         self.use_soft_projection_in_hr_fix = True
 
-    def __call__(self, input_image, resolution, slider_1=None, slider_2=None, slider_3=None, **kwargs):
+    def __call__(
+        self,
+        input_image,
+        resolution,
+        slider_1=None,
+        slider_2=None,
+        slider_3=None,
+        **kwargs,
+    ):
         input_image, remove_pad = resize_image_with_pad(input_image, resolution)
-        canny_image = cv2.cvtColor(cv2.Canny(input_image, int(slider_1), int(slider_2)), cv2.COLOR_GRAY2RGB)
+        canny_image = cv2.cvtColor(
+            cv2.Canny(input_image, int(slider_1), int(slider_2)), cv2.COLOR_GRAY2RGB
+        )
         return remove_pad(canny_image)
 
 
@@ -122,9 +187,7 @@ class PreprocessorClipVision(Preprocessor):
             return self.clipvision
 
         ckpt_path = load_file_from_url(
-            url=self.url,
-            model_dir=preprocessor_dir,
-            file_name=self.filename
+            url=self.url, model_dir=preprocessor_dir, file_name=self.filename
         )
 
         if ckpt_path in PreprocessorClipVision.global_cache:
@@ -138,28 +201,43 @@ class PreprocessorClipVision(Preprocessor):
 
         return self.clipvision
 
-    def setup_model_patcher(self, model, load_device=None, offload_device=None, dtype=torch.float32, **kwargs):
+    def setup_model_patcher(
+        self,
+        model,
+        load_device=None,
+        offload_device=None,
+        dtype=torch.float32,
+        **kwargs,
+    ):
         if load_device is None:
             load_device = model_management.get_torch_device()
         if offload_device is None:
-            offload_device = torch.device('cpu')
+            offload_device = torch.device("cpu")
         if not model_management.should_use_fp16(load_device):
             dtype = torch.float32
-        
+
         # The ClipVisionModel doesn't need eval() as it's handled internally
         model = model.to(device=offload_device, dtype=dtype)
         self.model_patcher = self.clipvision.patcher
         return self.model_patcher
 
     @torch.no_grad()
-    def __call__(self, input_image, resolution, slider_1=None, slider_2=None, slider_3=None, **kwargs):
+    def __call__(
+        self,
+        input_image,
+        resolution,
+        slider_1=None,
+        slider_2=None,
+        slider_3=None,
+        **kwargs,
+    ):
         clipvision = self.load_clipvision()
-        
+
         # Move the model to the appropriate device
         self.move_all_model_patchers_to_gpu()
-        
+
         # Convert input image to PyTorch tensor and move to the correct device
         input_tensor = self.send_tensor_to_model_device(numpy_to_pytorch(input_image))
-        
+
         # Encode the image
         return clipvision.encode_image(input_tensor)

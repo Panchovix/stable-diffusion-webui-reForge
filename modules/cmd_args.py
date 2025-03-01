@@ -86,7 +86,7 @@ parser.add_argument(
 parser.add_argument(
     "--data-dir",
     type=normalized_filepath,
-    default=os.path.dirname(os.path.dirname(os.path.realpath(__file__))),
+    default=Path(__file__).resolve().parent.parent,
     help="base path where all user data is stored",
 )
 parser.add_argument(
@@ -123,7 +123,7 @@ parser.add_argument(
     "--gfpgan-dir",
     type=normalized_filepath,
     help="GFPGAN directory",
-    default=("./src/gfpgan" if os.path.exists("./src/gfpgan") else "./GFPGAN"),
+    default=Path("./src/gfpgan") if Path("./src/gfpgan").is_dir() else Path("./GFPGAN"),
 )
 parser.add_argument(
     "--gfpgan-model",
@@ -150,25 +150,25 @@ parser.add_argument(
 parser.add_argument(
     "--embeddings-dir",
     type=normalized_filepath,
-    default=os.path.join(data_path, "embeddings"),
+    default=data_path / "embeddings",
     help="embeddings directory for textual inversion (default: embeddings)",
 )
 parser.add_argument(
     "--textual-inversion-templates-dir",
     type=normalized_filepath,
-    default=os.path.join(script_path, "textual_inversion_templates"),
+    default=script_path / "textual_inversion_templates",
     help="directory with textual inversion templates",
 )
 parser.add_argument(
     "--hypernetwork-dir",
     type=normalized_filepath,
-    default=os.path.join(models_path, "hypernetworks"),
+    default=models_path / "hypernetworks",
     help="hypernetwork directory",
 )
 parser.add_argument(
     "--localizations-dir",
     type=normalized_filepath,
-    default=os.path.join(script_path, "localizations"),
+    default=script_path / "localizations",
     help="localizations directory",
 )
 parser.add_argument(
@@ -241,37 +241,37 @@ parser.add_argument(
     "--codeformer-models-path",
     type=normalized_filepath,
     help="Path to directory with codeformer model file(s).",
-    default=os.path.join(models_path, "Codeformer"),
+    default=models_path / "Codeformer",
 )
 parser.add_argument(
     "--gfpgan-models-path",
     type=normalized_filepath,
     help="Path to directory with GFPGAN model file(s).",
-    default=os.path.join(models_path, "GFPGAN"),
+    default=models_path / "GFPGAN",
 )
 parser.add_argument(
     "--esrgan-models-path",
     type=normalized_filepath,
     help="Path to directory with ESRGAN model file(s).",
-    default=os.path.join(models_path, "ESRGAN"),
+    default=models_path / "ESRGAN",
 )
 parser.add_argument(
     "--bsrgan-models-path",
     type=normalized_filepath,
     help="Path to directory with BSRGAN model file(s).",
-    default=os.path.join(models_path, "BSRGAN"),
+    default=models_path / "BSRGAN",
 )
 parser.add_argument(
     "--realesrgan-models-path",
     type=normalized_filepath,
     help="Path to directory with RealESRGAN model file(s).",
-    default=os.path.join(models_path, "RealESRGAN"),
+    default=models_path / "RealESRGAN",
 )
 parser.add_argument(
     "--dat-models-path",
     type=normalized_filepath,
     help="Path to directory with DAT model file(s).",
-    default=os.path.join(models_path, "DAT"),
+    default=models_path / "DAT",
 )
 parser.add_argument(
     "--clip-models-path",
@@ -387,7 +387,7 @@ parser.add_argument(
     "--ui-config-file",
     type=str,
     help="filename to use for ui configuration",
-    default=os.path.join(data_path, "ui-config.json"),
+    default=data_path / "ui-config.json",
 )
 parser.add_argument(
     "--hide-ui-dir-config",
@@ -417,7 +417,7 @@ parser.add_argument(
     "--ui-settings-file",
     type=str,
     help="filename to use for ui settings",
-    default=os.path.join(data_path, "config.json"),
+    default=data_path / "config.json",
 )
 parser.add_argument(
     "--gradio-debug", action="store_true", help="launch gradio with --debug option"

@@ -8,21 +8,24 @@ import tqdm
 
 from modules.paths import data_path, script_path
 
-cache_filename = os.environ.get('SD_WEBUI_CACHE_FILE', os.path.join(data_path, "cache.json"))
-cache_dir = os.environ.get('SD_WEBUI_CACHE_DIR', os.path.join(data_path, "cache"))
+cache_filename = os.environ.get("SD_WEBUI_CACHE_FILE", data_path / "cache.json")
+cache_dir = os.environ.get("SD_WEBUI_CACHE_DIR", data_path / "cache")
 caches = {}
 cache_lock = threading.Lock()
+
 
 def dump_cache():
     """old function for dumping cache to disk; does nothing since diskcache."""
     pass
 
+
 def make_cache(subsection: str) -> diskcache.Cache:
     return diskcache.Cache(
-        os.path.join(cache_dir, subsection),
+        cache_dir / subsection,
         size_limit=2**32,  # 4 GB, culling oldest first
         disk_min_file_size=2**18,  # keep up to 256KB in Sqlite
     )
+
 
 def convert_old_cached_data():
     try:
@@ -31,8 +34,10 @@ def convert_old_cached_data():
     except FileNotFoundError:
         return
     except Exception:
-        os.replace(cache_filename, os.path.join(script_path, "tmp", "cache.json"))
-        print('[ERROR] issue occurred while trying to read cache.json; old cache has been moved to tmp/cache.json')
+        os.replace(cache_filename, script_path / "tmp" / "cache.json")
+        print(
+            "[ERROR] issue occurred while trying to read cache.json; old cache has been moved to tmp/cache.json"
+        )
         return
 
     total_count = sum(len(keyvalues) for keyvalues in data.values())
@@ -99,20 +104,20 @@ def cached_data_for_file(subsection, title, filename, func):
     existing_cache = cache(subsection)
     ondisk_mtime = os.path.getmtime(filename)
 
-    entry = existing_cache.get(title)
+    entry = existing_cache.get(title, default={})
     if entry:
         cached_mtime = entry.get("mtime", 0)
         if ondisk_mtime > cached_mtime:
             entry = None
 
-    if not entry or 'value' not in entry:
+    if not entry or "value" not in entry:
         value = func()
         if value is None:
             return None
 
-        entry = {'mtime': ondisk_mtime, 'value': value}
+        entry = {"mtime": ondisk_mtime, "value": value}
         existing_cache[title] = entry
 
         dump_cache()
 
-    return entry['value']
+    return entry["value"]

@@ -56,9 +56,9 @@ def _generate_optimizer_class_with_gradient_clipping(
     Dynamically creates a new type that inherits the type of a given instance
     and overrides the `step` method to add gradient clipping
     """
-    assert (
-        per_param_clipper is None or global_clipper is None
-    ), "Not allowed to use both per-parameter clipping and global clipping"
+    assert per_param_clipper is None or global_clipper is None, (
+        "Not allowed to use both per-parameter clipping and global clipping"
+    )
 
     def optimizer_wgc_step(self, closure=None):
         if per_param_clipper is not None:
@@ -228,7 +228,9 @@ def get_default_optimizer_params(
             if isinstance(module, norm_module_types) and weight_decay_norm is not None:
                 hyperparams["weight_decay"] = weight_decay_norm
             if lr_factor_func is not None:
-                hyperparams["lr"] *= lr_factor_func(f"{module_name}.{module_param_name}")
+                hyperparams["lr"] *= lr_factor_func(
+                    f"{module_name}.{module_param_name}"
+                )
 
             hyperparams.update(overrides.get(module_param_name, {}))
             params.append({"params": [value], **hyperparams})

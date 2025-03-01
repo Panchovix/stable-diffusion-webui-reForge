@@ -1,6 +1,7 @@
 from functools import wraps
 
 import gradio as gr
+
 # Required. Else gradio just dies when handling dropdowns.
 from modules import gradio_extensions  # noqa: F401
 
@@ -21,7 +22,9 @@ class ToolButton(gr.Button, FormComponent):
     @wraps(gr.Button.__init__)
     def __init__(self, value="", *args, elem_classes=None, **kwargs):
         elem_classes = elem_classes or []
-        super().__init__(*args, elem_classes=["tool", *elem_classes], value=value, **kwargs)
+        super().__init__(
+            *args, elem_classes=["tool", *elem_classes], value=value, **kwargs
+        )
 
     def get_block_name(self):
         return "button"
@@ -29,6 +32,7 @@ class ToolButton(gr.Button, FormComponent):
 
 class ResizeHandleRow(gr.Row):
     """Same as gr.Row but fits inside gradio forms"""
+
     webui_do_not_create_gradio_pyi_thank_you = True
 
     @wraps(gr.Row.__init__)
@@ -39,6 +43,7 @@ class ResizeHandleRow(gr.Row):
 
     def get_block_name(self):
         return "row"
+
 
 class FormRow(gr.Row, FormComponent):
     """Same as gr.Row but fits inside gradio forms"""
@@ -80,7 +85,7 @@ class DropdownMulti(gr.Dropdown, FormComponent):
 
     @wraps(gr.Dropdown.__init__)
     def __init__(self, **kwargs):
-        kwargs['multiselect'] = True
+        kwargs["multiselect"] = True
         super().__init__(**kwargs)
 
     def get_block_name(self):
@@ -92,11 +97,12 @@ class DropdownEditable(gr.Dropdown, FormComponent):
 
     @wraps(gr.Dropdown.__init__)
     def __init__(self, **kwargs):
-        kwargs['allow_custom_value'] = True
+        kwargs["allow_custom_value"] = True
         super().__init__(**kwargs)
 
     def get_block_name(self):
         return "dropdown"
+
 
 class InputAccordionImpl(gr.Checkbox):
     """A gr.Accordion that can be used as an input - returns True if open, False if closed.
@@ -114,7 +120,7 @@ class InputAccordionImpl(gr.Checkbox):
             super().__init__(value=value, **kwargs)
             return
 
-        self.accordion_id = kwargs.get('elem_id')
+        self.accordion_id = kwargs.get("elem_id")
         if self.accordion_id is None:
             self.accordion_id = f"input-accordion-{InputAccordionImpl.global_index}"
             InputAccordionImpl.global_index += 1
@@ -126,13 +132,19 @@ class InputAccordionImpl(gr.Checkbox):
         }
         super().__init__(value=value, **kwargs_checkbox)
 
-        self.change(fn=None, js='function(checked){ inputAccordionChecked("' + self.accordion_id + '", checked); }', inputs=[self])
+        self.change(
+            fn=None,
+            js='function(checked){ inputAccordionChecked("'
+            + self.accordion_id
+            + '", checked); }',
+            inputs=[self],
+        )
 
         kwargs_accordion = {
             **kwargs,
             "elem_id": self.accordion_id,
-            "label": kwargs.get('label', 'Accordion'),
-            "elem_classes": ['input-accordion'],
+            "label": kwargs.get("label", "Accordion"),
+            "elem_classes": ["input-accordion"],
             "open": value,
         }
 
@@ -152,7 +164,11 @@ class InputAccordionImpl(gr.Checkbox):
         ```
         """
 
-        return gr.Column(elem_id=self.accordion_id + '-extra', elem_classes='input-accordion-extra', min_width=0)
+        return gr.Column(
+            elem_id=self.accordion_id + "-extra",
+            elem_classes="input-accordion-extra",
+            min_width=0,
+        )
 
     def __enter__(self):
         self.accordion.__enter__()

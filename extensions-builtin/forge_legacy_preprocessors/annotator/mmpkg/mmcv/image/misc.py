@@ -27,7 +27,7 @@ def tensor2imgs(tensor, mean=(0, 0, 0), std=(1, 1, 1), to_rgb=True):
     """
 
     if torch is None:
-        raise RuntimeError('pytorch is not installed')
+        raise RuntimeError("pytorch is not installed")
     assert torch.is_tensor(tensor) and tensor.ndim == 4
     assert len(mean) == 3
     assert len(std) == 3
@@ -38,7 +38,6 @@ def tensor2imgs(tensor, mean=(0, 0, 0), std=(1, 1, 1), to_rgb=True):
     imgs = []
     for img_id in range(num_imgs):
         img = tensor[img_id, ...].cpu().numpy().transpose(1, 2, 0)
-        img = mmcv.imdenormalize(
-            img, mean, std, to_bgr=to_rgb).astype(np.uint8)
+        img = mmcv.imdenormalize(img, mean, std, to_bgr=to_rgb).astype(np.uint8)
         imgs.append(np.ascontiguousarray(img))
     return imgs

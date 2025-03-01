@@ -4,7 +4,9 @@ import logging
 import os
 
 from annotator.oneformer.detectron2.data import DatasetCatalog, MetadataCatalog
-from annotator.oneformer.detectron2.data.datasets.builtin_meta import CITYSCAPES_CATEGORIES
+from annotator.oneformer.detectron2.data.datasets.builtin_meta import (
+    CITYSCAPES_CATEGORIES,
+)
 from annotator.oneformer.detectron2.utils.file_io import PathManager
 
 """
@@ -76,16 +78,17 @@ def load_cityscapes_panoptic(image_dir, gt_dir, gt_json, meta):
             ]
         return segment_info
 
-    assert os.path.exists(
-        gt_json
-    ), "Please run `python cityscapesscripts/preparation/createPanopticImgs.py` to generate label files."  # noqa
+    assert os.path.exists(gt_json), (
+        "Please run `python cityscapesscripts/preparation/createPanopticImgs.py` to generate label files."
+    )  # noqa
     with open(gt_json) as f:
         json_info = json.load(f)
     files = get_cityscapes_panoptic_files(image_dir, gt_dir, json_info)
     ret = []
     for image_file, label_file, segments_info in files:
         sem_label_file = (
-            image_file.replace("leftImg8bit", "gtFine").split(".")[0] + "_labelTrainIds.png"
+            image_file.replace("leftImg8bit", "gtFine").split(".")[0]
+            + "_labelTrainIds.png"
         )
         segments_info = [_convert_category_id(x, meta) for x in segments_info]
         ret.append(
@@ -100,12 +103,12 @@ def load_cityscapes_panoptic(image_dir, gt_dir, gt_json, meta):
             }
         )
     assert len(ret), f"No images found in {image_dir}!"
-    assert PathManager.isfile(
-        ret[0]["sem_seg_file_name"]
-    ), "Please generate labelTrainIds.png with cityscapesscripts/preparation/createTrainIdLabelImgs.py"  # noqa
-    assert PathManager.isfile(
-        ret[0]["pan_seg_file_name"]
-    ), "Please generate panoptic annotation with python cityscapesscripts/preparation/createPanopticImgs.py"  # noqa
+    assert PathManager.isfile(ret[0]["sem_seg_file_name"]), (
+        "Please generate labelTrainIds.png with cityscapesscripts/preparation/createTrainIdLabelImgs.py"
+    )  # noqa
+    assert PathManager.isfile(ret[0]["pan_seg_file_name"]), (
+        "Please generate panoptic annotation with python cityscapesscripts/preparation/createPanopticImgs.py"
+    )  # noqa
     return ret
 
 
@@ -173,7 +176,10 @@ def register_all_cityscapes_panoptic(root):
         gt_json = os.path.join(root, gt_json)
 
         DatasetCatalog.register(
-            key, lambda x=image_dir, y=gt_dir, z=gt_json: load_cityscapes_panoptic(x, y, z, meta)
+            key,
+            lambda x=image_dir, y=gt_dir, z=gt_json: load_cityscapes_panoptic(
+                x, y, z, meta
+            ),
         )
         MetadataCatalog.get(key).set(
             panoptic_root=gt_dir,

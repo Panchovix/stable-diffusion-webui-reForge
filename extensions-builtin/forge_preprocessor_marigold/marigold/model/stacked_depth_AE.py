@@ -17,7 +17,9 @@ class StackedDepthAE(nn.Module):
     def __init__(self, pretrained_path, subfolder=None) -> None:
         super().__init__()
 
-        self.vae: AutoencoderKL = AutoencoderKL.from_pretrained(pretrained_path, subfolder=subfolder)
+        self.vae: AutoencoderKL = AutoencoderKL.from_pretrained(
+            pretrained_path, subfolder=subfolder
+        )
         logging.info(f"pretrained AutoencoderKL loaded from: {pretrained_path}")
 
     def forward(self, depth_in):

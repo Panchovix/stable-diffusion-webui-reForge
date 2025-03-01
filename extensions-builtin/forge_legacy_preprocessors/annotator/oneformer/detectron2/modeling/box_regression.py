@@ -26,7 +26,9 @@ class Box2BoxTransform(object):
     """
 
     def __init__(
-        self, weights: Tuple[float, float, float, float], scale_clamp: float = _DEFAULT_SCALE_CLAMP
+        self,
+        weights: Tuple[float, float, float, float],
+        scale_clamp: float = _DEFAULT_SCALE_CLAMP,
     ):
         """
         Args:
@@ -72,7 +74,9 @@ class Box2BoxTransform(object):
         dh = wh * torch.log(target_heights / src_heights)
 
         deltas = torch.stack((dx, dy, dw, dh), dim=1)
-        assert (src_widths > 0).all().item(), "Input boxes to Box2BoxTransform are not valid!"
+        assert (src_widths > 0).all().item(), (
+            "Input boxes to Box2BoxTransform are not valid!"
+        )
         return deltas
 
     def apply_deltas(self, deltas, boxes):
@@ -157,10 +161,12 @@ class Box2BoxTransformRotated(object):
         assert isinstance(src_boxes, torch.Tensor), type(src_boxes)
         assert isinstance(target_boxes, torch.Tensor), type(target_boxes)
 
-        src_ctr_x, src_ctr_y, src_widths, src_heights, src_angles = torch.unbind(src_boxes, dim=1)
+        src_ctr_x, src_ctr_y, src_widths, src_heights, src_angles = torch.unbind(
+            src_boxes, dim=1
+        )
 
-        target_ctr_x, target_ctr_y, target_widths, target_heights, target_angles = torch.unbind(
-            target_boxes, dim=1
+        target_ctr_x, target_ctr_y, target_widths, target_heights, target_angles = (
+            torch.unbind(target_boxes, dim=1)
         )
 
         wx, wy, ww, wh, wa = self.weights
@@ -175,9 +181,9 @@ class Box2BoxTransformRotated(object):
         da *= wa * math.pi / 180.0
 
         deltas = torch.stack((dx, dy, dw, dh, da), dim=1)
-        assert (
-            (src_widths > 0).all().item()
-        ), "Input boxes to Box2BoxTransformRotated are not valid!"
+        assert (src_widths > 0).all().item(), (
+            "Input boxes to Box2BoxTransformRotated are not valid!"
+        )
         return deltas
 
     def apply_deltas(self, deltas, boxes):
@@ -345,25 +351,36 @@ def _dense_box_regression_loss(
         )
     elif box_reg_loss_type == "giou":
         pred_boxes = [
-            box2box_transform.apply_deltas(k, anchors) for k in cat(pred_anchor_deltas, dim=1)
+            box2box_transform.apply_deltas(k, anchors)
+            for k in cat(pred_anchor_deltas, dim=1)
         ]
         loss_box_reg = giou_loss(
-            torch.stack(pred_boxes)[fg_mask], torch.stack(gt_boxes)[fg_mask], reduction="sum"
+            torch.stack(pred_boxes)[fg_mask],
+            torch.stack(gt_boxes)[fg_mask],
+            reduction="sum",
         )
     elif box_reg_loss_type == "diou":
         pred_boxes = [
-            box2box_transform.apply_deltas(k, anchors) for k in cat(pred_anchor_deltas, dim=1)
+            box2box_transform.apply_deltas(k, anchors)
+            for k in cat(pred_anchor_deltas, dim=1)
         ]
         loss_box_reg = diou_loss(
-            torch.stack(pred_boxes)[fg_mask], torch.stack(gt_boxes)[fg_mask], reduction="sum"
+            torch.stack(pred_boxes)[fg_mask],
+            torch.stack(gt_boxes)[fg_mask],
+            reduction="sum",
         )
     elif box_reg_loss_type == "ciou":
         pred_boxes = [
-            box2box_transform.apply_deltas(k, anchors) for k in cat(pred_anchor_deltas, dim=1)
+            box2box_transform.apply_deltas(k, anchors)
+            for k in cat(pred_anchor_deltas, dim=1)
         ]
         loss_box_reg = ciou_loss(
-            torch.stack(pred_boxes)[fg_mask], torch.stack(gt_boxes)[fg_mask], reduction="sum"
+            torch.stack(pred_boxes)[fg_mask],
+            torch.stack(gt_boxes)[fg_mask],
+            reduction="sum",
         )
     else:
-        raise ValueError(f"Invalid dense box regression loss type '{box_reg_loss_type}'")
+        raise ValueError(
+            f"Invalid dense box regression loss type '{box_reg_loss_type}'"
+        )
     return loss_box_reg

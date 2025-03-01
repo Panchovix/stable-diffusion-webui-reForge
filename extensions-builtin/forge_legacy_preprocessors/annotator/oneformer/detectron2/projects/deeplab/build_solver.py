@@ -3,7 +3,9 @@ import torch
 
 from annotator.oneformer.detectron2.config import CfgNode
 from annotator.oneformer.detectron2.solver import LRScheduler
-from annotator.oneformer.detectron2.solver import build_lr_scheduler as build_d2_lr_scheduler
+from annotator.oneformer.detectron2.solver import (
+    build_lr_scheduler as build_d2_lr_scheduler,
+)
 
 from .lr_scheduler import WarmupPolyLR
 

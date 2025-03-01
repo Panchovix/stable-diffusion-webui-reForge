@@ -14,7 +14,7 @@ class UpscalerRCAN(Upscaler):
         self.model_url = None
         self.scalers = []
         super().__init__(create_dirs=True)
-        
+
         model_paths = self.find_models(ext_filter=[".pt", ".pth", ".safetensors"])
         for file in model_paths:
             if "http" in file:
@@ -42,9 +42,9 @@ class UpscalerRCAN(Upscaler):
 
         return modelloader.load_spandrel_model(
             filename,
-            device=('cpu' if devices.device_esrgan.type == 'mps' else None),
+            device=("cpu" if devices.device_esrgan.type == "mps" else None),
             prefer_half=(not cmd_opts.no_half and not cmd_opts.upcast_sampling),
-            expected_architecture='RCAN',
+            expected_architecture="RCAN",
         )
 
 

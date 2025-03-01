@@ -36,7 +36,10 @@ import torch
 
 @lru_cache()
 def default_bpe():
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), 'bpe_simple_vocab_16e6.txt.gz')
+    return os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "bpe_simple_vocab_16e6.txt.gz"
+    )
+
 
 @lru_cache()
 def bytes_to_unicode():
@@ -47,7 +50,11 @@ def bytes_to_unicode():
     coverage. This is a significant percentage of your normal, say, 32K bpe vocab. To avoid that, we want lookup tables
     between utf-8 bytes and unicode strings. And avoids mapping to whitespace/control characters the bpe code barfs on.
     """
-    bs = list(range(ord('!'), ord('~') + 1)) + list(range(ord('¡'), ord('¬') + 1)) + list(range(ord('®'), ord('ÿ') + 1))
+    bs = (
+        list(range(ord("!"), ord("~") + 1))
+        + list(range(ord("¡"), ord("¬") + 1))
+        + list(range(ord("®"), ord("ÿ") + 1))
+    )
     cs = bs[:]
     n = 0
     for b in range(2**8):
@@ -79,12 +86,12 @@ def basic_clean(text):
 
 
 def whitespace_clean(text):
-    text = re.sub(r'\s+', ' ', text)
+    text = re.sub(r"\s+", " ", text)
     text = text.strip()
     return text
 
-class Tokenize:
 
+class Tokenize:
     def __init__(self, tokenizer, max_seq_len=77, truncate=True):
         self.tokenizer = tokenizer
         self.max_seq_len = max_seq_len
@@ -96,19 +103,23 @@ class Tokenize:
             texts = [texts]
             expanded_dim = True
 
-        sot_token = self.tokenizer.encoder['<|startoftext|>']
-        eot_token = self.tokenizer.encoder['<|endoftext|>']
-        all_tokens = [[sot_token] + self.tokenizer.encode(text) + [eot_token] for text in texts]
+        sot_token = self.tokenizer.encoder["<|startoftext|>"]
+        eot_token = self.tokenizer.encoder["<|endoftext|>"]
+        all_tokens = [
+            [sot_token] + self.tokenizer.encode(text) + [eot_token] for text in texts
+        ]
         result = torch.zeros(len(all_tokens), self.max_seq_len, dtype=torch.long)
 
         for i, tokens in enumerate(all_tokens):
             if len(tokens) > self.max_seq_len:
                 if self.truncate:
-                    tokens = tokens[:self.max_seq_len]
+                    tokens = tokens[: self.max_seq_len]
                     tokens[-1] = eot_token
                 else:
-                    raise RuntimeError(f'Input {texts[i]} is too long for context length {self.max_seq_len}')
-            result[i, :len(tokens)] = torch.tensor(tokens)
+                    raise RuntimeError(
+                        f"Input {texts[i]} is too long for context length {self.max_seq_len}"
+                    )
+            result[i, : len(tokens)] = torch.tensor(tokens)
 
         if expanded_dim:
             return result[0]
@@ -117,37 +128,40 @@ class Tokenize:
 
 
 class SimpleTokenizer(object):
-
     def __init__(self, bpe_path: str = default_bpe()):
         self.byte_encoder = bytes_to_unicode()
         self.byte_decoder = {v: k for k, v in self.byte_encoder.items()}
-        merges = gzip.open(bpe_path).read().decode('utf-8').split('\n')
-        merges = merges[1:49152 - 256 - 2 + 1]
+        merges = gzip.open(bpe_path).read().decode("utf-8").split("\n")
+        merges = merges[1 : 49152 - 256 - 2 + 1]
         merges = [tuple(merge.split()) for merge in merges]
         vocab = list(bytes_to_unicode().values())
-        vocab = vocab + [v + '</w>' for v in vocab]
+        vocab = vocab + [v + "</w>" for v in vocab]
         for merge in merges:
-            vocab.append(''.join(merge))
-        vocab.extend(['<|startoftext|>', '<|endoftext|>'])
+            vocab.append("".join(merge))
+        vocab.extend(["<|startoftext|>", "<|endoftext|>"])
         self.encoder = dict(zip(vocab, range(len(vocab))))
         self.decoder = {v: k for k, v in self.encoder.items()}
         self.bpe_ranks = dict(zip(merges, range(len(merges))))
-        self.cache = {'<|startoftext|>': '<|startoftext|>', '<|endoftext|>': '<|endoftext|>'}
+        self.cache = {
+            "<|startoftext|>": "<|startoftext|>",
+            "<|endoftext|>": "<|endoftext|>",
+        }
         self.pat = re.compile(
             r"""<\|startoftext\|>|<\|endoftext\|>|'s|'t|'re|'ve|'m|'ll|'d|[\p{L}]+|[\p{N}]|[^\s\p{L}\p{N}]+""",
-            re.IGNORECASE)
+            re.IGNORECASE,
+        )
 
     def bpe(self, token):
         if token in self.cache:
             return self.cache[token]
-        word = tuple(token[:-1]) + (token[-1] + '</w>', )
+        word = tuple(token[:-1]) + (token[-1] + "</w>",)
         pairs = get_pairs(word)
 
         if not pairs:
-            return token + '</w>'
+            return token + "</w>"
 
         while True:
-            bigram = min(pairs, key=lambda pair: self.bpe_ranks.get(pair, float('inf')))
+            bigram = min(pairs, key=lambda pair: self.bpe_ranks.get(pair, float("inf")))
             if bigram not in self.bpe_ranks:
                 break
             first, second = bigram
@@ -174,7 +188,7 @@ class SimpleTokenizer(object):
                 break
             else:
                 pairs = get_pairs(word)
-        word = ' '.join(word)
+        word = " ".join(word)
         self.cache[token] = word
         return word
 
@@ -182,11 +196,17 @@ class SimpleTokenizer(object):
         bpe_tokens = []
         text = whitespace_clean(basic_clean(text)).lower()
         for token in re.findall(self.pat, text):
-            token = ''.join(self.byte_encoder[b] for b in token.encode('utf-8'))
-            bpe_tokens.extend(self.encoder[bpe_token] for bpe_token in self.bpe(token).split(' '))
+            token = "".join(self.byte_encoder[b] for b in token.encode("utf-8"))
+            bpe_tokens.extend(
+                self.encoder[bpe_token] for bpe_token in self.bpe(token).split(" ")
+            )
         return bpe_tokens
 
     def decode(self, tokens):
-        text = ''.join([self.decoder[token] for token in tokens])
-        text = bytearray([self.byte_decoder[c] for c in text]).decode('utf-8', errors='replace').replace('</w>', ' ')
+        text = "".join([self.decoder[token] for token in tokens])
+        text = (
+            bytearray([self.byte_decoder[c] for c in text])
+            .decode("utf-8", errors="replace")
+            .replace("</w>", " ")
+        )
         return text

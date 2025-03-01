@@ -54,12 +54,11 @@ def save_settings_to_file(log_directory, all_params):
     params = {"datetime": now.strftime("%Y-%m-%d %H:%M:%S")}
 
     keys = saved_params_all
-    if all_params.get('preview_from_txt2img'):
+    if all_params.get("preview_from_txt2img"):
         keys = keys | saved_params_previews
 
     params.update({k: v for k, v in all_params.items() if k in keys})
 
-    filename = f'settings-{now.strftime("%Y-%m-%d-%H-%M-%S")}.json'
+    filename = f"settings-{now.strftime('%Y-%m-%d-%H-%M-%S')}.json"
     with open(os.path.join(log_directory, filename), "w") as file:
         json.dump(params, file, indent=4)
-        

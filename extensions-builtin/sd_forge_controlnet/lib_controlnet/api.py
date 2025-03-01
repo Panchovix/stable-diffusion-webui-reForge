@@ -64,11 +64,11 @@ def controlnet_api(_: gr.Blocks, app: FastAPI):
             default_model,
         ):
             control_dict = {
-                    "module_list": filtered_preprocessor_list,
-                    "model_list": filtered_model_list,
-                    "default_option": default_option,
-                    "default_model": default_model,
-                }
+                "module_list": filtered_preprocessor_list,
+                "model_list": filtered_model_list,
+                "default_option": default_option,
+                "default_model": default_model,
+            }
 
             return control_dict
 
@@ -104,7 +104,7 @@ def controlnet_api(_: gr.Blocks, app: FastAPI):
         poses = []
 
         for input_image in controlnet_input_images:
-            img = np.array(api.decode_base64_to_image(input_image)).astype('uint8')
+            img = np.array(api.decode_base64_to_image(input_image)).astype("uint8")
 
             class JsonAcceptor:
                 def __init__(self) -> None:
@@ -135,4 +135,3 @@ def controlnet_api(_: gr.Blocks, app: FastAPI):
             res["poses"] = poses
 
         return res
-

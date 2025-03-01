@@ -10,7 +10,9 @@ from annotator.oneformer.detectron2.utils.file_io import PathManager
 from .builtin_meta import _get_coco_instances_meta
 from .lvis_v0_5_categories import LVIS_CATEGORIES as LVIS_V0_5_CATEGORIES
 from .lvis_v1_categories import LVIS_CATEGORIES as LVIS_V1_CATEGORIES
-from .lvis_v1_category_image_count import LVIS_CATEGORY_IMAGE_COUNT as LVIS_V1_CATEGORY_IMAGE_COUNT
+from .lvis_v1_category_image_count import (
+    LVIS_CATEGORY_IMAGE_COUNT as LVIS_V1_CATEGORY_IMAGE_COUNT,
+)
 
 """
 This file contains functions to parse LVIS-format annotations into dicts in the
@@ -38,7 +40,9 @@ def register_lvis_instances(name, metadata, json_file, image_root):
     )
 
 
-def load_lvis_json(json_file, image_root, dataset_name=None, extra_annotation_keys=None):
+def load_lvis_json(
+    json_file, image_root, dataset_name=None, extra_annotation_keys=None
+):
     """
     Load a json file in LVIS's annotation format.
 
@@ -67,7 +71,9 @@ def load_lvis_json(json_file, image_root, dataset_name=None, extra_annotation_ke
     timer = Timer()
     lvis_api = LVIS(json_file)
     if timer.seconds() > 1:
-        logger.info("Loading {} takes {:.2f} seconds.".format(json_file, timer.seconds()))
+        logger.info(
+            "Loading {} takes {:.2f} seconds.".format(json_file, timer.seconds())
+        )
 
     if dataset_name is not None:
         meta = get_lvis_instances_meta(dataset_name)
@@ -102,17 +108,21 @@ def load_lvis_json(json_file, image_root, dataset_name=None, extra_annotation_ke
 
     # Sanity check that each annotation has a unique id
     ann_ids = [ann["id"] for anns_per_image in anns for ann in anns_per_image]
-    assert len(set(ann_ids)) == len(ann_ids), "Annotation ids in '{}' are not unique".format(
-        json_file
+    assert len(set(ann_ids)) == len(ann_ids), (
+        "Annotation ids in '{}' are not unique".format(json_file)
     )
 
     imgs_anns = list(zip(imgs, anns))
 
-    logger.info("Loaded {} images in the LVIS format from {}".format(len(imgs_anns), json_file))
+    logger.info(
+        "Loaded {} images in the LVIS format from {}".format(len(imgs_anns), json_file)
+    )
 
     if extra_annotation_keys:
         logger.info(
-            "The following extra annotation keys will be loaded: {} ".format(extra_annotation_keys)
+            "The following extra annotation keys will be loaded: {} ".format(
+                extra_annotation_keys
+            )
         )
     else:
         extra_annotation_keys = []
@@ -126,12 +136,14 @@ def load_lvis_json(json_file, image_root, dataset_name=None, extra_annotation_ke
 
     dataset_dicts = []
 
-    for (img_dict, anno_dict_list) in imgs_anns:
+    for img_dict, anno_dict_list in imgs_anns:
         record = {}
         record["file_name"] = get_file_name(image_root, img_dict)
         record["height"] = img_dict["height"]
         record["width"] = img_dict["width"]
-        record["not_exhaustive_category_ids"] = img_dict.get("not_exhaustive_category_ids", [])
+        record["not_exhaustive_category_ids"] = img_dict.get(
+            "not_exhaustive_category_ids", []
+        )
         record["neg_category_ids"] = img_dict.get("neg_category_ids", [])
         image_id = record["image_id"] = img_dict["id"]
 
@@ -145,15 +157,21 @@ def load_lvis_json(json_file, image_root, dataset_name=None, extra_annotation_ke
             # LVIS data loader can be used to load COCO dataset categories. In this case `meta`
             # variable will have a field with COCO-specific category mapping.
             if dataset_name is not None and "thing_dataset_id_to_contiguous_id" in meta:
-                obj["category_id"] = meta["thing_dataset_id_to_contiguous_id"][anno["category_id"]]
+                obj["category_id"] = meta["thing_dataset_id_to_contiguous_id"][
+                    anno["category_id"]
+                ]
             else:
-                obj["category_id"] = anno["category_id"] - 1  # Convert 1-indexed to 0-indexed
+                obj["category_id"] = (
+                    anno["category_id"] - 1
+                )  # Convert 1-indexed to 0-indexed
             segm = anno["segmentation"]  # list[list[float]]
             # filter out invalid polygons (< 3 points)
-            valid_segm = [poly for poly in segm if len(poly) % 2 == 0 and len(poly) >= 6]
-            assert len(segm) == len(
-                valid_segm
-            ), "Annotation contains an invalid polygon with < 3 points"
+            valid_segm = [
+                poly for poly in segm if len(poly) % 2 == 0 and len(poly) >= 6
+            ]
+            assert len(segm) == len(valid_segm), (
+                "Annotation contains an invalid polygon with < 3 points"
+            )
             assert len(segm) > 0
             obj["segmentation"] = segm
             for extra_ann_key in extra_annotation_keys:
@@ -187,9 +205,9 @@ def get_lvis_instances_meta(dataset_name):
 def _get_lvis_instances_meta_v0_5():
     assert len(LVIS_V0_5_CATEGORIES) == 1230
     cat_ids = [k["id"] for k in LVIS_V0_5_CATEGORIES]
-    assert min(cat_ids) == 1 and max(cat_ids) == len(
-        cat_ids
-    ), "Category ids are not in [1, #categories], as expected"
+    assert min(cat_ids) == 1 and max(cat_ids) == len(cat_ids), (
+        "Category ids are not in [1, #categories], as expected"
+    )
     # Ensure that the category list is sorted by id
     lvis_categories = sorted(LVIS_V0_5_CATEGORIES, key=lambda x: x["id"])
     thing_classes = [k["synonyms"][0] for k in lvis_categories]
@@ -200,13 +218,16 @@ def _get_lvis_instances_meta_v0_5():
 def _get_lvis_instances_meta_v1():
     assert len(LVIS_V1_CATEGORIES) == 1203
     cat_ids = [k["id"] for k in LVIS_V1_CATEGORIES]
-    assert min(cat_ids) == 1 and max(cat_ids) == len(
-        cat_ids
-    ), "Category ids are not in [1, #categories], as expected"
+    assert min(cat_ids) == 1 and max(cat_ids) == len(cat_ids), (
+        "Category ids are not in [1, #categories], as expected"
+    )
     # Ensure that the category list is sorted by id
     lvis_categories = sorted(LVIS_V1_CATEGORIES, key=lambda x: x["id"])
     thing_classes = [k["synonyms"][0] for k in lvis_categories]
-    meta = {"thing_classes": thing_classes, "class_image_count": LVIS_V1_CATEGORY_IMAGE_COUNT}
+    meta = {
+        "thing_classes": thing_classes,
+        "class_image_count": LVIS_V1_CATEGORY_IMAGE_COUNT,
+    }
     return meta
 
 

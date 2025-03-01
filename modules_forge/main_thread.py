@@ -57,7 +57,9 @@ def run_and_wait_result(func, *args, **kwargs):
     while True:
         time.sleep(0.01)
         finished_task = None
-        for t in finished_list.copy():  # thread safe shallow copy without needing a lock
+        for (
+            t
+        ) in finished_list.copy():  # thread safe shallow copy without needing a lock
             if t.task_id == current_id:
                 finished_task = t
                 break
@@ -65,4 +67,3 @@ def run_and_wait_result(func, *args, **kwargs):
             with lock:
                 finished_list.remove(finished_task)
             return finished_task.result
-

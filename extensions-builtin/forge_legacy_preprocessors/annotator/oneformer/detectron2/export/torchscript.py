@@ -47,9 +47,9 @@ def scripting_with_instances(model, fields):
     Returns:
         torch.jit.ScriptModule: the model in torchscript format
     """
-    assert (
-        not model.training
-    ), "Currently we only support exporting models in evaluation mode to torchscript"
+    assert not model.training, (
+        "Currently we only support exporting models in evaluation mode to torchscript"
+    )
 
     with freeze_training_mode(model), patch_instances(fields):
         scripted_model = torch.jit.script(model)

@@ -2,10 +2,13 @@ import torch
 import math
 from ldm_patched.ldm.modules.attention import optimized_attention_for_device
 
+
 class T5LayerNorm(torch.nn.Module):
     def __init__(self, hidden_size, eps=1e-6, dtype=None, device=None, operations=None):
         super().__init__()
-        self.weight = torch.nn.Parameter(torch.empty(hidden_size, dtype=dtype, device=device))
+        self.weight = torch.nn.Parameter(
+            torch.empty(hidden_size, dtype=dtype, device=device)
+        )
         self.variance_epsilon = eps
 
     def forward(self, x):
@@ -13,16 +16,22 @@ class T5LayerNorm(torch.nn.Module):
         x = x * torch.rsqrt(variance + self.variance_epsilon)
         return self.weight.to(device=x.device, dtype=x.dtype) * x
 
+
 activations = {
     "gelu_pytorch_tanh": lambda a: torch.nn.functional.gelu(a, approximate="tanh"),
     "relu": torch.nn.functional.relu,
 }
 
+
 class T5DenseActDense(torch.nn.Module):
     def __init__(self, model_dim, ff_dim, ff_activation, dtype, device, operations):
         super().__init__()
-        self.wi = operations.Linear(model_dim, ff_dim, bias=False, dtype=dtype, device=device)
-        self.wo = operations.Linear(ff_dim, model_dim, bias=False, dtype=dtype, device=device)
+        self.wi = operations.Linear(
+            model_dim, ff_dim, bias=False, dtype=dtype, device=device
+        )
+        self.wo = operations.Linear(
+            ff_dim, model_dim, bias=False, dtype=dtype, device=device
+        )
         # self.dropout = nn.Dropout(config.dropout_rate)
         self.act = activations[ff_activation]
 
@@ -32,12 +41,19 @@ class T5DenseActDense(torch.nn.Module):
         x = self.wo(x)
         return x
 
+
 class T5DenseGatedActDense(torch.nn.Module):
     def __init__(self, model_dim, ff_dim, ff_activation, dtype, device, operations):
         super().__init__()
-        self.wi_0 = operations.Linear(model_dim, ff_dim, bias=False, dtype=dtype, device=device)
-        self.wi_1 = operations.Linear(model_dim, ff_dim, bias=False, dtype=dtype, device=device)
-        self.wo = operations.Linear(ff_dim, model_dim, bias=False, dtype=dtype, device=device)
+        self.wi_0 = operations.Linear(
+            model_dim, ff_dim, bias=False, dtype=dtype, device=device
+        )
+        self.wi_1 = operations.Linear(
+            model_dim, ff_dim, bias=False, dtype=dtype, device=device
+        )
+        self.wo = operations.Linear(
+            ff_dim, model_dim, bias=False, dtype=dtype, device=device
+        )
         # self.dropout = nn.Dropout(config.dropout_rate)
         self.act = activations[ff_activation]
 
@@ -49,15 +65,24 @@ class T5DenseGatedActDense(torch.nn.Module):
         x = self.wo(x)
         return x
 
+
 class T5LayerFF(torch.nn.Module):
-    def __init__(self, model_dim, ff_dim, ff_activation, gated_act, dtype, device, operations):
+    def __init__(
+        self, model_dim, ff_dim, ff_activation, gated_act, dtype, device, operations
+    ):
         super().__init__()
         if gated_act:
-            self.DenseReluDense = T5DenseGatedActDense(model_dim, ff_dim, ff_activation, dtype, device, operations)
+            self.DenseReluDense = T5DenseGatedActDense(
+                model_dim, ff_dim, ff_activation, dtype, device, operations
+            )
         else:
-            self.DenseReluDense = T5DenseActDense(model_dim, ff_dim, ff_activation, dtype, device, operations)
+            self.DenseReluDense = T5DenseActDense(
+                model_dim, ff_dim, ff_activation, dtype, device, operations
+            )
 
-        self.layer_norm = T5LayerNorm(model_dim, dtype=dtype, device=device, operations=operations)
+        self.layer_norm = T5LayerNorm(
+            model_dim, dtype=dtype, device=device, operations=operations
+        )
         # self.dropout = nn.Dropout(config.dropout_rate)
 
     def forward(self, x):
@@ -67,25 +92,47 @@ class T5LayerFF(torch.nn.Module):
         x += forwarded_states
         return x
 
+
 class T5Attention(torch.nn.Module):
-    def __init__(self, model_dim, inner_dim, num_heads, relative_attention_bias, dtype, device, operations):
+    def __init__(
+        self,
+        model_dim,
+        inner_dim,
+        num_heads,
+        relative_attention_bias,
+        dtype,
+        device,
+        operations,
+    ):
         super().__init__()
 
         # Mesh TensorFlow initialization to avoid scaling before softmax
-        self.q = operations.Linear(model_dim, inner_dim, bias=False, dtype=dtype, device=device)
-        self.k = operations.Linear(model_dim, inner_dim, bias=False, dtype=dtype, device=device)
-        self.v = operations.Linear(model_dim, inner_dim, bias=False, dtype=dtype, device=device)
-        self.o = operations.Linear(inner_dim, model_dim, bias=False, dtype=dtype, device=device)
+        self.q = operations.Linear(
+            model_dim, inner_dim, bias=False, dtype=dtype, device=device
+        )
+        self.k = operations.Linear(
+            model_dim, inner_dim, bias=False, dtype=dtype, device=device
+        )
+        self.v = operations.Linear(
+            model_dim, inner_dim, bias=False, dtype=dtype, device=device
+        )
+        self.o = operations.Linear(
+            inner_dim, model_dim, bias=False, dtype=dtype, device=device
+        )
         self.num_heads = num_heads
 
         self.relative_attention_bias = None
         if relative_attention_bias:
             self.relative_attention_num_buckets = 32
             self.relative_attention_max_distance = 128
-            self.relative_attention_bias = torch.nn.Embedding(self.relative_attention_num_buckets, self.num_heads, device=device)
+            self.relative_attention_bias = torch.nn.Embedding(
+                self.relative_attention_num_buckets, self.num_heads, device=device
+            )
 
     @staticmethod
-    def _relative_position_bucket(relative_position, bidirectional=True, num_buckets=32, max_distance=128):
+    def _relative_position_bucket(
+        relative_position, bidirectional=True, num_buckets=32, max_distance=128
+    ):
         """
         Adapted from Mesh Tensorflow:
         https://github.com/tensorflow/mesh/blob/0cb87fe07da627bf0b7e60475d59f95ed6b5be3d/mesh_tensorflow/transformer/transformer_layers.py#L593
@@ -112,7 +159,9 @@ class T5Attention(torch.nn.Module):
             relative_buckets += (relative_position > 0).to(torch.long) * num_buckets
             relative_position = torch.abs(relative_position)
         else:
-            relative_position = -torch.min(relative_position, torch.zeros_like(relative_position))
+            relative_position = -torch.min(
+                relative_position, torch.zeros_like(relative_position)
+            )
         # now relative_position is in the range [0, inf)
 
         # half of the buckets are for exact increments in positions
@@ -126,25 +175,38 @@ class T5Attention(torch.nn.Module):
             * (num_buckets - max_exact)
         ).to(torch.long)
         relative_position_if_large = torch.min(
-            relative_position_if_large, torch.full_like(relative_position_if_large, num_buckets - 1)
+            relative_position_if_large,
+            torch.full_like(relative_position_if_large, num_buckets - 1),
         )
 
-        relative_buckets += torch.where(is_small, relative_position, relative_position_if_large)
+        relative_buckets += torch.where(
+            is_small, relative_position, relative_position_if_large
+        )
         return relative_buckets
 
     def compute_bias(self, query_length, key_length, device):
         """Compute binned relative position bias"""
-        context_position = torch.arange(query_length, dtype=torch.long, device=device)[:, None]
-        memory_position = torch.arange(key_length, dtype=torch.long, device=device)[None, :]
-        relative_position = memory_position - context_position  # shape (query_length, key_length)
+        context_position = torch.arange(query_length, dtype=torch.long, device=device)[
+            :, None
+        ]
+        memory_position = torch.arange(key_length, dtype=torch.long, device=device)[
+            None, :
+        ]
+        relative_position = (
+            memory_position - context_position
+        )  # shape (query_length, key_length)
         relative_position_bucket = self._relative_position_bucket(
             relative_position,  # shape (query_length, key_length)
             bidirectional=True,
             num_buckets=self.relative_attention_num_buckets,
             max_distance=self.relative_attention_max_distance,
         )
-        values = self.relative_attention_bias(relative_position_bucket)  # shape (query_length, key_length, num_heads)
-        values = values.permute([2, 0, 1]).unsqueeze(0)  # shape (1, num_heads, query_length, key_length)
+        values = self.relative_attention_bias(
+            relative_position_bucket
+        )  # shape (query_length, key_length, num_heads)
+        values = values.permute([2, 0, 1]).unsqueeze(
+            0
+        )  # shape (1, num_heads, query_length, key_length)
         return values
 
     def forward(self, x, mask=None, past_bias=None, optimized_attention=None):
@@ -160,52 +222,153 @@ class T5Attention(torch.nn.Module):
             else:
                 mask = past_bias
 
-        out = optimized_attention(q, k * ((k.shape[-1] / self.num_heads) ** 0.5), v, self.num_heads, mask)
+        out = optimized_attention(
+            q, k * ((k.shape[-1] / self.num_heads) ** 0.5), v, self.num_heads, mask
+        )
         return self.o(out), past_bias
 
+
 class T5LayerSelfAttention(torch.nn.Module):
-    def __init__(self, model_dim, inner_dim, ff_dim, num_heads, relative_attention_bias, dtype, device, operations):
+    def __init__(
+        self,
+        model_dim,
+        inner_dim,
+        ff_dim,
+        num_heads,
+        relative_attention_bias,
+        dtype,
+        device,
+        operations,
+    ):
         super().__init__()
-        self.SelfAttention = T5Attention(model_dim, inner_dim, num_heads, relative_attention_bias, dtype, device, operations)
-        self.layer_norm = T5LayerNorm(model_dim, dtype=dtype, device=device, operations=operations)
+        self.SelfAttention = T5Attention(
+            model_dim,
+            inner_dim,
+            num_heads,
+            relative_attention_bias,
+            dtype,
+            device,
+            operations,
+        )
+        self.layer_norm = T5LayerNorm(
+            model_dim, dtype=dtype, device=device, operations=operations
+        )
         # self.dropout = nn.Dropout(config.dropout_rate)
 
     def forward(self, x, mask=None, past_bias=None, optimized_attention=None):
-        output, past_bias = self.SelfAttention(self.layer_norm(x), mask=mask, past_bias=past_bias, optimized_attention=optimized_attention)
+        output, past_bias = self.SelfAttention(
+            self.layer_norm(x),
+            mask=mask,
+            past_bias=past_bias,
+            optimized_attention=optimized_attention,
+        )
         # x = x + self.dropout(attention_output)
         x += output
         return x, past_bias
 
+
 class T5Block(torch.nn.Module):
-    def __init__(self, model_dim, inner_dim, ff_dim, ff_activation, gated_act, num_heads, relative_attention_bias, dtype, device, operations):
+    def __init__(
+        self,
+        model_dim,
+        inner_dim,
+        ff_dim,
+        ff_activation,
+        gated_act,
+        num_heads,
+        relative_attention_bias,
+        dtype,
+        device,
+        operations,
+    ):
         super().__init__()
         self.layer = torch.nn.ModuleList()
-        self.layer.append(T5LayerSelfAttention(model_dim, inner_dim, ff_dim, num_heads, relative_attention_bias, dtype, device, operations))
-        self.layer.append(T5LayerFF(model_dim, ff_dim, ff_activation, gated_act, dtype, device, operations))
+        self.layer.append(
+            T5LayerSelfAttention(
+                model_dim,
+                inner_dim,
+                ff_dim,
+                num_heads,
+                relative_attention_bias,
+                dtype,
+                device,
+                operations,
+            )
+        )
+        self.layer.append(
+            T5LayerFF(
+                model_dim, ff_dim, ff_activation, gated_act, dtype, device, operations
+            )
+        )
 
     def forward(self, x, mask=None, past_bias=None, optimized_attention=None):
         x, past_bias = self.layer[0](x, mask, past_bias, optimized_attention)
         x = self.layer[-1](x)
         return x, past_bias
 
+
 class T5Stack(torch.nn.Module):
-    def __init__(self, num_layers, model_dim, inner_dim, ff_dim, ff_activation, gated_act, num_heads, relative_attention, dtype, device, operations):
+    def __init__(
+        self,
+        num_layers,
+        model_dim,
+        inner_dim,
+        ff_dim,
+        ff_activation,
+        gated_act,
+        num_heads,
+        relative_attention,
+        dtype,
+        device,
+        operations,
+    ):
         super().__init__()
 
         self.block = torch.nn.ModuleList(
-            [T5Block(model_dim, inner_dim, ff_dim, ff_activation, gated_act, num_heads, relative_attention_bias=((not relative_attention) or (i == 0)), dtype=dtype, device=device, operations=operations) for i in range(num_layers)]
+            [
+                T5Block(
+                    model_dim,
+                    inner_dim,
+                    ff_dim,
+                    ff_activation,
+                    gated_act,
+                    num_heads,
+                    relative_attention_bias=((not relative_attention) or (i == 0)),
+                    dtype=dtype,
+                    device=device,
+                    operations=operations,
+                )
+                for i in range(num_layers)
+            ]
         )
-        self.final_layer_norm = T5LayerNorm(model_dim, dtype=dtype, device=device, operations=operations)
+        self.final_layer_norm = T5LayerNorm(
+            model_dim, dtype=dtype, device=device, operations=operations
+        )
         # self.dropout = nn.Dropout(config.dropout_rate)
 
-    def forward(self, x, attention_mask=None, intermediate_output=None, final_layer_norm_intermediate=True):
+    def forward(
+        self,
+        x,
+        attention_mask=None,
+        intermediate_output=None,
+        final_layer_norm_intermediate=True,
+    ):
         mask = None
         if attention_mask is not None:
-            mask = 1.0 - attention_mask.to(x.dtype).reshape((attention_mask.shape[0], 1, -1, attention_mask.shape[-1])).expand(attention_mask.shape[0], 1, attention_mask.shape[-1], attention_mask.shape[-1])
+            mask = 1.0 - attention_mask.to(x.dtype).reshape(
+                (attention_mask.shape[0], 1, -1, attention_mask.shape[-1])
+            ).expand(
+                attention_mask.shape[0],
+                1,
+                attention_mask.shape[-1],
+                attention_mask.shape[-1],
+            )
             mask = mask.masked_fill(mask.to(torch.bool), float("-inf"))
 
         intermediate = None
-        optimized_attention = optimized_attention_for_device(x.device, mask=attention_mask is not None, small_input=True)
+        optimized_attention = optimized_attention_for_device(
+            x.device, mask=attention_mask is not None, small_input=True
+        )
         past_bias = None
         for i, l in enumerate(self.block):
             x, past_bias = l(x, mask, past_bias, optimized_attention)
@@ -216,15 +379,30 @@ class T5Stack(torch.nn.Module):
             intermediate = self.final_layer_norm(intermediate)
         return x, intermediate
 
+
 class T5(torch.nn.Module):
     def __init__(self, config_dict, dtype, device, operations):
         super().__init__()
         self.num_layers = config_dict["num_layers"]
         model_dim = config_dict["d_model"]
 
-        self.encoder = T5Stack(self.num_layers, model_dim, model_dim, config_dict["d_ff"], config_dict["dense_act_fn"], config_dict["is_gated_act"], config_dict["num_heads"], config_dict["model_type"] != "umt5", dtype, device, operations)
+        self.encoder = T5Stack(
+            self.num_layers,
+            model_dim,
+            model_dim,
+            config_dict["d_ff"],
+            config_dict["dense_act_fn"],
+            config_dict["is_gated_act"],
+            config_dict["num_heads"],
+            config_dict["model_type"] != "umt5",
+            dtype,
+            device,
+            operations,
+        )
         self.dtype = dtype
-        self.shared = torch.nn.Embedding(config_dict["vocab_size"], model_dim, device=device)
+        self.shared = torch.nn.Embedding(
+            config_dict["vocab_size"], model_dim, device=device
+        )
 
     def get_input_embeddings(self):
         return self.shared

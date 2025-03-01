@@ -20,11 +20,12 @@ class DiffusersModelPatcher:
             with modeling_utils.no_init_weights():
                 self.pipeline = pipeline_class.from_pretrained(*args, **kwargs)
 
-        if hasattr(self.pipeline, 'unet'):
-            if hasattr(self.pipeline.unet, 'set_attn_processor'):
+        if hasattr(self.pipeline, "unet"):
+            if hasattr(self.pipeline.unet, "set_attn_processor"):
                 from diffusers.models.attention_processor import AttnProcessor2_0
+
                 self.pipeline.unet.set_attn_processor(AttnProcessor2_0())
-                print('Attention optimization applied to DiffusersModelPatcher')
+                print("Attention optimization applied to DiffusersModelPatcher")
 
         self.pipeline = self.pipeline.to(device=offload_device)
 
@@ -34,16 +35,14 @@ class DiffusersModelPatcher:
         self.pipeline.eval()
 
         self.patcher = ModelPatcher(
-            model=self.pipeline,
-            load_device=load_device,
-            offload_device=offload_device)
+            model=self.pipeline, load_device=load_device, offload_device=offload_device
+        )
 
     def prepare_memory_before_sampling(self, batchsize, latent_width, latent_height):
         area = 2 * batchsize * latent_width * latent_height
         inference_memory = (((area * 0.6) / 0.9) + 1024) * (1024 * 1024)
         model_management.load_models_gpu(
-            models=[self.patcher],
-            memory_required=inference_memory
+            models=[self.patcher], memory_required=inference_memory
         )
 
     def move_tensor_to_current_device(self, x):

@@ -117,8 +117,9 @@ def timer_decorator(func):
 
 
 class TimeMeta(type):
-    """ Metaclass to record execution time on all methods of the
-    child class. """
+    """Metaclass to record execution time on all methods of the
+    child class."""
+
     def __new__(cls, name, bases, attrs):
         for attr_name, attr_value in attrs.items():
             if callable(attr_value):
@@ -173,7 +174,9 @@ def read_image(img_path: str) -> str:
     return encoded_image
 
 
-def read_image_dir(img_dir: str, suffixes=('.png', '.jpg', '.jpeg', '.webp')) -> List[str]:
+def read_image_dir(
+    img_dir: str, suffixes=(".png", ".jpg", ".jpeg", ".webp")
+) -> List[str]:
     """Try read all images in given img_dir."""
     images = []
     for filename in os.listdir(img_dir):
@@ -187,7 +190,7 @@ def read_image_dir(img_dir: str, suffixes=('.png', '.jpg', '.jpeg', '.webp')) ->
 
 
 def align_dim_latent(x: int) -> int:
-    """ Align the pixel dimension (w/h) to latent dimension.
+    """Align the pixel dimension (w/h) to latent dimension.
     Stable diffusion 1:8 ratio for latent/pixel, i.e.,
     1 latent unit == 8 pixel unit."""
     return (x // 8) * 8
@@ -220,7 +223,7 @@ def prepare_mask(
     if getattr(p, "inpainting_mask_invert", False):
         mask = ImageOps.invert(mask)
 
-    if hasattr(p, 'mask_blur_x'):
+    if hasattr(p, "mask_blur_x"):
         if getattr(p, "mask_blur_x", 0) > 0:
             np_mask = np.array(mask)
             kernel_size = 2 * int(2.5 * p.mask_blur_x + 0.5) + 1
@@ -263,7 +266,7 @@ def set_numpy_seed(p: processing.StableDiffusionProcessing) -> Optional[int]:
         return seed
     except Exception as e:
         logger.warning(e)
-        logger.warning('Warning: Failed to use consistent random seed.')
+        logger.warning("Warning: Failed to use consistent random seed.")
         return None
 
 
@@ -303,7 +306,9 @@ def high_quality_resize(x, size):
         elif new_size_is_smaller:
             interpolation = cv2.INTER_AREA
         else:
-            interpolation = cv2.INTER_CUBIC  # Must be CUBIC because we now use nms. NEVER CHANGE THIS
+            interpolation = (
+                cv2.INTER_CUBIC
+            )  # Must be CUBIC because we now use nms. NEVER CHANGE THIS
 
         y = cv2.resize(x, size, interpolation=interpolation)
 
@@ -338,26 +343,44 @@ def crop_and_resize_image(detected_map, resize_mode, h, w, fill_border_with_255=
 
     if resize_mode == external_code.ResizeMode.OUTER_FIT:
         k = min(k0, k1)
-        borders = np.concatenate([detected_map[0, :, :], detected_map[-1, :, :], detected_map[:, 0, :], detected_map[:, -1, :]], axis=0)
-        high_quality_border_color = np.median(borders, axis=0).astype(detected_map.dtype)
+        borders = np.concatenate(
+            [
+                detected_map[0, :, :],
+                detected_map[-1, :, :],
+                detected_map[:, 0, :],
+                detected_map[:, -1, :],
+            ],
+            axis=0,
+        )
+        high_quality_border_color = np.median(borders, axis=0).astype(
+            detected_map.dtype
+        )
         if fill_border_with_255:
             high_quality_border_color = np.zeros_like(high_quality_border_color) + 255
-        high_quality_background = np.tile(high_quality_border_color[None, None], [h, w, 1])
-        detected_map = high_quality_resize(detected_map, (safeint(old_w * k), safeint(old_h * k)))
+        high_quality_background = np.tile(
+            high_quality_border_color[None, None], [h, w, 1]
+        )
+        detected_map = high_quality_resize(
+            detected_map, (safeint(old_w * k), safeint(old_h * k))
+        )
         new_h, new_w, _ = detected_map.shape
         pad_h = max(0, (h - new_h) // 2)
         pad_w = max(0, (w - new_w) // 2)
-        high_quality_background[pad_h:pad_h + new_h, pad_w:pad_w + new_w] = detected_map
+        high_quality_background[pad_h : pad_h + new_h, pad_w : pad_w + new_w] = (
+            detected_map
+        )
         detected_map = high_quality_background
         detected_map = safe_numpy(detected_map)
         return detected_map
     else:
         k = max(k0, k1)
-        detected_map = high_quality_resize(detected_map, (safeint(old_w * k), safeint(old_h * k)))
+        detected_map = high_quality_resize(
+            detected_map, (safeint(old_w * k), safeint(old_h * k))
+        )
         new_h, new_w, _ = detected_map.shape
         pad_h = max(0, (new_h - h) // 2)
         pad_w = max(0, (new_w - w) // 2)
-        detected_map = detected_map[pad_h:pad_h+h, pad_w:pad_w+w]
+        detected_map = detected_map[pad_h : pad_h + h, pad_w : pad_w + w]
         detected_map = safe_numpy(detected_map)
         return detected_map
 
@@ -373,7 +396,9 @@ def try_unfold_unit(unit: ControlNetUnit) -> List[ControlNetUnit]:
 
     def extract_unit(gallery_item: dict) -> ControlNetUnit:
         r_unit = copy(unit)
-        img = np.array(api.decode_base64_to_image(read_image(gallery_item["name"]))).astype('uint8')
+        img = np.array(
+            api.decode_base64_to_image(read_image(gallery_item["name"]))
+        ).astype("uint8")
         r_unit.image = {
             "image": img,
             "mask": np.zeros_like(img),

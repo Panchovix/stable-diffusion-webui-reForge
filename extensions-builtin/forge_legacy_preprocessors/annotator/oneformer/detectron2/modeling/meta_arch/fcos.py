@@ -8,7 +8,12 @@ from torch import nn
 from torch.nn import functional as F
 
 from annotator.oneformer.detectron2.layers import ShapeSpec, batched_nms
-from annotator.oneformer.detectron2.structures import Boxes, ImageList, Instances, pairwise_point_box_distance
+from annotator.oneformer.detectron2.structures import (
+    Boxes,
+    ImageList,
+    Instances,
+    pairwise_point_box_distance,
+)
 from annotator.oneformer.detectron2.utils.events import get_event_storage
 
 from ..anchor_generator import DefaultAnchorGenerator
@@ -85,13 +90,18 @@ class FCOS(DenseDetector):
 
     def forward_training(self, images, features, predictions, gt_instances):
         # Transpose the Hi*Wi*A dimension to the middle:
-        pred_logits, pred_anchor_deltas, pred_centerness = self._transpose_dense_predictions(
-            predictions, [self.num_classes, 4, 1]
+        pred_logits, pred_anchor_deltas, pred_centerness = (
+            self._transpose_dense_predictions(predictions, [self.num_classes, 4, 1])
         )
         anchors = self.anchor_generator(features)
         gt_labels, gt_boxes = self.label_anchors(anchors, gt_instances)
         return self.losses(
-            anchors, pred_logits, gt_labels, pred_anchor_deltas, gt_boxes, pred_centerness
+            anchors,
+            pred_logits,
+            gt_labels,
+            pred_anchor_deltas,
+            gt_boxes,
+            pred_centerness,
         )
 
     @torch.no_grad()
@@ -191,7 +201,13 @@ class FCOS(DenseDetector):
         return gt_labels, matched_gt_boxes
 
     def losses(
-        self, anchors, pred_logits, gt_labels, pred_anchor_deltas, gt_boxes, pred_centerness
+        self,
+        anchors,
+        pred_logits,
+        gt_labels,
+        pred_anchor_deltas,
+        gt_boxes,
+        pred_centerness,
     ):
         """
         This method is almost identical to :meth:`RetinaNet.losses`, with an extra
@@ -237,7 +253,9 @@ class FCOS(DenseDetector):
             "loss_fcos_ctr": ctrness_loss / normalizer,
         }
 
-    def compute_ctrness_targets(self, anchors: List[Boxes], gt_boxes: List[torch.Tensor]):
+    def compute_ctrness_targets(
+        self, anchors: List[Boxes], gt_boxes: List[torch.Tensor]
+    ):
         anchors = Boxes.cat(anchors).tensor  # Rx4
         reg_targets = [self.box2box_transform.get_deltas(anchors, m) for m in gt_boxes]
         reg_targets = torch.stack(reg_targets, dim=0)  # NxRx4
@@ -256,8 +274,8 @@ class FCOS(DenseDetector):
         features: List[torch.Tensor],
         predictions: List[List[torch.Tensor]],
     ):
-        pred_logits, pred_anchor_deltas, pred_centerness = self._transpose_dense_predictions(
-            predictions, [self.num_classes, 4, 1]
+        pred_logits, pred_anchor_deltas, pred_centerness = (
+            self._transpose_dense_predictions(predictions, [self.num_classes, 4, 1])
         )
         anchors = self.anchor_generator(features)
 
@@ -307,7 +325,9 @@ class FCOSHead(RetinaNetHead):
     """
 
     def __init__(self, *, input_shape: List[ShapeSpec], conv_dims: List[int], **kwargs):
-        super().__init__(input_shape=input_shape, conv_dims=conv_dims, num_anchors=1, **kwargs)
+        super().__init__(
+            input_shape=input_shape, conv_dims=conv_dims, num_anchors=1, **kwargs
+        )
         # Unlike original FCOS, we do not add an additional learnable scale layer
         # because it's found to have no benefits after normalizing regression targets by stride.
         self._num_features = len(input_shape)

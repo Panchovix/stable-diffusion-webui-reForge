@@ -18,7 +18,7 @@ def load(
     parse_constant=None,
     object_pairs_hook=None,
     **kw,
-)-> typing.Any:
+) -> typing.Any:
     return loads(
         fp.read(),
         cls=cls,

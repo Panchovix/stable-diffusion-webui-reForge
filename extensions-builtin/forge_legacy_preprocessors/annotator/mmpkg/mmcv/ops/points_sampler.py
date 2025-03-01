@@ -4,8 +4,10 @@ import torch
 from torch import nn as nn
 
 from annotator.mmpkg.mmcv.runner import force_fp32
-from .furthest_point_sample import (furthest_point_sample,
-                                    furthest_point_sample_with_dist)
+from .furthest_point_sample import (
+    furthest_point_sample,
+    furthest_point_sample_with_dist,
+)
 
 
 def calc_square_dist(point_feat_a, point_feat_b, norm=True):
@@ -45,16 +47,17 @@ def get_sampler_cls(sampler_type):
         class: Points sampler type.
     """
     sampler_mappings = {
-        'D-FPS': DFPSSampler,
-        'F-FPS': FFPSSampler,
-        'FS': FSSampler,
+        "D-FPS": DFPSSampler,
+        "F-FPS": FFPSSampler,
+        "FS": FSSampler,
     }
     try:
         return sampler_mappings[sampler_type]
     except KeyError:
         raise KeyError(
-            f'Supported `sampler_type` are {sampler_mappings.keys()}, but got \
-                {sampler_type}')
+            f"Supported `sampler_type` are {sampler_mappings.keys()}, but got \
+                {sampler_type}"
+        )
 
 
 class PointsSampler(nn.Module):
@@ -71,16 +74,17 @@ class PointsSampler(nn.Module):
             Range of points to apply FPS. Default: [-1].
     """
 
-    def __init__(self,
-                 num_point: List[int],
-                 fps_mod_list: List[str] = ['D-FPS'],
-                 fps_sample_range_list: List[int] = [-1]):
+    def __init__(
+        self,
+        num_point: List[int],
+        fps_mod_list: List[str] = ["D-FPS"],
+        fps_sample_range_list: List[int] = [-1],
+    ):
         super().__init__()
         # FPS would be applied to different fps_mod in the list,
         # so the length of the num_point should be equal to
         # fps_mod_list and fps_sample_range_list.
-        assert len(num_point) == len(fps_mod_list) == len(
-            fps_sample_range_list)
+        assert len(num_point) == len(fps_mod_list) == len(fps_sample_range_list)
         self.num_point = num_point
         self.fps_sample_range_list = fps_sample_range_list
         self.samplers = nn.ModuleList()
@@ -102,7 +106,8 @@ class PointsSampler(nn.Module):
         last_fps_end_index = 0
 
         for fps_sample_range, sampler, npoint in zip(
-                self.fps_sample_range_list, self.samplers, self.num_point):
+            self.fps_sample_range_list, self.samplers, self.num_point
+        ):
             assert fps_sample_range < points_xyz.shape[1]
 
             if fps_sample_range == -1:
@@ -112,16 +117,15 @@ class PointsSampler(nn.Module):
                 else:
                     sample_features = None
             else:
-                sample_points_xyz = \
-                    points_xyz[:, last_fps_end_index:fps_sample_range]
+                sample_points_xyz = points_xyz[:, last_fps_end_index:fps_sample_range]
                 if features is not None:
-                    sample_features = features[:, :, last_fps_end_index:
-                                               fps_sample_range]
+                    sample_features = features[
+                        :, :, last_fps_end_index:fps_sample_range
+                    ]
                 else:
                     sample_features = None
 
-            fps_idx = sampler(sample_points_xyz.contiguous(), sample_features,
-                              npoint)
+            fps_idx = sampler(sample_points_xyz.contiguous(), sample_features, npoint)
 
             indices.append(fps_idx + last_fps_end_index)
             last_fps_end_index += fps_sample_range
@@ -150,11 +154,9 @@ class FFPSSampler(nn.Module):
 
     def forward(self, points, features, npoint):
         """Sampling points with F-FPS."""
-        assert features is not None, \
-            'feature input to FFPS_Sampler should not be None'
+        assert features is not None, "feature input to FFPS_Sampler should not be None"
         features_for_fps = torch.cat([points, features.transpose(1, 2)], dim=2)
-        features_dist = calc_square_dist(
-            features_for_fps, features_for_fps, norm=False)
+        features_dist = calc_square_dist(features_for_fps, features_for_fps, norm=False)
         fps_idx = furthest_point_sample_with_dist(features_dist, npoint)
         return fps_idx
 
@@ -167,8 +169,7 @@ class FSSampler(nn.Module):
 
     def forward(self, points, features, npoint):
         """Sampling points with FS_Sampling."""
-        assert features is not None, \
-            'feature input to FS_Sampler should not be None'
+        assert features is not None, "feature input to FS_Sampler should not be None"
         ffps_sampler = FFPSSampler()
         dfps_sampler = DFPSSampler()
         fps_idx_ffps = ffps_sampler(points, features, npoint)

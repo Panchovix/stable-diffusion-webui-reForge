@@ -34,7 +34,7 @@ class BundledTIHash(str):
         self.hash = hash_str
 
     def __str__(self):
-        return self.hash if shared.opts.lora_bundled_ti_to_infotext else ''
+        return self.hash if shared.opts.lora_bundled_ti_to_infotext else ""
 
 
 def load_network(name, network_on_disk):
@@ -59,7 +59,10 @@ def load_networks(names, te_multipliers=None, unet_multipliers=None, dyn_dims=No
 
     unavailable_networks = []
     for name in names:
-        if name.lower() in forbidden_network_aliases and available_networks.get(name) is None:
+        if (
+            name.lower() in forbidden_network_aliases
+            and available_networks.get(name) is None
+        ):
             unavailable_networks.append(name)
         elif available_network_aliases.get(name) is None:
             unavailable_networks.append(name)
@@ -67,10 +70,20 @@ def load_networks(names, te_multipliers=None, unet_multipliers=None, dyn_dims=No
     if unavailable_networks:
         update_available_networks_by_names(unavailable_networks)
 
-    networks_on_disk = [available_networks.get(name, None) if name.lower() in forbidden_network_aliases else available_network_aliases.get(name, None) for name in names]
+    networks_on_disk = [
+        available_networks.get(name, None)
+        if name.lower() in forbidden_network_aliases
+        else available_network_aliases.get(name, None)
+        for name in names
+    ]
     if any(x is None for x in networks_on_disk):
         list_available_networks()
-        networks_on_disk = [available_networks.get(name, None) if name.lower() in forbidden_network_aliases else available_network_aliases.get(name, None) for name in names]
+        networks_on_disk = [
+            available_networks.get(name, None)
+            if name.lower() in forbidden_network_aliases
+            else available_network_aliases.get(name, None)
+            for name in names
+        ]
 
     for i, (network_on_disk, name) in enumerate(zip(networks_on_disk, names)):
         try:
@@ -97,11 +110,20 @@ def load_networks(names, te_multipliers=None, unet_multipliers=None, dyn_dims=No
 
     for filename, strength_model, strength_clip in compiled_lora_targets:
         lora_sd = load_lora_state_dict(filename)
-        current_sd.forge_objects.unet, current_sd.forge_objects.clip = load_lora_for_models(
-            current_sd.forge_objects.unet, current_sd.forge_objects.clip, lora_sd, strength_model, strength_clip,
-            filename=filename)
+        current_sd.forge_objects.unet, current_sd.forge_objects.clip = (
+            load_lora_for_models(
+                current_sd.forge_objects.unet,
+                current_sd.forge_objects.clip,
+                lora_sd,
+                strength_model,
+                strength_clip,
+                filename=filename,
+            )
+        )
 
-    current_sd.forge_objects_after_applying_lora = current_sd.forge_objects.shallow_copy()
+    current_sd.forge_objects_after_applying_lora = (
+        current_sd.forge_objects.shallow_copy()
+    )
     return
 
 
@@ -127,11 +149,27 @@ def restore_weights_backup(obj, field, weight):
     getattr(obj, field).copy_(weight)
 
 
-def network_restore_weights_from_backup(self: Union[torch.nn.Conv2d, torch.nn.Linear, torch.nn.GroupNorm, torch.nn.LayerNorm, torch.nn.MultiheadAttention]):
+def network_restore_weights_from_backup(
+    self: Union[
+        torch.nn.Conv2d,
+        torch.nn.Linear,
+        torch.nn.GroupNorm,
+        torch.nn.LayerNorm,
+        torch.nn.MultiheadAttention,
+    ],
+):
     pass
 
 
-def network_apply_weights(self: Union[torch.nn.Conv2d, torch.nn.Linear, torch.nn.GroupNorm, torch.nn.LayerNorm, torch.nn.MultiheadAttention]):
+def network_apply_weights(
+    self: Union[
+        torch.nn.Conv2d,
+        torch.nn.Linear,
+        torch.nn.GroupNorm,
+        torch.nn.LayerNorm,
+        torch.nn.MultiheadAttention,
+    ],
+):
     pass
 
 
@@ -184,7 +222,12 @@ def network_MultiheadAttention_load_state_dict(self, *args, **kwargs):
 
 
 def process_network_files(names: list[str] | None = None):
-    candidates = list(shared.walk_files(shared.cmd_opts.lora_dir, allowed_extensions=[".pt", ".ckpt", ".safetensors"]))
+    candidates = list(
+        shared.walk_files(
+            shared.cmd_opts.lora_dir,
+            allowed_extensions=[".pt", ".ckpt", ".safetensors"],
+        )
+    )
     for filename in candidates:
         if os.path.isdir(filename):
             continue
@@ -195,7 +238,9 @@ def process_network_files(names: list[str] | None = None):
         try:
             entry = network.NetworkOnDisk(name, filename)
         except OSError:  # should catch FileNotFoundError and PermissionError etc.
-            errors.report(f"Failed to load network {name} from {filename}", exc_info=True)
+            errors.report(
+                f"Failed to load network {name} from {filename}", exc_info=True
+            )
             continue
 
         available_networks[name] = entry

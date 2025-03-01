@@ -9,7 +9,7 @@ opLLLiteLoader = LLLiteLoader().load_lllite
 class ControlLLLitePatcher(ControlModelPatcher):
     @staticmethod
     def try_build_from_state_dict(state_dict, ckpt_path):
-        if not any('lllite' in k for k in state_dict.keys()):
+        if not any("lllite" in k for k in state_dict.keys()):
             return None
         return ControlLLLitePatcher(state_dict)
 
@@ -28,7 +28,7 @@ class ControlLLLitePatcher(ControlModelPatcher):
             strength=self.strength,
             steps=process.steps,
             start_percent=self.start_percent,
-            end_percent=self.end_percent
+            end_percent=self.end_percent,
         )[0]
 
         process.sd_model.forge_objects.unet = unet
