@@ -394,7 +394,7 @@ def early_access_blackwell_wheels():
         # Print warning about torchvision compatibility issues
         if cuda_cap >= 10.0 or use_nightly:
             python_ver = f"cp{sys.version_info.major}{sys.version_info.minor}-cp{sys.version_info.major}{sys.version_info.minor}"
-            custom_tv_url = f"https://huggingface.co/Panchovix/torchvision-windows-blackwell-nightly/resolve/main/torchvision-0.22.0a0%2Bd28001e-{python_ver}-win_amd64.whl"
+            custom_tv_url = f"https://huggingface.co/Panchovix/torchvision-windows-blackwell2.0-nightly/resolve/main/torchvision-0.22.0a0%2Bd28001e-{python_ver}-win_amd64.whl"
             
             print("\n" + "="*80)
             print("WARNING: Official nightly torchvision packages may have compatibility issues with some extensions like ADetailer.")
@@ -420,7 +420,7 @@ def early_access_blackwell_wheels():
         
         # Add xformers, triton, and sageattention for Python 3.12 only
         if sys.version_info.minor == 12:
-            ea_whl[12] += ' https://huggingface.co/Panchovix/xformers-windows-blackwell-nightly/resolve/main/xformers-0.0.30%2B7cb59f0b.d20250226-cp312-cp312-win_amd64.whl'
+            ea_whl[12] += ' https://huggingface.co/Panchovix/xformers-windows-blackwell2.0-nightly/resolve/main/xformers-0.0.30%2B7cb59f0b.d20250226-cp312-cp312-win_amd64.whl'
             ea_whl[12] += ' https://huggingface.co/Panchovix/triton-blackwell2.0-windows-nightly/resolve/main/triton-3.2.0%2Bgited43d228-cp312-cp312-win_amd64.whl'
             ea_whl[12] += ' https://huggingface.co/Panchovix/sageattention2.1.1-blackwell2.0-windows-nightly/resolve/main/sageattention-2.1.1-cp312-cp312-win_amd64.whl'
             
