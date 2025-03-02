@@ -1,7 +1,4 @@
 # Original code from Comfy, https://github.com/comfyanonymous/ComfyUI
-
-
-
 import argparse
 import enum
 import os
@@ -159,6 +156,7 @@ parser.add_argument("--is-windows-embedded-python", action="store_true", help="W
 parser.add_argument("--disable-server-info", action="store_true", help="Disable saving prompt metadata in files.")
 parser.add_argument("--cuda-stream", action="store_true")
 parser.add_argument("--pin-shared-memory", action="store_true")
+parser.add_argument("--nightly-builds", action="store_true", help="Use nightly PyTorch builds for compatible GPUs")
 
 parser.add_argument("--disable-metadata", action="store_true", help="Disable saving prompt metadata in files.")
 parser.add_argument("--disable-all-custom-nodes", action="store_true", help="Disable loading all custom nodes.")
