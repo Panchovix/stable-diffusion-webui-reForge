@@ -393,8 +393,8 @@ def early_access_blackwell_wheels():
     if should_use_nightly and platform.system() == "Windows":
         # PyTorch nightly builds for March 1, 2025
         torch_base = 'https://download.pytorch.org/whl/nightly/cu128/torch-2.7.0.dev20250301%2Bcu128'
-        # Official nightly torchvision builds
-        tv_base = 'https://download.pytorch.org/whl/nightly/cpu/torchvision-0.22.0.dev20250302%2Bcpu'
+        # Official nightly torchvision builds with CUDA support
+        tv_base = 'https://download.pytorch.org/whl/nightly/cu128/torchvision-0.22.0.dev20250302%2Bcu128'
         
         # Map each Python version to its torch and torchvision wheels
         ea_whl = {
