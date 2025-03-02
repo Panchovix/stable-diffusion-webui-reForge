@@ -12,12 +12,13 @@ from modules.infotext_utils import image_from_url_text
 import modules.images
 from modules.ui_components import ToolButton
 import modules.infotext_utils as parameters_copypaste
+from PIL import Image
 
 folder_symbol = '\U0001f4c2'  # 📂
 refresh_symbol = '\U0001f504'  # 🔄
 
 
-def update_generation_info(generation_info, html_info, img_index):
+def update_generation_info(generation_info:str, html_info:str, img_index:str):
     try:
         generation_info = json.loads(generation_info)
         if img_index < 0 or img_index >= len(generation_info["infotexts"]):
@@ -61,7 +62,7 @@ def update_logfile(logfile_path, fields):
         writer.writerows(rows)
 
 
-def save_files(js_data, images, do_make_zip, index):
+def save_files(js_data, images:list[tuple[str,str]], do_make_zip, index):
     filenames = []
     fullfns = []
     parsed_infotexts = []
@@ -115,7 +116,7 @@ def save_files(js_data, images, do_make_zip, index):
                 writer.writerow(fields)
 
         for image_index, filedata in enumerate(images, start_index):
-            image = image_from_url_text(filedata)
+            image = filedata[0]
 
             is_grid = image_index < p.index_of_first_image
 
@@ -154,7 +155,9 @@ def save_files(js_data, images, do_make_zip, index):
 
 @dataclasses.dataclass
 class OutputPanel:
-    gallery = None
+    # Gallery returns [(PIL,Caption:str)]
+    # I hate gradio doesn't allow me to type check this.
+    gallery:gr.Gallery|None = None
     generation_info = None
     infotext = None
     html_log = None
@@ -184,7 +187,8 @@ def create_output_panel(tabname, outdir, toprow=None):
 
         with gr.Column(variant='panel', elem_id=f"{tabname}_results_panel"):
             with gr.Group(elem_id=f"{tabname}_gallery_container"):
-                res.gallery = gr.Gallery(label='Output', show_label=False, elem_id=f"{tabname}_gallery", columns=4, preview=True, height=shared.opts.gallery_height or None)
+                # XXX: Gradio 4 needs type="pil" for image saving to work. - Ristellise
+                res.gallery = gr.Gallery(label='Output', show_label=False, elem_id=f"{tabname}_gallery", columns=4, preview=True, height=shared.opts.gallery_height or None, interactive=False, type="pil", object_fit="contain")
 
             with gr.Row(elem_id=f"image_buttons_{tabname}", elem_classes="image-buttons"):
                 open_folder_button = ToolButton(folder_symbol, elem_id=f'{tabname}_open_folder', visible=not shared.cmd_opts.hide_ui_dir_config, tooltip="Open images output directory.")

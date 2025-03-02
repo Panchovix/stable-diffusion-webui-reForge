@@ -439,11 +439,11 @@ div.toprow-compact-tools{
     background: none;
 }
 
-#quicksettings > div.model_selection{
+#quicksettings > div#setting_sd_model_checkpoint{
     min-width: 20em !important;
 }
 
-#quicksettings > div.model_selection input{
+#quicksettings > div#setting_sd_model_checkpoint input{
     margin-left: 2% !important; /* override the margin set for subdued */
     width: 100%;
 }
@@ -453,7 +453,7 @@ div.toprow-compact-tools{
     background-color: var(--background-fill-secondary);
 }
 
-#quicksettings > div.model_selection li{
+#quicksettings > div#setting_sd_model_checkpoint li{
     overflow-x: visible !important;
     width: 100% !important; /* Set size to max element */
 }
