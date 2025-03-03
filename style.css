@@ -439,11 +439,11 @@ div.toprow-compact-tools{
     background: none;
 }
 
-#quicksettings > div#setting_sd_model_checkpoint{
+#quicksettings > div#setting_sd_model_checkpoint, #quicksettings > div#setting_sd_vae{
     min-width: 20em !important;
 }
 
-#quicksettings > div#setting_sd_model_checkpoint input{
+#quicksettings > div#setting_sd_model_checkpoint input, #quicksettings > div#setting_sd_vae input{
     margin-left: 2% !important; /* override the margin set for subdued */
     width: 100%;
 }
@@ -453,7 +453,7 @@ div.toprow-compact-tools{
     background-color: var(--background-fill-secondary);
 }
 
-#quicksettings > div#setting_sd_model_checkpoint li{
+#quicksettings > div#setting_sd_model_checkpoint li, #quicksettings > div#setting_sd_vae li{
     overflow-x: visible !important;
     width: 100% !important; /* Set size to max element */
 }
