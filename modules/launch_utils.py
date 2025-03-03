@@ -421,8 +421,6 @@ def early_access_blackwell_wheels():
         # Add xformers, triton, and sageattention for Python 3.12 only
         if sys.version_info.minor == 12:
             ea_whl[12] += ' https://huggingface.co/Panchovix/xformers-windows-blackwell2.0-nightly/resolve/main/xformers-0.0.30%2B7cb59f0b.d20250226-cp312-cp312-win_amd64.whl'
-            ea_whl[12] += ' https://huggingface.co/Panchovix/triton-blackwell2.0-windows-nightly/resolve/main/triton-3.2.0%2Bgited43d228-cp312-cp312-win_amd64.whl'
-            ea_whl[12] += ' https://huggingface.co/Panchovix/sageattention2.1.1-blackwell2.0-windows-nightly/resolve/main/sageattention-2.1.1-cp312-cp312-win_amd64.whl'
             
         return f'pip install {ea_whl.get(sys.version_info.minor)}'
     elif should_use_nightly and platform.system() == "Linux":
