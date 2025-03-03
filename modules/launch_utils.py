@@ -368,34 +368,64 @@ def get_cuda_comp_cap():
         return 0.0
 
 def early_access_blackwell_wheels():
-    """For Blackwell GPUs, use Nightly PyTorch Wheels"""
-    if all([
-            os.environ.get('TORCH_INDEX_URL') is None,
-            sys.version_info.major == 3,
-            sys.version_info.minor in (10, 11, 12, 13),
-            get_cuda_comp_cap() >= 10,  # Blackwell
-    ]):
-        if platform.system() == "Windows":
-            # PyTorch nightly builds
-            torch_base = 'https://download.pytorch.org/whl/nightly/cu128/torch-2.7.0.dev20250221%2Bcu128'
-            # Updated torchvision builds
-            tv_base = 'https://huggingface.co/Panchovix/torchvision-windows-blackwell-nightly/resolve/main/torchvision-0.22.0a0%2Bd28001e'
+    """For Blackwell GPUs or when using --nightly-builds flag, use Nightly PyTorch Wheels"""
+    cuda_cap = get_cuda_comp_cap()
+    
+    # Import args from ldm_patched if available, otherwise default to false
+    try:
+        from ldm_patched.modules.args_parser import args
+        use_nightly = args.nightly_builds
+    except:
+        use_nightly = False
+    
+    # Check if we should use nightly builds
+    # Either Blackwell GPU (always use) or Ampere/Ada GPU with nightly flag
+    should_use_nightly = (
+        os.environ.get('TORCH_INDEX_URL') is None and
+        sys.version_info.major == 3 and
+        sys.version_info.minor in (10, 11, 12, 13) and
+        (
+            cuda_cap >= 10.0 or  # Always use for Blackwell
+            (use_nightly and cuda_cap >= 8.0)  # Use for Ampere/Ada if flag is set
+        )
+    )
+    
+    if should_use_nightly and platform.system() == "Windows":
+        # Print warning about torchvision compatibility issues
+        if cuda_cap >= 10.0 or use_nightly:
+            python_ver = f"cp{sys.version_info.major}{sys.version_info.minor}-cp{sys.version_info.major}{sys.version_info.minor}"
+            custom_tv_url = f"https://huggingface.co/Panchovix/torchvision-windows-blackwell2.0-nightly/resolve/main/torchvision-0.22.0a0%2Bd28001e-{python_ver}-win_amd64.whl"
             
-            # Map each Python version to its torch and torchvision wheels
-            ea_whl = {
-                10: f'{torch_base}-cp310-cp310-win_amd64.whl {tv_base}-cp310-cp310-win_amd64.whl',
-                11: f'{torch_base}-cp311-cp311-win_amd64.whl {tv_base}-cp311-cp311-win_amd64.whl',
-                12: f'{torch_base}-cp312-cp312-win_amd64.whl {tv_base}-cp312-cp312-win_amd64.whl',
-                13: f'{torch_base}-cp313-cp313-win_amd64.whl {tv_base}-cp313-cp313-win_amd64.whl'
-            }
+            print("\n" + "="*80)
+            print("WARNING: Official nightly torchvision packages may have compatibility issues with some extensions like ADetailer.")
+            print("If you experience problems, you can replace the official package with a custom compatible version:")
+            print(f"\n1. Navigate to your 'stable-diffusion-webui-reForge' folder")
+            print(f"2. Activate the virtual environment with: venv\\Scripts\\activate")
+            print(f"3. Run: pip install {custom_tv_url} --force-reinstall")
+            print(f"4. Restart the WebUI")
+            print("="*80 + "\n")
+        
+        # PyTorch nightly builds for March 1, 2025
+        torch_base = 'https://download.pytorch.org/whl/nightly/cu128/torch-2.7.0.dev20250301%2Bcu128'
+        # Official nightly torchvision builds with CUDA support
+        tv_base = 'https://download.pytorch.org/whl/nightly/cu128/torchvision-0.22.0.dev20250302%2Bcu128'
+        
+        # Map each Python version to its torch and torchvision wheels
+        ea_whl = {
+            10: f'{torch_base}-cp310-cp310-win_amd64.whl {tv_base}-cp310-cp310-win_amd64.whl',
+            11: f'{torch_base}-cp311-cp311-win_amd64.whl {tv_base}-cp311-cp311-win_amd64.whl',
+            12: f'{torch_base}-cp312-cp312-win_amd64.whl {tv_base}-cp312-cp312-win_amd64.whl',
+            13: f'{torch_base}-cp313-cp313-win_amd64.whl {tv_base}-cp313-cp313-win_amd64.whl'
+        }
+        
+        # Add xformers, triton, and sageattention for Python 3.12 only
+        if sys.version_info.minor == 12:
+            ea_whl[12] += ' https://huggingface.co/Panchovix/xformers-windows-blackwell2.0-nightly/resolve/main/xformers-0.0.30%2B7cb59f0b.d20250226-cp312-cp312-win_amd64.whl'
             
-            # Add xformers for Python 3.12 only
-            if sys.version_info.minor == 12:
-                ea_whl[12] += ' https://huggingface.co/Panchovix/xformers-windows-blackwell-nightly/resolve/main/xformers-0.0.30%2B7cb59f0b.d20250226-cp312-cp312-win_amd64.whl'
-                
-            return f'pip install {ea_whl.get(sys.version_info.minor)}'
-        elif platform.system() == "Linux":
-            return "pip install --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu128"
+        return f'pip install {ea_whl.get(sys.version_info.minor)}'
+    elif should_use_nightly and platform.system() == "Linux":
+        return "pip install --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu128"
+    
     return None
 
 

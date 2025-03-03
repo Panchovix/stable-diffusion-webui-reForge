@@ -1,7 +1,4 @@
 # Original code from Comfy, https://github.com/comfyanonymous/ComfyUI
-
-
-
 import argparse
 import enum
 import ldm_patched.modules.options
@@ -130,6 +127,8 @@ parser.add_argument("--pytorch-deterministic", action="store_true")
 parser.add_argument("--disable-server-log", action="store_true")
 parser.add_argument("--debug-mode", action="store_true")
 parser.add_argument("--is-windows-embedded-python", action="store_true")
+
+parser.add_argument("--nightly-builds", action="store_true", help="Use nightly PyTorch builds for compatible GPUs")
 
 parser.add_argument("--disable-server-info", action="store_true")
 

@@ -8,7 +8,7 @@ The name "Forge" is inspired from "Minecraft Forge". This project is aimed at be
 
 * main: Has all the possible upstream changes from A1111, new samplers/schedulers/sd options/etc and some small modifications in the backend compared to the original forge (mostly to load multiple checkpoints at the same time). It may be missing some new features related to the comfy backend (from 2024-01 and onwards when it's not samplers). This branch may be slower than the other branches like dev2/dev2/experimental.
 * dev: This branch has everything dev branch has, and all applicable updates from Comfy upstream, may have more features vs dev branch. Could have some more instabilities, but should also be generally stable for daily usage.
-* dev2: Same as dev (for now)
+* dev2: Same as dev backend, but it uses gradio 4.0 instead of 3.42. This is to test some extensions and changes, then it will be moved to dev, and then to main branch.
 * experimental: This branch will have some experimental changes that may have major new features, but they may be incomplete or have major bugs, based on the dev2 branch. This branch will be mostly inactive until I want to test things.
 * dev_upstream: Deprecated, see more https://github.com/Panchovix/stable-diffusion-webui-reForge/discussions/175
 * dev_upsteam_experimental: Deprecated, see more https://github.com/Panchovix/stable-diffusion-webui-reForge/discussions/175
