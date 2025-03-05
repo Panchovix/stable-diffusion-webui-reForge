@@ -231,37 +231,6 @@ For img2img, VAE is used to process user's input image before the sampling, and 
     "sd_vae_decode_method": OptionInfo("Full", "VAE type for decode", gr.Radio, {"choices": ["Full", "TAESD"]}, infotext='VAE Decoder').info("method to decode latent to image"),
 }))
 
-options_templates.update(options_section(('sd_sampler_cfg_denoiser', "SD Sampler CFG Denoiser", "sd"), {
-    "sd_sampler_cfg_denoiser": OptionInfo(
-        "reForge",
-        "CFG Denoiser Type",
-        gr.Radio,
-        lambda: {"choices": ["reForge", "reForgeDev"]}
-    ).info(
-        """<p>Choose the CFG Denoiser type:</p>
-        <p><strong>A restart of the UI is required for changes to apply effect.</strong></p>
-        <p><strong>reForge:</strong> Use CFG Denoiser from reForge. It's more compatible with everything and custom samplers.<br>
-        <em>NOTE: This breaks DDIM CFG++ Sampler.</em></p>
-        <p><strong>reForgeDev:</strong> Use CFG Denoiser from reForge Dev variant. This is a WIP with some custom noise changes. Similar to reForge<br>
-        """
-    ),
-}))
-
-options_templates.update(options_section(('sd_processing', "SD Processing", "sd"), {
-    "sd_processing": OptionInfo(
-        "reForge OG",
-        "SD Processing Type",
-        gr.Radio,
-        lambda: {"choices": ["reForge OG", "reForge A1111"]}
-    ).info(
-        """<p>Choose the SD Processing type:</p>
-        <p><strong>A restart of the UI is required for changes to apply effect.</strong></p>
-        <p><strong>reForge OG:</strong> Use SD Processing from OG reForge/Old Forge. Should be more compatible with more extensions.<br>
-        <p><strong>reForge A1111:</strong> Use SD Processing from reForge upstream to A1111, adapted to work fine. It has more features but it can have some unexpected behavior with some extensions<br>
-        """
-    ),
-}))
-
 options_templates.update(options_section(('sd_sampling', "SD Sampling backend for A1111 samplers", "sd"), {
     "sd_sampling": OptionInfo(
         "A1111",
