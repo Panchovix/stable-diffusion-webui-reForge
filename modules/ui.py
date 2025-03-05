@@ -112,7 +112,13 @@ def calc_resolution_hires(enable, width, height, hr_scale, hr_resize_x, hr_resiz
     return f"from <span class='resolution'>{p.width}x{p.height}</span> to <span class='resolution'>{new_width}x{new_height}</span>"
 
 
-def resize_from_to_html(width, height, scale_by):
+def resize_from_to_html(width:float, height:float, scale_by:float|None):
+    
+    if scale_by is None:
+        # XXX: Fix a TypeError for unsupported operand type(s) for *: 'float' and 'NoneType'. - Ristellise
+        print("Scale is None. Assuming 1.0.")
+        scale_by = 1.0
+    
     target_width = int(float(width) * scale_by)
     target_height = int(float(height) * scale_by)
 

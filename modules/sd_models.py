@@ -21,7 +21,8 @@ import modules_forge.ops as forge_ops
 from ldm_patched.modules.ops import manual_cast
 from ldm_patched.modules import model_management as model_management
 import ldm_patched.modules.model_patcher
-
+import weakref
+import logging as log
 
 model_dir = "Stable-diffusion"
 model_path = os.path.abspath(os.path.join(paths.models_path, model_dir))
@@ -332,22 +333,257 @@ def read_state_dict(checkpoint_file, print_global_state=False, map_location=None
     sd = get_state_dict_from_checkpoint(pl_sd)
     return sd
 
+def complete_model_teardown(model):
+    """Completely tear down a model by breaking all references to its components"""
+    if model is None:
+        return
+        
+    model_name = "Unknown"
+    if hasattr(model, 'sd_checkpoint_info') and hasattr(model.sd_checkpoint_info, 'title'):
+        model_name = model.sd_checkpoint_info.title
+    elif hasattr(model, 'filename'):
+        model_name = model.filename
+        
+    print(f"Performing complete teardown of model: {model_name}")
+    
+    def replace_attributes(obj, path="", visited=None, depth=0):
+        if visited is None:
+            visited = set()
+            
+        # Limit recursion depth for safety
+        if depth > 10:
+            return
+            
+        # Don't process the same object twice
+        obj_id = id(obj)
+        if obj_id in visited:
+            return
+        visited.add(obj_id)
+        
+        try:
+            # Handle torch.nn.Module
+            if hasattr(obj, 'parameters') and hasattr(obj, 'named_parameters'):
+                # Handle parameters
+                try:
+                    for name, param in list(obj.named_parameters(recurse=False)):
+                        try:
+                            if hasattr(param, 'data'):
+                                param.data = None
+                                delattr(obj, name)
+                        except:
+                            pass
+                except:
+                    pass
+                    
+                # Handle buffers
+                try:
+                    for name, buffer in list(obj.named_buffers(recurse=False)):
+                        try:
+                            if hasattr(buffer, 'data'):
+                                buffer.data = None
+                                delattr(obj, name)
+                        except:
+                            pass
+                except:
+                    pass
+                    
+                # Process child modules
+                try:
+                    for name, module in list(obj.named_children()):
+                        try:
+                            replace_attributes(module, f"{path}.{name}", visited, depth+1)
+                            setattr(obj, name, None)
+                        except:
+                            pass
+                except:
+                    pass
+                
+            # Handle dictionaries
+            elif isinstance(obj, dict):
+                for key in list(obj.keys()):
+                    try:
+                        val = obj[key]
+                        if hasattr(val, 'parameters') or hasattr(val, 'numel'):
+                            replace_attributes(val, f"{path}[{key}]", visited, depth+1)
+                            obj[key] = None
+                    except:
+                        pass
+                try:
+                    obj.clear()
+                except:
+                    pass
+                    
+            # Handle lists and tuples
+            elif isinstance(obj, (list, tuple)) and len(obj) > 0:
+                for i, item in enumerate(obj):
+                    try:
+                        if hasattr(item, 'parameters') or hasattr(item, 'numel'):
+                            replace_attributes(item, f"{path}[{i}]", visited, depth+1)
+                    except:
+                        pass
+        except:
+            pass
+                    
+    # Safely process the model's attribute tree
+    for attr_name in dir(model):
+        if attr_name.startswith('__'):
+            continue
+            
+        try:
+            attr = getattr(model, attr_name)
+            if attr is not None:
+                if isinstance(attr, (dict, list, tuple)) or hasattr(attr, 'parameters') or hasattr(attr, 'numel'):
+                    replace_attributes(attr, attr_name)
+                    setattr(model, attr_name, None)
+        except:
+            pass
+    
+    # Clear CUDA cache forcefully
+    if torch.cuda.is_available():
+        try:
+            torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
+        except:
+            pass
+    
+    # Run GC multiple times
+    for _ in range(3):
+        gc.collect()
+        
+    print(f"Model teardown completed")
+
+# Global tracking to find leaks
+models_loaded_count = 0
+peak_memory_usage = 0
+
+def force_memory_deallocation():
+    """Force deallocation of memory using memory profiling and weak references"""
+    import gc
+    import psutil
+    
+    # 1. Get pre-cleanup memory for comparison
+    process = psutil.Process()
+    pre_mem = process.memory_info().rss
+    
+    # 2. Clear all caches that might hold model references
+    global checkpoints_loaded
+    if len(checkpoints_loaded) > 0:
+        print(f"Clearing {len(checkpoints_loaded)} cached state dictionaries")
+        checkpoints_loaded.clear()
+    
+    # 3. Clear checkpoints_list references to only keep essential information
+    for key in list(checkpoints_list):
+        info = checkpoints_list[key]
+        if hasattr(info, 'metadata') and info.metadata:
+            # Save only minimal metadata to preserve functionality
+            minimal_metadata = {}
+            if 'ss_sd_model_name' in info.metadata:
+                minimal_metadata['ss_sd_model_name'] = info.metadata['ss_sd_model_name']
+            info.metadata = minimal_metadata
+    
+    # 4. Clear torch CUDA caches
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.ipc_collect()
+    
+    # 5. Use specialized weakref to identify and break circular references
+    # This trick helps identify objects that aren't being collected
+    tracked_objects = []
+    
+    def on_delete(ref):
+        tracked_objects.remove(ref)
+    
+    # Track large objects for collection
+    large_objects = [obj for obj in gc.get_objects() 
+                     if (isinstance(obj, torch.Tensor) and 
+                         not obj.is_cuda and 
+                         obj.numel() > 1e6)]
+    
+    for obj in large_objects:
+        ref = weakref.ref(obj, on_delete)
+        tracked_objects.append(ref)
+    
+    # Force collection
+    del large_objects
+    gc.collect()
+    
+    # Report uncollected objects
+    if tracked_objects:
+        log.debug(f"Warning: {len(tracked_objects)} large tensor objects were not collected")
+    
+    # 6. Run several garbage collection passes
+    for i in range(3):
+        count = gc.collect()
+        if count == 0:
+            break
+        print(f"GC pass {i+1}: collected {count} objects")
+    
+    # 7. Report memory change
+    post_mem = process.memory_info().rss
+    mem_diff = (post_mem - pre_mem) / (1024 * 1024)
+    print(f"Memory change: {mem_diff:.2f} MB ({post_mem/(1024*1024*1024):.2f} GB total)")
+    
+    # Special measure for large leaks
+    global peak_memory_usage, models_loaded_count
+    models_loaded_count += 1
+    peak_memory_usage = max(peak_memory_usage, post_mem)
+    
+    # Emergency deallocation if memory gets too high
+    if post_mem > 50 * 1024 * 1024 * 1024:  # 50GB threshold
+        print("EMERGENCY MEMORY CLEANUP - Memory usage critically high")
+        import sys
+        for module_name in list(sys.modules.keys()):
+            if 'ldm' in module_name or 'forge' in module_name:
+                if module_name not in ['__main__', 'sys', 'os', 'gc']:
+                    try:
+                        del sys.modules[module_name]
+                    except:
+                        pass
+        # Clear all loaded models completely
+        model_data.loaded_sd_models.clear()
+        gc.collect()
+    
+    return f"Memory cleanup: {post_mem/(1024*1024*1024):.2f} GB used"
+
+disable_checkpoint_caching = True  # Global flag to completely disable checkpoint caching
 
 def get_checkpoint_state_dict(checkpoint_info: CheckpointInfo, timer):
+    global disable_checkpoint_caching
+    
     sd_model_hash = checkpoint_info.calculate_shorthash()
     timer.record("calculate hash")
-
-    if checkpoint_info in checkpoints_loaded:
-        # use checkpoint cache
-        print(f"Loading weights [{sd_model_hash}] from cache")
-        # move to end as latest
-        checkpoints_loaded.move_to_end(checkpoint_info)
-        return checkpoints_loaded[checkpoint_info]
-
+    
+    # Completely disable checkpoint caching - always load fresh
     print(f"Loading weights [{sd_model_hash}] from {checkpoint_info.filename}")
-    res = read_state_dict(checkpoint_info.filename)
+    
+    # Use a more direct loading approach to avoid duplicate copies
+    if checkpoint_info.is_safetensors:
+        import safetensors.torch
+        # Load directly to the appropriate device
+        device = shared.weight_load_location or model_management.get_torch_device()
+        
+        if shared.opts.disable_mmap_load_safetensors:
+            with torch.no_grad():
+                data = open(checkpoint_info.filename, 'rb').read()
+                res = safetensors.torch.load(data)
+                # Move tensors to target device
+                res = {k: v.to(device) for k, v in res.items()}
+                del data  # Immediately delete raw data
+        else:
+            # Direct file loading to device
+            res = safetensors.torch.load_file(
+                checkpoint_info.filename, 
+                device=device
+            )
+    else:
+        # For regular checkpoints
+        res = torch.load(
+            checkpoint_info.filename, 
+            map_location=shared.weight_load_location or model_management.get_torch_device()
+        )
+        res = get_state_dict_from_checkpoint(res)
+    
     timer.record("load weights from disk")
-
     return res
 
 
@@ -637,132 +873,114 @@ def get_obj_from_str(string, reload=False):
         importlib.reload(module_imp)
     return getattr(importlib.import_module(module, package=None), cls)
 
-if shared.opts.model_management_type == 'Old':
-    def load_model(checkpoint_info=None, already_loaded_state_dict=None):
-        from modules import sd_hijack
-        checkpoint_info = checkpoint_info or select_checkpoint()
+def clear_python_cache():
+    """Clear Python's internal module cache to reduce memory usage"""
+    # Clear module cache - can help with memory leaks
+    count = 0
+    for module_name in list(sys.modules.keys()):
+        # Don't remove essential modules
+        if module_name in ('sys', 'os', 'gc', 'torch', 'numpy'):
+            continue
+        # Don't remove main modules
+        if module_name.startswith('__main__') or module_name == '__main__':
+            continue
+        # Focus on model-related modules that might hold large tensors
+        if 'model' in module_name or 'unet' in module_name or 'vae' in module_name or 'tensor' in module_name:
+            try:
+                del sys.modules[module_name]
+                count += 1
+            except:
+                pass
+    
+    print(f"Cleared {count} modules from Python module cache")
+    return count
 
-        timer = Timer()
+def aggressive_memory_cleanup():
+    """Perform aggressive memory cleanup to address RAM leaks - safer approach"""
+    global checkpoints_loaded
+    
+    print("Performing aggressive memory cleanup...")
+    
+    # 1. Clear checkpoint cache
+    if len(checkpoints_loaded) > 0:
+        print(f"Clearing {len(checkpoints_loaded)} cached checkpoints from memory")
+        checkpoints_loaded.clear()
+    
+    # 2. Clear torch caches
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.ipc_collect()
+    
+    # 3. Run garbage collection
+    collected = gc.collect()
+    print(f"GC: collected {collected} objects")
+    
+    # 4. Get current memory usage for logging
+    import psutil
+    process = psutil.Process()
+    mem_info = process.memory_info()
+    print(f"Current memory usage: RSS={mem_info.rss/(1024*1024*1024):.2f} GB, VMS={mem_info.vms/(1024*1024*1024):.2f} GB")
+    
+    return f"Memory cleanup complete. Current usage: {mem_info.rss/(1024*1024*1024):.2f} GB"
 
-        if model_data.sd_model:
-            if model_data.sd_model.filename == checkpoint_info.filename:
-                return model_data.sd_model
+def load_model(checkpoint_info=None, already_loaded_state_dict=None):
+    import logging as log
+    global model_data
 
-            model_data.sd_model = None
-            model_data.loaded_sd_models = []
-            model_management.unload_all_models()
-            model_management.soft_empty_cache()
+    checkpoint_info = checkpoint_info or select_checkpoint()
+    timer = Timer()
+
+    # Check if the model is already loaded
+    for i, loaded_model in enumerate(model_data.loaded_sd_models):
+        if loaded_model.filename == checkpoint_info.filename:
+            log.debug(f"Using already loaded model {loaded_model.sd_checkpoint_info.title}")
+            # Set this model as active by moving it to the front
+            model_data.loaded_sd_models.remove(loaded_model)
+            model_data.loaded_sd_models.insert(0, loaded_model)
+            model_data.set_sd_model(loaded_model, already_loaded=True)
+            return loaded_model
+
+    # Emergency cleanup if memory usage is high
+    import psutil
+    process = psutil.Process()
+    current_mem = process.memory_info().rss
+    if current_mem > 25 * 1024 * 1024 * 1024:  # 25GB threshold
+        print(f"WARNING: High memory usage detected ({current_mem/(1024*1024*1024):.2f} GB), performing emergency cleanup")
+        emergency_gc()
+
+    # Enforce model limit
+    while len(model_data.loaded_sd_models) >= shared.opts.sd_checkpoints_limit:
+        unload_first_loaded_model()
+    
+    # Force memory deallocation
+    force_memory_deallocation()
+    timer.record("memory cleanup")
+
+    current_loaded_models = len(model_data.loaded_sd_models)
+    print(f"Loading model {checkpoint_info.title} ({current_loaded_models + 1} of {shared.opts.sd_checkpoints_limit})")
+
+    # State dict handling with explicit scoping
+    sd_model = None
+    try:
+        if already_loaded_state_dict is not None:
+            state_dict = already_loaded_state_dict
+        else:
+            state_dict = get_checkpoint_state_dict(checkpoint_info, timer)
+
+        # Load the model
+        sd_model = forge_loader.load_model_for_a1111(timer=timer, checkpoint_info=checkpoint_info, state_dict=state_dict)
+        sd_model.filename = checkpoint_info.filename
+    finally:
+        # Always clear state dict, even on failure
+        if 'state_dict' in locals():
+            del state_dict
             gc.collect()
 
-        timer.record("unload existing model")
-
-        if already_loaded_state_dict is not None:
-            state_dict = already_loaded_state_dict
-        else:
-            state_dict = get_checkpoint_state_dict(checkpoint_info, timer)
-
-        if shared.opts.sd_checkpoint_cache > 0:
-            # cache newly loaded model
-            checkpoints_loaded[checkpoint_info] = state_dict.copy()
-
-        sd_model = forge_loader.load_model_for_a1111(timer=timer, checkpoint_info=checkpoint_info, state_dict=state_dict)
-        sd_model.filename = checkpoint_info.filename
-
-        del state_dict
-
-        # clean up cache if limit is reached
-        while len(checkpoints_loaded) > shared.opts.sd_checkpoint_cache:
-            checkpoints_loaded.popitem(last=False)
-
-        shared.opts.data["sd_checkpoint_hash"] = checkpoint_info.sha256
-
-        sd_vae.delete_base_vae()
-        sd_vae.clear_loaded_vae()
-        vae_file, vae_source = sd_vae.resolve_vae(checkpoint_info.filename).tuple()
-        sd_vae.load_vae(sd_model, vae_file, vae_source)
-        timer.record("load VAE")
-
-        model_data.set_sd_model(sd_model)
-        model_data.was_loaded_at_least_once = True
-
-        sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings(force_reload=True)  # Reload embeddings after model load as they may or may not fit the model
-
-        timer.record("load textual inversion embeddings")
-
-        script_callbacks.model_loaded_callback(sd_model)
-
-        timer.record("scripts callbacks")
-
-        with torch.no_grad():
-            sd_model.cond_stage_model_empty_prompt = get_empty_cond(sd_model)
-
-        timer.record("calculate empty prompt")
-
-        print(f"Model loaded in {timer.summary()}.")
-
-        return sd_model
-elif shared.opts.model_management_type == 'New':
-    def load_model(checkpoint_info=None, already_loaded_state_dict=None):
-        import logging as log
-        global model_data
-
-        checkpoint_info = checkpoint_info or select_checkpoint()
-        timer = Timer()
-
-        if model_management.DISABLE_SMART_MEMORY:
-            # Pinned shared memory case
-            for loaded_model in model_data.loaded_sd_models:
-                if loaded_model.filename == checkpoint_info.filename:
-                    log.debug(f"Using already loaded model {loaded_model.sd_checkpoint_info.title}: done in {timer.summary()}")
-                    model_data.loaded_sd_models.remove(loaded_model)
-                    model_data.loaded_sd_models.insert(0, loaded_model)
-                    model_data.set_sd_model(loaded_model, already_loaded=True)
-                    return loaded_model
-
-            if len(model_data.loaded_sd_models) >= shared.opts.sd_checkpoints_limit:
-                unload_first_loaded_model()
-
-            timer.record("unload first loaded model if necessary (pinned)")
-
-        else:
-            # Non-pinned memory case
-            for loaded_model in model_data.loaded_sd_models:
-                if loaded_model.filename == checkpoint_info.filename:
-                    log.debug(f"Using already loaded model {loaded_model.sd_checkpoint_info.title}: done in {timer.summary()}")
-                    model_data.loaded_sd_models.remove(loaded_model)
-                    model_data.loaded_sd_models.insert(0, loaded_model)
-                    model_data.set_sd_model(loaded_model, already_loaded=True)
-                    return loaded_model
-
-            if len(model_data.loaded_sd_models) >= shared.opts.sd_checkpoints_limit:
-                unload_first_loaded_model()
-
-            timer.record("unload first loaded model if necessary (non-pinned)")
-
-        current_loaded_models = len(model_data.loaded_sd_models)
-        print(f"Loading model {checkpoint_info.title} ({current_loaded_models + 1} of {shared.opts.sd_checkpoints_limit})")
-
-        if already_loaded_state_dict is not None:
-            state_dict = already_loaded_state_dict
-        else:
-            state_dict = get_checkpoint_state_dict(checkpoint_info, timer)
-
-        sd_model = forge_loader.load_model_for_a1111(timer=timer, checkpoint_info=checkpoint_info, state_dict=state_dict)
-        sd_model.filename = checkpoint_info.filename
-
+    # Only proceed if model loaded successfully
+    if sd_model is not None:
         model_data.loaded_sd_models.insert(0, sd_model)  # Add new model to the front
         model_data.set_sd_model(sd_model)
         model_data.was_loaded_at_least_once = True
-
-        # Ensure the new model is marked as currently used
-        sd_model.currently_used = True
-
-        # Free memory if necessary
-        model_management.free_memory(
-            model_management.get_total_memory(model_management.get_torch_device()),
-            model_management.get_torch_device(),
-            keep_loaded=[sd_model] + model_data.loaded_sd_models[1:]  # Keep the newly loaded model and others
-        )
 
         shared.opts.data["sd_checkpoint_hash"] = checkpoint_info.sha256
 
@@ -783,36 +1001,81 @@ elif shared.opts.model_management_type == 'New':
         timer.record("calculate empty prompt")
 
         print(f"Model {checkpoint_info.title} loaded in {timer.summary()}.")
+        
+        # One final cleanup to release any temporary objects
+        force_memory_deallocation()
+    else:
+        print("Error: Model failed to load")
 
-        return sd_model
+    return sd_model
 
+def set_model_active(model_index):
+    """Set a specific model as active based on its index in loaded_sd_models"""
+    global model_data
+    
+    try:
+        model_index = int(model_index)
+    except:
+        return "Model index must be a number"
+    
+    if not model_data.loaded_sd_models:
+        return "No models currently loaded"
+    
+    if model_index < 0 or model_index >= len(model_data.loaded_sd_models):
+        return f"Invalid model index: {model_index}, valid range is 0-{len(model_data.loaded_sd_models)-1}"
+    
+    # Get the model we want to activate
+    model_to_activate = model_data.loaded_sd_models[model_index]
+    
+    # If it's already active, no need to do anything
+    if model_data.sd_model == model_to_activate:
+        return f"Model {model_to_activate.sd_checkpoint_info.title} is already active"
+    
+    # Move the model to the front of the list and set it as active
+    model_data.loaded_sd_models.remove(model_to_activate)
+    model_data.loaded_sd_models.insert(0, model_to_activate)
+    model_data.set_sd_model(model_to_activate, already_loaded=True)
+    
+    return f"Activated model: {model_to_activate.sd_checkpoint_info.title}"
 
 def unload_first_loaded_model():
+    """Completely unload the first loaded model using aggressive teardown"""
     global model_data
     if not model_data.loaded_sd_models:
         return
 
     first_loaded_model = model_data.loaded_sd_models.pop(-1)  # Remove the last item (first loaded)
-    print(f"Unloading first loaded model: {first_loaded_model.sd_checkpoint_info.title}...")
     
-    if hasattr(first_loaded_model, 'model_unload'):
-        first_loaded_model.model_unload()
-    elif hasattr(first_loaded_model, 'to'):
-        first_loaded_model.to('cpu')
+    # Get the model name safely
+    if hasattr(first_loaded_model, 'sd_checkpoint_info'):
+        if hasattr(first_loaded_model.sd_checkpoint_info, 'title'):
+            model_name = first_loaded_model.sd_checkpoint_info.title
+        else:
+            model_name = str(first_loaded_model.sd_checkpoint_info)
+    elif hasattr(first_loaded_model, 'filename'):
+        model_name = first_loaded_model.filename
+    else:
+        model_name = "Unknown"
+        
+    print(f"Unloading first loaded model: {model_name}")
     
-    unloaded_models = model_management.free_memory(
-        model_management.get_total_memory(model_management.get_torch_device()), 
-        model_management.get_torch_device(), 
-        keep_loaded=model_data.loaded_sd_models
-    )
+    # Complete teardown of the model
+    complete_model_teardown(first_loaded_model)
     
-    # Remove any additional unloaded models from loaded_sd_models
-    for unloaded_model in unloaded_models:
-        if unloaded_model in model_data.loaded_sd_models:
-            model_data.loaded_sd_models.remove(unloaded_model)
+    # Force reference removal
+    first_loaded_model = None
     
-    model_management.soft_empty_cache()
+    # Force GC
     gc.collect()
+    gc.collect()
+    
+    # Get memory statistics
+    import psutil
+    process = psutil.Process()
+    mem_info = process.memory_info()
+    print(f"Current memory usage after unload: RSS={mem_info.rss/(1024*1024*1024):.2f} GB")
+    
+    return None  # Return None instead of the model to ensure no references remain
 
 def reuse_model_from_already_loaded(sd_model, checkpoint_info, timer):
     pass
@@ -821,9 +1084,216 @@ def reuse_model_from_already_loaded(sd_model, checkpoint_info, timer):
 def reload_model_weights(sd_model=None, info=None, forced_reload=False):
     return load_model(info)
 
+import os
+# Prevent interactive prompts for optional dependencies
+os.environ['KORNIA_INSTALLATION_MODE'] = 'silent'  # Prevent boxmot installation prompt
 
-def unload_model_weights(sd_model=None, info=None):
-    return sd_model
+def emergency_gc():
+    """Last resort function to try to free memory when all else fails"""
+    import gc
+    import psutil
+    
+    # Get initial memory usage
+    process = psutil.Process()
+    initial_mem = process.memory_info().rss
+    
+    print(f"EMERGENCY CLEANUP: Initial memory: {initial_mem/(1024*1024*1024):.2f} GB")
+    
+    # First run normal GC
+    collected = gc.collect()
+    print(f"Normal GC collected {collected} objects")
+    
+    # Get all objects in memory
+    gc_objects = gc.get_objects()
+    
+    # Function to test if an object looks like it might be a model or a large tensor
+    def is_model_or_large_tensor(obj):
+        try:
+            # Avoid the FutureWarning by simplifying the checks
+            # Check if it's a large tensor
+            if type(obj).__name__ == 'Tensor':
+                is_cuda = False
+                try:
+                    is_cuda = obj.is_cuda
+                except:
+                    pass
+                
+                if not is_cuda:
+                    try:
+                        if obj.numel() > 1000000:
+                            return True
+                    except:
+                        pass
+                
+            # Check if it might be a model - avoid warnings
+            if hasattr(obj, 'state_dict'):
+                state_dict_attr = getattr(obj, 'state_dict', None)
+                if callable(state_dict_attr):
+                    return True
+                
+            # Check if it's a module with parameters
+            if hasattr(obj, 'parameters'):
+                params_attr = getattr(obj, 'parameters', None)
+                if callable(params_attr):
+                    try:
+                        params = list(params_attr())
+                        if len(params) > 0:
+                            return True
+                    except:
+                        pass
+                
+            return False
+        except:
+            return False
+    
+    # Find and clear large objects
+    large_objects = []
+    try:
+        # Process in batches to avoid memory spikes
+        for i in range(0, len(gc_objects), 1000):
+            batch = gc_objects[i:i+1000]
+            large_objects.extend([obj for obj in batch if is_model_or_large_tensor(obj)])
+    except:
+        pass
+        
+    print(f"Found {len(large_objects)} potential large objects")
+    
+    # Try to clear these objects
+    for obj in large_objects:
+        try:
+            if type(obj).__name__ == 'Tensor':
+                try:
+                    obj.set_()  # Reset the tensor to empty
+                except:
+                    pass
+            elif hasattr(obj, 'parameters'):
+                try:
+                    for param in obj.parameters():
+                        if hasattr(param, 'data'):
+                            param.data = None
+                except:
+                    pass
+        except:
+            pass
+    
+    # Clean up and force collect again
+    del large_objects
+    del gc_objects
+    gc.collect()
+    
+    # Check memory usage after cleanup
+    final_mem = process.memory_info().rss
+    print(f"EMERGENCY CLEANUP: Final memory: {final_mem/(1024*1024*1024):.2f} GB")
+    print(f"Memory change: {(final_mem-initial_mem)/(1024*1024):.2f} MB")
+    
+    return "Emergency cleanup completed"
+
+
+def unload_model_weights(model=None):
+    """Unload the currently active model to RAM"""
+    if model is None:
+        model = model_data.sd_model
+        
+    if model is None:
+        return "No model is currently loaded"
+        
+    print(f"Unloading model weights for {model.sd_checkpoint_info.title}")
+    
+    if hasattr(model, 'model_unload'):
+        model.model_unload()
+    elif hasattr(model, 'to') and hasattr(model, 'offload_device'):
+        model.to(model.offload_device)
+    else:
+        model.to('cpu')
+    
+    model_management.soft_empty_cache(force=True)
+    gc.collect()
+    
+    return f"Unloaded model {model.sd_checkpoint_info.title} to RAM"
+
+def load_model_to_device(model=None):
+    """Load a model from RAM to VRAM"""
+    if model is None:
+        model = model_data.sd_model
+        
+    if model is None:
+        return "No model is currently loaded"
+    
+    print(f"Loading model weights for {model.sd_checkpoint_info.title} to device")
+    
+    if hasattr(model, 'model_load'):
+        model.model_load()
+    else:
+        device = model_management.get_torch_device()
+        model.to(device)
+    
+    return f"Loaded model {model.sd_checkpoint_info.title} to device"
+
+def list_loaded_models():
+    """Return a list of all currently loaded models"""
+    if not model_data.loaded_sd_models:
+        return "No models currently loaded"
+    
+    import psutil
+    process = psutil.Process()
+    total_ram = process.memory_info().rss / (1024 * 1024 * 1024)
+    
+    result = f"Currently loaded models (Total RAM: {total_ram:.2f} GB):\n"
+    for i, model in enumerate(model_data.loaded_sd_models):
+        active = " (active)" if model == model_data.sd_model else ""
+        result += f"[{i}] {model.sd_checkpoint_info.title}{active}\n"
+    
+    return result
+
+def unload_specific_model(model_index):
+    """Unload a specific model by index"""
+    try:
+        model_index = int(model_index)
+    except:
+        return "Model index must be a number"
+    
+    if not model_data.loaded_sd_models:
+        return "No models currently loaded"
+    
+    if model_index < 0 or model_index >= len(model_data.loaded_sd_models):
+        return f"Invalid model index: {model_index}, valid range is 0-{len(model_data.loaded_sd_models)-1}"
+    
+    model_to_unload = model_data.loaded_sd_models[model_index]
+    name = model_to_unload.sd_checkpoint_info.title
+    
+    # Check if we're unloading the active model
+    is_active = model_to_unload == model_data.sd_model
+    
+    # If unloading active model, switch to another model first
+    if is_active and len(model_data.loaded_sd_models) > 1:
+        new_index = 0 if model_index != 0 else 1
+        new_active_model = model_data.loaded_sd_models[new_index]
+        print(f"Switching active model from {name} to {new_active_model.sd_checkpoint_info.title}")
+        model_data.set_sd_model(new_active_model, already_loaded=True)
+    
+    # Remove from list
+    model_data.loaded_sd_models.pop(model_index)
+    
+    # Unload model
+    if hasattr(model_to_unload, 'model_unload'):
+        print(f"Calling model_unload() for {name}")
+        model_to_unload.model_unload()
+    elif hasattr(model_to_unload, 'to') and hasattr(model_to_unload, 'offload_device'):
+        print(f"Moving {name} to {model_to_unload.offload_device}")
+        model_to_unload.to(model_to_unload.offload_device)
+    else:
+        print(f"Moving {name} to CPU")
+        model_to_unload.to('cpu')
+    
+    # Force cleanup
+    model_management.soft_empty_cache(force=True)
+    gc.collect()
+    
+    status = f"Unloaded model: {name}"
+    if is_active and len(model_data.loaded_sd_models) == 0:
+        status += "\nWarning: No active model remaining"
+    
+    return status
 
 
 def apply_token_merging(sd_model, token_merging_ratio):

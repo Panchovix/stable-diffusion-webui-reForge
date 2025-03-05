@@ -25,6 +25,7 @@ import sys
 import platform
 import weakref
 import gc
+import logging
 
 class VRAMState(Enum):
     DISABLED = 0    #No vram present: no need to move models to vram
@@ -529,12 +530,12 @@ def free_memory(memory_required, device, keep_loaded=[]):
         unloaded_models.append(current_loaded_models.pop(i))
 
     if len(unloaded_model) > 0:
-        soft_empty_cache()
+        soft_empty_cache(force=True)
     else:
         if vram_state != VRAMState.HIGH_VRAM:
             mem_free_total, mem_free_torch = get_free_memory(device, torch_free_too=True)
             if mem_free_torch > mem_free_total * 0.25:
-                soft_empty_cache()
+                soft_empty_cache(force=True)
     return unloaded_models
 
 def enable_ipadapter_layer_cache():
@@ -579,13 +580,20 @@ def load_models_gpu(models, memory_required=0, force_patch_weights=False, minimu
         for i in to_unload:
             current_loaded_models.pop(i).model.detach(unpatch_all=False)
 
+    # Force memory cleanup before loading new models
+    soft_empty_cache(force=True)
+
     total_memory_required = {}
     for loaded_model in models_to_load:
-        total_memory_required[loaded_model.device] = total_memory_required.get(loaded_model.device, 0) + loaded_model.model_memory_required(loaded_model.device)
+        device_mem = loaded_model.model_memory_required(loaded_model.device)
+        total_memory_required[loaded_model.device] = total_memory_required.get(loaded_model.device, 0) + device_mem
+        logging.debug(f"Model requires {device_mem/(1024*1024):.2f} MB on {loaded_model.device}")
 
     for device in total_memory_required:
         if device != torch.device("cpu"):
-            free_memory(total_memory_required[device] * 1.1 + extra_mem, device)
+            mem_needed = total_memory_required[device] * 1.3 + extra_mem
+            logging.debug(f"Freeing {mem_needed/(1024*1024):.2f} MB on {device}")
+            free_memory(mem_needed, device)
 
     for device in total_memory_required:
         if device != torch.device("cpu"):
@@ -612,8 +620,17 @@ def load_models_gpu(models, memory_required=0, force_patch_weights=False, minimu
         if vram_set_state == VRAMState.NO_VRAM:
             lowvram_model_memory = 0.1
 
-        loaded_model.model_load(lowvram_model_memory, force_patch_weights=force_patch_weights)
-        current_loaded_models.insert(0, loaded_model)
+        # loaded_model.model_load(lowvram_model_memory, force_patch_weights=force_patch_weights)
+        # current_loaded_models.insert(0, loaded_model)
+        try:
+            logging.debug(f"Loading model to {model.load_device}")
+            loaded_model.model_load(lowvram_model_memory, force_patch_weights=force_patch_weights)
+            current_loaded_models.insert(0, loaded_model)
+            logging.debug(f"Successfully loaded model to {model.load_device}")
+        except Exception as e:
+            logging.debug(f"Error loading model: {str(e)}")
+            soft_empty_cache(force=True)
+            raise e
     return
 
 def load_model_gpu(model):

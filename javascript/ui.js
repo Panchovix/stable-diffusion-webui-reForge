@@ -39,7 +39,7 @@ function extract_image_from_gallery(gallery) {
         return [null];
     }
     if (gallery.length == 1) {
-        return [gallery[0]];
+        return [[gallery[0]]];
     }
 
     var index = selected_gallery_index();
@@ -49,7 +49,7 @@ function extract_image_from_gallery(gallery) {
         index = 0;
     }
 
-    return [gallery[index]];
+    return [[gallery[index]]];
 }
 
 window.args_to_array = Array.from; // Compatibility with e.g. extensions that may expect this to be around
