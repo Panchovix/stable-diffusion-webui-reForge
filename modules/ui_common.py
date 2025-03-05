@@ -12,12 +12,13 @@ from modules.infotext_utils import image_from_url_text
 import modules.images
 from modules.ui_components import ToolButton
 import modules.infotext_utils as parameters_copypaste
+from PIL import Image
 
-folder_symbol = '\U0001f4c2'  # 📂
-refresh_symbol = '\U0001f504'  # 🔄
+folder_symbol = '\U0001f4c2'  # ≡ƒôé
+refresh_symbol = '\U0001f504'  # ≡ƒöä
 
 
-def update_generation_info(generation_info, html_info, img_index):
+def update_generation_info(generation_info:str, html_info:str, img_index:str):
     try:
         generation_info = json.loads(generation_info)
         if img_index < 0 or img_index >= len(generation_info["infotexts"]):
@@ -61,7 +62,7 @@ def update_logfile(logfile_path, fields):
         writer.writerows(rows)
 
 
-def save_files(js_data, images, do_make_zip, index):
+def save_files(js_data, images:list[tuple[str,str]], do_make_zip, index):
     filenames = []
     fullfns = []
     parsed_infotexts = []
@@ -115,7 +116,7 @@ def save_files(js_data, images, do_make_zip, index):
                 writer.writerow(fields)
 
         for image_index, filedata in enumerate(images, start_index):
-            image = image_from_url_text(filedata)
+            image = filedata[0]
 
             is_grid = image_index < p.index_of_first_image
 
@@ -154,7 +155,9 @@ def save_files(js_data, images, do_make_zip, index):
 
 @dataclasses.dataclass
 class OutputPanel:
-    gallery = None
+    # Gallery returns [(PIL,Caption:str)]
+    # I hate gradio doesn't allow me to type check this.
+    gallery:gr.Gallery|None = None
     generation_info = None
     infotext = None
     html_log = None
@@ -184,28 +187,29 @@ def create_output_panel(tabname, outdir, toprow=None):
 
         with gr.Column(variant='panel', elem_id=f"{tabname}_results_panel"):
             with gr.Group(elem_id=f"{tabname}_gallery_container"):
-                res.gallery = gr.Gallery(label='Output', show_label=False, elem_id=f"{tabname}_gallery", columns=4, preview=True, height=shared.opts.gallery_height or None)
+                # XXX: Gradio 4 needs type="pil" for image saving to work. - Ristellise
+                res.gallery = gr.Gallery(label='Output', show_label=False, elem_id=f"{tabname}_gallery", columns=4, preview=True, height=shared.opts.gallery_height or None, interactive=False, type="pil", object_fit="contain")
 
             with gr.Row(elem_id=f"image_buttons_{tabname}", elem_classes="image-buttons"):
                 open_folder_button = ToolButton(folder_symbol, elem_id=f'{tabname}_open_folder', visible=not shared.cmd_opts.hide_ui_dir_config, tooltip="Open images output directory.")
 
                 if tabname != "extras":
-                    save = ToolButton('💾', elem_id=f'save_{tabname}', tooltip=f"Save the image to a dedicated directory ({shared.opts.outdir_save}).")
-                    save_zip = ToolButton('🗃️', elem_id=f'save_zip_{tabname}', tooltip=f"Save zip archive with images to a dedicated directory ({shared.opts.outdir_save})")
+                    save = ToolButton('≡ƒÆ╛', elem_id=f'save_{tabname}', tooltip=f"Save the image to a dedicated directory ({shared.opts.outdir_save}).")
+                    save_zip = ToolButton('≡ƒùâ∩╕Å', elem_id=f'save_zip_{tabname}', tooltip=f"Save zip archive with images to a dedicated directory ({shared.opts.outdir_save})")
 
                 buttons = {
-                    'img2img': ToolButton('🖼️', elem_id=f'{tabname}_send_to_img2img', tooltip="Send image and generation parameters to img2img tab."),
-                    'inpaint': ToolButton('🎨️', elem_id=f'{tabname}_send_to_inpaint', tooltip="Send image and generation parameters to img2img inpaint tab."),
-                    'extras': ToolButton('📐', elem_id=f'{tabname}_send_to_extras', tooltip="Send image and generation parameters to extras tab."),
-                    'svd': ToolButton('🎬', elem_id=f'{tabname}_send_to_svd', tooltip="Send image and generation parameters to SVD tab."),
+                    'img2img': ToolButton('≡ƒû╝∩╕Å', elem_id=f'{tabname}_send_to_img2img', tooltip="Send image and generation parameters to img2img tab."),
+                    'inpaint': ToolButton('≡ƒÄ¿∩╕Å', elem_id=f'{tabname}_send_to_inpaint', tooltip="Send image and generation parameters to img2img inpaint tab."),
+                    'extras': ToolButton('≡ƒôÉ', elem_id=f'{tabname}_send_to_extras', tooltip="Send image and generation parameters to extras tab."),
+                    'svd': ToolButton('≡ƒÄ¼', elem_id=f'{tabname}_send_to_svd', tooltip="Send image and generation parameters to SVD tab."),
                 }
 
                 if tabname == 'txt2img':
-                    res.button_upscale = ToolButton('✨', elem_id=f'{tabname}_upscale', tooltip="Create an upscaled version of the current image using hires fix settings.")
+                    res.button_upscale = ToolButton('Γ£¿', elem_id=f'{tabname}_upscale', tooltip="Create an upscaled version of the current image using hires fix settings.")
 
             open_folder_button.click(
                 fn=lambda images, index: open_folder(shared.opts.outdir_samples or outdir, images, index),
-                _js="(y, w) => [y, selected_gallery_index()]",
+                js="(y, w) => [y, selected_gallery_index()]",
                 inputs=[
                     res.gallery,
                     open_folder_button,  # placeholder for index
@@ -225,15 +229,15 @@ def create_output_panel(tabname, outdir, toprow=None):
                         generation_info_button = gr.Button(visible=False, elem_id=f"{tabname}_generation_info_button")
                         generation_info_button.click(
                             fn=update_generation_info,
-                            _js="function(x, y, z){ return [x, y, selected_gallery_index()] }",
+                            js="function(x, y, z){ return [x, y, selected_gallery_index()] }",
                             inputs=[res.generation_info, res.infotext, res.infotext],
                             outputs=[res.infotext, res.infotext],
-                            show_progress=False,
+                            show_progress='hidden',
                         )
 
                     save.click(
                         fn=call_queue.wrap_gradio_call_no_job(save_files),
-                        _js="(x, y, z, w) => [x, y, false, selected_gallery_index()]",
+                        js="(x, y, z, w) => [x, y, false, selected_gallery_index()]",
                         inputs=[
                             res.generation_info,
                             res.gallery,
@@ -244,12 +248,12 @@ def create_output_panel(tabname, outdir, toprow=None):
                             download_files,
                             res.html_log,
                         ],
-                        show_progress=False,
+                        show_progress='hidden',
                     )
 
                     save_zip.click(
                         fn=call_queue.wrap_gradio_call_no_job(save_files),
-                        _js="(x, y, z, w) => [x, y, true, selected_gallery_index()]",
+                        js="(x, y, z, w) => [x, y, true, selected_gallery_index()]",
                         inputs=[
                             res.generation_info,
                             res.gallery,
@@ -319,8 +323,8 @@ def setup_dialog(button_show, dialog, *, button_close=None):
         fn=lambda: gr.update(visible=True),
         inputs=[],
         outputs=[dialog],
-    ).then(fn=None, _js="function(){ popupId('" + dialog.elem_id + "'); }")
+    ).then(fn=None, js="function(){ popupId('" + dialog.elem_id + "'); }")
 
     if button_close:
-        button_close.click(fn=None, _js="closePopup")
+        button_close.click(fn=None, js="closePopup")
 
