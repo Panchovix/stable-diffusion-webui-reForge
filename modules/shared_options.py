@@ -231,21 +231,6 @@ For img2img, VAE is used to process user's input image before the sampling, and 
     "sd_vae_decode_method": OptionInfo("Full", "VAE type for decode", gr.Radio, {"choices": ["Full", "TAESD"]}, infotext='VAE Decoder').info("method to decode latent to image"),
 }))
 
-options_templates.update(options_section(('model_management_type', "Model Magement Type", "sd"), {
-    "model_management_type": OptionInfo(
-        "Old",
-        "MM Type",
-        gr.Radio,
-        lambda: {"choices": ["Old", "New"]}
-    ).info(
-        """<p>Choose the Model Management Type:</p>
-        <p><strong>A restart of the UI is required for changes to apply effect.</strong></p>
-        <p><strong>Old:</strong> Use the old way to manage models as it was on OG Forge. More stable and no RAM leak, but multiple checkpoints are slower because it doesn't have multiple checkpoints support on VRAM.<br>
-        <p><strong>New:</strong> Use the new way to manage models. It less stable and for now it has a RAM leak issue. Multiple checkpoints work fine to be kept on VRAM.<br>
-        """
-    ),
-}))
-
 options_templates.update(options_section(('sd_sampler_cfg_denoiser', "SD Sampler CFG Denoiser", "sd"), {
     "sd_sampler_cfg_denoiser": OptionInfo(
         "reForge",
