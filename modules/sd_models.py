@@ -346,6 +346,21 @@ def complete_model_teardown(model):
         
     print(f"Performing complete teardown of model: {model_name}")
     
+    # Create a set of objects to preserve (don't nullify these)
+    preserve_attributes = set()
+    
+    # Preserve VAE structure while still clearing its internal tensors
+    if hasattr(model, 'forge_objects') and hasattr(model.forge_objects, 'vae'):
+        preserve_attributes.add(id(model.forge_objects.vae))
+        # Also preserve encoder/decoder structure but not their weights
+        if hasattr(model.forge_objects.vae, 'model'):
+            preserve_attributes.add(id(model.forge_objects.vae.model))
+            if hasattr(model.forge_objects.vae.model, 'encoder'):
+                preserve_attributes.add(id(model.forge_objects.vae.model.encoder))
+            if hasattr(model.forge_objects.vae.model, 'decoder'):
+                preserve_attributes.add(id(model.forge_objects.vae.model.decoder))
+    
+    # Safer implementation that avoids FutureWarnings and preserves critical structures
     def replace_attributes(obj, path="", visited=None, depth=0):
         if visited is None:
             visited = set()
@@ -360,6 +375,11 @@ def complete_model_teardown(model):
             return
         visited.add(obj_id)
         
+        # Skip objects that need to be preserved
+        if obj_id in preserve_attributes:
+            # Still process children of preserved objects, just don't nullify the structure
+            pass
+        
         try:
             # Handle torch.nn.Module
             if hasattr(obj, 'parameters') and hasattr(obj, 'named_parameters'):
@@ -369,7 +389,6 @@ def complete_model_teardown(model):
                         try:
                             if hasattr(param, 'data'):
                                 param.data = None
-                                delattr(obj, name)
                         except:
                             pass
                 except:
@@ -381,7 +400,6 @@ def complete_model_teardown(model):
                         try:
                             if hasattr(buffer, 'data'):
                                 buffer.data = None
-                                delattr(obj, name)
                         except:
                             pass
                 except:
@@ -392,7 +410,9 @@ def complete_model_teardown(model):
                     for name, module in list(obj.named_children()):
                         try:
                             replace_attributes(module, f"{path}.{name}", visited, depth+1)
-                            setattr(obj, name, None)
+                            # Only nullify if not in preserve list
+                            if id(module) not in preserve_attributes:
+                                setattr(obj, name, None)
                         except:
                             pass
                 except:
@@ -405,13 +425,17 @@ def complete_model_teardown(model):
                         val = obj[key]
                         if hasattr(val, 'parameters') or hasattr(val, 'numel'):
                             replace_attributes(val, f"{path}[{key}]", visited, depth+1)
-                            obj[key] = None
+                            # Only nullify if not in preserve list
+                            if id(val) not in preserve_attributes:
+                                obj[key] = None
                     except:
                         pass
-                try:
-                    obj.clear()
-                except:
-                    pass
+                # Don't clear dictionaries that might contain preserved objects
+                if not any(id(val) in preserve_attributes for val in obj.values() if val is not None):
+                    try:
+                        obj.clear()
+                    except:
+                        pass
                     
             # Handle lists and tuples
             elif isinstance(obj, (list, tuple)) and len(obj) > 0:
@@ -434,7 +458,9 @@ def complete_model_teardown(model):
             if attr is not None:
                 if isinstance(attr, (dict, list, tuple)) or hasattr(attr, 'parameters') or hasattr(attr, 'numel'):
                     replace_attributes(attr, attr_name)
-                    setattr(model, attr_name, None)
+                    # Only nullify attributes that aren't in the preserve list
+                    if id(attr) not in preserve_attributes:
+                        setattr(model, attr_name, None)
         except:
             pass
     
@@ -989,6 +1015,16 @@ def load_model(checkpoint_info=None, already_loaded_state_dict=None):
         vae_file, vae_source = sd_vae.resolve_vae(checkpoint_info.filename).tuple()
         sd_vae.load_vae(sd_model, vae_file, vae_source)
         timer.record("load VAE")
+        if hasattr(sd_model, 'forge_objects') and hasattr(sd_model.forge_objects, 'vae'):
+            vae = sd_model.forge_objects.vae
+            if hasattr(vae, 'model'):
+                if not hasattr(vae.model, 'encoder') or vae.model.encoder is None:
+                    print("Warning: VAE encoder was null, reinitializing VAE")
+                    # Reload the VAE from scratch
+                    sd_vae.delete_base_vae()
+                    sd_vae.clear_loaded_vae()
+                    vae_file, vae_source = sd_vae.resolve_vae(checkpoint_info.filename).tuple()
+                    sd_vae.load_vae(sd_model, vae_file, vae_source)
 
         sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings(force_reload=True)
         timer.record("load textual inversion embeddings")
