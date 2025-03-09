@@ -58,6 +58,8 @@ def txt2img_create_processing(id_task: str, request: gr.Request, prompt: str, ne
 
 
 def txt2img_upscale_function(id_task: str, request: gr.Request, gallery, gallery_index, generation_info, *args):
+    if isinstance(gallery_index,str):
+        gallery_index = int(gallery_index)
     assert len(gallery) > 0, 'No image to upscale'
     assert 0 <= gallery_index < len(gallery), f'Bad image index: {gallery_index}'
 
