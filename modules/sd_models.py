@@ -554,21 +554,6 @@ def force_memory_deallocation():
     models_loaded_count += 1
     peak_memory_usage = max(peak_memory_usage, post_mem)
     
-    # Emergency deallocation if memory gets too high
-    if post_mem > 50 * 1024 * 1024 * 1024:  # 50GB threshold
-        print("EMERGENCY MEMORY CLEANUP - Memory usage critically high")
-        import sys
-        for module_name in list(sys.modules.keys()):
-            if 'ldm' in module_name or 'forge' in module_name:
-                if module_name not in ['__main__', 'sys', 'os', 'gc']:
-                    try:
-                        del sys.modules[module_name]
-                    except:
-                        pass
-        # Clear all loaded models completely
-        model_data.loaded_sd_models.clear()
-        gc.collect()
-    
     return f"Memory cleanup: {post_mem/(1024*1024*1024):.2f} GB used"
 
 disable_checkpoint_caching = True  # Global flag to completely disable checkpoint caching
@@ -966,14 +951,6 @@ def load_model(checkpoint_info=None, already_loaded_state_dict=None):
             model_data.set_sd_model(loaded_model, already_loaded=True)
             return loaded_model
 
-    # Emergency cleanup if memory usage is high
-    import psutil
-    process = psutil.Process()
-    current_mem = process.memory_info().rss
-    if current_mem > 25 * 1024 * 1024 * 1024:  # 25GB threshold
-        print(f"WARNING: High memory usage detected ({current_mem/(1024*1024*1024):.2f} GB), performing emergency cleanup")
-        emergency_gc()
-
     # Enforce model limit
     while len(model_data.loaded_sd_models) >= shared.opts.sd_checkpoints_limit:
         unload_first_loaded_model()
@@ -1119,110 +1096,6 @@ def reuse_model_from_already_loaded(sd_model, checkpoint_info, timer):
 
 def reload_model_weights(sd_model=None, info=None, forced_reload=False):
     return load_model(info)
-
-import os
-# Prevent interactive prompts for optional dependencies
-os.environ['KORNIA_INSTALLATION_MODE'] = 'silent'  # Prevent boxmot installation prompt
-
-def emergency_gc():
-    """Last resort function to try to free memory when all else fails"""
-    import gc
-    import psutil
-    
-    # Get initial memory usage
-    process = psutil.Process()
-    initial_mem = process.memory_info().rss
-    
-    print(f"EMERGENCY CLEANUP: Initial memory: {initial_mem/(1024*1024*1024):.2f} GB")
-    
-    # First run normal GC
-    collected = gc.collect()
-    print(f"Normal GC collected {collected} objects")
-    
-    # Get all objects in memory
-    gc_objects = gc.get_objects()
-    
-    # Function to test if an object looks like it might be a model or a large tensor
-    def is_model_or_large_tensor(obj):
-        try:
-            # Avoid the FutureWarning by simplifying the checks
-            # Check if it's a large tensor
-            if type(obj).__name__ == 'Tensor':
-                is_cuda = False
-                try:
-                    is_cuda = obj.is_cuda
-                except:
-                    pass
-                
-                if not is_cuda:
-                    try:
-                        if obj.numel() > 1000000:
-                            return True
-                    except:
-                        pass
-                
-            # Check if it might be a model - avoid warnings
-            if hasattr(obj, 'state_dict'):
-                state_dict_attr = getattr(obj, 'state_dict', None)
-                if callable(state_dict_attr):
-                    return True
-                
-            # Check if it's a module with parameters
-            if hasattr(obj, 'parameters'):
-                params_attr = getattr(obj, 'parameters', None)
-                if callable(params_attr):
-                    try:
-                        params = list(params_attr())
-                        if len(params) > 0:
-                            return True
-                    except:
-                        pass
-                
-            return False
-        except:
-            return False
-    
-    # Find and clear large objects
-    large_objects = []
-    try:
-        # Process in batches to avoid memory spikes
-        for i in range(0, len(gc_objects), 1000):
-            batch = gc_objects[i:i+1000]
-            large_objects.extend([obj for obj in batch if is_model_or_large_tensor(obj)])
-    except:
-        pass
-        
-    print(f"Found {len(large_objects)} potential large objects")
-    
-    # Try to clear these objects
-    for obj in large_objects:
-        try:
-            if type(obj).__name__ == 'Tensor':
-                try:
-                    obj.set_()  # Reset the tensor to empty
-                except:
-                    pass
-            elif hasattr(obj, 'parameters'):
-                try:
-                    for param in obj.parameters():
-                        if hasattr(param, 'data'):
-                            param.data = None
-                except:
-                    pass
-        except:
-            pass
-    
-    # Clean up and force collect again
-    del large_objects
-    del gc_objects
-    gc.collect()
-    
-    # Check memory usage after cleanup
-    final_mem = process.memory_info().rss
-    print(f"EMERGENCY CLEANUP: Final memory: {final_mem/(1024*1024*1024):.2f} GB")
-    print(f"Memory change: {(final_mem-initial_mem)/(1024*1024):.2f} MB")
-    
-    return "Emergency cleanup completed"
 
 
 def unload_model_weights(model=None):

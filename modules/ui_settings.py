@@ -196,7 +196,6 @@ class UiSettings:
                         model_index_input = gr.Number(value=0, label="Model index", elem_id="model_index_input", precision=0, minimum=0)
                     with gr.Row():
                         force_memory_cleanup = gr.Button(value='Force Memory Cleanup (RAM)', elem_id="force_memory_cleanup")
-                        emergency_memory_cleanup = gr.Button(value='Emergency Memory Cleanup', elem_id="emergency_memory_cleanup", variant="stop")
                     with gr.Row():
                         calculate_all_checkpoint_hash = gr.Button(value='Calculate hash for all checkpoint', elem_id="calculate_all_checkpoint_hash")
                         calculate_all_checkpoint_hash_threads = gr.Number(value=1, label="Number of parallel calculations", elem_id="calculate_all_checkpoint_hash_threads", precision=0, minimum=1)
@@ -252,12 +251,6 @@ class UiSettings:
 
             force_memory_cleanup.click(
                 fn=lambda: sd_models.force_memory_deallocation(),
-                inputs=[],
-                outputs=[self.result]
-            )
-
-            emergency_memory_cleanup.click(
-                fn=lambda: sd_models.emergency_gc(),
                 inputs=[],
                 outputs=[self.result]
             )
