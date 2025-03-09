@@ -191,6 +191,12 @@ class UiSettings:
                         unload_sd_model = gr.Button(value='Unload SD checkpoint to RAM', elem_id="sett_unload_sd_model")
                         reload_sd_model = gr.Button(value='Load SD checkpoint to VRAM from RAM', elem_id="sett_reload_sd_model")
                     with gr.Row():
+                        list_models_btn = gr.Button(value='List loaded models', elem_id="sett_list_models")
+                        unload_specific_model_btn = gr.Button(value='Unload specific model', elem_id="sett_unload_specific")
+                        model_index_input = gr.Number(value=0, label="Model index", elem_id="model_index_input", precision=0, minimum=0)
+                    with gr.Row():
+                        force_memory_cleanup = gr.Button(value='Force Memory Cleanup (RAM)', elem_id="force_memory_cleanup")
+                    with gr.Row():
                         calculate_all_checkpoint_hash = gr.Button(value='Calculate hash for all checkpoint', elem_id="calculate_all_checkpoint_hash")
                         calculate_all_checkpoint_hash_threads = gr.Number(value=1, label="Number of parallel calculations", elem_id="calculate_all_checkpoint_hash_threads", precision=0, minimum=1)
 
@@ -214,15 +220,37 @@ class UiSettings:
                     return f'{text} in {t.total:.1f}s'
 
                 return handler
+            
+            def get_max_model_index():
+                # Get maximum valid index, default to 0 if no models loaded
+                return max(0, len(sd_models.model_data.loaded_sd_models) - 1)
 
             unload_sd_model.click(
-                fn=call_func_and_return_text(sd_models.unload_model_weights, 'Unloaded the checkpoint'),
+                fn=sd_models.unload_model_weights,
                 inputs=[],
                 outputs=[self.result]
             )
 
             reload_sd_model.click(
-                fn=call_func_and_return_text(lambda: sd_models.send_model_to_device(shared.sd_model), 'Loaded the checkpoint'),
+                fn=sd_models.load_model_to_device,
+                inputs=[],
+                outputs=[self.result]
+            )
+
+            list_models_btn.click(
+                fn=lambda: (sd_models.list_loaded_models(), gr.Number.update(maximum=get_max_model_index())),
+                inputs=[],
+                outputs=[self.result, model_index_input]
+            )
+
+            unload_specific_model_btn.click(
+                fn=sd_models.unload_specific_model,
+                inputs=[model_index_input],
+                outputs=[self.result]
+            )
+
+            force_memory_cleanup.click(
+                fn=lambda: sd_models.force_memory_deallocation(),
                 inputs=[],
                 outputs=[self.result]
             )

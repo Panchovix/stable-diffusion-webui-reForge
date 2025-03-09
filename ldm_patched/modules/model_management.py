@@ -10,6 +10,7 @@ from modules_forge import stream
 import torch
 import sys
 import platform
+import logging
 
 class VRAMState(Enum):
     DISABLED = 0    #No vram present: no need to move models to vram
@@ -417,7 +418,10 @@ def unload_model_clones(model):
 def free_memory(memory_required, device, keep_loaded=[]):
     offload_everything = ALWAYS_VRAM_OFFLOAD or vram_state == VRAMState.NO_VRAM
     unloaded_model = False
-    for i in range(len(current_loaded_models) -1, -1, -1):
+    
+    logging.debug(f"Freeing memory: required={memory_required}, device={device}, models to keep={[m.model.__class__.__name__ for m in keep_loaded]}")
+    
+    for i in range(len(current_loaded_models) - 1, -1, -1):
         if not offload_everything:
             if get_free_memory(device) > memory_required:
                 break
@@ -425,17 +429,19 @@ def free_memory(memory_required, device, keep_loaded=[]):
         if shift_model.device == device:
             if shift_model not in keep_loaded:
                 m = current_loaded_models.pop(i)
+                logging.debug(f"Unloading model from index {i}")
                 m.model_unload()
                 del m
                 unloaded_model = True
 
+    # Always perform memory cleanup after unloading
     if unloaded_model:
-        soft_empty_cache()
+        soft_empty_cache(force=True)
     else:
         if vram_state != VRAMState.HIGH_VRAM:
             mem_free_total, mem_free_torch = get_free_memory(device, torch_free_too=True)
             if mem_free_torch > mem_free_total * 0.25:
-                soft_empty_cache()
+                soft_empty_cache(force=True)
 
 def enable_ipadapter_layer_cache():
     return vram_state == VRAMState.HIGH_VRAM
@@ -448,22 +454,28 @@ def load_models_gpu(models, memory_required=0):
 
     models_to_load = []
     models_already_loaded = []
+    
+    logging.debug(f"Request to load {len(models)} models to GPU")
+    
     for x in models:
         loaded_model = LoadedModel(x, memory_required=memory_required)
 
         if loaded_model in current_loaded_models:
+            logging.debug(f"Model {getattr(getattr(x, '__class__', object), '__name__', 'Unknown')} already loaded")
             index = current_loaded_models.index(loaded_model)
             current_loaded_models.insert(0, current_loaded_models.pop(index))
             models_already_loaded.append(loaded_model)
         else:
             if hasattr(x, "model"):
-                print(f"To load target model {x.model.__class__.__name__}")
+                logging.debug(f"Model {x.model.__class__.__name__} needs to be loaded")
             models_to_load.append(loaded_model)
 
     if len(models_to_load) == 0:
+        print("No new models to load")
         devs = set(map(lambda a: a.device, models_already_loaded))
         for d in devs:
             if d != torch.device("cpu"):
+                logging.debug(f"Freeing memory on device {d} for already loaded models")
                 free_memory(extra_mem, d, models_already_loaded)
 
         moving_time = time.perf_counter() - execution_start_time
@@ -474,14 +486,21 @@ def load_models_gpu(models, memory_required=0):
 
     print(f"Begin to load {len(models_to_load)} model{'s' if len(models_to_load) > 1 else ''}")
 
+    # Force memory cleanup before loading new models
+    soft_empty_cache(force=True)
+    
     total_memory_required = {}
     for loaded_model in models_to_load:
         unload_model_clones(loaded_model.model)
-        total_memory_required[loaded_model.device] = total_memory_required.get(loaded_model.device, 0) + loaded_model.model_memory_required(loaded_model.device)
+        device_mem = loaded_model.model_memory_required(loaded_model.device)
+        total_memory_required[loaded_model.device] = total_memory_required.get(loaded_model.device, 0) + device_mem
+        logging.debug(f"Model requires {device_mem/(1024*1024):.2f} MB on {loaded_model.device}")
 
     for device in total_memory_required:
         if device != torch.device("cpu"):
-            free_memory(total_memory_required[device] * 1.3 + extra_mem, device, models_already_loaded)
+            mem_needed = total_memory_required[device] * 1.3 + extra_mem
+            logging.debug(f"Freeing {mem_needed/(1024*1024):.2f} MB on {device}")
+            free_memory(mem_needed, device, models_already_loaded)
 
     for loaded_model in models_to_load:
         model = loaded_model.model
@@ -499,21 +518,30 @@ def load_models_gpu(models, memory_required=0):
             minimal_inference_memory = minimum_inference_memory()
             estimated_remaining_memory = current_free_mem - model_memory - minimal_inference_memory
 
-            print("[Memory Management] Current Free GPU Memory (MB) = ", current_free_mem / (1024 * 1024))
-            print("[Memory Management] Model Memory (MB) = ", model_memory / (1024 * 1024))
-            print("[Memory Management] Minimal Inference Memory (MB) = ", minimal_inference_memory / (1024 * 1024))
-            print("[Memory Management] Estimated Remaining GPU Memory (MB) = ", estimated_remaining_memory / (1024 * 1024))
+            print(f"[Memory Management] Current Free GPU Memory (MB) = {current_free_mem/(1024*1024):.2f}")
+            print(f"[Memory Management] Model Memory (MB) = {model_memory/(1024*1024):.2f}")
+            print(f"[Memory Management] Minimal Inference Memory (MB) = {minimal_inference_memory/(1024*1024):.2f}")
+            print(f"[Memory Management] Estimated Remaining GPU Memory (MB) = {estimated_remaining_memory/(1024*1024):.2f}")
 
             if estimated_remaining_memory < 0:
                 vram_set_state = VRAMState.LOW_VRAM
                 async_kept_memory = (current_free_mem - minimal_inference_memory) / 1.3
                 async_kept_memory = int(max(0, async_kept_memory))
+                print(f"[Memory Management] Switching to LOW_VRAM mode, kept memory = {async_kept_memory/(1024*1024):.2f} MB")
 
         if vram_set_state == VRAMState.NO_VRAM:
             async_kept_memory = 0
 
-        loaded_model.model_load(async_kept_memory)
-        current_loaded_models.insert(0, loaded_model)
+        try:
+            logging.debug(f"Loading model to {model.load_device}")
+            loaded_model.model_load(async_kept_memory)
+            current_loaded_models.insert(0, loaded_model)
+            logging.debug(f"Successfully loaded model to {model.load_device}")
+        except Exception as e:
+            logging.debug(f"Error loading model: {str(e)}")
+            # Clean up on error
+            soft_empty_cache(force=True)
+            raise e
 
     moving_time = time.perf_counter() - execution_start_time
     print(f'Moving model(s) has taken {moving_time:.2f} seconds')
