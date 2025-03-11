@@ -384,17 +384,20 @@ def get_torch_device_name(device):
         return "CUDA {}: {}".format(device, torch.cuda.get_device_name(device))
 
 try:
-    logging.info("Device: {}".format(get_torch_device_name(get_torch_device())))
+    current_device = get_torch_device()
+    device_name = get_torch_device_name(current_device)
+    logging.info("Device: {}".format(device_name))
+    
+    # Check if it's an RTX device and provide hints
+    if 'rtx' in device_name.lower():
+        if not args.pin_shared_memory:
+            print('Hint: your device supports --pin-shared-memory for speed improvements if having 16GB or more VRAM. It may cause issues with 12GB VRAM or less.')
+        if not args.cuda_malloc:
+            print('Hint: your device supports --cuda-malloc for a bit less vram usage and small speed improvement')
+        if not args.cuda_stream:
+            print('Hint: your device supports --cuda-stream for potential speed improvements but it may cause issues on some GPUs that have 6-8GB VRAM or less.')
 except:
     logging.warning("Could not pick default device.")
-
-# if 'rtx' in get_torch_device_name():
-#     if not args.pin_shared_memory:
-#         print('Hint: your device supports --pin-shared-memory for speed improvements if having 16GB or more VRAM. It may cause issues with 12GB VRAM or less.')
-#     if not args.cuda_malloc:
-#         print('Hint: your device supports --cuda-malloc for a bit less vram usage and small speed improvement')
-#     if not args.cuda_stream:
-#         print('Hint: your device supports --cuda-stream for potential speed improvements but it may cause issues on some GPUs that have 6-8GB VRAM or less.')
 
 
 current_loaded_models = []
