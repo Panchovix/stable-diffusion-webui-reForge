@@ -1,7 +1,4 @@
-# 1st edit by https://github.com/comfyanonymous/ComfyUI
-# 2nd edit by Forge Official
-
-
+import json
 import ldm_patched.modules.supported_models
 import ldm_patched.modules.supported_models_base
 import ldm_patched.modules.utils
@@ -37,7 +34,7 @@ def calculate_transformer_depth(prefix, state_dict_keys, state_dict):
         return last_transformer_depth, context_dim, use_linear_in_transformer, time_stack, time_stack_cross
     return None
 
-def detect_unet_config(state_dict, key_prefix):
+def detect_unet_config(state_dict, key_prefix, metadata=None):
     state_dict_keys = list(state_dict.keys())
 
     if '{}joint_blocks.0.context_block.attn.qkv.weight'.format(key_prefix) in state_dict_keys: #mmdit model
@@ -81,29 +78,22 @@ def detect_unet_config(state_dict, key_prefix):
                 unet_config["x_block_self_attn_layers"].append(int(layer))
         return unet_config
 
-    if 'clf.1.weight' in state_dict_keys or '{}clf.1.weight'.format(key_prefix) in state_dict_keys:
-        print("Detected cascade model")
+    if '{}clf.1.weight'.format(key_prefix) in state_dict_keys: #stable cascade
         unet_config = {}
-        text_mapper_name = 'clip_txt_mapper.weight'
-        text_mapper_name_prefixed = '{}clip_txt_mapper.weight'.format(key_prefix)
-
-        if text_mapper_name in state_dict_keys or text_mapper_name_prefixed in state_dict_keys:
-            print("Detected stage c")
+        text_mapper_name = '{}clip_txt_mapper.weight'.format(key_prefix)
+        if text_mapper_name in state_dict_keys:
             unet_config['stable_cascade_stage'] = 'c'
-            w = state_dict.get(text_mapper_name, state_dict.get(text_mapper_name_prefixed))
-            if w.shape[0] == 1536:  # stage c lite
+            w = state_dict[text_mapper_name]
+            if w.shape[0] == 1536: #stage c lite
                 unet_config['c_cond'] = 1536
                 unet_config['c_hidden'] = [1536, 1536]
                 unet_config['nhead'] = [24, 24]
                 unet_config['blocks'] = [[4, 12], [12, 4]]
             elif w.shape[0] == 2048: #stage c full
                 unet_config['c_cond'] = 2048
-        elif 'clip_mapper.weight' in state_dict_keys or '{}clip_mapper.weight'.format(key_prefix) in state_dict_keys:
-            print("Detected stage b")
+        elif '{}clip_mapper.weight'.format(key_prefix) in state_dict_keys:
             unet_config['stable_cascade_stage'] = 'b'
-            down_block_key = 'down_blocks.1.0.channelwise.0.weight'
-            down_block_key_prefixed = '{}down_blocks.1.0.channelwise.0.weight'.format(key_prefix)
-            w = state_dict.get(down_block_key, state_dict.get(down_block_key_prefixed))
+            w = state_dict['{}down_blocks.1.0.channelwise.0.weight'.format(key_prefix)]
             if w.shape[-1] == 640:
                 unet_config['c_hidden'] = [320, 640, 1280, 1280]
                 unet_config['nhead'] = [-1, -1, 20, 20]
@@ -130,11 +120,50 @@ def detect_unet_config(state_dict, key_prefix):
         unet_config["n_double_layers"] = double_layers
         unet_config["n_layers"] = double_layers + single_layers
         return unet_config
-    
+
+    if '{}mlp_t5.0.weight'.format(key_prefix) in state_dict_keys: #Hunyuan DiT
+        unet_config = {}
+        unet_config["image_model"] = "hydit"
+        unet_config["depth"] = count_blocks(state_dict_keys, '{}blocks.'.format(key_prefix) + '{}.')
+        unet_config["hidden_size"] = state_dict['{}x_embedder.proj.weight'.format(key_prefix)].shape[0]
+        if unet_config["hidden_size"] == 1408 and unet_config["depth"] == 40: #DiT-g/2
+            unet_config["mlp_ratio"] = 4.3637
+        if state_dict['{}extra_embedder.0.weight'.format(key_prefix)].shape[1] == 3968:
+            unet_config["size_cond"] = True
+            unet_config["use_style_cond"] = True
+            unet_config["image_model"] = "hydit1"
+        return unet_config
+
+    if '{}txt_in.individual_token_refiner.blocks.0.norm1.weight'.format(key_prefix) in state_dict_keys: #Hunyuan Video
+        dit_config = {}
+        dit_config["image_model"] = "hunyuan_video"
+        dit_config["in_channels"] = state_dict['{}img_in.proj.weight'.format(key_prefix)].shape[1] #SkyReels img2video has 32 input channels
+        dit_config["patch_size"] = [1, 2, 2]
+        dit_config["out_channels"] = 16
+        dit_config["vec_in_dim"] = 768
+        dit_config["context_in_dim"] = 4096
+        dit_config["hidden_size"] = 3072
+        dit_config["mlp_ratio"] = 4.0
+        dit_config["num_heads"] = 24
+        dit_config["depth"] = count_blocks(state_dict_keys, '{}double_blocks.'.format(key_prefix) + '{}.')
+        dit_config["depth_single_blocks"] = count_blocks(state_dict_keys, '{}single_blocks.'.format(key_prefix) + '{}.')
+        dit_config["axes_dim"] = [16, 56, 56]
+        dit_config["theta"] = 256
+        dit_config["qkv_bias"] = True
+        guidance_keys = list(filter(lambda a: a.startswith("{}guidance_in.".format(key_prefix)), state_dict_keys))
+        dit_config["guidance_embed"] = len(guidance_keys) > 0
+        return dit_config
+
     if '{}double_blocks.0.img_attn.norm.key_norm.scale'.format(key_prefix) in state_dict_keys: #Flux
         dit_config = {}
         dit_config["image_model"] = "flux"
         dit_config["in_channels"] = 16
+        patch_size = 2
+        dit_config["patch_size"] = patch_size
+        in_key = "{}img_in.weight".format(key_prefix)
+        if in_key in state_dict_keys:
+            dit_config["in_channels"] = state_dict[in_key].shape[1] // (patch_size * patch_size)
+        dit_config["out_channels"] = 16
         dit_config["vec_in_dim"] = 768
         dit_config["context_in_dim"] = 4096
         dit_config["hidden_size"] = 3072
@@ -146,6 +175,152 @@ def detect_unet_config(state_dict, key_prefix):
         dit_config["theta"] = 10000
         dit_config["qkv_bias"] = True
         dit_config["guidance_embed"] = "{}guidance_in.in_layer.weight".format(key_prefix) in state_dict_keys
+        return dit_config
+
+    if '{}t5_yproj.weight'.format(key_prefix) in state_dict_keys: #Genmo mochi preview
+        dit_config = {}
+        dit_config["image_model"] = "mochi_preview"
+        dit_config["depth"] = 48
+        dit_config["patch_size"] = 2
+        dit_config["num_heads"] = 24
+        dit_config["hidden_size_x"] = 3072
+        dit_config["hidden_size_y"] = 1536
+        dit_config["mlp_ratio_x"] = 4.0
+        dit_config["mlp_ratio_y"] = 4.0
+        dit_config["learn_sigma"] = False
+        dit_config["in_channels"] = 12
+        dit_config["qk_norm"] = True
+        dit_config["qkv_bias"] = False
+        dit_config["out_bias"] = True
+        dit_config["attn_drop"] = 0.0
+        dit_config["patch_embed_bias"] = True
+        dit_config["posenc_preserve_area"] = True
+        dit_config["timestep_mlp_bias"] = True
+        dit_config["attend_to_padding"] = False
+        dit_config["timestep_scale"] = 1000.0
+        dit_config["use_t5"] = True
+        dit_config["t5_feat_dim"] = 4096
+        dit_config["t5_token_length"] = 256
+        dit_config["rope_theta"] = 10000.0
+        return dit_config
+
+    if '{}adaln_single.emb.timestep_embedder.linear_1.bias'.format(key_prefix) in state_dict_keys and '{}pos_embed.proj.bias'.format(key_prefix) in state_dict_keys:
+        # PixArt diffusers
+        return None
+
+    if '{}adaln_single.emb.timestep_embedder.linear_1.bias'.format(key_prefix) in state_dict_keys: #Lightricks ltxv
+        dit_config = {}
+        dit_config["image_model"] = "ltxv"
+        if metadata is not None and "config" in metadata:
+            dit_config.update(json.loads(metadata["config"]).get("transformer", {}))
+        return dit_config
+
+    if '{}t_block.1.weight'.format(key_prefix) in state_dict_keys: # PixArt
+        patch_size = 2
+        dit_config = {}
+        dit_config["num_heads"] = 16
+        dit_config["patch_size"] = patch_size
+        dit_config["hidden_size"] = 1152
+        dit_config["in_channels"] = 4
+        dit_config["depth"] = count_blocks(state_dict_keys, '{}blocks.'.format(key_prefix) + '{}.')
+
+        y_key = "{}y_embedder.y_embedding".format(key_prefix)
+        if y_key in state_dict_keys:
+            dit_config["model_max_length"] = state_dict[y_key].shape[0]
+
+        pe_key = "{}pos_embed".format(key_prefix)
+        if pe_key in state_dict_keys:
+            dit_config["input_size"] = int(math.sqrt(state_dict[pe_key].shape[1])) * patch_size
+            dit_config["pe_interpolation"] = dit_config["input_size"] // (512//8) # guess
+
+        ar_key = "{}ar_embedder.mlp.0.weight".format(key_prefix)
+        if ar_key in state_dict_keys:
+            dit_config["image_model"] = "pixart_alpha"
+            dit_config["micro_condition"] = True
+        else:
+            dit_config["image_model"] = "pixart_sigma"
+            dit_config["micro_condition"] = False
+        return dit_config
+
+    if '{}blocks.block0.blocks.0.block.attn.to_q.0.weight'.format(key_prefix) in state_dict_keys:  # Cosmos
+        dit_config = {}
+        dit_config["image_model"] = "cosmos"
+        dit_config["max_img_h"] = 240
+        dit_config["max_img_w"] = 240
+        dit_config["max_frames"] = 128
+        concat_padding_mask = True
+        dit_config["in_channels"] = (state_dict['{}x_embedder.proj.1.weight'.format(key_prefix)].shape[1] // 4) - int(concat_padding_mask)
+        dit_config["out_channels"] = 16
+        dit_config["patch_spatial"] = 2
+        dit_config["patch_temporal"] = 1
+        dit_config["model_channels"] = state_dict['{}blocks.block0.blocks.0.block.attn.to_q.0.weight'.format(key_prefix)].shape[0]
+        dit_config["block_config"] = "FA-CA-MLP"
+        dit_config["concat_padding_mask"] = concat_padding_mask
+        dit_config["pos_emb_cls"] = "rope3d"
+        dit_config["pos_emb_learnable"] = False
+        dit_config["pos_emb_interpolation"] = "crop"
+        dit_config["block_x_format"] = "THWBD"
+        dit_config["affline_emb_norm"] = True
+        dit_config["use_adaln_lora"] = True
+        dit_config["adaln_lora_dim"] = 256
+
+        if dit_config["model_channels"] == 4096:
+            # 7B
+            dit_config["num_blocks"] = 28
+            dit_config["num_heads"] = 32
+            dit_config["extra_per_block_abs_pos_emb"] = True
+            dit_config["rope_h_extrapolation_ratio"] = 1.0
+            dit_config["rope_w_extrapolation_ratio"] = 1.0
+            dit_config["rope_t_extrapolation_ratio"] = 2.0
+            dit_config["extra_per_block_abs_pos_emb_type"] = "learnable"
+        else:  # 5120
+            # 14B
+            dit_config["num_blocks"] = 36
+            dit_config["num_heads"] = 40
+            dit_config["extra_per_block_abs_pos_emb"] = True
+            dit_config["rope_h_extrapolation_ratio"] = 2.0
+            dit_config["rope_w_extrapolation_ratio"] = 2.0
+            dit_config["rope_t_extrapolation_ratio"] = 2.0
+            dit_config["extra_h_extrapolation_ratio"] = 2.0
+            dit_config["extra_w_extrapolation_ratio"] = 2.0
+            dit_config["extra_t_extrapolation_ratio"] = 2.0
+            dit_config["extra_per_block_abs_pos_emb_type"] = "learnable"
+        return dit_config
+
+    if '{}cap_embedder.1.weight'.format(key_prefix) in state_dict_keys:  # Lumina 2
+        dit_config = {}
+        dit_config["image_model"] = "lumina2"
+        dit_config["patch_size"] = 2
+        dit_config["in_channels"] = 16
+        dit_config["dim"] = 2304
+        dit_config["cap_feat_dim"] = 2304
+        dit_config["n_layers"] = 26
+        dit_config["n_heads"] = 24
+        dit_config["n_kv_heads"] = 8
+        dit_config["qk_norm"] = True
+        dit_config["axes_dims"] = [32, 32, 32]
+        dit_config["axes_lens"] = [300, 512, 512]
+        return dit_config
+
+    if '{}head.modulation'.format(key_prefix) in state_dict_keys:  # Wan 2.1
+        dit_config = {}
+        dit_config["image_model"] = "wan2.1"
+        dim = state_dict['{}head.modulation'.format(key_prefix)].shape[-1]
+        dit_config["dim"] = dim
+        dit_config["num_heads"] = dim // 128
+        dit_config["ffn_dim"] = state_dict['{}blocks.0.ffn.0.weight'.format(key_prefix)].shape[0]
+        dit_config["num_layers"] = count_blocks(state_dict_keys, '{}blocks.'.format(key_prefix) + '{}.')
+        dit_config["patch_size"] = (1, 2, 2)
+        dit_config["freq_dim"] = 256
+        dit_config["window_size"] = (-1, -1)
+        dit_config["qk_norm"] = True
+        dit_config["cross_attn_norm"] = True
+        dit_config["eps"] = 1e-6
+        dit_config["in_dim"] = state_dict['{}patch_embedding.weight'.format(key_prefix)].shape[1]
+        if '{}img_emb.proj.0.bias'.format(key_prefix) in state_dict_keys:
+            dit_config["model_type"] = "i2v"
+        else:
+            dit_config["model_type"] = "t2v"
         return dit_config
 
     if '{}input_blocks.0.0.weight'.format(key_prefix) not in state_dict_keys:
@@ -282,24 +457,31 @@ def model_config_from_unet_config(unet_config, state_dict=None):
     logging.error("no match {}".format(unet_config))
     return None
 
-def model_config_from_unet(state_dict, unet_key_prefix, use_base_if_no_match=False):
-    unet_config = detect_unet_config(state_dict, unet_key_prefix)
+def model_config_from_unet(state_dict, unet_key_prefix, use_base_if_no_match=False, metadata=None):
+    unet_config = detect_unet_config(state_dict, unet_key_prefix, metadata=metadata)
     if unet_config is None:
         return None
     model_config = model_config_from_unet_config(unet_config, state_dict)
     if model_config is None and use_base_if_no_match:
         model_config = ldm_patched.modules.supported_models_base.BASE(unet_config)
+
     scaled_fp8_key = "{}scaled_fp8".format(unet_key_prefix)
     if scaled_fp8_key in state_dict:
         scaled_fp8_weight = state_dict.pop(scaled_fp8_key)
         model_config.scaled_fp8 = scaled_fp8_weight.dtype
         if model_config.scaled_fp8 == torch.float32:
             model_config.scaled_fp8 = torch.float8_e4m3fn
+        if scaled_fp8_weight.nelement() == 2:
+            model_config.optimizations["fp8"] = False
+        else:
+            model_config.optimizations["fp8"] = True
+
     return model_config
 
 def unet_prefix_from_state_dict(state_dict):
     candidates = ["model.diffusion_model.", #ldm/sgm models
                   "model.model.", #audio models
+                  "net.", #cosmos
                   ]
     counts = {k: 0 for k in candidates}
     for k in state_dict:
@@ -313,6 +495,7 @@ def unet_prefix_from_state_dict(state_dict):
         return top
     else:
         return "model." #aura flow and others
+
 
 def convert_config(unet_config):
     new_config = unet_config.copy()
@@ -477,12 +660,12 @@ def unet_config_from_diffusers_unet(state_dict, dtype=None):
             'transformer_depth': [0, 1, 1], 'channel_mult': [1, 2, 4], 'transformer_depth_middle': -2, 'use_linear_in_transformer': False,
             'context_dim': 768, 'num_head_channels': 64, 'transformer_depth_output': [0, 0, 1, 1, 1, 1],
             'use_temporal_attention': False, 'use_temporal_resblock': False}
-    
+
     SD15_diffusers_inpaint = {'use_checkpoint': False, 'image_size': 32, 'out_channels': 4, 'use_spatial_transformer': True, 'legacy': False, 'adm_in_channels': None,
             'dtype': dtype, 'in_channels': 9, 'model_channels': 320, 'num_res_blocks': [2, 2, 2, 2], 'transformer_depth': [1, 1, 1, 1, 1, 1, 0, 0],
             'channel_mult': [1, 2, 4, 4], 'transformer_depth_middle': 1, 'use_linear_in_transformer': False, 'context_dim': 768, 'num_heads': 8,
             'transformer_depth_output': [1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0],
-            'use_temporal_attention': False, 'use_temporal_resblock': False}  
+            'use_temporal_attention': False, 'use_temporal_resblock': False}
 
 
     supported_models = [SDXL, SDXL_refiner, SD21, SD15, SD21_uncliph, SD21_unclipl, SDXL_mid_cnet, SDXL_small_cnet, SDXL_diffusers_inpaint, SSD_1B, Segmind_Vega, KOALA_700M, KOALA_1B, SD09_XS, SD_XS, SDXL_diffusers_ip2p, SD15_diffusers_inpaint]
@@ -510,6 +693,9 @@ def convert_diffusers_mmdit(state_dict, output_prefix=""):
         num_joint = count_blocks(state_dict, 'joint_transformer_blocks.{}.')
         num_single = count_blocks(state_dict, 'single_transformer_blocks.{}.')
         sd_map = ldm_patched.modules.utils.auraflow_to_diffusers({"n_double_layers": num_joint, "n_layers": num_joint + num_single}, output_prefix=output_prefix)
+    elif 'adaln_single.emb.timestep_embedder.linear_1.bias' in state_dict and 'pos_embed.proj.bias' in state_dict: # PixArt
+        num_blocks = count_blocks(state_dict, 'transformer_blocks.{}.')
+        sd_map = ldm_patched.modules.utils.pixart_to_diffusers({"depth": num_blocks}, output_prefix=output_prefix)
     elif 'x_embedder.weight' in state_dict: #Flux
         depth = count_blocks(state_dict, 'transformer_blocks.{}.')
         depth_single_blocks = count_blocks(state_dict, 'single_transformer_blocks.{}.')

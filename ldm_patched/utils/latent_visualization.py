@@ -1,16 +1,23 @@
-# Original code from Comfy, https://github.com/comfyanonymous/ComfyUI
-
-
 import torch
 from PIL import Image
-import struct
-import numpy as np
 from ldm_patched.modules.args_parser import args, LatentPreviewMethod
 from ldm_patched.taesd.taesd import TAESD
-import ldm_patched.utils.path_utils
+import ldm_patched.modules.model_management
+from . import path_utils
 import ldm_patched.modules.utils
+import logging
 
-MAX_PREVIEW_RESOLUTION = 512
+MAX_PREVIEW_RESOLUTION = args.preview_size
+
+def preview_to_image(latent_image):
+        latents_ubyte = (((latent_image + 1.0) / 2.0).clamp(0, 1)  # change scale from -1..1 to 0..1
+                            .mul(0xFF)  # to 0..255
+                            )
+        if ldm_patched.modules.model_management.directml_enabled:
+                latents_ubyte = latents_ubyte.to(dtype=torch.uint8)
+        latents_ubyte = latents_ubyte.to(device="cpu", dtype=torch.uint8, non_blocking=ldm_patched.modules.model_management.device_supports_non_blocking(latent_image.device))
+
+        return Image.fromarray(latents_ubyte.numpy())
 
 class LatentPreviewer:
     def decode_latent_to_preview(self, x0):
@@ -25,59 +32,60 @@ class TAESDPreviewerImpl(LatentPreviewer):
         self.taesd = taesd
 
     def decode_latent_to_preview(self, x0):
-        x_sample = self.taesd.decode(x0[:1])[0].detach()
-        x_sample = torch.clamp((x_sample + 1.0) / 2.0, min=0.0, max=1.0)
-        x_sample = 255. * np.moveaxis(x_sample.cpu().numpy(), 0, 2)
-        x_sample = x_sample.astype(np.uint8)
-
-        preview_image = Image.fromarray(x_sample)
-        return preview_image
+        x_sample = self.taesd.decode(x0[:1])[0].movedim(0, 2)
+        return preview_to_image(x_sample)
 
 
 class Latent2RGBPreviewer(LatentPreviewer):
-    def __init__(self, latent_rgb_factors):
-        self.latent_rgb_factors = torch.tensor(latent_rgb_factors, device="cpu")
+    def __init__(self, latent_rgb_factors, latent_rgb_factors_bias=None):
+        self.latent_rgb_factors = torch.tensor(latent_rgb_factors, device="cpu").transpose(0, 1)
+        self.latent_rgb_factors_bias = None
+        if latent_rgb_factors_bias is not None:
+            self.latent_rgb_factors_bias = torch.tensor(latent_rgb_factors_bias, device="cpu")
 
     def decode_latent_to_preview(self, x0):
-        latent_image = x0[0].permute(1, 2, 0).cpu() @ self.latent_rgb_factors
+        self.latent_rgb_factors = self.latent_rgb_factors.to(dtype=x0.dtype, device=x0.device)
+        if self.latent_rgb_factors_bias is not None:
+            self.latent_rgb_factors_bias = self.latent_rgb_factors_bias.to(dtype=x0.dtype, device=x0.device)
 
-        latents_ubyte = (((latent_image + 1) / 2)
-                            .clamp(0, 1)  # change scale from -1..1 to 0..1
-                            .mul(0xFF)  # to 0..255
-                            .byte()).cpu()
+        if x0.ndim == 5:
+            x0 = x0[0, :, 0]
+        else:
+            x0 = x0[0]
 
-        return Image.fromarray(latents_ubyte.numpy())
+        latent_image = torch.nn.functional.linear(x0.movedim(0, -1), self.latent_rgb_factors, bias=self.latent_rgb_factors_bias)
+        # latent_image = x0[0].permute(1, 2, 0) @ self.latent_rgb_factors
+
+        return preview_to_image(latent_image)
 
 
 def get_previewer(device, latent_format):
     previewer = None
-    method = args.preview_option
+    method = args.preview_method
     if method != LatentPreviewMethod.NoPreviews:
         # TODO previewer methods
         taesd_decoder_path = None
         if latent_format.taesd_decoder_name is not None:
             taesd_decoder_path = next(
-                (fn for fn in ldm_patched.utils.path_utils.get_filename_list("vae_approx")
+                (fn for fn in path_utils.get_filename_list("vae_approx")
                     if fn.startswith(latent_format.taesd_decoder_name)),
                 ""
             )
-            taesd_decoder_path = ldm_patched.utils.path_utils.get_full_path("vae_approx", taesd_decoder_path)
+            taesd_decoder_path = path_utils.get_full_path("vae_approx", taesd_decoder_path)
 
         if method == LatentPreviewMethod.Auto:
             method = LatentPreviewMethod.Latent2RGB
-            if taesd_decoder_path:
-                method = LatentPreviewMethod.TAESD
 
         if method == LatentPreviewMethod.TAESD:
             if taesd_decoder_path:
-                taesd = TAESD(None, taesd_decoder_path).to(device)
+                taesd = TAESD(None, taesd_decoder_path, latent_channels=latent_format.latent_channels).to(device)
                 previewer = TAESDPreviewerImpl(taesd)
             else:
-                print("Warning: TAESD previews enabled, but could not find models/vae_approx/{}".format(latent_format.taesd_decoder_name))
+                logging.warning("Warning: TAESD previews enabled, but could not find models/vae_approx/{}".format(latent_format.taesd_decoder_name))
 
         if previewer is None:
             if latent_format.latent_rgb_factors is not None:
-                previewer = Latent2RGBPreviewer(latent_format.latent_rgb_factors)
+                previewer = Latent2RGBPreviewer(latent_format.latent_rgb_factors, latent_format.latent_rgb_factors_bias)
     return previewer
 
 def prepare_callback(model, steps, x0_output_dict=None):

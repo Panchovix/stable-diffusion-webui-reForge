@@ -142,7 +142,12 @@ parser.add_argument("--default-hashing-function", type=str, choices=['md5', 'sha
 
 parser.add_argument("--always-offload-from-vram", action="store_true", help="Force reForge to agressively offload to regular ram instead of keeping models in vram when it can.")
 parser.add_argument("--pytorch-deterministic", action="store_true", help="Make pytorch use slower deterministic algorithms when it can. Note that this might not make images deterministic in all cases.")
-parser.add_argument("--fast", action="store_true", help="Enable some untested and potentially quality deteriorating optimizations.")
+
+class PerformanceFeature(enum.Enum):
+    Fp16Accumulation = "fp16_accumulation"
+    Fp8MatrixMultiplication = "fp8_matrix_mult"
+
+parser.add_argument("--fast", nargs="*", type=PerformanceFeature, help="Enable some untested and potentially quality deteriorating optimizations. --fast with no arguments enables everything. You can pass a list specific optimizations if you only want to enable specific ones. Current valid optimizations: fp16_accumulation fp8_matrix_mult")
 
 cm_group = parser.add_mutually_exclusive_group()
 cm_group.add_argument("--cuda-malloc", action="store_true", help="Enable cudaMallocAsync")

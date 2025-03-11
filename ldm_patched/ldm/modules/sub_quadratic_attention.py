@@ -17,10 +17,11 @@ import math
 import logging
 
 try:
-	from typing import Optional, NamedTuple, List, Protocol
+    from typing import Optional, NamedTuple, List, Protocol
 except ImportError:
-	from typing import Optional, NamedTuple, List
-	from typing_extensions import Protocol
+    from typing import Optional, NamedTuple, List
+    from typing_extensions import Protocol
+
 from typing import List
 
 from ldm_patched.modules import model_management
@@ -260,7 +261,7 @@ def efficient_dot_product_attention(
             value=value,
             mask=mask,
         )
-    
+
     # TODO: maybe we should use torch.empty_like(query) to allocate storage in-advance,
     # and pass slices to be mutated, instead of torch.cat()ing the returned slices
     res = torch.cat([

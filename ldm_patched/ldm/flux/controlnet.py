@@ -6,9 +6,7 @@ import math
 from torch import Tensor, nn
 from einops import rearrange, repeat
 
-from .layers import (DoubleStreamBlock, EmbedND, LastLayer,
-                                 MLPEmbedder, SingleStreamBlock,
-                                 timestep_embedding)
+from .layers import (timestep_embedding)
 
 from .model import Flux
 import ldm_patched.ldm.common_dit
@@ -84,6 +82,7 @@ class ControlNetFlux(Flux):
             control_latent_channels = self.in_channels
         else:
             control_latent_channels *= 2 * 2 #patch size
+
         self.pos_embed_input = operations.Linear(control_latent_channels, self.hidden_size, bias=True, dtype=dtype, device=device)
         if not self.latent_input:
             if self.mistoline:
@@ -202,4 +201,3 @@ class ControlNetFlux(Flux):
 
         txt_ids = torch.zeros((bs, context.shape[1], 3), device=x.device, dtype=x.dtype)
         return self.forward_orig(img, img_ids, hint, context, txt_ids, timesteps, y, guidance, control_type=kwargs.get("control_type", []))
-    

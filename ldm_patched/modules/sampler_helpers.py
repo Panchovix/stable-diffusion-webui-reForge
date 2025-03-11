@@ -1,6 +1,5 @@
 from __future__ import annotations
 import uuid
-import torch
 import ldm_patched.modules.model_management
 import ldm_patched.modules.conds
 import ldm_patched.modules.utils
@@ -25,24 +24,23 @@ def get_models_from_cond(cond, model_type):
                 models += [c[model_type]]
     return models
 
-def get_hooks_from_cond(cond, hooks_dict: dict[ldm_patched.hooks.EnumHookType, dict[ldm_patched.hooks.Hook, None]]):
+def get_hooks_from_cond(cond, full_hooks: ldm_patched.hooks.HookGroup):
     # get hooks from conds, and collect cnets so they can be checked for extra_hooks
     cnets: list[ControlBase] = []
     for c in cond:
         if 'hooks' in c:
             for hook in c['hooks'].hooks:
-                hook: ldm_patched.hooks.Hook
-                with_type = hooks_dict.setdefault(hook.hook_type, {})
-                with_type[hook] = None
+                full_hooks.add(hook)
         if 'control' in c:
             cnets.append(c['control'])
+
     def get_extra_hooks_from_cnet(cnet: ControlBase, _list: list):
         if cnet.extra_hooks is not None:
             _list.append(cnet.extra_hooks)
         if cnet.previous_controlnet is None:
             return _list
         return get_extra_hooks_from_cnet(cnet.previous_controlnet, _list)
-        
+
     hooks_list = []
     cnets = set(cnets)
     for base_cnet in cnets:
@@ -50,9 +48,9 @@ def get_hooks_from_cond(cond, hooks_dict: dict[ldm_patched.hooks.EnumHookType, d
     extra_hooks = ldm_patched.hooks.HookGroup.combine_all_hooks(hooks_list)
     if extra_hooks is not None:
         for hook in extra_hooks.hooks:
-            with_type = hooks_dict.setdefault(hook.hook_type, {})
-            with_type[hook] = None
-    return hooks_dict
+            full_hooks.add(hook)
+
+    return full_hooks
 
 def convert_cond(cond):
     out = []
@@ -60,7 +58,6 @@ def convert_cond(cond):
         temp = c[1].copy()
         model_conds = temp.get("model_conds", {})
         if c[0] is not None:
-            model_conds["c_crossattn"] = ldm_patched.modules.conds.CONDCrossAttn(c[0]) #TODO: remove
             temp["cross_attn"] = c[0]
         temp["model_conds"] = model_conds
         temp["uuid"] = uuid.uuid4()
@@ -72,13 +69,11 @@ def get_additional_models(conds, dtype):
     cnets: list[ControlBase] = []
     gligen = []
     add_models = []
-    hooks: dict[ldm_patched.hooks.EnumHookType, dict[ldm_patched.hooks.Hook, None]] = {}
 
     for k in conds:
         cnets += get_models_from_cond(conds[k], "control")
         gligen += get_models_from_cond(conds[k], "gligen")
         add_models += get_models_from_cond(conds[k], "additional_models")
-        get_hooks_from_cond(conds[k], hooks)
 
     control_nets = set(cnets)
 
@@ -89,9 +84,19 @@ def get_additional_models(conds, dtype):
         inference_memory += m.inference_memory_requirements(dtype)
 
     gligen = [x[1] for x in gligen]
-    hook_models = [x.model for x in hooks.get(ldm_patched.hooks.EnumHookType.AddModels, {}).keys()]
-    models = control_models + gligen + add_models + hook_models
+    models = control_models + gligen + add_models
+
     return models, inference_memory
+
+def get_additional_models_from_model_options(model_options: dict[str]=None):
+    """loads additional models from registered AddModels hooks"""
+    models = []
+    if model_options is not None and "registered_hooks" in model_options:
+        registered: ldm_patched.hooks.HookGroup = model_options["registered_hooks"]
+        for hook in registered.get_type(ldm_patched.hooks.EnumHookType.AdditionalModels):
+            hook: ldm_patched.hooks.AdditionalModelsHook
+            models.extend(hook.models)
+    return models
 
 def cleanup_additional_models(models):
     """cleanup additional models that were loaded"""
@@ -100,10 +105,10 @@ def cleanup_additional_models(models):
             m.cleanup()
 
 
-def prepare_sampling(model: 'ModelPatcher', noise_shape, conds):
-    device = model.load_device
-    real_model: 'BaseModel' = None
+def prepare_sampling(model: ModelPatcher, noise_shape, conds, model_options=None):
+    real_model: BaseModel = None
     models, inference_memory = get_additional_models(conds, model.model_dtype())
+    models += get_additional_models_from_model_options(model_options)
     models += model.get_nested_additional_models()  # TODO: does this require inference_memory update?
     memory_required = model.memory_required([noise_shape[0] * 2] + list(noise_shape[1:])) + inference_memory
     minimum_memory_required = model.memory_required([noise_shape[0]] + list(noise_shape[1:])) + inference_memory
@@ -122,12 +127,35 @@ def cleanup_models(conds, models):
     cleanup_additional_models(set(control_cleanup))
 
 def prepare_model_patcher(model: 'ModelPatcher', conds, model_options: dict):
+    '''
+    Registers hooks from conds.
+    '''
     # check for hooks in conds - if not registered, see if can be applied
-    hooks = {}
+    hooks = ldm_patched.hooks.HookGroup()
     for k in conds:
         get_hooks_from_cond(conds[k], hooks)
     # add wrappers and callbacks from ModelPatcher to transformer_options
     model_options["transformer_options"]["wrappers"] = ldm_patched.modules.patcher_extension.copy_nested_dicts(model.wrappers)
     model_options["transformer_options"]["callbacks"] = ldm_patched.modules.patcher_extension.copy_nested_dicts(model.callbacks)
-    # register hooks on model/model_options
-    model.register_all_hook_patches(hooks, ldm_patched.hooks.EnumWeightTarget.Model, model_options)
+    # begin registering hooks
+    registered = ldm_patched.hooks.HookGroup()
+    target_dict = ldm_patched.hooks.create_target_dict(ldm_patched.hooks.EnumWeightTarget.Model)
+    # handle all TransformerOptionsHooks
+    for hook in hooks.get_type(ldm_patched.hooks.EnumHookType.TransformerOptions):
+        hook: ldm_patched.hooks.TransformerOptionsHook
+        hook.add_hook_patches(model, model_options, target_dict, registered)
+    # handle all AddModelsHooks
+    for hook in hooks.get_type(ldm_patched.hooks.EnumHookType.AdditionalModels):
+        hook: ldm_patched.hooks.AdditionalModelsHook
+        hook.add_hook_patches(model, model_options, target_dict, registered)
+    # handle all WeightHooks by registering on ModelPatcher
+    model.register_all_hook_patches(hooks, target_dict, model_options, registered)
+    # add registered_hooks onto model_options for further reference
+    if len(registered) > 0:
+        model_options["registered_hooks"] = registered
+    # merge original wrappers and callbacks with hooked wrappers and callbacks
+    to_load_options: dict[str] = model_options.setdefault("to_load_options", {})
+    for wc_name in ["wrappers", "callbacks"]:
+        ldm_patched.modules.patcher_extension.merge_nested_dicts(to_load_options.setdefault(wc_name, {}), model_options["transformer_options"][wc_name],
+                                                    copy_dict1=False)
+    return to_load_options

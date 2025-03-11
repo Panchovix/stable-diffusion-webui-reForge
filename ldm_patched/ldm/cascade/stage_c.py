@@ -18,7 +18,6 @@
 
 import torch
 from torch import nn
-import numpy as np
 import math
 from .common import AttnBlock, LayerNorm2d_op, ResBlock, FeedForwardBlock, TimestepBlock
 # from .controlnet import ControlNetDeliverer
@@ -143,7 +142,7 @@ class StageC(nn.Module):
     #     nn.init.normal_(self.clip_img_mapper.weight, std=0.02)  # conditionings
     #     torch.nn.init.xavier_uniform_(self.embedding[1].weight, 0.02)  # inputs
     #     nn.init.constant_(self.clf[1].weight, 0)  # outputs
-    # 
+    #
     #     # blocks
     #     for level_block in self.down_blocks + self.up_blocks:
     #         for block in level_block:
@@ -153,7 +152,7 @@ class StageC(nn.Module):
     #                 for layer in block.modules():
     #                     if isinstance(layer, nn.Linear):
     #                         nn.init.constant_(layer.weight, 0)
-    # 
+    #
     # def _init_weights(self, m):
     #     if isinstance(m, (nn.Conv2d, nn.Linear)):
     #         torch.nn.init.xavier_uniform_(m.weight)
@@ -194,10 +193,10 @@ class StageC(nn.Module):
                             hasattr(block, '_fsdp_wrapped_module') and isinstance(block._fsdp_wrapped_module,
                                                                                   ResBlock)):
                         if cnet is not None:
-                            next_cnet = cnet()
+                            next_cnet = cnet.pop()
                             if next_cnet is not None:
                                 x = x + nn.functional.interpolate(next_cnet, size=x.shape[-2:], mode='bilinear',
-                                                                  align_corners=True)
+                                                                  align_corners=True).to(x.dtype)
                         x = block(x)
                     elif isinstance(block, AttnBlock) or (
                             hasattr(block, '_fsdp_wrapped_module') and isinstance(block._fsdp_wrapped_module,
@@ -228,10 +227,10 @@ class StageC(nn.Module):
                             x = torch.nn.functional.interpolate(x, skip.shape[-2:], mode='bilinear',
                                                                 align_corners=True)
                         if cnet is not None:
-                            next_cnet = cnet()
+                            next_cnet = cnet.pop()
                             if next_cnet is not None:
                                 x = x + nn.functional.interpolate(next_cnet, size=x.shape[-2:], mode='bilinear',
-                                                                  align_corners=True)
+                                                                  align_corners=True).to(x.dtype)
                         x = block(x, skip)
                     elif isinstance(block, AttnBlock) or (
                             hasattr(block, '_fsdp_wrapped_module') and isinstance(block._fsdp_wrapped_module,
@@ -248,7 +247,7 @@ class StageC(nn.Module):
             x = upscaler(x)
         return x
 
-    def forward(self, x, r, clip_text, clip_text_pooled, clip_img, cnet=None, **kwargs):
+    def forward(self, x, r, clip_text, clip_text_pooled, clip_img, control=None, **kwargs):
         # Process the conditioning embeddings
         r_embed = self.gen_r_embedding(r).to(dtype=x.dtype)
         for c in self.t_conds:
@@ -256,10 +255,13 @@ class StageC(nn.Module):
             r_embed = torch.cat([r_embed, self.gen_r_embedding(t_cond).to(dtype=x.dtype)], dim=1)
         clip = self.gen_c_embeddings(clip_text, clip_text_pooled, clip_img)
 
+        if control is not None:
+            cnet = control.get("input")
+        else:
+            cnet = None
+
         # Model Blocks
         x = self.embedding(x)
-        if cnet is not None:
-            cnet = ControlNetDeliverer(cnet)
         level_outputs = self._down_encode(x, r_embed, clip, cnet)
         x = self._up_decode(level_outputs, r_embed, clip, cnet)
         return self.clf(x)

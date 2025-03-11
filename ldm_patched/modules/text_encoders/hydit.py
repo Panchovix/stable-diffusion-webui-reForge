@@ -20,7 +20,7 @@ class HyditBertTokenizer(sd1_clip.SDTokenizer):
 class MT5XLModel(sd1_clip.SDClipModel):
     def __init__(self, device="cpu", layer="last", layer_idx=None, dtype=None, model_options={}):
         textmodel_json_config = os.path.join(os.path.dirname(os.path.realpath(__file__)), "mt5_config_xl.json")
-        super().__init__(device=device, layer=layer, layer_idx=layer_idx, textmodel_json_config=textmodel_json_config, dtype=dtype, special_tokens={"end": 1, "pad": 0}, model_class=comfy.text_encoders.t5.T5, enable_attention_masks=True, return_attention_masks=True, model_options=model_options)
+        super().__init__(device=device, layer=layer, layer_idx=layer_idx, textmodel_json_config=textmodel_json_config, dtype=dtype, special_tokens={"end": 1, "pad": 0}, model_class=ldm_patched.modules.text_encoders.t5.T5, enable_attention_masks=True, return_attention_masks=True, model_options=model_options)
 
 class MT5XLTokenizer(sd1_clip.SDTokenizer):
     def __init__(self, embedding_directory=None, tokenizer_data={}):
@@ -37,7 +37,7 @@ class HyditTokenizer:
         self.hydit_clip = HyditBertTokenizer(embedding_directory=embedding_directory)
         self.mt5xl = MT5XLTokenizer(tokenizer_data={"spiece_model": mt5_tokenizer_data}, embedding_directory=embedding_directory)
 
-    def tokenize_with_weights(self, text:str, return_word_ids=False):
+    def tokenize_with_weights(self, text:str, return_word_ids=False, **kwargs):
         out = {}
         out["hydit_clip"] = self.hydit_clip.tokenize_with_weights(text, return_word_ids)
         out["mt5xl"] = self.mt5xl.tokenize_with_weights(text, return_word_ids)

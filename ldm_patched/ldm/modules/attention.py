@@ -1,4 +1,6 @@
 import math
+import sys
+
 import torch
 import torch.nn.functional as F
 from torch import nn, einsum
@@ -17,7 +19,11 @@ if model_management.xformers_enabled():
     import xformers.ops
 
 if model_management.sage_attention_enabled():
-    from sageattention import sageattn
+    try:
+        from sageattention import sageattn
+    except ModuleNotFoundError:
+        print(f"\n\nTo use the `--use-sage-attention` feature, the `sageattention` package must be installed first.\ncommand:\n\t{sys.executable} -m pip install sageattention")
+        exit(-1)
 
 from ldm_patched.modules.args_parser import args
 import ldm_patched.modules.ops
@@ -25,11 +31,12 @@ ops = ldm_patched.modules.ops.disable_weight_init
 
 FORCE_UPCAST_ATTENTION_DTYPE = model_management.force_upcast_attention_dtype()
 
-def get_attn_precision(attn_precision):
+def get_attn_precision(attn_precision, current_dtype):
     if args.force_upcast_attention:
         return None
-    if FORCE_UPCAST_ATTENTION_DTYPE is not None:
-        return FORCE_UPCAST_ATTENTION_DTYPE
+
+    if FORCE_UPCAST_ATTENTION_DTYPE is not None and current_dtype in FORCE_UPCAST_ATTENTION_DTYPE:
+        return FORCE_UPCAST_ATTENTION_DTYPE[current_dtype]
     return attn_precision
 
 
@@ -38,7 +45,7 @@ class AttnPrecision:
         self._value = self._get_precision()
 
     def _get_precision(self):
-        return get_attn_precision(os.environ.get("ATTN_PRECISION", "fp32"))
+        return get_attn_precision(os.environ.get("ATTN_PRECISION", "fp32"), None)
 
     def __str__(self):
         return self._value
@@ -114,7 +121,7 @@ def Normalize(in_channels, dtype=None, device=None):
     return torch.nn.GroupNorm(num_groups=32, num_channels=in_channels, eps=1e-6, affine=True, dtype=dtype, device=device)
 
 def attention_basic(q, k, v, heads, mask=None, attn_precision=None, skip_reshape=False, skip_output_reshape=False):
-    attn_precision = get_attn_precision(attn_precision)
+    attn_precision = get_attn_precision(attn_precision, q.dtype)
 
     if skip_reshape:
         b, _, _, dim_head = q.shape
@@ -183,7 +190,7 @@ def attention_basic(q, k, v, heads, mask=None, attn_precision=None, skip_reshape
 
 
 def attention_sub_quad(query, key, value, heads, mask=None, attn_precision=None, skip_reshape=False, skip_output_reshape=False):
-    attn_precision = get_attn_precision(attn_precision)
+    attn_precision = get_attn_precision(attn_precision, query.dtype)
 
     if skip_reshape:
         b, _, _, dim_head = query.shape
@@ -253,7 +260,7 @@ def attention_sub_quad(query, key, value, heads, mask=None, attn_precision=None,
     return hidden_states
 
 def attention_split(q, k, v, heads, mask=None, attn_precision=None, skip_reshape=False, skip_output_reshape=False):
-    attn_precision = get_attn_precision(attn_precision)
+    attn_precision = get_attn_precision(attn_precision, q.dtype)
 
     if skip_reshape:
         b, _, _, dim_head = q.shape
@@ -819,6 +826,7 @@ class SpatialTransformer(nn.Module):
             x = self.proj_out(x)
         return x + x_in
 
+
 class SpatialVideoTransformer(SpatialTransformer):
     def __init__(
         self,
@@ -980,4 +988,5 @@ class SpatialVideoTransformer(SpatialTransformer):
             x = self.proj_out(x)
         out = x + x_in
         return out
+
 

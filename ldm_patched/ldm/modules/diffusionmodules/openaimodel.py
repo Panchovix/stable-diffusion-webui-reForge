@@ -1,10 +1,4 @@
-# 1st edit by https://github.com/CompVis/latent-diffusion
-# 2nd edit by https://github.com/Stability-AI/stablediffusion
-# 3rd edit by https://github.com/Stability-AI/generative-models
-# 4th edit by https://github.com/comfyanonymous/ComfyUI
-# 5th edit by Forge
-
-
+# Original by https://github.com/comfyanonymous/ComfyUI
 from abc import abstractmethod
 
 import torch as th
@@ -16,7 +10,6 @@ import logging
 from .util import (
     checkpoint,
     avg_pool_nd,
-    zero_module,
     timestep_embedding,
     AlphaBlender,
 )
@@ -375,8 +368,6 @@ def apply_control(h, control, name):
         ctrl = control[name].pop()
         if ctrl is not None:
             try:
-                if ctrl.shape[2] != h.shape[2] or ctrl.shape[3] != h.shape[3]:
-                    ctrl = F.interpolate(ctrl.float(), size=(h.shape[2], h.shape[3]), mode="bicubic", align_corners=False).to(h.dtype)
                 h += ctrl
             except:
                 logging.warning("warning control could not be applied {} {}".format(h.shape, ctrl.shape))
@@ -843,6 +834,7 @@ class UNetModel(nn.Module):
             self,
             ldm_patched.modules.patcher_extension.get_all_wrappers(ldm_patched.modules.patcher_extension.WrappersMP.DIFFUSION_MODEL, transformer_options)
         ).execute(x, timesteps, context, y, control, transformer_options, **kwargs)
+
     def _forward(self, x, timesteps=None, context=None, y=None, control=None, transformer_options={}, **kwargs):
         """
         Apply the model to an input batch.

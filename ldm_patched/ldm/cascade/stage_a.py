@@ -19,6 +19,10 @@
 import torch
 from torch import nn
 from torch.autograd import Function
+import ldm_patched.modules.ops
+
+ops = ldm_patched.modules.ops.disable_weight_init
+
 
 class vector_quantize(Function):
     @staticmethod
@@ -121,15 +125,15 @@ class ResBlock(nn.Module):
         self.norm1 = nn.LayerNorm(c, elementwise_affine=False, eps=1e-6)
         self.depthwise = nn.Sequential(
             nn.ReplicationPad2d(1),
-            nn.Conv2d(c, c, kernel_size=3, groups=c)
+            ops.Conv2d(c, c, kernel_size=3, groups=c)
         )
 
         # channelwise
         self.norm2 = nn.LayerNorm(c, elementwise_affine=False, eps=1e-6)
         self.channelwise = nn.Sequential(
-            nn.Linear(c, c_hidden),
+            ops.Linear(c, c_hidden),
             nn.GELU(),
-            nn.Linear(c_hidden, c),
+            ops.Linear(c_hidden, c),
         )
 
         self.gammas = nn.Parameter(torch.zeros(6), requires_grad=True)
@@ -163,26 +167,24 @@ class ResBlock(nn.Module):
 
 
 class StageA(nn.Module):
-    def __init__(self, levels=2, bottleneck_blocks=12, c_hidden=384, c_latent=4, codebook_size=8192,
-                 scale_factor=0.43):  # 0.3764
+    def __init__(self, levels=2, bottleneck_blocks=12, c_hidden=384, c_latent=4, codebook_size=8192):
         super().__init__()
         self.c_latent = c_latent
-        self.scale_factor = scale_factor
         c_levels = [c_hidden // (2 ** i) for i in reversed(range(levels))]
 
         # Encoder blocks
         self.in_block = nn.Sequential(
             nn.PixelUnshuffle(2),
-            nn.Conv2d(3 * 4, c_levels[0], kernel_size=1)
+            ops.Conv2d(3 * 4, c_levels[0], kernel_size=1)
         )
         down_blocks = []
         for i in range(levels):
             if i > 0:
-                down_blocks.append(nn.Conv2d(c_levels[i - 1], c_levels[i], kernel_size=4, stride=2, padding=1))
+                down_blocks.append(ops.Conv2d(c_levels[i - 1], c_levels[i], kernel_size=4, stride=2, padding=1))
             block = ResBlock(c_levels[i], c_levels[i] * 4)
             down_blocks.append(block)
         down_blocks.append(nn.Sequential(
-            nn.Conv2d(c_levels[-1], c_latent, kernel_size=1, bias=False),
+            ops.Conv2d(c_levels[-1], c_latent, kernel_size=1, bias=False),
             nn.BatchNorm2d(c_latent),  # then normalize them to have mean 0 and std 1
         ))
         self.down_blocks = nn.Sequential(*down_blocks)
@@ -193,7 +195,7 @@ class StageA(nn.Module):
 
         # Decoder blocks
         up_blocks = [nn.Sequential(
-            nn.Conv2d(c_latent, c_levels[-1], kernel_size=1)
+            ops.Conv2d(c_latent, c_levels[-1], kernel_size=1)
         )]
         for i in range(levels):
             for j in range(bottleneck_blocks if i == 0 else 1):
@@ -201,11 +203,11 @@ class StageA(nn.Module):
                 up_blocks.append(block)
             if i < levels - 1:
                 up_blocks.append(
-                    nn.ConvTranspose2d(c_levels[levels - 1 - i], c_levels[levels - 2 - i], kernel_size=4, stride=2,
+                    ops.ConvTranspose2d(c_levels[levels - 1 - i], c_levels[levels - 2 - i], kernel_size=4, stride=2,
                                        padding=1))
         self.up_blocks = nn.Sequential(*up_blocks)
         self.out_block = nn.Sequential(
-            nn.Conv2d(c_levels[0], 3 * 4, kernel_size=1),
+            ops.Conv2d(c_levels[0], 3 * 4, kernel_size=1),
             nn.PixelShuffle(2),
         )
 
@@ -214,12 +216,11 @@ class StageA(nn.Module):
         x = self.down_blocks(x)
         if quantize:
             qe, (vq_loss, commit_loss), indices = self.vquantizer.forward(x, dim=1)
-            return qe / self.scale_factor, x / self.scale_factor, indices, vq_loss + commit_loss * 0.25
+            return qe, x, indices, vq_loss + commit_loss * 0.25
         else:
-            return x / self.scale_factor
+            return x
 
     def decode(self, x):
-        x = x * self.scale_factor
         x = self.up_blocks(x)
         x = self.out_block(x)
         return x
@@ -235,17 +236,17 @@ class Discriminator(nn.Module):
         super().__init__()
         d = max(depth - 3, 3)
         layers = [
-            nn.utils.spectral_norm(nn.Conv2d(c_in, c_hidden // (2 ** d), kernel_size=3, stride=2, padding=1)),
+            nn.utils.spectral_norm(ops.Conv2d(c_in, c_hidden // (2 ** d), kernel_size=3, stride=2, padding=1)),
             nn.LeakyReLU(0.2),
         ]
         for i in range(depth - 1):
             c_in = c_hidden // (2 ** max((d - i), 0))
             c_out = c_hidden // (2 ** max((d - 1 - i), 0))
-            layers.append(nn.utils.spectral_norm(nn.Conv2d(c_in, c_out, kernel_size=3, stride=2, padding=1)))
+            layers.append(nn.utils.spectral_norm(ops.Conv2d(c_in, c_out, kernel_size=3, stride=2, padding=1)))
             layers.append(nn.InstanceNorm2d(c_out))
             layers.append(nn.LeakyReLU(0.2))
         self.encoder = nn.Sequential(*layers)
-        self.shuffle = nn.Conv2d((c_hidden + c_cond) if c_cond > 0 else c_hidden, 1, kernel_size=1)
+        self.shuffle = ops.Conv2d((c_hidden + c_cond) if c_cond > 0 else c_hidden, 1, kernel_size=1)
         self.logits = nn.Sigmoid()
 
     def forward(self, x, cond=None):

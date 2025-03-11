@@ -1,9 +1,7 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from ldm_patched.ldm.modules.attention import optimized_attention
 import ldm_patched.modules.ops
-
 
 class AttentionPool(nn.Module):
     def __init__(self, spacial_dim: int, embed_dim: int, num_heads: int, output_dim: int = None, dtype=None, device=None, operations=None):

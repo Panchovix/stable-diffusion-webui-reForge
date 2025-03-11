@@ -1,5 +1,5 @@
 import torch
-from typing import Dict, Optional
+from typing import Optional
 import ldm_patched.ldm.modules.diffusionmodules.mmdit
 
 class ControlNet(ldm_patched.ldm.modules.diffusionmodules.mmdit.MMDiT):

@@ -1,24 +1,17 @@
-from typing import Any, Optional
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-from torch.utils import checkpoint
 
 from ldm_patched.ldm.modules.diffusionmodules.mmdit import (
-    Mlp,
     TimestepEmbedder,
     PatchEmbed,
-    RMSNorm,
 )
-from ldm_patched.ldm.modules.diffusionmodules.util import timestep_embedding
 from .poolers import AttentionPool
 
 import ldm_patched.modules.latent_formats
 from .models import HunYuanDiTBlock, calc_rope
 
-from .posemb_layers import get_2d_rotary_pos_embed, get_fill_resize_and_crop
 
 
 class HunYuanControlNet(nn.Module):
@@ -316,4 +309,3 @@ class HunYuanControlNet(nn.Module):
             controls.append(self.after_proj_list[layer](x))  # zero linear for output
 
         return {"output": controls}
-    

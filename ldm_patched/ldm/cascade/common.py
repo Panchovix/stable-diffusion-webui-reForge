@@ -20,6 +20,7 @@ import torch
 import torch.nn as nn
 from ldm_patched.ldm.modules.attention import optimized_attention
 import ldm_patched.modules.ops
+
 class OptimizedAttention(nn.Module):
     def __init__(self, c, nhead, dropout=0.0, dtype=None, device=None, operations=None):
         super().__init__()
