@@ -318,6 +318,22 @@ VAE_DECODE_TILE_SIZE_X = 64
 
 VAE_DECODE_TILE_SIZE_Y = 64
 
+def set_fp16_accumulation_if_available():
+    if args.allow_fp16_accumulation:
+        try:
+            matmul = torch.backends.cuda.matmul
+            try:
+                current_state = matmul.allow_fp16_accumulation
+                print(f"FP16 accumulation flag found, current state: {current_state}")
+                matmul.allow_fp16_accumulation = True
+                print(f"FP16 accumulation set to: {matmul.allow_fp16_accumulation}")
+            except (AttributeError, AssertionError):
+                print("FP16 accumulation flag not available in this torch version")
+        except Exception as e:
+            print(f"Could not access CUDA matmul settings: {str(e)}")
+
+set_fp16_accumulation_if_available()
+
 if lowvram_available:
     if set_vram_to in (VRAMState.LOW_VRAM, VRAMState.NO_VRAM):
         vram_state = set_vram_to
