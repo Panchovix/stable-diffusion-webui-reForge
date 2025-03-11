@@ -114,7 +114,7 @@ def validate_and_fix_vae(sd_model):
     
     # Check model attribute exists
     if not hasattr(vae, 'model'):
-        print("Critical: VAE has no model attribute, attempting to reload VAE")
+        print("Reloading VAE")
         sd_vae.delete_base_vae()
         sd_vae.clear_loaded_vae()
         vae_file, vae_source = sd_vae.resolve_vae(sd_model.sd_checkpoint_info.filename).tuple()
