@@ -157,19 +157,19 @@ def connect_paste_params_buttons():
         destination_height_component = next(iter([field for field, name in fields if name == "Size-2"] if fields else []), None)
 
         if binding.source_image_component and destination_image_component:
-            need_send_dementions = destination_width_component and binding.tabname != 'inpaint'
+            need_send_dimensions = destination_width_component and binding.tabname != 'inpaint'
             if isinstance(binding.source_image_component, gr.Gallery):
-                func = send_image_and_dimensions if need_send_dementions else image_from_url_text
+                func = send_image_and_dimensions if need_send_dimensions else image_from_url_text
                 jsfunc = "extract_image_from_gallery"
             else:
-                func = send_image_and_dimensions if need_send_dementions else lambda x: x
+                func = send_image_and_dimensions if need_send_dimensions else lambda x: x
                 jsfunc = None
 
             binding.paste_button.click(
                 fn=func,
                 js=jsfunc,
                 inputs=[binding.source_image_component],
-                outputs=[destination_image_component, destination_width_component, destination_height_component] if need_send_dementions else [destination_image_component],
+                outputs=[destination_image_component, destination_width_component, destination_height_component] if need_send_dimensions else [destination_image_component],
                 show_progress=False,
             )
 
