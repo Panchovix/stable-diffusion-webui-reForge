@@ -51,7 +51,7 @@ parser.add_argument("--temp-directory", type=str, default=None)
 parser.add_argument("--input-directory", type=str, default=None)
 parser.add_argument("--auto-launch", action="store_true", help="Automatically launch in the default browser.")
 parser.add_argument("--disable-auto-launch", action="store_true", help="Disable auto launching the browser.")
-parser.add_argument("--cuda-device", type=int, default=None, metavar="DEVICE_ID", help="Set the id of the cuda device this instance will use.")
+parser.add_argument("--cuda-device", type=str, default=None, metavar="DEVICE_ID", help="Set the ids of cuda devices this instance will use.")
 
 parser.add_argument("--disable-attention-upcast", action="store_true", help="Disable all upcasting of attention. Should be unnecessary except for debugging.")
 
