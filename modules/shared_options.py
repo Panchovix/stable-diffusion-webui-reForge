@@ -103,6 +103,8 @@ options_templates.update(options_section(('upscaling', "Upscaling", "postprocess
     "ESRGAN_tile_overlap": OptionInfo(32, "Tile overlap for ESRGAN upscalers.", gr.Slider, {"minimum": 0, "maximum": 2048, "step": 8}).info("Low values = visible seam"),
     "RCAN_tile": OptionInfo(512, "Tile size for RCAN upscaler. 0 = no tiling.", gr.Slider, {"minimum": 0, "maximum": 4096, "step": 16}),
     "RCAN_tile_overlap": OptionInfo(32, "Tile overlap for RCAN upscaler. Higher values = fewer artifacts but slower processing.", gr.Slider, {"minimum": 0, "maximum": 2048, "step": 8}),
+    "PLKSR_tile": OptionInfo(512, "Tile size for PLKSR upscaler. 0 = no tiling.", gr.Slider, {"minimum": 0, "maximum": 2048, "step": 64}),
+    "PLKSR_tile_overlap": OptionInfo(32, "Tile overlap for PLKSR upscaler. Higher values = fewer artifacts but slower processing.", gr.Slider, {"minimum": 0, "maximum": 256, "step": 16}),
     "DAT_tile": OptionInfo(256, "Tile size for DAT upscalers.", gr.Slider, {"minimum": 0, "maximum": 4096, "step": 32}).info("0 = no tiling"),
     "DAT_tile_overlap": OptionInfo(32, "Tile overlap for DAT upscalers.", gr.Slider, {"minimum": 0, "maximum": 2048, "step": 32}).info("Low values = visible seam"),
     "HAT_tile": OptionInfo(256, "Tile size for HAT upscalers.", gr.Slider, {"minimum": 0, "maximum": 4096, "step": 16}).info("0 = no tiling"),
