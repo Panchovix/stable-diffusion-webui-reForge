@@ -194,7 +194,8 @@ def zeroed_hidden_states(clip_vision, batch_size):
     image = torch.zeros([batch_size, 224, 224, 3])
     ldm_patched.modules.model_management.load_model_gpu(clip_vision.patcher)
     pixel_values = clip_preprocess(image.to(clip_vision.load_device)).float()
-    _, intermediate, _ = clip_vision.model(pixel_values=pixel_values, intermediate_output=-2)
+    output = clip_vision.model(pixel_values=pixel_values, intermediate_output=-2)
+    intermediate = output[1] if len(output) >= 3 else output[0]
     return intermediate.to(ldm_patched.modules.model_management.intermediate_device())
 
 def min_(tensor_list):
