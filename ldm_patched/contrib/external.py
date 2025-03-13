@@ -313,18 +313,7 @@ class VAEEncode:
 
     CATEGORY = "latent"
 
-    @staticmethod
-    def vae_encode_crop_pixels(pixels):
-        x = (pixels.shape[1] // 8) * 8
-        y = (pixels.shape[2] // 8) * 8
-        if pixels.shape[1] != x or pixels.shape[2] != y:
-            x_offset = (pixels.shape[1] % 8) // 2
-            y_offset = (pixels.shape[2] % 8) // 2
-            pixels = pixels[:, x_offset:x + x_offset, y_offset:y + y_offset, :]
-        return pixels
-
     def encode(self, vae, pixels):
-        pixels = self.vae_encode_crop_pixels(pixels)
         t = vae.encode(pixels[:,:,:,:3])
         return ({"samples":t}, )
 
@@ -340,7 +329,6 @@ class VAEEncodeTiled:
     CATEGORY = "_for_testing"
 
     def encode(self, vae, pixels, tile_size):
-        pixels = VAEEncode.vae_encode_crop_pixels(pixels)
         t = vae.encode_tiled(pixels[:,:,:,:3], tile_x=tile_size, tile_y=tile_size, )
         return ({"samples":t}, )
 
@@ -354,14 +342,14 @@ class VAEEncodeForInpaint:
     CATEGORY = "latent/inpaint"
 
     def encode(self, vae, pixels, mask, grow_mask_by=6):
-        x = (pixels.shape[1] // 8) * 8
-        y = (pixels.shape[2] // 8) * 8
+        x = (pixels.shape[1] // vae.downscale_ratio) * vae.downscale_ratio
+        y = (pixels.shape[2] // vae.downscale_ratio) * vae.downscale_ratio
         mask = torch.nn.functional.interpolate(mask.reshape((-1, 1, mask.shape[-2], mask.shape[-1])), size=(pixels.shape[1], pixels.shape[2]), mode="bilinear")
 
         pixels = pixels.clone()
         if pixels.shape[1] != x or pixels.shape[2] != y:
-            x_offset = (pixels.shape[1] % 8) // 2
-            y_offset = (pixels.shape[2] % 8) // 2
+            x_offset = (pixels.shape[1] % vae.downscale_ratio) // 2
+            y_offset = (pixels.shape[2] % vae.downscale_ratio) // 2
             pixels = pixels[:,x_offset:x + x_offset, y_offset:y + y_offset,:]
             mask = mask[:,:,x_offset:x + x_offset, y_offset:y + y_offset]
 
@@ -858,15 +846,19 @@ class CLIPLoader:
     @classmethod
     def INPUT_TYPES(s):
         return {"required": { "clip_name": (ldm_patched.utils.path_utils.get_filename_list("clip"), ),
+                             "type": (["stable_diffusion", "stable_cascade"], ),
                              }}
     RETURN_TYPES = ("CLIP",)
     FUNCTION = "load_clip"
 
     CATEGORY = "advanced/loaders"
 
-    def load_clip(self, clip_name):
+    def load_clip(self, clip_name, type="stable_diffusion"):
+        clip_type = ldm_patched.sd.CLIPType.STABLE_DIFFUSION
+        if type == "stable_cascade":
+            clip_type = ldm_patched.sd.CLIPType.STABLE_CASCADE
         clip_path = ldm_patched.utils.path_utils.get_full_path("clip", clip_name)
-        clip = ldm_patched.modules.sd.load_clip(ckpt_paths=[clip_path], embedding_directory=ldm_patched.utils.path_utils.get_folder_paths("embeddings"))
+        clip = ldm_patched.modules.sd.load_clip(ckpt_paths=[clip_path], embedding_directory=ldm_patched.utils.path_utils.get_folder_paths("embeddings"), clip_type=clip_type)
         return (clip,)
 
 class DualCLIPLoader:
@@ -1975,3 +1967,4 @@ def init_custom_nodes():
         load_custom_node(os.path.join(extras_dir, node_file))
 
     load_custom_nodes()
+    

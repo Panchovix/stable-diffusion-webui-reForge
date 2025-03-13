@@ -35,7 +35,7 @@ httpx==0.24.1
 pillow-avif-plugin==1.4.6 
 albumentations==1.4.3
 pydantic==2.8.2
-diffusers==0.28.2
+diffusers==0.32.2
 gradio_rangeslider==0.0.6
 gradio_imageslider==0.0.20
 loadimg==0.1.2

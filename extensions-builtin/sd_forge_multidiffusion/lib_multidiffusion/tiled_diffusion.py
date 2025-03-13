@@ -7,14 +7,18 @@
 from __future__ import division
 import torch
 from torch import Tensor
-import ldm_patched.modules.model_management
-from ldm_patched.modules.model_patcher import ModelPatcher
-import ldm_patched.modules.model_patcher
-from ldm_patched.modules.model_base import BaseModel
-from typing import List, Union, Tuple, Dict
-from ldm_patched.contrib.external import ImageScale
+from typing import List, Union, Tuple, Callable, Dict
+from weakref import WeakSet
 import ldm_patched.modules.utils
+import ldm_patched.modules.model_patcher
+import ldm_patched.modules.model_management
+from ldm_patched.contrib.external import ImageScale
+from ldm_patched.modules.model_base import BaseModel
+from ldm_patched.modules.model_patcher import ModelPatcher
 from ldm_patched.modules.controlnet import ControlNet, T2IAdapter
+from ldm_patched.modules.utils import common_upscale
+from ldm_patched.modules.model_management import processing_interrupted, loaded_models, load_models_gpu
+from math import pi
 
 opt_C = 4
 opt_f = 8
@@ -58,6 +62,15 @@ class BBox:
 
     def __getitem__(self, idx:int) -> int:
         return self.box[idx]
+
+def repeat_to_batch_size(tensor, batch_size, dim=0):
+    if dim == 0 and tensor.shape[dim] == 1:
+        return tensor.expand([batch_size] + [-1] * (len(tensor.shape) - 1))
+    if tensor.shape[dim] > batch_size:
+        return tensor.narrow(dim, 0, batch_size)
+    elif tensor.shape[dim] < batch_size:
+        return tensor.repeat(dim * [1] + [ceildiv(batch_size, tensor.shape[dim])] + [1] * (len(tensor.shape) - 1 - dim)).narrow(dim, 0, batch_size)
+    return tensor
 
 def split_bboxes(w:int, h:int, tile_w:int, tile_h:int, overlap:int=16, init_weight:Union[Tensor, float]=1.0) -> Tuple[List[BBox], Tensor]:
     cols = ceildiv((w - overlap) , (tile_w - overlap))
@@ -142,13 +155,23 @@ class AbstractDiffusion:
         self.control_tensor_cpu = False
         self.weights = None
         self.imagescale = ImageScale()
+        self.uniform_distribution = None
+        self.sigmas = None
 
     def reset(self):
         tile_width = self.tile_width
         tile_height = self.tile_height
         tile_overlap = self.tile_overlap
         tile_batch_size = self.tile_batch_size
+        compression = self.compression
+        width = self.width
+        height  = self.height 
+        overlap = self.overlap
         self.__init__()
+        self.compression = compression
+        self.width = width
+        self.height  = height
+        self.overlap = overlap
         self.tile_width = tile_width
         self.tile_height = tile_height
         self.tile_overlap = tile_overlap
@@ -205,6 +228,26 @@ class AbstractDiffusion:
         self.num_batches = ceildiv(self.num_tiles , tile_bs)
         self.tile_bs = ceildiv(len(bboxes) , self.num_batches)          # optimal_batch_size
         self.batched_bboxes = [bboxes[i*self.tile_bs:(i+1)*self.tile_bs] for i in range(self.num_batches)]
+
+    # detached version of above
+    @grid_bbox
+    def get_grid_bbox(self, tile_w: int, tile_h: int, overlap: int, tile_bs: int, w: int, h: int, 
+                    device: torch.device, get_tile_weights: Callable = lambda: 1.0) -> List[List[BBox]]:
+        weights = torch.zeros((1, 1, h, w), device=device, dtype=torch.float32)
+        # enable_grid_bbox = True
+
+        tile_w = min(tile_w, w)
+        tile_h = min(tile_h, h)
+        overlap = max(0, min(overlap, min(tile_w, tile_h) - 4))
+        # split the latent into overlapped tiles, then batching
+        # weights basically indicate how many times a pixel is painted
+        bboxes, weights_ = split_bboxes(w, h, tile_w, tile_h, overlap, get_tile_weights())
+        weights += weights_
+        num_tiles = len(bboxes)
+        num_batches = ceildiv(num_tiles, tile_bs)
+        tile_bs = ceildiv(len(bboxes), num_batches)          # optimal_batch_size
+        batched_bboxes = [bboxes[i*tile_bs:(i+1)*tile_bs] for i in range(num_batches)]
+        return batched_bboxes
 
     @grid_bbox
     def get_tile_weights(self) -> Union[Tensor, float]:
@@ -295,59 +338,117 @@ class AbstractDiffusion:
             #     control_tile = control_tile.repeat([x_batch_size if is_denoise else x_batch_size * 2, 1, 1, 1])
             # self.control_params[param_id].hint_cond = control_tile.to(devices.device)
 
-    def process_controlnet(self, x_shape, x_dtype, c_in: dict, cond_or_uncond: List, bboxes, batch_size: int, batch_id: int):
-        control: ControlNet = c_in['control_model']
-        param_id = -1 # current controlnet & previous_controlnets
-        tuple_key = tuple(cond_or_uncond) + tuple(x_shape)
+    def process_controlnet(self, x_noisy, c_in: dict, cond_or_uncond: List, bboxes, batch_size: int, batch_id: int, shifts=None, shift_condition=None):
+        control: ControlNet = c_in['control']
+        param_id = -1 # current controlnet & previous controlnets
+        tuple_key = tuple(cond_or_uncond) + tuple(x_noisy.shape)
         while control is not None:
             param_id += 1
-            PH, PW = self.h*8, self.w*8
-            
-            if self.control_params.get(tuple_key, None) is None:
-                self.control_params[tuple_key] = [[None]]
-                val = self.control_params[tuple_key]
-                if param_id+1 >= len(val):
-                    val.extend([[None] for _ in range(param_id+1)])
-                if len(self.batched_bboxes) >= len(val[param_id]):
-                    val[param_id].extend([[None] for _ in range(len(self.batched_bboxes))])
 
-            # Below is taken from ldm_patched.modules.controlnet.py, but we need to additionally tile the cnets.
+            if tuple_key not in self.control_params:
+                self.control_params[tuple_key] = [[None]]
+
+            while len(self.control_params[tuple_key]) <= param_id:
+                self.control_params[tuple_key].append([None])
+
+            while len(self.control_params[tuple_key][param_id]) <= batch_id:
+                self.control_params[tuple_key][param_id].append(None)
+
+            # Below is taken from ldm_patched.controlnet.py, but we need to additionally tile the cnets.
             # if statement: eager eval. first time when cond_hint is None. 
             if self.refresh or control.cond_hint is None or not isinstance(self.control_params[tuple_key][param_id][batch_id], Tensor):
+                if control.cond_hint is not None:
+                    del control.cond_hint
+                control.cond_hint = None
+                compression_ratio = control.compression_ratio
+                if control.vae is not None:
+                    compression_ratio *= control.vae.downscale_ratio
+                else:
+                    if control.latent_format is not None:
+                        raise ValueError("This Controlnet needs a VAE but none was provided, please use a ControlNetApply node with a VAE input and connect it.")
+                PH, PW = self.h * compression_ratio, self.w * compression_ratio
+
+                device = getattr(control, 'device', x_noisy.device)
                 dtype = getattr(control, 'manual_cast_dtype', None)
                 if dtype is None: dtype = getattr(getattr(control, 'control_model', None), 'dtype', None)
-                if dtype is None: dtype = x_dtype
+                if dtype is None: dtype = x_noisy.dtype
+
                 if isinstance(control, T2IAdapter):
                     width, height = control.scale_image_to(PW, PH)
-                    control.cond_hint = ldm_patched.modules.utils.common_upscale(control.cond_hint_original, width, height, 'nearest-exact', "center").float().to(control.device)
+                    cns = common_upscale(control.cond_hint_original, width, height, control.upscale_algorithm, "center").float().to(device=device)
                     if control.channels_in == 1 and control.cond_hint.shape[1] > 1:
-                        control.cond_hint = torch.mean(control.cond_hint, 1, keepdim=True)
+                        cns = torch.mean(control.cond_hint, 1, keepdim=True)
                 elif control.__class__.__name__ == 'ControlLLLiteAdvanced':
-                    if control.sub_idxs is not None and control.cond_hint_original.shape[0] >= control.full_latent_length:
-                        control.cond_hint = ldm_patched.modules.utils.common_upscale(control.cond_hint_original[control.sub_idxs], PW, PH, 'nearest-exact', "center").to(dtype=dtype, device=control.device)
+                    if getattr(control, 'sub_idxs', None) is not None and control.cond_hint_original.shape[0] >= control.full_latent_length:
+                        cns = common_upscale(control.cond_hint_original[control.sub_idxs], PW, PH, control.upscale_algorithm, "center").to(dtype=dtype, device=device)
                     else:
-                        if (PH, PW) == (control.cond_hint_original.shape[-2], control.cond_hint_original.shape[-1]):
-                            control.cond_hint = control.cond_hint_original.clone().to(dtype=dtype, device=control.device)
-                        else:
-                            control.cond_hint = ldm_patched.modules.utils.common_upscale(control.cond_hint_original, PW, PH, 'nearest-exact', "center").to(dtype=dtype, device=control.device)
+                        cns = common_upscale(control.cond_hint_original, PW, PH, control.upscale_algorithm, "center").to(dtype=dtype, device=device)
                 else:
-                    if (PH, PW) == (control.cond_hint_original.shape[-2], control.cond_hint_original.shape[-1]):
-                        control.cond_hint = control.cond_hint_original.clone().to(dtype=dtype, device=control.device)
-                    else:
-                        control.cond_hint = ldm_patched.modules.utils.common_upscale(control.cond_hint_original, PW, PH, 'nearest-exact', 'center').to(dtype=dtype, device=control.device)
-                
-                # Broadcast then tile
+                    cns = common_upscale(control.cond_hint_original, PW, PH, control.upscale_algorithm, 'center').to(dtype=dtype, device=device)
+                    if getattr(control, 'vae', None) is not None:
+                        loaded_models_ = loaded_models(only_currently_used=True)
+                        cns = control.vae.encode(cns.movedim(1, -1))
+                        load_models_gpu(loaded_models_)
+                    if getattr(control, 'latent_format', None) is not None:
+                        cns = control.latent_format.process_in(cns)
+                    if len(getattr(control, 'extra_concat_orig', ())) > 0:
+                        to_concat = []
+                        for c in control.extra_concat_orig:
+                            c = c.to(device=device)
+                            c = common_upscale(c, cns.shape[3], cns.shape[2], control.upscale_algorithm, "center")
+                            to_concat.append(repeat_to_batch_size(c, cns.shape[0]))
+                        cns = torch.cat([cns] + to_concat, dim=1)
+
+                    cns = cns.to(device=device, dtype=dtype)
+
+                # Tile the ControlNets
                 #
-                # Below can be in the parent's if clause because self.refresh will trigger on resolution change, e.g. cause of ConditioningSetArea
-                # so that particular case isn't cached atm.
-                cond_hint_pre_tile = control.cond_hint
-                if control.cond_hint.shape[0] < batch_size :
-                    cond_hint_pre_tile = self.repeat_tensor(control.cond_hint, ceildiv(batch_size, control.cond_hint.shape[0]))[:batch_size]
-                cns = [cond_hint_pre_tile[:, :, bbox[1]*opt_f:bbox[3]*opt_f, bbox[0]*opt_f:bbox[2]*opt_f] for bbox in bboxes]
-                control.cond_hint = torch.cat(cns, dim=0)
-                self.control_params[tuple_key][param_id][batch_id]=control.cond_hint
+                # Below can be in this if clause because self.refresh will trigger on resolution change,
+                # e.g. cause of ConditioningSetArea, so that particular case isn't cached atm.
+                cf = control.compression_ratio
+                if cns.shape[0] != batch_size:
+                    cns = repeat_to_batch_size(cns, batch_size)
+                if shifts is not None:
+                    control.cns = cns
+                    # cns = cns.roll(shifts=tuple(x * cf for x in shifts), dims=(-2,-1))
+                    sh_h,sh_w=shifts
+                    sh_h *= cf
+                    sh_w *= cf
+                    if (sh_h,sh_w) != (0,0):
+                        if sh_h == 0 or sh_w == 0:
+                            cns = control.cns.roll(shifts=(sh_h,sh_w), dims=(-2,-1))
+                        else:
+                            if shift_condition:
+                                cns = control.cns.roll(shifts=sh_h, dims=-2)
+                            else:
+                                cns = control.cns.roll(shifts=sh_w, dims=-1)
+                cns_slices = [cns[:, :, bbox[1]*cf:bbox[3]*cf, bbox[0]*cf:bbox[2]*cf] for bbox in bboxes]
+                control.cond_hint = torch.cat(cns_slices, dim=0).to(device=cns.device)
+                del cns_slices
+                del cns
+                self.control_params[tuple_key][param_id][batch_id] = control.cond_hint
             else:
-                control.cond_hint = self.control_params[tuple_key][param_id][batch_id]
+                if hasattr(control,'cns') and shifts is not None:
+                    cf = control.compression_ratio
+                    # cns = control.cns.roll(shifts=tuple(x * cf for x in shifts), dims=(-2,-1))
+                    cns = control.cns
+                    sh_h,sh_w=shifts
+                    sh_h *= cf
+                    sh_w *= cf
+                    if (sh_h,sh_w) != (0,0):
+                        if sh_h == 0 or sh_w == 0:
+                            cns = control.cns.roll(shifts=(sh_h,sh_w), dims=(-2,-1))
+                        else:
+                            if shift_condition:
+                                cns = control.cns.roll(shifts=sh_h, dims=-2)
+                            else:
+                                cns = control.cns.roll(shifts=sh_w, dims=-1)
+                    cns_slices = [cns[:, :, bbox[1]*cf:bbox[3]*cf, bbox[0]*cf:bbox[2]*cf] for bbox in bboxes]
+                    control.cond_hint = torch.cat(cns_slices, dim=0).to(device=cns.device)
+                    del cns_slices
+                    del cns
+                else:
+                    control.cond_hint = self.control_params[tuple_key][param_id][batch_id]
             control = control.previous_controlnet
 
 import numpy as np
@@ -370,17 +471,16 @@ class CondDict: ...
 
 class MultiDiffusion(AbstractDiffusion):
     
-    @torch.no_grad()
+    @torch.inference_mode()
     def __call__(self, model_function: BaseModel.apply_model, args: dict):
         x_in: Tensor = args["input"]
         t_in: Tensor = args["timestep"]
         c_in: dict = args["c"]
         cond_or_uncond: List = args["cond_or_uncond"]
-        c_crossattn: Tensor = c_in['c_crossattn']
 
         N, C, H, W = x_in.shape
 
-        # ldm_patched.modulesui can feed in a latent that's a different size cause of SetArea, so we'll refresh in that case.
+        # comfyui can feed in a latent that's a different size cause of SetArea, so we'll refresh in that case.
         self.refresh = False
         if self.weights is None or self.h != H or self.w != W:
             self.h, self.w = H, W
@@ -395,41 +495,49 @@ class MultiDiffusion(AbstractDiffusion):
         # Background sampling (grid bbox)
         if self.draw_background:
             for batch_id, bboxes in enumerate(self.batched_bboxes):
-                if ldm_patched.modules.model_management.processing_interrupted(): 
+                if processing_interrupted(): 
                     # self.pbar.close()
                     return x_in
 
                 # batching & compute tiles
                 x_tile = torch.cat([x_in[bbox.slicer] for bbox in bboxes], dim=0)   # [TB, C, TH, TW]
-                n_rep = len(bboxes)
-                ts_tile = self.repeat_tensor(t_in, n_rep)
-                cond_tile = self.repeat_tensor(c_crossattn, n_rep)
-                c_tile = c_in.copy()
-                c_tile['c_crossattn'] = cond_tile
-                if 'time_context' in c_in:
-                    c_tile['time_context'] = self.repeat_tensor(c_in['time_context'], n_rep)
-                for key in c_tile:
-                    if key in ['y', 'c_concat']:
-                        icond = c_tile[key]
-                        if icond.shape[2:] == (self.h, self.w):
-                            c_tile[key] = torch.cat([icond[bbox.slicer] for bbox in bboxes])
-                        else:
-                            c_tile[key] = self.repeat_tensor(icond, n_rep)
+                t_tile = repeat_to_batch_size(t_in, x_tile.shape[0])
+                c_tile = {}
+                for k, v in c_in.items():
+                    if isinstance(v, torch.Tensor):
+                        if len(v.shape) == len(x_tile.shape):
+                            bboxes_ = bboxes
+                            if v.shape[-2:] != x_in.shape[-2:]:
+                                cf = x_in.shape[-1] * self.compression // v.shape[-1] # compression factor
+                                bboxes_ = self.get_grid_bbox(
+                                    self.width // cf,
+                                    self.height // cf,
+                                    self.overlap // cf,
+                                    self.tile_batch_size,
+                                    v.shape[-1],
+                                    v.shape[-2],
+                                    x_in.device,
+                                    self.get_tile_weights,
+                                )
+                            v = torch.cat([v[bbox_.slicer] for bbox_ in bboxes_[batch_id]])
+                        if v.shape[0] != x_tile.shape[0]:
+                            v = repeat_to_batch_size(v, x_tile.shape[0])
+                    c_tile[k] = v
 
                 # controlnet tiling
                 # self.switch_controlnet_tensors(batch_id, N, len(bboxes))
                 if 'control' in c_in:
-                    self.process_controlnet(x_tile.shape, x_tile.dtype, c_in, cond_or_uncond, bboxes, N, batch_id)
-                    c_tile['control'] = c_in['control_model'].get_control(x_tile, ts_tile, c_tile, len(cond_or_uncond))
+                    self.process_controlnet(x_tile, c_in, cond_or_uncond, bboxes, N, batch_id)
+                    c_tile['control'] = c_in['control'].get_control_orig(x_tile, t_tile, c_tile, len(cond_or_uncond))
 
                 # stablesr tiling
                 # self.switch_stablesr_tensors(batch_id)
 
-                x_tile_out = model_function(x_tile, ts_tile, **c_tile)
+                x_tile_out = model_function(x_tile, t_tile, **c_tile)
 
                 for i, bbox in enumerate(bboxes):
                     self.x_buffer[bbox.slicer] += x_tile_out[i*N:(i+1)*N, :, :, :]
-                del x_tile_out, x_tile, ts_tile, c_tile
+                del x_tile_out, x_tile, t_tile, c_tile
 
                 # update progress bar
                 # self.update_pbar()
@@ -438,6 +546,177 @@ class MultiDiffusion(AbstractDiffusion):
         x_out = torch.where(self.weights > 1, self.x_buffer / self.weights, self.x_buffer)
 
         return x_out
+
+class Store:
+    def __repr__(self):
+        keys = sorted(self.__dict__)
+        items = ("{}={!r}".format(k, self.__dict__[k]) for k in keys)
+        return "{}({})".format(type(self).__name__, ", ".join(items))
+
+    def __eq__(self, other):
+        return self.__dict__ == other.__dict__
+
+store = Store()
+
+def fibonacci_spacing(x):
+    result = torch.zeros_like(x)
+    fib = [0, 1]
+    while fib[-1] < len(x):
+        fib.append(fib[-1] + fib[-2])
+    
+    used_indices = set()
+    for i, val in enumerate(x):
+        fib_index = i % len(fib)
+        target_index = fib[fib_index] % len(x)
+        while target_index in used_indices:
+            target_index = (target_index + 1) % len(x)
+        result[target_index] = val
+        used_indices.add(target_index)
+    
+    return result
+
+def find_nearest(a,b):
+    # Calculate the absolute differences. 
+    diff = (a - b).abs()
+
+    # Find the indices of the nearest elements
+    nearest_indices = diff.argmin()
+
+    # Get the nearest elements from b
+    return b[nearest_indices]
+
+class SpotDiffusion(AbstractDiffusion):
+    
+    @torch.inference_mode()
+    def __call__(self, model_function: BaseModel.apply_model, args: dict):
+        x_in: Tensor = args["input"]
+        t_in: Tensor = args["timestep"]
+        c_in: dict = args["c"]
+        cond_or_uncond: List = args["cond_or_uncond"]
+
+        N, C, H, W = x_in.shape
+
+        # comfyui can feed in a latent that's a different size cause of SetArea, so we'll refresh in that case.
+        self.refresh = False
+        if self.weights is None or self.h != H or self.w != W:
+            self.h, self.w = H, W
+            self.refresh = True
+            self.init_grid_bbox(self.tile_width, self.tile_height, self.tile_overlap, self.tile_batch_size)
+            # init everything done, perform sanity check & pre-computations
+            self.init_done()
+        self.h, self.w = H, W
+        # clear buffer canvas
+        self.reset_buffer(x_in)
+
+        if self.uniform_distribution is None:
+            sigmas = self.sigmas = store.sigmas
+            shift_method = store.model_options.get('tiled_diffusion_shift_method', 'random')
+            seed = store.model_options.get('tiled_diffusion_seed', store.extra_args.get('seed', 0))
+            th = self.tile_height
+            tw = self.tile_width
+            cf = self.compression
+            if 'effnet' in c_in:
+                cf = x_in.shape[-1] * self.compression // c_in['effnet'].shape[-1] # compression factor
+                th = self.height // cf
+                tw = self.width // cf
+            shift_height = torch.randint(0, th, (len(sigmas)-1,), generator=torch.Generator(device='cpu').manual_seed(seed), device='cpu')
+            shift_height = (shift_height * cf / self.compression).round().to(torch.int32)
+            shift_width = torch.randint(0, tw, (len(sigmas)-1,), generator=torch.Generator(device='cpu').manual_seed(seed), device='cpu')
+            shift_width = (shift_width * cf / self.compression).round().to(torch.int32)
+            if shift_method == "sorted":
+                shift_height = shift_height.sort().values
+                shift_width = shift_width.sort().values
+            elif shift_method == "fibonacci":
+                shift_height = fibonacci_spacing(shift_height.sort().values)
+                shift_width = fibonacci_spacing(shift_width.sort().values)
+            self.uniform_distribution = (shift_height, shift_width)
+
+        sigmas = self.sigmas
+        ts_in = find_nearest(t_in[0], sigmas)
+        cur_i = ss.item() if (ss:=(sigmas == ts_in).nonzero()).shape[0] != 0 else 0
+
+        sh_h = self.uniform_distribution[0][cur_i].item()
+        sh_w = self.uniform_distribution[1][cur_i].item()
+        if min(self.tile_height, x_in.shape[-2]) == x_in.shape[-2]:
+            sh_h=0
+        if min(self.tile_width, x_in.shape[-1]) == x_in.shape[-1]:
+            sh_w=0
+        condition = cur_i % 2 == 0 if self.tile_height > self.tile_width else cur_i % 2 != 0
+        if (sh_h,sh_w) != (0,0):
+            # x_in = x_in.roll(shifts=(sh_h,sh_w), dims=(-2,-1))
+            if sh_h == 0 or sh_w == 0:
+                x_in = x_in.roll(shifts=(sh_h,sh_w), dims=(-2,-1))
+            else:
+                if condition:
+                    x_in = x_in.roll(shifts=sh_h, dims=-2)
+                else:
+                    x_in = x_in.roll(shifts=sh_w, dims=-1)
+
+        # Background sampling (grid bbox)
+        if self.draw_background:
+            for batch_id, bboxes in enumerate(self.batched_bboxes):
+                if processing_interrupted(): 
+                    # self.pbar.close()
+                    return x_in
+
+                # batching & compute tiles
+                x_tile = torch.cat([x_in[bbox.slicer] for bbox in bboxes], dim=0)   # [TB, C, TH, TW]
+                t_tile = repeat_to_batch_size(t_in, x_tile.shape[0])
+                c_tile = {}
+                for k, v in c_in.items():
+                    if isinstance(v, torch.Tensor):
+                        if len(v.shape) == len(x_tile.shape):
+                            bboxes_ = bboxes
+                            sh_h_new, sh_w_new = sh_h, sh_w
+                            if v.shape[-2:] != x_in.shape[-2:]:
+                                cf = x_in.shape[-1] * self.compression // v.shape[-1] # compression factor
+                                bboxes_ = self.get_grid_bbox(
+                                    self.width // cf,
+                                    self.height // cf,
+                                    self.overlap // cf,
+                                    self.tile_batch_size,
+                                    v.shape[-1],
+                                    v.shape[-2],
+                                    x_in.device,
+                                    self.get_tile_weights,
+                                )
+                                sh_h_new, sh_w_new = round(sh_h * self.compression / cf), round(sh_w * self.compression / cf)
+                            v = v.roll(shifts=(sh_h_new, sh_w_new), dims=(-2,-1))
+                            v = torch.cat([v[bbox_.slicer] for bbox_ in bboxes_[batch_id]])
+                        if v.shape[0] != x_tile.shape[0]:
+                            v = repeat_to_batch_size(v, x_tile.shape[0])
+                    c_tile[k] = v
+
+                # controlnet tiling
+                # self.switch_controlnet_tensors(batch_id, N, len(bboxes))
+                if 'control' in c_in:
+                    self.process_controlnet(x_tile, c_in, cond_or_uncond, bboxes, N, batch_id, (sh_h,sh_w), condition)
+                    c_tile['control'] = c_in['control'].get_control_orig(x_tile, t_tile, c_tile, len(cond_or_uncond))
+
+                # stablesr tiling
+                # self.switch_stablesr_tensors(batch_id)
+
+                x_tile_out = model_function(x_tile, t_tile, **c_tile)
+
+                for i, bbox in enumerate(bboxes):
+                    self.x_buffer[bbox.slicer] = x_tile_out[i*N:(i+1)*N, :, :, :]
+
+                del x_tile_out, x_tile, t_tile, c_tile
+
+                # update progress bar
+                # self.update_pbar()
+
+        if (sh_h,sh_w) != (0,0):
+            # self.x_buffer = self.x_buffer.roll(shifts=(-sh_h, -sh_w), dims=(-2, -1))
+            if sh_h == 0 or sh_w == 0:
+                self.x_buffer = self.x_buffer.roll(shifts=(-sh_h, -sh_w), dims=(-2, -1))
+            else:
+                if condition:
+                    self.x_buffer = self.x_buffer.roll(shifts=-sh_h, dims=-2)
+                else:
+                    self.x_buffer = self.x_buffer.roll(shifts=-sh_w, dims=-1)
+
+        return self.x_buffer
 
 class MixtureOfDiffusers(AbstractDiffusion):
     """
@@ -469,13 +748,12 @@ class MixtureOfDiffusers(AbstractDiffusion):
         self.tile_weights = self.get_weight(self.tile_w, self.tile_h)
         return self.tile_weights
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def __call__(self, model_function: BaseModel.apply_model, args: dict):
         x_in: Tensor = args["input"]
         t_in: Tensor = args["timestep"]
         c_in: dict = args["c"]
         cond_or_uncond: List= args["cond_or_uncond"]
-        c_crossattn: Tensor = c_in['c_crossattn']
 
         N, C, H, W = x_in.shape
 
@@ -497,59 +775,43 @@ class MixtureOfDiffusers(AbstractDiffusion):
         # Global sampling
         if self.draw_background:
             for batch_id, bboxes in enumerate(self.batched_bboxes):     # batch_id is the `Latent tile batch size`
-                if ldm_patched.modules.model_management.processing_interrupted(): 
+                if processing_interrupted(): 
                     # self.pbar.close()
                     return x_in
-
                 # batching
                 x_tile_list     = []
-                t_tile_list     = []
-                icond_map = {}
-                # tcond_tile_list = []
-                # icond_tile_list = []
-                # vcond_tile_list = []
-                # control_list = []
                 for bbox in bboxes:
                     x_tile_list.append(x_in[bbox.slicer])
-                    t_tile_list.append(t_in)
-                    if isinstance(c_in, dict):
-                        # tcond
-                        # tcond_tile = c_crossattn #self.get_tcond(c_in)      # cond, [1, 77, 768]
-                        # tcond_tile_list.append(tcond_tile)
-                        # present in sdxl
-                        for key in ['y', 'c_concat']:
-                            if key in c_in:
-                                icond=c_in[key] # self.get_icond(c_in)
-                                if icond.shape[2:] == (self.h, self.w):
-                                    icond = icond[bbox.slicer]
-                                if icond_map.get(key, None) is None:
-                                    icond_map[key] = []
-                                icond_map[key].append(icond)
-                        # # vcond:
-                        # vcond = self.get_vcond(c_in)
-                        # vcond_tile_list.append(vcond)
-                    else:
-                        print('>> [WARN] not supported, make an issue on github!!')
-                n_rep = len(bboxes)
-                x_tile      = torch.cat(x_tile_list,     dim=0)          # differs each
-                t_tile      = self.repeat_tensor(t_in, n_rep)           # just repeat
-                tcond_tile = self.repeat_tensor(c_crossattn, n_rep) # just repeat
-                c_tile = c_in.copy()
-                c_tile['c_crossattn'] = tcond_tile
-                if 'time_context' in c_in:
-                    c_tile['time_context'] = self.repeat_tensor(c_in['time_context'], n_rep) # just repeat
-                for key in c_tile:
-                    if key in ['y', 'c_concat']:
-                        icond_tile = torch.cat(icond_map[key], dim=0)  # differs each
-                        c_tile[key] = icond_tile
-                # vcond_tile = torch.cat(vcond_tile_list, dim=0) if None not in vcond_tile_list else None # just repeat
 
+                x_tile = torch.cat(x_tile_list, dim=0)                     # differs each
+                t_tile = repeat_to_batch_size(t_in, x_tile.shape[0])   # just repeat
+                c_tile = {}
+                for k, v in c_in.items():
+                    if isinstance(v, torch.Tensor):
+                        if len(v.shape) == len(x_tile.shape):
+                            bboxes_ = bboxes
+                            if v.shape[-2:] != x_in.shape[-2:]:
+                                cf = x_in.shape[-1] * self.compression // v.shape[-1] # compression factor
+                                bboxes_ = self.get_grid_bbox(
+                                    (tile_w := self.width // cf),
+                                    (tile_h := self.height // cf),
+                                    self.overlap // cf,
+                                    self.tile_batch_size,
+                                    v.shape[-1],
+                                    v.shape[-2],
+                                    x_in.device,
+                                    lambda: self.get_weight(tile_w, tile_h),
+                                )
+                            v = torch.cat([v[bbox_.slicer] for bbox_ in bboxes_[batch_id]])
+                        if v.shape[0] != x_tile.shape[0]:
+                            v = repeat_to_batch_size(v, x_tile.shape[0])
+                    c_tile[k] = v
+                
                 # controlnet
                 # self.switch_controlnet_tensors(batch_id, N, len(bboxes), is_denoise=True)
                 if 'control' in c_in:
-                    control=c_in['control']
-                    self.process_controlnet(x_tile.shape, x_tile.dtype, c_in, cond_or_uncond, bboxes, N, batch_id)
-                    c_tile['control'] = control.get_control(x_tile, t_tile, c_tile, len(cond_or_uncond))
+                    self.process_controlnet(x_tile, c_in, cond_or_uncond, bboxes, N, batch_id)
+                    c_tile['control'] = c_in['control'].get_control_orig(x_tile, t_tile, c_tile, len(cond_or_uncond))
                 
                 # stablesr
                 # self.switch_stablesr_tensors(batch_id)
@@ -572,13 +834,12 @@ class MixtureOfDiffusers(AbstractDiffusion):
 
         return x_out
 
-
 MAX_RESOLUTION=8192
 class TiledDiffusion():
     @classmethod
     def INPUT_TYPES(s):
         return {"required": {"model": ("MODEL", ),
-                                "method": (["MultiDiffusion", "Mixture of Diffusers"], {"default": "Mixture of Diffusers"}),
+                                "method": (["MultiDiffusion", "Mixture of Diffusers", "SpotDiffusion"], {"default": "Mixture of Diffusers"}),
                                 # "tile_width": ("INT", {"default": 96, "min": 16, "max": 256, "step": 16}),
                                 "tile_width": ("INT", {"default": 96*opt_f, "min": 16, "max": MAX_RESOLUTION, "step": 16}),
                                 # "tile_height": ("INT", {"default": 96, "min": 16, "max": 256, "step": 16}),
@@ -589,28 +850,47 @@ class TiledDiffusion():
     RETURN_TYPES = ("MODEL",)
     FUNCTION = "apply"
     CATEGORY = "_for_testing"
+    instances = WeakSet()
+
+    @classmethod
+    def IS_CHANGED(s, *args, **kwargs):
+        for o in s.instances:
+            o.impl.reset()
+        return ""
+    
+    def __init__(self) -> None:
+        self.__class__.instances.add(self)
 
     def apply(self, model: ModelPatcher, method, tile_width, tile_height, tile_overlap, tile_batch_size):
         if method == "Mixture of Diffusers":
-            implement = MixtureOfDiffusers()
+            self.impl = MixtureOfDiffusers()
+        elif method == "MultiDiffusion":
+            self.impl = MultiDiffusion()
         else:
-            implement = MultiDiffusion()
+            self.impl = SpotDiffusion()
         
         # if noise_inversion:
         #     get_cache_callback = self.noise_inverse_get_cache
         #     set_cache_callback = None # lambda x0, xt, prompts: self.noise_inverse_set_cache(p, x0, xt, prompts, steps, retouch)
-        #     implement.init_noise_inverse(steps, retouch, get_cache_callback, set_cache_callback, renoise_strength, renoise_kernel_size)
+        #     self.impl.init_noise_inverse(steps, retouch, get_cache_callback, set_cache_callback, renoise_strength, renoise_kernel_size)
 
-        implement.tile_width = tile_width // opt_f
-        implement.tile_height = tile_height // opt_f
-        implement.tile_overlap = tile_overlap // opt_f
-        implement.tile_batch_size = tile_batch_size
-        # implement.init_grid_bbox(tile_width, tile_height, tile_overlap, tile_batch_size)
+        compression = 4 if "CASCADE" in str(model.model.model_type) else 8
+        self.impl.tile_width = tile_width // compression
+        self.impl.tile_height = tile_height // compression
+        self.impl.tile_overlap = tile_overlap // compression
+        self.impl.tile_batch_size = tile_batch_size
+        
+        self.impl.compression = compression
+        self.impl.width = tile_width
+        self.impl.height  = tile_height
+        self.impl.overlap = tile_overlap
+
+        # self.impl.init_grid_bbox(tile_width, tile_height, tile_overlap, tile_batch_size)
         # # init everything done, perform sanity check & pre-computations
-        # implement.init_done()
+        # self.impl.init_done()
         # hijack the behaviours
-        # implement.hook()
+        # self.impl.hook()
         model = model.clone()
-        model.set_model_unet_function_wrapper(implement)
+        model.set_model_unet_function_wrapper(self.impl)
         model.model_options['tiled_diffusion'] = True
         return (model,)

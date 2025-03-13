@@ -30,8 +30,7 @@ class BasicScheduler:
         if denoise < 1.0:
             total_steps = int(steps/denoise)
 
-        ldm_patched.modules.model_management.load_models_gpu([model])
-        sigmas = ldm_patched.modules.samplers.calculate_sigmas_scheduler(model.model, scheduler, total_steps).cpu()
+        sigmas = ldm_patched.modules.samplers.calculate_sigmas(model.get_model_object("model_sampling"), scheduler, total_steps).cpu()
         sigmas = sigmas[-(steps + 1):]
         return (sigmas, )
 

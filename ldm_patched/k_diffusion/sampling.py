@@ -6,12 +6,14 @@ import math
 
 from scipy import integrate
 import torch
-import numpy as np
 from torch import nn
 import torchsde
 from tqdm.auto import trange, tqdm
-import ldm_patched.modules.model_patcher
+
+from ldm_patched.modules import utils
 from ldm_patched.k_diffusion import deis
+import ldm_patched.modules.model_patcher
+import ldm_patched.modules.model_sampling
 import torchdiffeq
 import modules.shared
 from torch import no_grad, FloatTensor
@@ -19,9 +21,7 @@ from typing import Protocol, Optional, Dict, Any, TypedDict, NamedTuple, List
 from itertools import pairwise
 from ldm_patched.modules.model_sampling import CONST
 from modules.shared import opts
-
-from . import utils
-
+import numpy as np
 
 from modules.sd_samplers_kdiffusion_smea import Rescaler
 
@@ -207,10 +207,19 @@ def get_sigmas_vp(n, beta_d=19.9, beta_min=0.1, eps_s=1e-3, device='cpu'):
     sigmas = torch.sqrt(torch.exp(beta_d * t ** 2 / 2 + beta_min * t) - 1)
     return append_zero(sigmas)
 
+def get_sigmas_laplace(n, sigma_min, sigma_max, mu=0., beta=0.5, device='cpu'):
+    """Constructs the noise schedule proposed by Tiankai et al. (2024). """
+    epsilon = 1e-5 # avoid log(0)
+    x = torch.linspace(0, 1, n, device=device)
+    clamp = lambda x: torch.clamp(x, min=sigma_min, max=sigma_max)
+    lmb = mu - beta * torch.sign(0.5-x) * torch.log(1 - 2 * torch.abs(0.5-x) + epsilon)
+    sigmas = clamp(torch.exp(lmb))
+    return sigmas
+
 
 def to_d(x, sigma, denoised):
     """Converts a denoiser output to a Karras ODE derivative."""
-    return (x - denoised) / utils.append_dims(sigma, x.ndim)
+    return (x - denoised) / append_dims(sigma, x.ndim)
 
 
 def get_ancestral_step(sigma_from, sigma_to, eta=None):
@@ -504,6 +513,47 @@ def sample_euler_ancestral_RF(model, x, sigmas, extra_args=None, callback=None, 
             x = sigma_down_i_ratio * x + (1 - sigma_down_i_ratio) * denoised
             if eta > 0:
                 x = (alpha_ip1 / alpha_down) * x + noise_sampler(sigmas[i], sigmas[i + 1]) * s_noise * renoise_coeff
+    return x
+
+@torch.no_grad()
+def sample_dpmpp_2s_ancestral_cfg_pp(model, x, sigmas, extra_args=None, callback=None, disable=None, eta=1., s_noise=1., noise_sampler=None):
+    
+    """Ancestral sampling with DPM-Solver++(2S) second-order steps."""
+    extra_args = {} if extra_args is None else extra_args
+    noise_sampler = default_noise_sampler(x) if noise_sampler is None else noise_sampler
+    
+    temp = [0]
+    def post_cfg_function(args):
+        temp[0] = args["uncond_denoised"]
+        return args["denoised"]
+    model_options = extra_args.get("model_options", {}).copy()
+    extra_args["model_options"] = ldm_patched.modules.model_patcher.set_model_options_post_cfg_function(model_options, post_cfg_function, disable_cfg1_optimization=True)
+    s_in = x.new_ones([x.shape[0]])
+    sigma_fn = lambda t: t.neg().exp()
+    t_fn = lambda sigma: sigma.log().neg()
+    for i in trange(len(sigmas) - 1, disable=disable):
+        denoised = model(x, sigmas[i] * s_in, **extra_args)
+        sigma_down, sigma_up = get_ancestral_step(sigmas[i], sigmas[i + 1], eta=eta)
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
+        if sigma_down == 0:
+            # Euler method
+            d = to_d(x, sigmas[i], temp[0])
+            dt = sigma_down - sigmas[i]
+            x = denoised + d * sigma_down
+        else:
+            # DPM-Solver++(2S)
+            t, t_next = t_fn(sigmas[i]), t_fn(sigma_down)
+            # r = torch.sinh(1 + (2 - eta) * (t_next - t) / (t - t_fn(sigma_up))) works only on non-cfgpp, weird
+            r = 1 / 2
+            h = t_next - t
+            s = t + r * h
+            x_2 = (sigma_fn(s) / sigma_fn(t)) * (x + (denoised - temp[0])) - (-h * r).expm1() * denoised
+            denoised_2 = model(x_2, sigma_fn(s) * s_in, **extra_args)
+            x = (sigma_fn(t_next) / sigma_fn(t)) * (x + (denoised - temp[0])) - (-h).expm1() * denoised_2
+        # Noise addition
+        if sigmas[i + 1] > 0:
+            x = x + noise_sampler(sigmas[i], sigmas[i + 1]) * s_noise * sigma_up
     return x
 
 @torch.no_grad()
@@ -887,9 +937,9 @@ def sample_dpm_adaptive(model, x, sigma_min, sigma_max, extra_args=None, callbac
 
 @torch.no_grad()
 def sample_dpmpp_2s_ancestral(model, x, sigmas, extra_args=None, callback=None, disable=None, noise_sampler=None):
-    """Ancestral sampling with DPM-Solver++(2S) second-order steps."""
     eta = modules.shared.opts.dpm_2s_ancestral_og_eta
     s_noise = modules.shared.opts.dpm_2s_ancestral_og_s_noise
+    """Ancestral sampling with DPM-Solver++(2S) second-order steps."""
 
     extra_args = {} if extra_args is None else extra_args
     seed = extra_args.get("seed", None)
@@ -1141,22 +1191,38 @@ def sample_dpmpp_3m_sde(model, x, sigmas, extra_args=None, callback=None, disabl
 
 @torch.no_grad()
 def sample_dpmpp_3m_sde_gpu(model, x, sigmas, extra_args=None, callback=None, disable=None, eta=1., s_noise=1., noise_sampler=None):
+    if len(sigmas) <= 1:
+        return x
+
     sigma_min, sigma_max = sigmas[sigmas > 0].min(), sigmas.max()
     noise_sampler = BrownianTreeNoiseSampler(x, sigma_min, sigma_max, seed=extra_args.get("seed", None), cpu=False) if noise_sampler is None else noise_sampler
     return sample_dpmpp_3m_sde(model, x, sigmas, extra_args=extra_args, callback=callback, disable=disable, eta=eta, s_noise=s_noise, noise_sampler=noise_sampler)
 
 @torch.no_grad()
 def sample_dpmpp_2m_sde_gpu(model, x, sigmas, extra_args=None, callback=None, disable=None, eta=1., s_noise=1., noise_sampler=None, solver_type='midpoint'):
+    if len(sigmas) <= 1:
+        return x
+
     sigma_min, sigma_max = sigmas[sigmas > 0].min(), sigmas.max()
     noise_sampler = BrownianTreeNoiseSampler(x, sigma_min, sigma_max, seed=extra_args.get("seed", None), cpu=False) if noise_sampler is None else noise_sampler
     return sample_dpmpp_2m_sde(model, x, sigmas, extra_args=extra_args, callback=callback, disable=disable, eta=eta, s_noise=s_noise, noise_sampler=noise_sampler, solver_type=solver_type)
 
 @torch.no_grad()
 def sample_dpmpp_sde_gpu(model, x, sigmas, extra_args=None, callback=None, disable=None, eta=1., s_noise=1., noise_sampler=None, r=1 / 2):
+    if len(sigmas) <= 1:
+        return x
+
     sigma_min, sigma_max = sigmas[sigmas > 0].min(), sigmas.max()
     noise_sampler = BrownianTreeNoiseSampler(x, sigma_min, sigma_max, seed=extra_args.get("seed", None), cpu=False) if noise_sampler is None else noise_sampler
     return sample_dpmpp_sde(model, x, sigmas, extra_args=extra_args, callback=callback, disable=disable, eta=eta, s_noise=s_noise, noise_sampler=noise_sampler, r=r)
 
+
+def append_dims(x, target_dims):
+    """Appends dimensions to the end of a tensor until it has target_dims dimensions."""
+    dims_to_append = target_dims - x.ndim
+    if dims_to_append < 0:
+        raise ValueError(f'input has {x.ndim} dims but target_dims is {target_dims}, which is less')
+    return x[(...,) + (None,) * dims_to_append]
 
 def DDPMSampler_step(x, sigma, sigma_prev, noise, noise_sampler):
     alpha_cumprod = 1 / ((sigma * sigma) + 1)
@@ -1616,6 +1682,37 @@ def sample_dpmpp_2s_ancestral_cfg_pp_intern(model, x, sigmas, extra_args=None, c
     return x
 
 @torch.no_grad()
+def sample_dpmpp_2m_cfg_pp(model, x, sigmas, extra_args=None, callback=None, disable=None):
+    """DPM-Solver++(2M)."""
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+    t_fn = lambda sigma: sigma.log().neg()
+    old_uncond_denoised = None
+    uncond_denoised = None
+    def post_cfg_function(args):
+        nonlocal uncond_denoised
+        uncond_denoised = args["uncond_denoised"]
+        return args["denoised"]
+    
+    model_options = extra_args.get("model_options", {}).copy()
+    extra_args["model_options"] = ldm_patched.modules.model_patcher.set_model_options_post_cfg_function(model_options, post_cfg_function, disable_cfg1_optimization=True)
+    for i in trange(len(sigmas) - 1, disable=disable):
+        denoised = model(x, sigmas[i] * s_in, **extra_args)
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
+        t, t_next = t_fn(sigmas[i]), t_fn(sigmas[i + 1])
+        h = t_next - t
+        if old_uncond_denoised is None or sigmas[i + 1] == 0:
+            denoised_mix = -torch.exp(-h) * uncond_denoised
+        else:
+            h_last = t - t_fn(sigmas[i - 1])
+            r = h_last / h
+            denoised_mix = -torch.exp(-h) * uncond_denoised - torch.expm1(-h) * (1 / (2 * r)) * (denoised - old_uncond_denoised)
+        x = denoised + denoised_mix + torch.exp(-h) * x
+        old_uncond_denoised = uncond_denoised
+    return x
+
+@torch.no_grad()
 def sample_dpmpp_sde_cfg_pp(model, x, sigmas, extra_args=None, callback=None, disable=None, noise_sampler=None):
     """DPM-Solver++ (stochastic) with CFG++."""
     eta = modules.shared.opts.dpmpp_sde_cfg_pp_eta
@@ -1671,39 +1768,6 @@ def sample_dpmpp_sde_cfg_pp(model, x, sigmas, extra_args=None, callback=None, di
             denoised_d = (1 - fac) * temp[0] + fac * temp[0]  # Use temp[0] instead of denoised
             x = denoised_2 + to_d(x, sigmas[i], denoised_d) * sd
             x = x + noise_sampler(sigma_fn(t), sigma_fn(t_next)) * s_noise * su
-    return x
-
-@torch.no_grad()
-def sample_dpmpp_2m_cfg_pp(model, x, sigmas, extra_args=None, callback=None, disable=None):
-    """DPM-Solver++(2M)."""
-    extra_args = {} if extra_args is None else extra_args
-    s_in = x.new_ones([x.shape[0]])
-    t_fn = lambda sigma: sigma.log().neg()
-
-    old_uncond_denoised = None
-    uncond_denoised = None
-    def post_cfg_function(args):
-        nonlocal uncond_denoised
-        uncond_denoised = args["uncond_denoised"]
-        return args["denoised"]
-    
-    model_options = extra_args.get("model_options", {}).copy()
-    extra_args["model_options"] = ldm_patched.modules.model_patcher.set_model_options_post_cfg_function(model_options, post_cfg_function, disable_cfg1_optimization=True)
-
-    for i in trange(len(sigmas) - 1, disable=disable):
-        denoised = model(x, sigmas[i] * s_in, **extra_args)
-        if callback is not None:
-            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
-        t, t_next = t_fn(sigmas[i]), t_fn(sigmas[i + 1])
-        h = t_next - t
-        if old_uncond_denoised is None or sigmas[i + 1] == 0:
-            denoised_mix = -torch.exp(-h) * uncond_denoised
-        else:
-            h_last = t - t_fn(sigmas[i - 1])
-            r = h_last / h
-            denoised_mix = -torch.exp(-h) * uncond_denoised - torch.expm1(-h) * (1 / (2 * r)) * (denoised - old_uncond_denoised)
-        x = denoised + denoised_mix + torch.exp(-h) * x
-        old_uncond_denoised = uncond_denoised
     return x
 
 @torch.no_grad()
@@ -2788,12 +2852,23 @@ def sample_Kohaku_LoNyu_Yog(
     return x
 
 @torch.no_grad()
-def sample_kohaku_lonyu_yog_cfg_pp(model, x, sigmas, extra_args=None, callback=None, disable=None,
-                          s_churn=None, s_tmin=None, s_tmax=float('inf'), s_noise=None,
-                          noise_sampler=None, eta=None):
-    """Kohaku_LoNyu_Yog sampler with WIP CFG++ implementation"""
+def sample_kohaku_lonyu_yog_cfg_pp(
+    model, 
+    x, 
+    sigmas, 
+    extra_args=None, 
+    callback=None, 
+    disable=None, 
+    s_churn=None, 
+    s_tmin=None,
+    s_tmax=float('inf'), 
+    s_noise=None, 
+    noise_sampler=None, 
+    eta=None
+):
+    """Kohaku_LoNyu_Yog sampler with CFG++ implementation"""
     # Get values from shared options if not provided
-    s_churn = modules.shared.opts.kohaku_lonyu_yog_s_cfgpp_churn if s_churn is None else s_churn 
+    s_churn = modules.shared.opts.kohaku_lonyu_yog_s_cfgpp_churn if s_churn is None else s_churn
     s_tmin = modules.shared.opts.kohaku_lonyu_yog_s_cfgpp_tmin if s_tmin is None else s_tmin
     s_noise = modules.shared.opts.kohaku_lonyu_yog_s_cfgpp_noise if s_noise is None else s_noise
     eta = modules.shared.opts.kohaku_lonyu_yog_cfgpp_eta if eta is None else eta
@@ -2813,32 +2888,122 @@ def sample_kohaku_lonyu_yog_cfg_pp(model, x, sigmas, extra_args=None, callback=N
     extra_args["model_options"] = ldm_patched.modules.model_patcher.set_model_options_post_cfg_function(
         model_options, post_cfg_function, disable_cfg1_optimization=True
     )
-
+    
+    s_in = x.new_ones([x.shape[0]])
+    
     for i in trange(len(sigmas) - 1, disable=disable):
         gamma = min(s_churn / (len(sigmas) - 1), 2 ** 0.5 - 1) if s_tmin <= sigmas[i] <= s_tmax else 0.
         eps = torch.randn_like(x) * s_noise
         sigma_hat = sigmas[i] * (gamma + 1)
         if gamma > 0:
             x = x + eps * (sigma_hat ** 2 - sigmas[i] ** 2) ** 0.5
+            
         denoised = model(x, sigma_hat * s_in, **extra_args)
-        d = to_d(x, sigma_hat, temp[0])  # Using CFG++ unconditioned
+        d = to_d(x, sigma_hat, temp[0])  # Use uncond_denoised from CFG++
+        
         sigma_down, sigma_up = get_ancestral_step(sigmas[i], sigmas[i + 1], eta=eta)
+        
         if callback is not None:
             callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigma_hat, 'denoised': denoised})
+            
         dt = sigma_down - sigmas[i]
+        
         if i <= (len(sigmas) - 1) / 2:
-            x2 = - x 
+            x2 = -x
             denoised2 = model(x2, sigma_hat * s_in, **extra_args)
-            d2 = to_d(x2, sigma_hat, temp[0])  # Using CFG++ unconditioned
+            d2 = to_d(x2, sigma_hat, temp[0])  # Use uncond_denoised from CFG++
             x3 = x + ((d + d2) / 2) * dt
             denoised3 = model(x3, sigma_hat * s_in, **extra_args)
-            d3 = to_d(x3, sigma_hat, temp[0])  # Using CFG++ unconditioned
+            d3 = to_d(x3, sigma_hat, temp[0])  # Use uncond_denoised from CFG++
             real_d = (d + d3) / 2
             x = x + real_d * dt
             x = x + noise_sampler(sigmas[i], sigmas[i + 1]) * s_noise * sigma_up
         else:
             x = x + d * dt
+            
     return x
+
+def sample_custom(model, x, sigmas, extra_args=None, callback=None, disable=None):
+    """Custom sampler that uses configurations from shared options"""
+    
+    # Get sampler parameters from shared options
+    sampler_name = modules.shared.opts.custom_sampler_name
+    eta = modules.shared.opts.custom_sampler_eta
+    s_noise = modules.shared.opts.custom_sampler_s_noise
+    solver_type = modules.shared.opts.custom_sampler_solver_type
+    r = modules.shared.opts.custom_sampler_r
+    cfg_scale = modules.shared.opts.custom_cfg_conds
+    cfg_scale2 = modules.shared.opts.custom_cfg_cond2_negative
+
+    # Get the appropriate sampler function
+    sampler_functions = {
+            'euler_comfy': sample_euler,
+            'euler_ancestral_comfy': sample_euler_ancestral,
+            'heun_comfy': sample_heun,
+            'dpmpp_2s_ancestral_comfy': sample_dpmpp_2s_ancestral,
+            'dpmpp_sde_comfy': sample_dpmpp_sde,
+            'dpmpp_2m_comfy': sample_dpmpp_2m,
+            'dpmpp_2m_sde_comfy': sample_dpmpp_2m_sde,
+            'dpmpp_3m_sde_comfy': sample_dpmpp_3m_sde,
+            'euler_ancestral_turbo': sample_euler_ancestral,
+            'dpmpp_2m_turbo': sample_dpmpp_2m,
+            'dpmpp_2m_sde_turbo': sample_dpmpp_2m_sde,
+            'ddpm': sample_ddpm,
+            'heunpp2': sample_heunpp2,
+            'ipndm': sample_ipndm,
+            'ipndm_v': sample_ipndm_v,
+            'deis': sample_deis,
+            'euler_cfg_pp': sample_euler_cfg_pp,
+            'euler_ancestral_cfg_pp': sample_euler_ancestral_cfg_pp,
+            'sample_euler_ancestral_RF': sample_euler_ancestral_RF,
+            'dpmpp_2s_ancestral_cfg_pp': sample_dpmpp_2s_ancestral_cfg_pp,
+            'sample_dpmpp_2s_ancestral_RF': sample_dpmpp_2s_ancestral_RF,
+            'dpmpp_2s_ancestral_cfg_pp_dyn': sample_dpmpp_2s_ancestral_cfg_pp_dyn,
+            'dpmpp_2s_ancestral_cfg_pp_intern': sample_dpmpp_2s_ancestral_cfg_pp_intern,
+            'dpmpp_sde_cfg_pp': sample_dpmpp_sde_cfg_pp,
+            'dpmpp_2m_cfg_pp': sample_dpmpp_2m_cfg_pp,
+            'dpmpp_3m_sde_cfg_pp': sample_dpmpp_3m_sde_cfg_pp,
+            'dpmpp_2m_dy': sample_dpmpp_2m_dy,
+            'dpmpp_3m_dy': sample_dpmpp_3m_dy,
+            'dpmpp_3m_sde_dy': sample_dpmpp_3m_sde_dy,
+            'euler_dy_cfg_pp': sample_euler_dy_cfg_pp,
+            'euler_smea_dy_cfg_pp': sample_euler_smea_dy_cfg_pp,
+            'euler_ancestral_dy_cfg_pp': sample_euler_ancestral_dy_cfg_pp,
+            'dpmpp_2m_dy_cfg_pp': sample_dpmpp_2m_dy_cfg_pp,
+            'clyb_4m_sde_momentumized': sample_clyb_4m_sde_momentumized,
+            'res_solver': sample_res_solver,
+            'kohaku_lonyu_yog_cfg_pp': sample_kohaku_lonyu_yog_cfg_pp,
+        }
+
+    sampler_function = sampler_functions.get(sampler_name)
+    if sampler_function is None:
+        raise ValueError(f"Unknown sampler: {sampler_name}")
+
+    # Prepare sampler kwargs based on which sampler is selected
+    kwargs = {
+        "model": model,
+        "x": x,
+        "sigmas": sigmas,
+        "extra_args": extra_args,
+        "callback": callback,
+        "disable": disable,
+    }
+
+    # Add additional parameters based on sampler type
+    if "cfg" in sampler_name:
+        kwargs["cfg_scale"] = cfg_scale
+    if "sde" in sampler_name:
+        kwargs.update({
+            "eta": eta,
+            "s_noise": s_noise,
+        })
+    if "2m_sde" in sampler_name:
+        kwargs["solver_type"] = solver_type
+    if any(x in sampler_name for x in ["sde", "dpmpp"]):
+        kwargs["r"] = r
+
+    # Call the sampler
+    return sampler_function(**kwargs)
 
 @torch.no_grad()
 def res_multistep(model, x, sigmas, extra_args=None, callback=None, disable=None, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1., noise_sampler=None, cfg_pp=False):
@@ -2933,4 +3098,60 @@ def sample_gradient_estimation(model, x, sigmas, extra_args=None, callback=None,
             d_bar = ge_gamma * d + (1 - ge_gamma) * old_d
             x = x + d_bar * dt
         old_d = d
+    return x
+
+@torch.no_grad()
+def sample_er_sde(model, x, sigmas, extra_args=None, callback=None, disable=None, s_noise=1., noise_sampler=None, noise_scaler=None, max_stage=3):
+    """
+    Extended Reverse-Time SDE solver (VE ER-SDE-Solver-3). Arxiv: https://arxiv.org/abs/2309.06169.
+    Code reference: https://github.com/QinpengCui/ER-SDE-Solver/blob/main/er_sde_solver.py.
+    """
+    extra_args = {} if extra_args is None else extra_args
+    seed = extra_args.get("seed", None)
+    noise_sampler = default_noise_sampler(x, seed=seed) if noise_sampler is None else noise_sampler
+    s_in = x.new_ones([x.shape[0]])
+
+    def default_noise_scaler(sigma):
+        return sigma * ((sigma ** 0.3).exp() + 10.0)
+    noise_scaler = default_noise_scaler if noise_scaler is None else noise_scaler
+    num_integration_points = 200.0
+    point_indice = torch.arange(0, num_integration_points, dtype=torch.float32, device=x.device)
+
+    old_denoised = None
+    old_denoised_d = None
+
+    for i in trange(len(sigmas) - 1, disable=disable):
+        denoised = model(x, sigmas[i] * s_in, **extra_args)
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
+        stage_used = min(max_stage, i + 1)
+        if sigmas[i + 1] == 0:
+            x = denoised
+        elif stage_used == 1:
+            r = noise_scaler(sigmas[i + 1]) / noise_scaler(sigmas[i])
+            x = r * x + (1 - r) * denoised
+        else:
+            r = noise_scaler(sigmas[i + 1]) / noise_scaler(sigmas[i])
+            x = r * x + (1 - r) * denoised
+
+            dt = sigmas[i + 1] - sigmas[i]
+            sigma_step_size = -dt / num_integration_points
+            sigma_pos = sigmas[i + 1] + point_indice * sigma_step_size
+            scaled_pos = noise_scaler(sigma_pos)
+
+            # Stage 2
+            s = torch.sum(1 / scaled_pos) * sigma_step_size
+            denoised_d = (denoised - old_denoised) / (sigmas[i] - sigmas[i - 1])
+            x = x + (dt + s * noise_scaler(sigmas[i + 1])) * denoised_d
+
+            if stage_used >= 3:
+                # Stage 3
+                s_u = torch.sum((sigma_pos - sigmas[i]) / scaled_pos) * sigma_step_size
+                denoised_u = (denoised_d - old_denoised_d) / ((sigmas[i] - sigmas[i - 2]) / 2)
+                x = x + ((dt ** 2) / 2 + s_u * noise_scaler(sigmas[i + 1])) * denoised_u
+            old_denoised_d = denoised_d
+
+        if s_noise != 0 and sigmas[i + 1] > 0:
+            x = x + noise_sampler(sigmas[i], sigmas[i + 1]) * s_noise * (sigmas[i + 1] ** 2 - sigmas[i] ** 2 * r ** 2).sqrt()
+        old_denoised = denoised
     return x

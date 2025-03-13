@@ -24,7 +24,7 @@ def load_diffusers(model_path, output_vae=True, output_clip=True, embedding_dire
     if text_encoder2_path is not None:
         text_encoder_paths.append(text_encoder2_path)
 
-    unet = ldm_patched.modules.sd.load_unet(unet_path)
+    unet = ldm_patched.modules.sd.load_diffusion_model(unet_path)
 
     clip = None
     if output_clip:

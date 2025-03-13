@@ -24,7 +24,7 @@ If you know what you are doing, you can install Forge/reForge using same method 
 ```bash
 git clone https://github.com/Panchovix/stable-diffusion-webui-reForge.git
 cd stable-diffusion-webui-reForge
-git checkout main
+git checkout dev
 ```
 Then run webui-user.bat (Windows) or webui-user.sh (Linux, for this one make sure to uncomment the lines according of your folder, paths and setting you need).
 
@@ -42,7 +42,7 @@ For Windows CMD, it would be:
 ```bash
 git clone https://github.com/Panchovix/stable-diffusion-webui-reForge.git
 cd stable-diffusion-webui-reForge
-git checkout main
+git checkout dev
 ren requirements_versions.txt requirements_versions_backup.txt
 copy requirements_versions_legacy.txt requirements_versions.txt
 ```
@@ -52,7 +52,7 @@ Windows PS1
 ```bash
 git clone https://github.com/Panchovix/stable-diffusion-webui-reForge.git
 cd stable-diffusion-webui-reForge
-git checkout main
+git checkout dev
 Rename-Item requirements_versions.txt requirements_versions_backup.txt
 Copy-Item requirements_versions_legacy.txt requirements_versions.txt
 ```
@@ -64,10 +64,10 @@ Tutorial from: https://github.com/continue-revolution/sd-webui-animatediff/blob/
 If you have already had OG A1111 and you are familiar with git, An option is go to `/path/to/stable-diffusion-webui` and
 ```bash
 git remote add reForge https://github.com/Panchovix/stable-diffusion-webui-reForge
-git branch Panchovix/main
-git checkout Panchovix/main
+git branch Panchovix/dev
+git checkout Panchovix/dev
 git fetch reForge
-git branch -u reForge/main
+git branch -u reForge/dev
 git stash
 git pull
 ```
@@ -117,7 +117,7 @@ Without any cmd flag, Forge/reForge can run SDXL with 4GB vram and SD1.5 with 2G
 
 4. `--pin-shared-memory` (This flag will make things **faster** but more risky). Effective only when used together with `--cuda-stream`. This will offload modules to Shared GPU Memory instead of system RAM when offloading models. On some 30XX/40XX devices with small VRAM (eg, RTX 4050 6GB, RTX 3060 Laptop 6GB, etc), I can observe significant (at least 20\%) speed-up for SDXL. However, this unfortunately cannot be set as default because the OOM of Shared GPU Memory is a much more severe problem than common GPU memory OOM. Pytorch does not provide any robust method to unload or detect Shared GPU Memory. Once the Shared GPU Memory OOM, the entire program will crash (observed with SDXL on GTX 1060/1050/1066), and there is no dynamic method to prevent or recover from the crash. Users need to enable this cmd flag at their own risk.
 
-CMD flags are on ldm_patches/modules/args_parser.py and on the normal A1111 path (modules/cmd_args.py)
+Some extra flags that can help with performance or save VRAM, or more, depending of your needs. Most of them are found on ldm_patched/modules/args_parser.py and on the normal A1111 path (modules/cmd_args.py):
 
     --disable-xformers
         Disables xformers, to use other attentions like SDP.
@@ -131,8 +131,14 @@ CMD flags are on ldm_patches/modules/args_parser.py and on the normal A1111 path
         Use the new pytorch 2.0 cross attention function.
     --disable-attention-upcast
         Disable all upcasting of attention. Should be unnecessary except for debugging.
+    --force-channels-last
+        Force channels last format when inferencing the models.
+    --disable-cuda-malloc
+        Disable cudaMallocAsync.
     --gpu-device-id
         Set the id of the cuda device this instance will use.
+    --force-upcast-attention
+        Force enable attention upcasting.
 
 (VRAM related)
 

@@ -14,12 +14,14 @@ import torch
 from torch import Tensor
 from torch.utils.checkpoint import checkpoint
 import math
+import logging
 
 try:
-	from typing import Optional, NamedTuple, List, Protocol
+    from typing import Optional, NamedTuple, List, Protocol
 except ImportError:
-	from typing import Optional, NamedTuple, List
-	from typing_extensions import Protocol
+    from typing import Optional, NamedTuple, List
+    from typing_extensions import Protocol
+
 from typing import List
 
 from ldm_patched.modules import model_management
@@ -231,6 +233,8 @@ def efficient_dot_product_attention(
     def get_mask_chunk(chunk_idx: int) -> Tensor:
         if mask is None:
             return None
+        if mask.shape[1] == 1:
+            return mask
         chunk = min(query_chunk_size, q_tokens)
         return mask[:,chunk_idx:chunk_idx + chunk]
 
@@ -257,7 +261,7 @@ def efficient_dot_product_attention(
             value=value,
             mask=mask,
         )
-    
+
     # TODO: maybe we should use torch.empty_like(query) to allocate storage in-advance,
     # and pass slices to be mutated, instead of torch.cat()ing the returned slices
     res = torch.cat([

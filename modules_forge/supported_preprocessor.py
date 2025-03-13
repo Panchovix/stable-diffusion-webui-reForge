@@ -29,7 +29,7 @@ class Preprocessor:
         self.model_patcher: ModelPatcher = None
         self.show_control_mode = True
         self.do_not_need_model = False
-        self.sorting_priority = 0  # higher goes to top in the list
+        self.sorting_priority = 0
         self.corp_image_with_a1111_mask_when_in_img2img_inpaint_tab = True
         self.fill_mask_with_one_when_resize_and_fill = False
         self.use_soft_projection_in_hr_fix = False
@@ -38,26 +38,29 @@ class Preprocessor:
     def setup_model_patcher(self, model, load_device=None, offload_device=None, dtype=torch.float32, **kwargs):
         if load_device is None:
             load_device = model_management.get_torch_device()
-
         if offload_device is None:
             offload_device = torch.device('cpu')
-
         if not model_management.should_use_fp16(load_device):
             dtype = torch.float32
-
         model.eval()
         model = model.to(device=offload_device, dtype=dtype)
-
-        self.model_patcher = ModelPatcher(model=model, load_device=load_device, offload_device=offload_device, **kwargs)
-        self.model_patcher.dtype = dtype
+        self.model_patcher = ModelPatcher(
+            model=model,
+            load_device=load_device,
+            offload_device=offload_device,
+            weight_inplace_update=kwargs.get('weight_inplace_update', False),
+            current_device=kwargs.get('current_device', None)
+        )
         return self.model_patcher
 
     def move_all_model_patchers_to_gpu(self):
-        model_management.load_models_gpu([self.model_patcher])
-        return
+        if self.model_patcher:
+            model_management.load_model_gpu(self.model_patcher)
 
     def send_tensor_to_model_device(self, x):
-        return x.to(device=self.model_patcher.current_device, dtype=self.model_patcher.dtype)
+        if self.model_patcher:
+            return x.to(device=self.model_patcher.model.device, dtype=self.model_patcher.model_dtype())
+        return x
 
     def process_after_running_preprocessors(self, process, params, *args, **kwargs):
         return
@@ -130,9 +133,33 @@ class PreprocessorClipVision(Preprocessor):
             self.clipvision = ldm_patched.modules.clip_vision.load(ckpt_path)
             PreprocessorClipVision.global_cache[ckpt_path] = self.clipvision
 
+        # Set up the model patcher for the CLIP vision model
+        self.setup_model_patcher(self.clipvision.model)
+
         return self.clipvision
+
+    def setup_model_patcher(self, model, load_device=None, offload_device=None, dtype=torch.float32, **kwargs):
+        if load_device is None:
+            load_device = model_management.get_torch_device()
+        if offload_device is None:
+            offload_device = torch.device('cpu')
+        if not model_management.should_use_fp16(load_device):
+            dtype = torch.float32
+        
+        # The ClipVisionModel doesn't need eval() as it's handled internally
+        model = model.to(device=offload_device, dtype=dtype)
+        self.model_patcher = self.clipvision.patcher
+        return self.model_patcher
 
     @torch.no_grad()
     def __call__(self, input_image, resolution, slider_1=None, slider_2=None, slider_3=None, **kwargs):
         clipvision = self.load_clipvision()
-        return clipvision.encode_image(numpy_to_pytorch(input_image))
+        
+        # Move the model to the appropriate device
+        self.move_all_model_patchers_to_gpu()
+        
+        # Convert input image to PyTorch tensor and move to the correct device
+        input_tensor = self.send_tensor_to_model_device(numpy_to_pytorch(input_image))
+        
+        # Encode the image
+        return clipvision.encode_image(input_tensor)

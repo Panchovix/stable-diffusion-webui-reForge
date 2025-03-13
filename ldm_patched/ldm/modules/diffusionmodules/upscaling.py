@@ -1,10 +1,4 @@
-# 1st edit by https://github.com/CompVis/latent-diffusion
-# 2nd edit by https://github.com/Stability-AI/stablediffusion
-# 3rd edit by https://github.com/Stability-AI/generative-models
-# 4th edit by https://github.com/comfyanonymous/ComfyUI
-
-
-
+# Original by https://github.com/comfyanonymous/ComfyUI
 
 import torch
 import torch.nn as nn
@@ -12,7 +6,6 @@ import numpy as np
 from functools import partial
 
 from .util import extract_into_tensor, make_beta_schedule
-from ldm_patched.ldm.util import default
 
 
 class AbstractLowScaleModel(nn.Module):

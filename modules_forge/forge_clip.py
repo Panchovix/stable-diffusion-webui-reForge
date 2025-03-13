@@ -21,13 +21,16 @@ class CLIP_SD_15_L(FrozenCLIPEmbedderWithCustomWords):
     def encode_with_transformers(self, tokens):
         move_clip_to_gpu()
         self.wrapped.transformer.text_model.embeddings.to(tokens.device)
-        outputs = self.wrapped.transformer(input_ids=tokens, output_hidden_states=-opts.CLIP_stop_at_last_layers)
+        if hasattr(self.wrapped.transformer, 'text_model'):
+            outputs = self.wrapped.transformer(input_ids=tokens, output_hidden_states=-opts.CLIP_stop_at_last_layers)
+        else:
+            outputs = self.wrapped.transformer(tokens, intermediate_output=-opts.CLIP_stop_at_last_layers)
 
         if opts.CLIP_stop_at_last_layers > self.minimal_clip_skip:
-            z = outputs.hidden_states[-opts.CLIP_stop_at_last_layers]
+            z = outputs.hidden_states[-opts.CLIP_stop_at_last_layers] if hasattr(outputs, 'hidden_states') else outputs[1]
             z = self.wrapped.transformer.text_model.final_layer_norm(z)
         else:
-            z = outputs.last_hidden_state
+            z = outputs.last_hidden_state if hasattr(outputs, 'last_hidden_state') else outputs[0]
 
         return z
 
@@ -48,15 +51,18 @@ class CLIP_SD_21_H(FrozenCLIPEmbedderWithCustomWords):
     def encode_with_transformers(self, tokens):
         move_clip_to_gpu()
         self.wrapped.transformer.text_model.embeddings.to(tokens.device)
-        outputs = self.wrapped.transformer(tokens, output_hidden_states=self.wrapped.layer == "hidden")
+        if hasattr(self.wrapped.transformer, 'text_model'):
+            outputs = self.wrapped.transformer(tokens, output_hidden_states=self.wrapped.layer == "hidden")
+        else:
+            outputs = self.wrapped.transformer(tokens, intermediate_output=self.wrapped.layer_idx if self.wrapped.layer == "hidden" else None)
 
         if opts.CLIP_stop_at_last_layers > self.minimal_clip_skip:
-            z = outputs.hidden_states[-opts.CLIP_stop_at_last_layers]
+            z = outputs.hidden_states[-opts.CLIP_stop_at_last_layers] if hasattr(outputs, 'hidden_states') else outputs[1]
             z = self.wrapped.transformer.text_model.final_layer_norm(z)
         elif self.wrapped.layer == "last":
-            z = outputs.last_hidden_state
+            z = outputs.last_hidden_state if hasattr(outputs, 'last_hidden_state') else outputs[0]
         else:
-            z = outputs.hidden_states[self.wrapped.layer_idx]
+            z = outputs.hidden_states[self.wrapped.layer_idx] if hasattr(outputs, 'hidden_states') else outputs[1]
             z = self.wrapped.transformer.text_model.final_layer_norm(z)
 
         return z
@@ -69,14 +75,17 @@ class CLIP_SD_XL_L(FrozenCLIPEmbedderWithCustomWords):
 
     def encode_with_transformers(self, tokens):
         self.wrapped.transformer.text_model.embeddings.to(tokens.device)
-        outputs = self.wrapped.transformer(tokens, output_hidden_states=self.wrapped.layer == "hidden")
+        if hasattr(self.wrapped.transformer, 'text_model'):
+            outputs = self.wrapped.transformer(tokens, output_hidden_states=self.wrapped.layer == "hidden")
+        else:
+            outputs = self.wrapped.transformer(tokens, intermediate_output=self.wrapped.layer_idx if self.wrapped.layer == "hidden" else None)
 
         if opts.CLIP_stop_at_last_layers > self.minimal_clip_skip:
-            z = outputs.hidden_states[-opts.CLIP_stop_at_last_layers]
+            z = outputs.hidden_states[-opts.CLIP_stop_at_last_layers] if hasattr(outputs, 'hidden_states') else outputs[1]
         elif self.wrapped.layer == "last":
-            z = outputs.last_hidden_state
+            z = outputs.last_hidden_state if hasattr(outputs, 'last_hidden_state') else outputs[0]
         else:
-            z = outputs.hidden_states[self.wrapped.layer_idx]
+            z = outputs.hidden_states[self.wrapped.layer_idx] if hasattr(outputs, 'hidden_states') else outputs[1]
 
         return z
 
@@ -96,16 +105,19 @@ class CLIP_SD_XL_G(FrozenCLIPEmbedderWithCustomWords):
 
     def encode_with_transformers(self, tokens):
         self.wrapped.transformer.text_model.embeddings.to(tokens.device)
-        outputs = self.wrapped.transformer(tokens, output_hidden_states=self.wrapped.layer == "hidden")
+        if hasattr(self.wrapped.transformer, 'text_model'):
+            outputs = self.wrapped.transformer(tokens, output_hidden_states=self.wrapped.layer == "hidden")
+        else:
+            outputs = self.wrapped.transformer(tokens, intermediate_output=self.wrapped.layer_idx if self.wrapped.layer == "hidden" else None)
 
         if opts.CLIP_stop_at_last_layers > self.minimal_clip_skip:
-            z = outputs.hidden_states[-opts.CLIP_stop_at_last_layers]
+            z = outputs.hidden_states[-opts.CLIP_stop_at_last_layers] if hasattr(outputs, 'hidden_states') else outputs[1]
         elif self.wrapped.layer == "last":
-            z = outputs.last_hidden_state
+            z = outputs.last_hidden_state if hasattr(outputs, 'last_hidden_state') else outputs[0]
         else:
-            z = outputs.hidden_states[self.wrapped.layer_idx]
+            z = outputs.hidden_states[self.wrapped.layer_idx] if hasattr(outputs, 'hidden_states') else outputs[1]
 
-        pooled_output = outputs.pooler_output
+        pooled_output = outputs.pooler_output if hasattr(outputs, 'pooler_output') else outputs[2]
         text_projection = self.wrapped.text_projection
         pooled_output = pooled_output.float().to(text_projection.device) @ text_projection.float()
         z.pooled = pooled_output

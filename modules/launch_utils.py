@@ -391,24 +391,11 @@ def early_access_blackwell_wheels():
     )
     
     if should_use_nightly and platform.system() == "Windows":
-        # Print warning about torchvision compatibility issues
-        if cuda_cap >= 10.0 or use_nightly:
-            python_ver = f"cp{sys.version_info.major}{sys.version_info.minor}-cp{sys.version_info.major}{sys.version_info.minor}"
-            custom_tv_url = f"https://huggingface.co/Panchovix/torchvision-windows-blackwell2.0-nightly/resolve/main/torchvision-0.22.0a0%2Bd28001e-{python_ver}-win_amd64.whl"
-            
-            print("\n" + "="*80)
-            print("WARNING: Official nightly torchvision packages may have compatibility issues with some extensions like ADetailer.")
-            print("If you experience problems, you can replace the official package with a custom compatible version:")
-            print(f"\n1. Navigate to your 'stable-diffusion-webui-reForge' folder")
-            print(f"2. Activate the virtual environment with: venv\\Scripts\\activate")
-            print(f"3. Run: pip install {custom_tv_url} --force-reinstall")
-            print(f"4. Restart the WebUI")
-            print("="*80 + "\n")
         
         # PyTorch nightly builds for March 1, 2025
-        torch_base = 'https://download.pytorch.org/whl/nightly/cu128/torch-2.7.0.dev20250301%2Bcu128'
+        torch_base = 'https://download.pytorch.org/whl/nightly/cu128/torch-2.7.0.dev20250310%2Bcu128'
         # Official nightly torchvision builds with CUDA support
-        tv_base = 'https://download.pytorch.org/whl/nightly/cu128/torchvision-0.22.0.dev20250302%2Bcu128'
+        tv_base = 'https://download.pytorch.org/whl/nightly/cu128/torchvision-0.22.0.dev20250311%2Bcu128'
         
         # Map each Python version to its torch and torchvision wheels
         ea_whl = {

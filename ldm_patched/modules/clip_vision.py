@@ -1,20 +1,14 @@
-# 1st edit by https://github.com/comfyanonymous/ComfyUI
-# 2nd edit by Forge
-
-
 from .utils import load_torch_file, transformers_convert, state_dict_prefix_replace
 import os
 import torch
+import json
+import logging
 
 import ldm_patched.modules.ops
 import ldm_patched.modules.model_patcher
 import ldm_patched.modules.model_management
 import ldm_patched.modules.utils
 import ldm_patched.modules.clip_model
-import ldm_patched.modules.ops as ops
-
-from transformers import modeling_utils, CLIPVisionConfig, CLIPVisionModelWithProjection
-
 
 class Output:
     def __getitem__(self, key):
@@ -22,13 +16,18 @@ class Output:
     def __setitem__(self, key, item):
         setattr(self, key, item)
 
-def clip_preprocess(image, size=224):
-    mean = torch.tensor([ 0.48145466,0.4578275,0.40821073], device=image.device, dtype=image.dtype)
-    std = torch.tensor([0.26862954,0.26130258,0.27577711], device=image.device, dtype=image.dtype)
+def clip_preprocess(image, size=224, mean=[0.48145466, 0.4578275, 0.40821073], std=[0.26862954, 0.26130258, 0.27577711], crop=True):
+    mean = torch.tensor(mean, device=image.device, dtype=image.dtype)
+    std = torch.tensor(std, device=image.device, dtype=image.dtype)
     image = image.movedim(-1, 1)
     if not (image.shape[2] == size and image.shape[3] == size):
-        scale = (size / min(image.shape[2], image.shape[3]))
-        image = torch.nn.functional.interpolate(image, size=(round(scale * image.shape[2]), round(scale * image.shape[3])), mode="bicubic", antialias=True)
+        if crop:
+            scale = (size / min(image.shape[2], image.shape[3]))
+            scale_size = (round(scale * image.shape[2]), round(scale * image.shape[3]))
+        else:
+            scale_size = (size, size)
+
+        image = torch.nn.functional.interpolate(image, size=scale_size, mode="bicubic", antialias=True)
         h = (image.shape[2] - size)//2
         w = (image.shape[3] - size)//2
         image = image[:,:,h:h+size,w:w+size]
@@ -37,26 +36,19 @@ def clip_preprocess(image, size=224):
 
 class ClipVisionModel():
     def __init__(self, json_config):
-        config = CLIPVisionConfig.from_json_file(json_config)
+        with open(json_config) as f:
+            config = json.load(f)
 
+        self.image_size = config.get("image_size", 224)
+        self.image_mean = config.get("image_mean", [0.48145466, 0.4578275, 0.40821073])
+        self.image_std = config.get("image_std", [0.26862954, 0.26130258, 0.27577711])
         self.load_device = ldm_patched.modules.model_management.text_encoder_device()
-        self.offload_device = ldm_patched.modules.model_management.text_encoder_offload_device()
+        offload_device = ldm_patched.modules.model_management.text_encoder_offload_device()
+        self.dtype = ldm_patched.modules.model_management.text_encoder_dtype(self.load_device)
+        self.model = ldm_patched.modules.clip_model.CLIPVisionModelProjection(config, self.dtype, offload_device, ldm_patched.modules.ops.manual_cast)
+        self.model.eval()
 
-        if ldm_patched.modules.model_management.should_use_fp16(self.load_device, prioritize_performance=False):
-            self.dtype = torch.float16
-        else:
-            self.dtype = torch.float32
-
-        with ops.use_patched_ops(ops.manual_cast):
-            with modeling_utils.no_init_weights():
-                self.model = CLIPVisionModelWithProjection(config)
-
-        self.model.to(self.dtype)
-        self.patcher = ldm_patched.modules.model_patcher.ModelPatcher(
-            self.model,
-            load_device=self.load_device,
-            offload_device=self.offload_device
-        )
+        self.patcher = ldm_patched.modules.model_patcher.ModelPatcher(self.model, load_device=self.load_device, offload_device=offload_device)
 
     def load_sd(self, sd):
         return self.model.load_state_dict(sd, strict=False)
@@ -64,17 +56,17 @@ class ClipVisionModel():
     def get_sd(self):
         return self.model.state_dict()
 
-    def encode_image(self, image):
+    def encode_image(self, image, crop=True):
         ldm_patched.modules.model_management.load_model_gpu(self.patcher)
-        pixel_values = ldm_patched.modules.clip_vision.clip_preprocess(image.to(self.load_device))
-        outputs = self.model(pixel_values=pixel_values, output_hidden_states=True)
+        pixel_values = clip_preprocess(image.to(self.load_device), size=self.image_size, mean=self.image_mean, std=self.image_std, crop=crop).float()
+        out = self.model(pixel_values=pixel_values, intermediate_output=-2)
 
-        o = Output()
-        o["last_hidden_state"] = outputs.last_hidden_state.to(ldm_patched.modules.model_management.intermediate_device())
-        o["penultimate_hidden_states"] = outputs.hidden_states[-2].to(ldm_patched.modules.model_management.intermediate_device())
-        o["image_embeds"] = outputs.image_embeds.to(ldm_patched.modules.model_management.intermediate_device())
-
-        return o
+        outputs = Output()
+        outputs["last_hidden_state"] = out[0].to(ldm_patched.modules.model_management.intermediate_device())
+        outputs["image_embeds"] = out[2].to(ldm_patched.modules.model_management.intermediate_device())
+        outputs["penultimate_hidden_states"] = out[1].to(ldm_patched.modules.model_management.intermediate_device())
+        outputs["mm_projected"] = out[3]
+        return outputs
 
 def convert_to_transformers(sd, prefix):
     sd_k = sd.keys()
@@ -110,20 +102,27 @@ def load_clipvision_from_sd(sd, prefix="", convert_keys=False):
     elif "vision_model.encoder.layers.30.layer_norm1.weight" in sd:
         json_config = os.path.join(os.path.dirname(os.path.realpath(__file__)), "clip_vision_config_h.json")
     elif "vision_model.encoder.layers.22.layer_norm1.weight" in sd:
-        json_config = os.path.join(os.path.dirname(os.path.realpath(__file__)), "clip_vision_config_vitl.json")
+        if sd["vision_model.encoder.layers.0.layer_norm1.weight"].shape[0] == 1152:
+            json_config = os.path.join(os.path.dirname(os.path.realpath(__file__)), "clip_vision_siglip_384.json")
+        elif sd["vision_model.embeddings.position_embedding.weight"].shape[0] == 577:
+            if "multi_modal_projector.linear_1.bias" in sd:
+                json_config = os.path.join(os.path.dirname(os.path.realpath(__file__)), "clip_vision_config_vitl_336_llava.json")
+            else:
+                json_config = os.path.join(os.path.dirname(os.path.realpath(__file__)), "clip_vision_config_vitl_336.json")
+        else:
+            json_config = os.path.join(os.path.dirname(os.path.realpath(__file__)), "clip_vision_config_vitl.json")
     else:
         return None
 
     clip = ClipVisionModel(json_config)
     m, u = clip.load_sd(sd)
     if len(m) > 0:
-        print("extra clip vision:", m)
+        logging.warning("missing clip vision: {}".format(m))
     u = set(u)
     keys = list(sd.keys())
     for k in keys:
         if k not in u:
-            t = sd.pop(k)
-            del t
+            sd.pop(k)
     return clip
 
 def load(ckpt_path):

@@ -154,9 +154,17 @@ class PreprocessorReference(Preprocessor):
                 self.recorded_attn1[location] = (k, v)
                 return sdp(q, k, v, transformer_options)
             else:
-                cond_indices = transformer_options['cond_indices']
-                uncond_indices = transformer_options['uncond_indices']
-                cond_or_uncond = transformer_options['cond_or_uncond']
+                if 'cond_indices' in transformer_options and 'uncond_indices' in transformer_options:
+                    cond_indices = transformer_options['cond_indices']
+                    uncond_indices = transformer_options['uncond_indices']
+                    cond_or_uncond = transformer_options['cond_or_uncond']
+                elif 'cond_or_uncond' in transformer_options:
+                    cond_or_uncond = transformer_options['cond_or_uncond']
+                    cond_indices = [i for i, x in enumerate(cond_or_uncond) if x == 0]
+                    uncond_indices = [i for i, x in enumerate(cond_or_uncond) if x != 0]
+                else:
+                    # Handle the case where neither old nor new keys are present
+                    return sdp(q, k, v, transformer_options)
 
                 q_c = q[cond_indices]
                 q_uc = q[uncond_indices]
@@ -169,10 +177,20 @@ class PreprocessorReference(Preprocessor):
 
                 k_r, v_r = self.recorded_attn1[location]
 
-                o_c = sdp(q_c, zero_cat(k_c, k_r, dim=1), zero_cat(v_c, v_r, dim=1), transformer_options)
-                o_uc_strong = sdp(q_uc, k_uc, v_uc, transformer_options)
-                o_uc_weak = sdp(q_uc, zero_cat(k_uc, k_r, dim=1), zero_cat(v_uc, v_r, dim=1), transformer_options)
-                o_uc = o_uc_weak + (o_uc_strong - o_uc_weak) * style_fidelity
+                # Check if shapes are compatible for concatenation
+                if k_c.shape[1:] != k_r.shape[1:] or v_c.shape[1:] != v_r.shape[1:]:
+                    print(f"Shape mismatch: k_c={k_c.shape}, k_r={k_r.shape}, v_c={v_c.shape}, v_r={v_r.shape}")
+                    return sdp(q, k, v, transformer_options)
+
+                try:
+                    o_c = sdp(q_c, zero_cat(k_c, k_r, dim=1), zero_cat(v_c, v_r, dim=1), transformer_options)
+                    o_uc_strong = sdp(q_uc, k_uc, v_uc, transformer_options)
+                    o_uc_weak = sdp(q_uc, zero_cat(k_uc, k_r, dim=1), zero_cat(v_uc, v_r, dim=1), transformer_options)
+                    o_uc = o_uc_weak + (o_uc_strong - o_uc_weak) * style_fidelity
+                except RuntimeError as e:
+                    print(f"Error in attn1_proc: {str(e)}")
+                    print(f"Shapes: q_c={q_c.shape}, k_c={k_c.shape}, k_r={k_r.shape}, v_c={v_c.shape}, v_r={v_r.shape}")
+                    return sdp(q, k, v, transformer_options)
 
                 recon = []
                 for cx in cond_or_uncond:

@@ -35,14 +35,23 @@ class FFCSE_block(nn.Module):
         x = x if type(x) is tuple else (x, 0)
         id_l, id_g = x
 
+        # Determine the device of id_l
+        x_device = id_l.device if torch.is_tensor(id_l) else (id_g.device if torch.is_tensor(id_g) else 'cpu')
+
+        # Move layers to the same device
+        self.avgpool = self.avgpool.to(x_device)
+        self.conv1 = self.conv1.to(x_device)
+        if self.conv_a2l is not None:
+            self.conv_a2l = self.conv_a2l.to(x_device)
+        if self.conv_a2g is not None:
+            self.conv_a2g = self.conv_a2g.to(x_device)
+
         x = id_l if type(id_g) is int else torch.cat([id_l, id_g], dim=1)
         x = self.avgpool(x)
         x = self.relu1(self.conv1(x))
 
-        x_l = 0 if self.conv_a2l is None else id_l * \
-            self.sigmoid(self.conv_a2l(x))
-        x_g = 0 if self.conv_a2g is None else id_g * \
-            self.sigmoid(self.conv_a2g(x))
+        x_l = 0 if self.conv_a2l is None else id_l * self.sigmoid(self.conv_a2l(x))
+        x_g = 0 if self.conv_a2g is None else id_g * self.sigmoid(self.conv_a2g(x))
         return x_l, x_g
 
 
@@ -74,6 +83,13 @@ class FourierUnit(nn.Module):
         self.fft_norm = fft_norm
 
     def forward(self, x):
+        # Determine the device of x
+        x_device = x.device
+
+        # Move layers to the same device
+        self.conv_layer = self.conv_layer.to(x_device)
+        self.bn = self.bn.to(x_device)
+
         batch = x.shape[0]
 
         if self.spatial_scale_factor is not None:
@@ -90,8 +106,8 @@ class FourierUnit(nn.Module):
 
         if self.spectral_pos_encoding:
             height, width = ffted.shape[-2:]
-            coords_vert = torch.linspace(0, 1, height)[None, None, :, None].expand(batch, 1, height, width).to(ffted)
-            coords_hor = torch.linspace(0, 1, width)[None, None, None, :].expand(batch, 1, height, width).to(ffted)
+            coords_vert = torch.linspace(0, 1, height)[None, None, :, None].expand(batch, 1, height, width).to(x_device)
+            coords_hor = torch.linspace(0, 1, width)[None, None, None, :].expand(batch, 1, height, width).to(x_device)
             ffted = torch.cat((coords_vert, coords_hor, ffted), dim=1)
 
         if self.use_se:
@@ -138,10 +154,16 @@ class SeparableFourierUnit(nn.Module):
         self.relu = torch.nn.ReLU(inplace=True)
 
     def process_branch(self, x, conv, bn):
+        # Determine the device of x
+        x_device = x.device
+
+        # Move layers to the same device
+        conv = conv.to(x_device)
+        bn = bn.to(x_device)
+
         batch = x.shape[0]
 
         r_size = x.size()
-        # (batch, c, h, w/2+1, 2)
         ffted = torch.fft.rfft(x, norm="ortho")
         ffted = torch.stack((ffted.real, ffted.imag), dim=-1)
         ffted = ffted.permute(0, 1, 4, 2, 3).contiguous()  # (batch, c, 2, h, w/2+1)
@@ -156,8 +178,16 @@ class SeparableFourierUnit(nn.Module):
         output = torch.fft.irfft(ffted, s=x.shape[-1:], norm="ortho")
         return output
 
-
     def forward(self, x):
+        # Determine the device of x
+        x_device = x.device
+
+        # Move layers to the same device
+        self.row_conv = self.row_conv.to(x_device)
+        self.col_conv = self.col_conv.to(x_device)
+        self.row_bn = self.row_bn.to(x_device)
+        self.col_bn = self.col_bn.to(x_device)
+
         rowwise = self.process_branch(x, self.row_conv, self.row_bn)
         colwise = self.process_branch(x.permute(0, 1, 3, 2), self.col_conv, self.col_bn).permute(0, 1, 3, 2)
         out = torch.cat((rowwise, colwise), dim=1)
@@ -192,6 +222,16 @@ class SpectralTransform(nn.Module):
             out_channels // 2, out_channels, kernel_size=1, groups=groups, bias=False)
 
     def forward(self, x):
+        # Determine the device of x
+        x_device = x.device
+
+        # Move layers to the same device
+        self.downsample = self.downsample.to(x_device)
+        self.conv1 = self.conv1.to(x_device)
+        self.fu = self.fu.to(x_device)
+        if self.enable_lfu:
+            self.lfu = self.lfu.to(x_device)
+        self.conv2 = self.conv2.to(x_device)
 
         x = self.downsample(x)
         x = self.conv1(x)
@@ -256,6 +296,23 @@ class FFC(nn.Module):
 
     def forward(self, x):
         x_l, x_g = x if type(x) is tuple else (x, 0)
+        
+        # Determine the device of x_l
+        x_device = x_l.device
+        
+        # Ensure x_g is on the same device as x_l
+        if torch.is_tensor(x_g):
+            x_g = x_g.to(x_device)
+
+        # Move all convolution layers to the same device
+        self.convl2l = self.convl2l.to(x_device)
+        self.convl2g = self.convl2g.to(x_device)
+        self.convg2l = self.convg2l.to(x_device)
+        self.convg2g = self.convg2g.to(x_device)
+
+        if self.gated:
+            self.gate = self.gate.to(x_device)
+
         out_xl, out_xg = 0, 0
 
         if self.gated:
@@ -301,6 +358,16 @@ class FFC_BN_ACT(nn.Module):
         self.act_g = gact(inplace=True)
 
     def forward(self, x):
+        # Determine the device of x
+        x_device = x[0].device if isinstance(x, tuple) else x.device
+
+        # Move layers to the same device
+        self.ffc = self.ffc.to(x_device)
+        self.bn_l = self.bn_l.to(x_device)
+        self.bn_g = self.bn_g.to(x_device)
+        self.act_l = self.act_l.to(x_device)
+        self.act_g = self.act_g.to(x_device)
+
         x_l, x_g = self.ffc(x)
         x_l = self.act_l(self.bn_l(x_l))
         x_g = self.act_g(self.bn_g(x_g))
@@ -332,6 +399,17 @@ class FFCResnetBlock(nn.Module):
         else:
             x_l, x_g = x if type(x) is tuple else (x, 0)
 
+        # Determine the device of x_l
+        x_device = x_l.device
+        
+        # Ensure x_g is on the same device as x_l
+        if torch.is_tensor(x_g):
+            x_g = x_g.to(x_device)
+
+        # Move conv layers to the same device
+        self.conv1 = self.conv1.to(x_device)
+        self.conv2 = self.conv2.to(x_device)
+
         id_l, id_g = x_l, x_g
 
         x_l, x_g = self.conv1((x_l, x_g))
@@ -351,7 +429,7 @@ class ConcatTupleLayer(nn.Module):
         assert torch.is_tensor(x_l) or torch.is_tensor(x_g)
         if not torch.is_tensor(x_g):
             return x_l
-        return torch.cat(x, dim=1)
+        return torch.cat(x, dim=1).to(x_l.device)
 
 
 class FFCResNetGenerator(nn.Module):
@@ -415,7 +493,29 @@ class FFCResNetGenerator(nn.Module):
             model.append(get_activation('tanh' if add_out_act is True else add_out_act))
         self.model = nn.Sequential(*model)
 
+    def to(self, *args, **kwargs):
+        # First, call the parent class's to() method
+        self = super().to(*args, **kwargs)
+       
+        # Then, explicitly move all submodules
+        for module in self.modules():
+            if isinstance(module, (nn.Conv2d, nn.ConvTranspose2d, nn.BatchNorm2d)):
+                module.to(*args, **kwargs)
+       
+        return self
+
     def forward(self, input):
+        # Find the first layer with a 'weight' attribute
+        for layer in self.model:
+            if hasattr(layer, 'weight'):
+                device = layer.weight.device
+                break
+        else:
+            # If no layer with 'weight' is found, use the device of the first parameter
+            device = next(self.parameters()).device
+
+        # Ensure input is on the same device as the model
+        input = input.to(device)
         return self.model(input)
 
 
@@ -473,6 +573,9 @@ class FFCNLayerDiscriminator(BaseDiscriminator):
         return res[1:]
 
     def forward(self, x):
+        # Find the device of the first parameter
+        device = next(self.parameters()).device
+        x = x.to(device)
         act = self.get_all_activations(x)
         feats = []
         for out in act[:-1]:
@@ -483,3 +586,15 @@ class FFCNLayerDiscriminator(BaseDiscriminator):
                     out = out[0]
             feats.append(out)
         return act[-1], feats
+    
+    def to(self, *args, **kwargs):
+        # First, call the parent class's to() method
+        self = super().to(*args, **kwargs)
+       
+        # Then, explicitly move all submodules
+        for module in self.modules():
+            if isinstance(module, (nn.Conv2d, nn.ConvTranspose2d, nn.BatchNorm2d)):
+                module.to(*args, **kwargs)
+       
+        return self
+    

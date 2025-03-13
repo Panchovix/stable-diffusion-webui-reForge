@@ -1,16 +1,8 @@
-# 1st edit by https://github.com/CompVis/latent-diffusion
-# 2nd edit by https://github.com/Stability-AI/stablediffusion
-# 3rd edit by https://github.com/Stability-AI/generative-models
-# 4th edit by https://github.com/comfyanonymous/ComfyUI
-# 5th edit by Forge
-
 import logging
 import math
 import torch
-# import pytorch_lightning as pl
-import torch.nn.functional as F
 from contextlib import contextmanager
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, Tuple, Union
 
 from ldm_patched.ldm.modules.distributions.distributions import DiagonalGaussianDistribution
 
@@ -170,12 +162,19 @@ class AutoencodingEngineLegacy(AutoencodingEngine):
             },
             **kwargs,
         )
-        self.quant_conv = ldm_patched.modules.ops.disable_weight_init.Conv2d(
+
+        if ddconfig.get("conv3d", False):
+            conv_op = ldm_patched.modules.ops.disable_weight_init.Conv3d
+        else:
+            conv_op = ldm_patched.modules.ops.disable_weight_init.Conv2d
+
+        self.quant_conv = conv_op(
             (1 + ddconfig["double_z"]) * ddconfig["z_channels"],
             (1 + ddconfig["double_z"]) * embed_dim,
             1,
         )
-        self.post_quant_conv = ldm_patched.modules.ops.disable_weight_init.Conv2d(embed_dim, ddconfig["z_channels"], 1)
+
+        self.post_quant_conv = conv_op(embed_dim, ddconfig["z_channels"], 1)
         self.embed_dim = embed_dim
 
     def get_autoencoder_params(self) -> list:
@@ -183,7 +182,7 @@ class AutoencodingEngineLegacy(AutoencodingEngine):
         return params
 
     def encode(
-        self, x: torch.Tensor, regulation=None, return_reg_log: bool = False
+        self, x: torch.Tensor, return_reg_log: bool = False
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, dict]]:
         if self.max_batch_size is None:
             z = self.encoder(x)
@@ -199,7 +198,7 @@ class AutoencodingEngineLegacy(AutoencodingEngine):
                 z.append(z_batch)
             z = torch.cat(z, 0)
 
-        z, reg_log = self.regularization(z) if regulation is None else regulation(z)
+        z, reg_log = self.regularization(z)
         if return_reg_log:
             return z, reg_log
         return z

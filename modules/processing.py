@@ -963,7 +963,7 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
             if p.n_iter > 1:
                 shared.state.job = f"Batch {n+1} out of {p.n_iter}"
 
-            advanced_model_sampling_script = next((x for x in p.scripts.alwayson_scripts if x.name == 'advanced model sampling for reforge (backported)'), None)
+            advanced_model_sampling_script = next((x for x in p.scripts.alwayson_scripts if x.name == 'advanced model sampling for reforge'), None)
             force_apply_ztsnr = (
                 advanced_model_sampling_script is not None
                 and p.script_args[advanced_model_sampling_script.args_from:advanced_model_sampling_script.args_to][0]
@@ -981,7 +981,7 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
                 p.sd_model.alphas_cumprod_original = p.sd_model.alphas_cumprod
                 if not getattr(opts, 'use_old_clip_g_load_and_ztsnr_application', False):
                     sd_models.apply_alpha_schedule_override(p.sd_model, p, force_apply=force_apply_ztsnr)
-                p.sd_model.forge_objects.unet.model.model_sampling.set_sigmas(rescale_zero_terminal_snr_sigmas(p.sd_model.forge_objects.unet.model.model_sampling.sigmas))
+                p.sd_model.forge_objects.unet.model.model_sampling.set_sigmas(rescale_zero_terminal_snr_sigmas(p.sd_model.forge_objects.unet.model.model_sampling.sigmas).to(p.sd_model.forge_objects.unet.model.device))
 
             samples_ddim = p.sample(conditioning=p.c, unconditional_conditioning=p.uc, seeds=p.seeds, subseeds=p.subseeds, subseed_strength=p.subseed_strength, prompts=p.prompts)
 
@@ -1842,4 +1842,3 @@ class StableDiffusionProcessingImg2Img(StableDiffusionProcessing):
 
     def get_token_merging_ratio(self, for_hr=False):
         return self.token_merging_ratio or ("token_merging_ratio" in self.override_settings and opts.token_merging_ratio) or opts.token_merging_ratio_img2img or opts.token_merging_ratio
-        

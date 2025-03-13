@@ -253,3 +253,4 @@ class CFGDenoiser(torch.nn.Module):
             eps = (x - denoised) / sigma[:, None, None, None]
             return eps
         return denoised.to(device=original_x_device, dtype=original_x_dtype)
+    

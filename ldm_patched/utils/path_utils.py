@@ -1,12 +1,14 @@
 # Original code from Comfy, https://github.com/comfyanonymous/ComfyUI
-
-
+from __future__ import annotations
 
 import os
 import time
+import mimetypes
 import logging
+from typing import Literal
+from collections.abc import Collection
 
-supported_pt_extensions = set(['.ckpt', '.pt', '.bin', '.pth', '.safetensors', '.pkl'])
+supported_pt_extensions: set[str] = {'.ckpt', '.pt', '.pt2', '.bin', '.pth', '.safetensors', '.pkl', '.sft'}
 
 folder_names_and_paths = {}
 
@@ -20,33 +22,33 @@ user_directory = None
 
 filename_list_cache = {}
 
-def set_output_directory(output_dir):
+def set_output_directory(output_dir: str) -> None:
     global output_directory
     output_directory = output_dir
 
-def set_temp_directory(temp_dir):
+def set_temp_directory(temp_dir: str) -> None:
     global temp_directory
     temp_directory = temp_dir
 
-def set_input_directory(input_dir):
+def set_input_directory(input_dir: str) -> None:
     global input_directory
     input_directory = input_dir
 
-def get_output_directory():
+def get_output_directory() -> str:
     global output_directory
     return output_directory
 
-def get_temp_directory():
+def get_temp_directory() -> str:
     global temp_directory
     return temp_directory
 
-def get_input_directory():
+def get_input_directory() -> str:
     global input_directory
     return input_directory
 
 
 #NOTE: used in http server so don't put folders that should not be accessed remotely
-def get_directory_by_type(type_name):
+def get_directory_by_type(type_name: str) -> str | None:
     if type_name == "output":
         return get_output_directory()
     if type_name == "temp":

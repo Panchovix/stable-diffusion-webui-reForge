@@ -69,6 +69,17 @@ def conv2d_same(
     pad_h = _calc_same_pad(ih, kh, stride[0], dilation[0])
     pad_w = _calc_same_pad(iw, kw, stride[1], dilation[1])
     x = F.pad(x, [pad_w // 2, pad_w - pad_w // 2, pad_h // 2, pad_h - pad_h // 2])
+    
+    # Determine the device of x
+    x_device = x.device
+    
+    # Move weight to the same device as x
+    weight = weight.to(x_device)
+    
+    # If bias exists, move it to the same device as x
+    if bias is not None:
+        bias = bias.to(x_device)
+    
     return F.conv2d(x, weight, bias, stride, (0, 0), dilation, groups)
 
 

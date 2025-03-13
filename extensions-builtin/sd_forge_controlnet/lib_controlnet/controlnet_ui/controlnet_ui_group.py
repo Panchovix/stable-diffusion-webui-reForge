@@ -22,13 +22,13 @@ from lib_controlnet.enums import InputMode, HiResFixOption
 from modules import shared, script_callbacks
 from modules.ui_components import FormRow, ToolButton
 from modules_forge.forge_util import HWC3
+from modules_forge.forge_canvas.canvas import ForgeCanvas
 from lib_controlnet.enums import (
     InputMode,
     HiResFixOption,
     PuLIDMode,
     ControlNetUnionControlType,
 )
-from modules_forge.forge_canvas.canvas import ForgeCanvas
 
 
 @dataclass

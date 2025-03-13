@@ -63,14 +63,11 @@ def apply_controlnet_advanced(
     cnet.negative_advanced_weighting = negative_advanced_weighting
     cnet.advanced_frame_weighting = advanced_frame_weighting
     cnet.advanced_sigma_weighting = advanced_sigma_weighting
-
     if advanced_mask_weighting is not None:
         assert isinstance(advanced_mask_weighting, torch.Tensor)
         B, C, H, W = advanced_mask_weighting.shape
         assert B > 0 and C == 1 and H > 0 and W > 0
-
     cnet.advanced_mask_weighting = advanced_mask_weighting
-
     m = unet.clone()
     m.add_patched_controlnet(cnet)
     return m

@@ -78,3 +78,4 @@ class NeverOOMForForge(scripts.Script):
             self.previous_unet_enabled = unet_enabled
 
         return
+    

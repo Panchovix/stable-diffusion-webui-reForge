@@ -47,4 +47,4 @@ class DiffusersModelPatcher:
         )
 
     def move_tensor_to_current_device(self, x):
-        return x.to(device=self.patcher.current_device, dtype=self.dtype)
+        return x.to(device=self.patcher.model.device, dtype=self.dtype)

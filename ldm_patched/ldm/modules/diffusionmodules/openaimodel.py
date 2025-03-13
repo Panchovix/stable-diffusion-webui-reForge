@@ -1,26 +1,21 @@
-# 1st edit by https://github.com/CompVis/latent-diffusion
-# 2nd edit by https://github.com/Stability-AI/stablediffusion
-# 3rd edit by https://github.com/Stability-AI/generative-models
-# 4th edit by https://github.com/comfyanonymous/ComfyUI
-# 5th edit by Forge
-
-
+# Original by https://github.com/comfyanonymous/ComfyUI
 from abc import abstractmethod
 
 import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
+import logging
 
 from .util import (
     checkpoint,
     avg_pool_nd,
-    zero_module,
     timestep_embedding,
     AlphaBlender,
 )
 from ..attention import SpatialTransformer, SpatialVideoTransformer, default
 from ldm_patched.ldm.util import exists
+import ldm_patched.modules.patcher_extension
 import ldm_patched.modules.ops
 ops = ldm_patched.modules.ops.disable_weight_init
 
@@ -30,23 +25,18 @@ class TimestepBlock(nn.Module):
     """
 
     @abstractmethod
-    def forward(self, x, emb, transformer_options={}):
+    def forward(self, x, emb):
         """
         Apply the module to `x` given `emb` timestep embeddings.
         """
 
 #This is needed because accelerate makes a copy of transformer_options which breaks "transformer_index"
 def forward_timestep_embed(ts, x, emb, context=None, transformer_options={}, output_shape=None, time_context=None, num_video_frames=None, image_only_indicator=None):
-    block_inner_modifiers = transformer_options.get("block_inner_modifiers", [])
-
-    for layer_index, layer in enumerate(ts):
-        for modifier in block_inner_modifiers:
-            x = modifier(x, 'before', layer, layer_index, ts, transformer_options)
-
+    for layer in ts:
         if isinstance(layer, VideoResBlock):
             x = layer(x, emb, num_video_frames, image_only_indicator)
         elif isinstance(layer, TimestepBlock):
-            x = layer(x, emb, transformer_options)
+            x = layer(x, emb)
         elif isinstance(layer, SpatialVideoTransformer):
             x = layer(x, context, time_context, num_video_frames, image_only_indicator, transformer_options)
             if "transformer_index" in transformer_options:
@@ -58,10 +48,16 @@ def forward_timestep_embed(ts, x, emb, context=None, transformer_options={}, out
         elif isinstance(layer, Upsample):
             x = layer(x, output_shape=output_shape)
         else:
+            if "patches" in transformer_options and "forward_timestep_embed_patch" in transformer_options["patches"]:
+                found_patched = False
+                for class_type, handler in transformer_options["patches"]["forward_timestep_embed_patch"]:
+                    if isinstance(layer, class_type):
+                        x = handler(layer, x, emb, context, transformer_options, output_shape, time_context, num_video_frames, image_only_indicator)
+                        found_patched = True
+                        break
+                if found_patched:
+                    continue
             x = layer(x)
-
-        for modifier in block_inner_modifiers:
-            x = modifier(x, 'after', layer, layer_index, ts, transformer_options)
     return x
 
 class TimestepEmbedSequential(nn.Sequential, TimestepBlock):
@@ -234,7 +230,7 @@ class ResBlock(TimestepBlock):
         else:
             self.skip_connection = operations.conv_nd(dims, channels, self.out_channels, 1, dtype=dtype, device=device)
 
-    def forward(self, x, emb, transformer_options={}):
+    def forward(self, x, emb):
         """
         Apply the block to a Tensor, conditioned on a timestep embedding.
         :param x: an [N x C x ...] Tensor of features.
@@ -242,29 +238,19 @@ class ResBlock(TimestepBlock):
         :return: an [N x C x ...] Tensor of outputs.
         """
         return checkpoint(
-            self._forward, (x, emb, transformer_options), self.parameters(), self.use_checkpoint
+            self._forward, (x, emb), self.parameters(), self.use_checkpoint
         )
 
 
-    def _forward(self, x, emb, transformer_options={}):
+    def _forward(self, x, emb):
         if self.updown:
             in_rest, in_conv = self.in_layers[:-1], self.in_layers[-1]
-            if "groupnorm_wrapper" in transformer_options:
-                in_norm, in_rest = in_rest[0], in_rest[1:]
-                h = transformer_options["groupnorm_wrapper"](in_norm, x, transformer_options)
-                h = in_rest(h)
-            else:
-                h = in_rest(x)
+            h = in_rest(x)
             h = self.h_upd(h)
             x = self.x_upd(x)
             h = in_conv(h)
         else:
-            if "groupnorm_wrapper" in transformer_options:
-                in_norm = self.in_layers[0]
-                h = transformer_options["groupnorm_wrapper"](in_norm, x, transformer_options)
-                h = self.in_layers[1:](h)
-            else:
-                h = self.in_layers(x)
+            h = self.in_layers(x)
 
         emb_out = None
         if not self.skip_t_emb:
@@ -273,10 +259,7 @@ class ResBlock(TimestepBlock):
                 emb_out = emb_out[..., None]
         if self.use_scale_shift_norm:
             out_norm, out_rest = self.out_layers[0], self.out_layers[1:]
-            if "groupnorm_wrapper" in transformer_options:
-                h = transformer_options["groupnorm_wrapper"](out_norm, h, transformer_options)
-            else:
-                h = out_norm(h)
+            h = out_norm(h)
             if emb_out is not None:
                 scale, shift = th.chunk(emb_out, 2, dim=1)
                 h *= (1 + scale)
@@ -285,13 +268,9 @@ class ResBlock(TimestepBlock):
         else:
             if emb_out is not None:
                 if self.exchange_temb_dims:
-                    emb_out = rearrange(emb_out, "b t c ... -> b c t ...")
+                    emb_out = emb_out.movedim(1, 2)
                 h = h + emb_out
-            if "groupnorm_wrapper" in transformer_options:
-                h = transformer_options["groupnorm_wrapper"](self.out_layers[0], h, transformer_options)
-                h = self.out_layers[1:](h)
-            else:
-                h = self.out_layers(h)
+            h = self.out_layers(h)
         return self.skip_connection(x) + h
 
 
@@ -389,11 +368,9 @@ def apply_control(h, control, name):
         ctrl = control[name].pop()
         if ctrl is not None:
             try:
-                if ctrl.shape[2] != h.shape[2] or ctrl.shape[3] != h.shape[3]:
-                    ctrl = F.interpolate(ctrl.float(), size=(h.shape[2], h.shape[3]), mode="bicubic", align_corners=False).to(h.dtype)
                 h += ctrl
             except:
-                print("warning control could not be applied", h.shape, ctrl.shape)
+                logging.warning("warning control could not be applied {} {}".format(h.shape, ctrl.shape))
     return h
 
 class UNetModel(nn.Module):
@@ -464,6 +441,7 @@ class UNetModel(nn.Module):
         video_kernel_size=None,
         disable_temporal_crossattention=False,
         max_ddpm_temb_period=10000,
+        attn_precision=None,
         device=None,
         operations=ops,
     ):
@@ -518,7 +496,6 @@ class UNetModel(nn.Module):
         self.predict_codebook_ids = n_embed is not None
 
         self.default_num_video_frames = None
-        self.default_image_only_indicator = None
 
         time_embed_dim = model_channels * 4
         self.time_embed = nn.Sequential(
@@ -531,7 +508,7 @@ class UNetModel(nn.Module):
             if isinstance(self.num_classes, int):
                 self.label_emb = nn.Embedding(num_classes, time_embed_dim, dtype=self.dtype, device=device)
             elif self.num_classes == "continuous":
-                print("setting up linear c_adm embedding layer")
+                logging.debug("setting up linear c_adm embedding layer")
                 self.label_emb = nn.Linear(1, time_embed_dim)
             elif self.num_classes == "sequential":
                 assert adm_in_channels is not None
@@ -584,13 +561,14 @@ class UNetModel(nn.Module):
                     disable_self_attn=disable_self_attn,
                     disable_temporal_crossattention=disable_temporal_crossattention,
                     max_time_embed_period=max_ddpm_temb_period,
+                    attn_precision=attn_precision,
                     dtype=self.dtype, device=device, operations=operations
                 )
             else:
                 return SpatialTransformer(
                                 ch, num_heads, dim_head, depth=depth, context_dim=context_dim,
                                 disable_self_attn=disable_self_attn, use_linear=use_linear_in_transformer,
-                                use_checkpoint=use_checkpoint, dtype=self.dtype, device=device, operations=operations
+                                use_checkpoint=use_checkpoint, attn_precision=attn_precision, dtype=self.dtype, device=device, operations=operations
                             )
 
         def get_resblock(
@@ -742,27 +720,30 @@ class UNetModel(nn.Module):
                 device=device,
                 operations=operations
             )]
-        if transformer_depth_middle >= 0:
-            mid_block += [get_attention_layer(  # always uses a self-attn
-                            ch, num_heads, dim_head, depth=transformer_depth_middle, context_dim=context_dim,
-                            disable_self_attn=disable_middle_self_attn, use_checkpoint=use_checkpoint
-                        ),
-            get_resblock(
-                merge_factor=merge_factor,
-                merge_strategy=merge_strategy,
-                video_kernel_size=video_kernel_size,
-                ch=ch,
-                time_embed_dim=time_embed_dim,
-                dropout=dropout,
-                out_channels=None,
-                dims=dims,
-                use_checkpoint=use_checkpoint,
-                use_scale_shift_norm=use_scale_shift_norm,
-                dtype=self.dtype,
-                device=device,
-                operations=operations
-            )]
-        self.middle_block = TimestepEmbedSequential(*mid_block)
+
+        self.middle_block = None
+        if transformer_depth_middle >= -1:
+            if transformer_depth_middle >= 0:
+                mid_block += [get_attention_layer(  # always uses a self-attn
+                                ch, num_heads, dim_head, depth=transformer_depth_middle, context_dim=context_dim,
+                                disable_self_attn=disable_middle_self_attn, use_checkpoint=use_checkpoint
+                            ),
+                get_resblock(
+                    merge_factor=merge_factor,
+                    merge_strategy=merge_strategy,
+                    video_kernel_size=video_kernel_size,
+                    ch=ch,
+                    time_embed_dim=time_embed_dim,
+                    dropout=dropout,
+                    out_channels=None,
+                    dims=dims,
+                    use_checkpoint=use_checkpoint,
+                    use_scale_shift_norm=use_scale_shift_norm,
+                    dtype=self.dtype,
+                    device=device,
+                    operations=operations
+                )]
+            self.middle_block = TimestepEmbedSequential(*mid_block)
         self._feature_size += ch
 
         self.output_blocks = nn.ModuleList([])
@@ -838,7 +819,7 @@ class UNetModel(nn.Module):
         self.out = nn.Sequential(
             operations.GroupNorm(32, ch, dtype=self.dtype, device=device),
             nn.SiLU(),
-            zero_module(operations.conv_nd(dims, model_channels, out_channels, 3, padding=1, dtype=self.dtype, device=device)),
+            operations.conv_nd(dims, model_channels, out_channels, 3, padding=1, dtype=self.dtype, device=device),
         )
         if self.predict_codebook_ids:
             self.id_predictor = nn.Sequential(
@@ -848,6 +829,13 @@ class UNetModel(nn.Module):
         )
 
     def forward(self, x, timesteps=None, context=None, y=None, control=None, transformer_options={}, **kwargs):
+        return ldm_patched.modules.patcher_extension.WrapperExecutor.new_class_executor(
+            self._forward,
+            self,
+            ldm_patched.modules.patcher_extension.get_all_wrappers(ldm_patched.modules.patcher_extension.WrappersMP.DIFFUSION_MODEL, transformer_options)
+        ).execute(x, timesteps, context, y, control, transformer_options, **kwargs)
+
+    def _forward(self, x, timesteps=None, context=None, y=None, control=None, transformer_options={}, **kwargs):
         """
         Apply the model to an input batch.
         :param x: an [N x C x ...] Tensor of inputs.
@@ -859,10 +847,9 @@ class UNetModel(nn.Module):
         transformer_options["original_shape"] = list(x.shape)
         transformer_options["transformer_index"] = 0
         transformer_patches = transformer_options.get("patches", {})
-        block_modifiers = transformer_options.get("block_modifiers", [])
 
         num_video_frames = kwargs.get("num_video_frames", self.default_num_video_frames)
-        image_only_indicator = kwargs.get("image_only_indicator", self.default_image_only_indicator)
+        image_only_indicator = kwargs.get("image_only_indicator", None)
         time_context = kwargs.get("time_context", None)
 
         assert (y is not None) == (
@@ -872,6 +859,11 @@ class UNetModel(nn.Module):
         t_emb = timestep_embedding(timesteps, self.model_channels, repeat_only=False).to(x.dtype)
         emb = self.time_embed(t_emb)
 
+        if "emb_patch" in transformer_patches:
+            patch = transformer_patches["emb_patch"]
+            for p in patch:
+                emb = p(emb, self.model_channels, transformer_options)
+
         if self.num_classes is not None:
             assert y.shape[0] == x.shape[0]
             emb = emb + self.label_emb(y)
@@ -879,16 +871,8 @@ class UNetModel(nn.Module):
         h = x
         for id, module in enumerate(self.input_blocks):
             transformer_options["block"] = ("input", id)
-
-            for block_modifier in block_modifiers:
-                h = block_modifier(h, 'before', transformer_options)
-
             h = forward_timestep_embed(module, h, emb, context, transformer_options, time_context=time_context, num_video_frames=num_video_frames, image_only_indicator=image_only_indicator)
             h = apply_control(h, control, 'input')
-
-            for block_modifier in block_modifiers:
-                h = block_modifier(h, 'after', transformer_options)
-
             if "input_block_patch" in transformer_patches:
                 patch = transformer_patches["input_block_patch"]
                 for p in patch:
@@ -901,15 +885,10 @@ class UNetModel(nn.Module):
                     h = p(h, transformer_options)
 
         transformer_options["block"] = ("middle", 0)
-
-        for block_modifier in block_modifiers:
-            h = block_modifier(h, 'before', transformer_options)
-
-        h = forward_timestep_embed(self.middle_block, h, emb, context, transformer_options, time_context=time_context, num_video_frames=num_video_frames, image_only_indicator=image_only_indicator)
+        if self.middle_block is not None:
+            h = forward_timestep_embed(self.middle_block, h, emb, context, transformer_options, time_context=time_context, num_video_frames=num_video_frames, image_only_indicator=image_only_indicator)
         h = apply_control(h, control, 'middle')
 
-        for block_modifier in block_modifiers:
-            h = block_modifier(h, 'after', transformer_options)
 
         for id, module in enumerate(self.output_blocks):
             transformer_options["block"] = ("output", id)
@@ -927,30 +906,9 @@ class UNetModel(nn.Module):
                 output_shape = hs[-1].shape
             else:
                 output_shape = None
-
-            for block_modifier in block_modifiers:
-                h = block_modifier(h, 'before', transformer_options)
-
             h = forward_timestep_embed(module, h, emb, context, transformer_options, output_shape, time_context=time_context, num_video_frames=num_video_frames, image_only_indicator=image_only_indicator)
-
-            for block_modifier in block_modifiers:
-                h = block_modifier(h, 'after', transformer_options)
-
-        transformer_options["block"] = ("last", 0)
-
-        for block_modifier in block_modifiers:
-            h = block_modifier(h, 'before', transformer_options)
-
+        h = h.type(x.dtype)
         if self.predict_codebook_ids:
-            h = self.id_predictor(h)
-        elif "groupnorm_wrapper" in transformer_options:
-            out_norm, out_rest = self.out[0], self.out[1:]
-            h = transformer_options["groupnorm_wrapper"](out_norm, h, transformer_options)
-            h = out_rest(h)
+            return self.id_predictor(h)
         else:
-            h = self.out(h)
-
-        for block_modifier in block_modifiers:
-            h = block_modifier(h, 'after', transformer_options)
-
-        return h.type(x.dtype)
+            return self.out(h)
