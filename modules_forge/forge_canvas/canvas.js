@@ -1226,7 +1226,4 @@ class ForgeCanvas {
 // TypeCorrection. See comment in canvas.js
 const True = true,
   False = false;
-<<<<<<< HEAD
   
-=======
->>>>>>> dev2
