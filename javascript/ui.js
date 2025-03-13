@@ -218,6 +218,27 @@ function submit_extras() {
 
     res[0] = id;
 
+    console.log(res)
+    
+    /*
+        HACK: DO NOT DO THIS! THIS IS EXTREMELY BAD.
+        Gradio pads null values wrongly by... inserted somewhere in the arguments.
+        This gets passed down to the python side of gradio and it litterally spews rainbows all over the floor.
+        (Like in konosuba if you know what I mean.)
+        
+        We pad an *extra* null value here so that it is happy.
+
+        Adding extensions seem to get rid of the issue for whatever reason.
+        But... I don't think we should be advocating for "Install an extension to fix an issue".
+
+        To fix this issue, we add a null value of the length is less than the default.
+        This fixes the issue for without extensions.
+         - Ristellise (12/03/25)
+    */
+    // If we add any more args to extras, we should relook at this.
+    if (res.length < 42)
+        res.push(null);
+
     console.log(res);
     return res;
 }

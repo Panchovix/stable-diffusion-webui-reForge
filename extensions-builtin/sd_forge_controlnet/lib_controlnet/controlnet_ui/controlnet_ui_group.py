@@ -29,6 +29,7 @@ from lib_controlnet.enums import (
     PuLIDMode,
     ControlNetUnionControlType,
 )
+from modules_forge.forge_canvas.canvas import ForgeCanvas
 
 
 @dataclass

@@ -24,7 +24,7 @@ If you know what you are doing, you can install Forge/reForge using same method 
 ```bash
 git clone https://github.com/Panchovix/stable-diffusion-webui-reForge.git
 cd stable-diffusion-webui-reForge
-git checkout dev
+git checkout dev2
 ```
 Then run webui-user.bat (Windows) or webui-user.sh (Linux, for this one make sure to uncomment the lines according of your folder, paths and setting you need).
 
@@ -42,7 +42,7 @@ For Windows CMD, it would be:
 ```bash
 git clone https://github.com/Panchovix/stable-diffusion-webui-reForge.git
 cd stable-diffusion-webui-reForge
-git checkout dev
+git checkout dev2
 ren requirements_versions.txt requirements_versions_backup.txt
 copy requirements_versions_legacy.txt requirements_versions.txt
 ```
@@ -52,7 +52,7 @@ Windows PS1
 ```bash
 git clone https://github.com/Panchovix/stable-diffusion-webui-reForge.git
 cd stable-diffusion-webui-reForge
-git checkout dev
+git checkout dev2
 Rename-Item requirements_versions.txt requirements_versions_backup.txt
 Copy-Item requirements_versions_legacy.txt requirements_versions.txt
 ```
