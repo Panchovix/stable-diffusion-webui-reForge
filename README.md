@@ -4,12 +4,13 @@ Stable Diffusion WebUI Forge/reForge is a platform on top of [Stable Diffusion W
 
 The name "Forge" is inspired from "Minecraft Forge". This project is aimed at becoming SD WebUI's Forge.
 
-# Important: Branches (Update on 27th December 2024)
+# Important: Branches
 
-* main: Has all the possible upstream changes from A1111, new samplers/schedulers/sd options/etc and some small modifications in the backend compared to the original forge (mostly to load multiple checkpoints at the same time). It may be missing some new features related to the comfy backend (from 2024-01 and onwards when it's not samplers). This branch may be slower than the other branches like dev2/dev2/experimental.
-* dev: This branch has everything dev branch has, and all applicable updates from Comfy upstream, may have more features vs dev branch. Could have some more instabilities, but should also be generally stable for daily usage.
-* dev2: Same as dev backend, but it uses gradio 4.0 instead of 3.42. This is to test some extensions and changes, then it will be moved to dev, and then to main branch.
+* main: Has all the possible upstream changes from A1111, new samplers/schedulers/sd options/etc and now, comfy backend updated to stream, so this deprecated the old forge backend.
+* dev: At this point (2025-03-13), it is the same as main branch.
+* dev2: Same as dev branch, but it uses gradio 4.0 instead of 3.42. This is to test some extensions and changes, then it will be moved to dev, and then to main branch.
 * experimental: This branch will have some experimental changes that may have major new features, but they may be incomplete or have major bugs, based on the dev2 branch. This branch will be mostly inactive until I want to test things.
+* main-old: Branch with old forge backend. Kept as backup in any case, but it won't receive updates.
 * dev_upstream: Deprecated, see more https://github.com/Panchovix/stable-diffusion-webui-reForge/discussions/175
 * dev_upsteam_experimental: Deprecated, see more https://github.com/Panchovix/stable-diffusion-webui-reForge/discussions/175
 * main_new_forge: Deprecated, see more https://github.com/lllyasviel/stable-diffusion-webui-forge/discussions/981.
@@ -78,28 +79,6 @@ If you got stuck in a merge to resolve conflicts, you can go back with `git merg
 -------
 
 Pre-done package is planned, but I'm not sure how to do it. Any PR or help with this is appreciated.
-
-# MESSAGE IF YOU WERE ON DEV/DEV2/EXPERIMENTAL ON 2025-01-24
-
-Branches had some major issues and they had to be re-done. So you will get issues when trying to do a git pull, and if resolving conflicts, it will be not working correctly.
-
-To fix this, do this (if you had any modifications, backup them to another folder. If you used symbolic links for models, embeddings etc do the same)
-
-```bash
-git checkout main
-git fetch origin
-'if you weren't on dev, then do'
-git checkout dev
-git reset --hard origin/dev
-'if you weren't on dev2, then do'
-git checkout dev2
-git reset --hard origin/dev2
-'if you weren't on experimental, then do'
-git checkout experimental
-git reset --hard origin/experimental
-```
-
-Then you can do git checkout normally to the fixed branches.
 
 # Forge/reForge Backend
 
