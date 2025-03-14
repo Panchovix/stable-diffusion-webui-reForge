@@ -171,12 +171,15 @@ class AlterSampler(sd_samplers_kdiffusion.KDiffusionSampler):
             "Align Your Steps Custom": "ays_custom",
         }
         
-        use_turbo = self.sampler_name.endswith('_turbo') or self.scheduler_name == "Turbo"
+        use_turbo = self.sampler_name.endswith('_turbo') or self.scheduler_name.lower() == "turbo".lower()
+    
+        forge_schedulers_lower = {k.lower(): v for k, v in forge_schedulers.items()}
+        scheduler_key_lower = self.scheduler_name.lower() if self.scheduler_name else ""
         
-        if self.scheduler_name in forge_schedulers:
-            matched_scheduler = forge_schedulers[self.scheduler_name]
+        if scheduler_key_lower in forge_schedulers_lower:
+            matched_scheduler = forge_schedulers_lower[scheduler_key_lower]
         else:
-            # Default to 'normal' if the selected scheduler is not available in forge_alter
+            # Default to 'normal' if not available
             matched_scheduler = 'normal'
 
         try:
