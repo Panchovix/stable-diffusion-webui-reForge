@@ -542,7 +542,7 @@ function extraNetworksRequestMetadata(event, extraPage) {
         extraNetworksShowMetadata("there was an error getting metadata");
     };
 
-    var cardName = event.target.parentElement.parentElement.getAttribute("data-name");
+    var cardName = event.target.parentElement.parentElement.getAttribute("data-name") || event.target.parentElement.parentElement.parentElement.getAttribute("data-name");
 
     requestGet("./sd_extra_networks/metadata", {page: extraPage, item: cardName}, function(data) {
         if (data && data.metadata) {
@@ -569,7 +569,7 @@ function extraNetworksEditUserMetadata(event, tabname, extraPage) {
         extraPageUserMetadataEditors[id] = editor;
     }
     
-    var cardName = event.target.parentElement.parentElement.getAttribute("data-name");
+    var cardName = event.target.parentElement.parentElement.getAttribute("data-name") || event.target.parentElement.parentElement.parentElement.getAttribute("data-name");
 
     editor.nameTextarea.value = cardName;
     updateInput(editor.nameTextarea);
