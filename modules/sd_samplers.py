@@ -158,10 +158,16 @@ def get_sampler_and_scheduler(sampler_name, scheduler_name, *, convert_automatic
             "Align Your Steps Custom": "ays_custom"
         }
         
-        if scheduler_name in forge_schedulers:
-            found_scheduler = sd_schedulers.Scheduler(forge_schedulers[scheduler_name], scheduler_name, None)
+        if scheduler_name:
+            forge_schedulers_lower = {k.lower(): (k, v) for k, v in forge_schedulers.items()}
+            scheduler_key_lower = scheduler_name.lower()
+            
+            if scheduler_key_lower in forge_schedulers_lower:
+                original_key, value = forge_schedulers_lower[scheduler_key_lower]
+                found_scheduler = sd_schedulers.Scheduler(value, original_key, None)
+            else:
+                found_scheduler = sd_schedulers.Scheduler('normal', 'Normal', None)
         else:
-            # Default to 'normal' if the selected scheduler is not available in forge_alter
             found_scheduler = sd_schedulers.Scheduler('normal', 'Normal', None)
 
     return sampler.name, found_scheduler.label
