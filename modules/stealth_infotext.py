@@ -5,14 +5,14 @@ from modules import shared
 
 
 def add_stealth_pnginfo(params: ImageSaveParams):
-    stealth_pnginfo_option = shared.opts.data.get('stealth_pnginfo_option', 'Alpha')
-    if not stealth_pnginfo_option or stealth_pnginfo_option == 'None':
+    stealth_pnginfo_opt = shared.opts.data.get('stealth_pnginfo_opt', 'Alpha')
+    if not stealth_pnginfo_opt or stealth_pnginfo_opt == 'None':
         return
     if not params.filename.endswith('.png') or params.pnginfo is None:
         return
     if 'parameters' not in params.pnginfo:
         return
-    add_data(params, str(stealth_pnginfo_option), True)
+    add_data(params, str(stealth_pnginfo_opt), True)
 
 def prepare_data(params, mode='Alpha', compressed=True):
     signature = f"stealth_{'png' if mode == 'Alpha' else 'rgb'}{'info' if not compressed else 'comp'}"
