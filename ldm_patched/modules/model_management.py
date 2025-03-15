@@ -59,7 +59,7 @@ except:
 
 lowvram_available = True
 if args.pytorch_deterministic:
-    logging.info("Using deterministic algorithms for pytorch")
+    print("Using deterministic algorithms for pytorch")
     torch.use_deterministic_algorithms(True, warn_only=True)
 
 directml_enabled = False
@@ -71,7 +71,7 @@ if args.directml is not None:
         directml_device = torch_directml.device()
     else:
         directml_device = torch_directml.device(device_index)
-    logging.info("Using directml with device: {}".format(torch_directml.device_name(device_index)))
+    print("Using directml with device: {}".format(torch_directml.device_name(device_index)))
     # torch_directml.disable_tiled_resources(True)
     lowvram_available = False #TODO: need to find a way to get free memory in directml before this can be enabled by default.
 
@@ -186,6 +186,12 @@ def get_total_memory(dev=None, torch_total_too=False):
         return (mem_total, mem_total_torch)
     else:
         return mem_total
+    
+def mac_version():
+    try:
+        return tuple(int(n) for n in platform.mac_ver()[0].split("."))
+    except:
+        return None
 
 total_vram = get_total_memory(get_torch_device()) / (1024 * 1024)
 total_ram = psutil.virtual_memory().total / (1024 * 1024)
@@ -193,6 +199,9 @@ print("Total VRAM {:0.0f} MB, total RAM {:0.0f} MB".format(total_vram, total_ram
 
 try:
     print("pytorch version: {}".format(torch_version))
+    mac_ver = mac_version()
+    if mac_ver is not None:
+        print("Mac Version {}".format(mac_ver))
 except:
     pass
 
@@ -264,7 +273,7 @@ except:
 try:
     if is_amd():
         arch = torch.cuda.get_device_properties(get_torch_device()).gcnArchName
-        logging.info("AMD arch: {}".format(arch))
+        print("AMD arch: {}".format(arch))
         if args.attention_split == False and args.attention_quad == False:
             if torch_version_numeric[0] >= 2 and torch_version_numeric[1] >= 7:  # works on 2.6 but doesn't actually seem to improve much
                 if any((a in arch) for a in ["gfx1100", "gfx1101"]):  # TODO: more arches
@@ -284,7 +293,7 @@ try:
     if is_nvidia() and PerformanceFeature.Fp16Accumulation in args.fast:
         torch.backends.cuda.matmul.allow_fp16_accumulation = True
         PRIORITIZE_FP16 = True  # TODO: limit to cards where it actually boosts performance
-        logging.info("Enabled fp16 accumulation.")
+        print("Enabled fp16 accumulation.")
 except:
     pass
 
@@ -386,7 +395,8 @@ def get_torch_device_name(device):
 try:
     current_device = get_torch_device()
     device_name = get_torch_device_name(current_device)
-    logging.info("Device: {}".format(device_name))
+    # logging.info("Device: {}".format(device_name))
+    print("Device: {}".format(device_name))
     
     # Check if it's an RTX device and provide hints
     if 'rtx' in device_name.lower():
@@ -990,6 +1000,8 @@ def cast_to_device(tensor, device, dtype, copy=False):
 def sage_attention_enabled():
     return args.use_sage_attention
 
+def flash_attention_enabled():
+    return args.use_flash_attention
 
 def xformers_enabled():
     global directml_enabled
@@ -1038,12 +1050,6 @@ def pytorch_attention_flash_attention():
         if is_amd():
             return True #if you have pytorch attention enabled on AMD it probably supports at least mem efficient attention
     return False
-
-def mac_version():
-    try:
-        return tuple(int(n) for n in platform.mac_ver()[0].split("."))
-    except:
-        return None
 
 def force_upcast_attention_dtype():
     upcast = args.force_upcast_attention
