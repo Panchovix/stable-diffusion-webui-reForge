@@ -373,7 +373,7 @@ def create_ui():
                                             hr_negative_prompt = gr.Textbox(label="Hires negative prompt", elem_id="hires_neg_prompt", show_label=False, lines=3, placeholder="Negative prompt for hires fix pass.\nLeave empty to use the same negative prompt as in first pass.", elem_classes=["prompt"])
 
 
-                                hr_cfg.change(lambda x: gr.update(interactive=(x != 1)), inputs=[hr_cfg], outputs=[hr_negative_prompt], queue=False, show_progress=False)
+                                hr_cfg.change(lambda x: gr.update(interactive=True), inputs=[hr_cfg], outputs=[hr_negative_prompt], queue=False, show_progress=False)
 
                             scripts.scripts_txt2img.setup_ui_for_section(category)
 
