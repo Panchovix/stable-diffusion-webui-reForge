@@ -378,7 +378,7 @@ class ControlNetForForgeOfficial(scripts.Script):
         else:
             hr_option = HiResFixOption.BOTH
 
-        alignment_indices = [i % len(preprocessor_outputs) for i in range(p.batch_size)]
+        alignment_indices = [i % len(preprocessor_outputs) for i in range(p.batch_size * p.n_iter)]
         def attach_extra_result_image(img: np.ndarray, is_high_res: bool = False):
             if (
                 (is_high_res and hr_option.high_res_enabled) or
@@ -478,10 +478,10 @@ class ControlNetForForgeOfficial(scripts.Script):
             return
 
         if is_hr_pass:
-            cond = params.control_cond_for_hr_fix
+            cond = torch.split(params.control_cond_for_hr_fix, p.batch_size)[p.iteration]
             mask = params.control_mask_for_hr_fix
         else:
-            cond = params.control_cond
+            cond = torch.split(params.control_cond, p.batch_size)[p.iteration]
             mask = params.control_mask
 
         kwargs.update(dict(
