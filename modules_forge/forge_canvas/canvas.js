@@ -455,6 +455,7 @@ class ForgeCanvas {
           canvasInst.cycleModeDown();
           canvasInst.updateModeButton();
           scribbleColorElement.value = rgbHex;
+          canvasInst.scribbleColor = rgbHex;
           scribbleIndicatorElement.style.borderColor = rgbHex;
         }
         return;
@@ -751,9 +752,8 @@ class ForgeCanvas {
 
     // Touch event handlers
     imageContainerElement.addEventListener("touchstart", function (event) {
-      const cModeStr = canvasInst.currentMode();
       if (event.target.closest(".forge-toolbar")) return; // Don't handle touches on toolbar
-      if (cModeStr == "pan" || cModeStr == "pick") return;
+      if (canvasInst.currentModeStr == "draw" || canvasInst.currentModeStr == "pick") return;
 
       event.preventDefault();
       canvasInst.touching = true;
@@ -852,7 +852,7 @@ class ForgeCanvas {
   }
 
   cycleModeDown() {
-    this.currentModeIdx = (this.currentModeIdx + 1) % this.modes.length;
+    this.currentModeIdx = (this.currentModeIdx - 1) % this.modes.length;
     this.currentModeStr = this.currentMode();
   }
 
