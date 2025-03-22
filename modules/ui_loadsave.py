@@ -4,7 +4,7 @@ import os
 import gradio as gr
 
 from modules import errors
-from modules.ui_components import ToolButton, InputAccordion
+from modules.ui_components import ToolButton, InputAccordion, InputAccordionImpl
 
 
 def radio_choices(comp):  # gradio 3.41 changes choices from list of values to list of pairs
@@ -49,7 +49,7 @@ class UiLoadsave:
 
             saved_value = self.ui_settings.get(key, None)
 
-            if isinstance(obj, gr.Accordion) and isinstance(x, InputAccordion) and field == 'value':
+            if isinstance(obj, gr.Accordion) and isinstance(x, InputAccordionImpl) and field == 'value':
                 field = 'open'
 
             if saved_value is None:
@@ -103,7 +103,7 @@ class UiLoadsave:
 
             apply_field(x, 'value', check_dropdown, getattr(x, 'init_field', None))
 
-        if type(x) == InputAccordion:
+        if isinstance(x, InputAccordionImpl):
             if hasattr(x, 'custom_script_source'):
                 x.accordion.custom_script_source = x.custom_script_source
             if x.accordion.visible:
