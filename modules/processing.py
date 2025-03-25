@@ -1470,13 +1470,6 @@ class StableDiffusionProcessingTxt2Img(StableDiffusionProcessing):
         self.sd_model.forge_objects = self.sd_model.forge_objects_after_applying_lora.shallow_copy()
         apply_token_merging(self.sd_model, self.get_token_merging_ratio(for_hr=True))
 
-        if self.scripts is not None:
-            self.scripts.process_before_every_sampling(self,
-                                                    x=samples,
-                                                    noise=noise,
-                                                    c=self.hr_c,
-                                                    uc=self.hr_uc)
-
         if self.modified_noise is not None:
             noise = self.modified_noise
             self.modified_noise = None
