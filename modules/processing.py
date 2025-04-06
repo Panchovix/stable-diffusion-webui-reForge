@@ -22,7 +22,6 @@ from modules.rng import slerp # noqa: F401
 from modules.sd_hijack import model_hijack
 from modules.sd_samplers_common import images_tensor_to_samples, decode_first_stage, approximation_indexes
 from modules.shared import opts, cmd_opts, state
-import modules.processing_scripts.comments as comments_parser
 import modules.shared as shared
 import modules.paths as paths
 import modules.face_restoration
@@ -1031,16 +1030,7 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
                 x_samples_ddim = batch_params.images
 
             def infotext(index=0, use_main_prompt=False):
-                if shared.opts.enable_prompt_comments:
-                    commented_prompts = p.prompts
-                    commented_prompts[index] = p.prompt
-                    commented_negative_prompts = p.negative_prompts
-                    commented_negative_prompts[index] = p.negative_prompt
-                    return create_infotext(p, commented_prompts, p.seeds, p.subseeds, use_main_prompt=False, index=index, all_negative_prompts=commented_negative_prompts)
-                else:
-                    clean_prompts = [comments_parser.strip_comments(prompt) for prompt in p.prompts]
-                    clean_negative_prompts = [comments_parser.strip_comments(negative_prompt) for negative_prompt in p.negative_prompts]
-                    return create_infotext(p, clean_prompts, p.seeds, p.subseeds, use_main_prompt=False, index=index, all_negative_prompts=clean_negative_prompts)
+                return create_infotext(p, p.prompts, p.seeds, p.subseeds, use_main_prompt=use_main_prompt, index=index, all_negative_prompts=p.negative_prompts)
 
             save_samples = p.save_samples()
 
@@ -1286,11 +1276,11 @@ class StableDiffusionProcessingTxt2Img(StableDiffusionProcessing):
 
             def get_hr_prompt(p, index, prompt_text, **kwargs):
                 hr_prompt = p.all_hr_prompts[index]
-                return hr_prompt if hr_prompt != (comments_parser.strip_comments(prompt_text) if shared.opts.enable_prompt_comments else prompt_text) else None
+                return hr_prompt if hr_prompt != prompt_text else None
 
             def get_hr_negative_prompt(p, index, negative_prompt, **kwargs):
                 hr_negative_prompt = p.all_hr_negative_prompts[index]
-                return hr_negative_prompt if hr_negative_prompt != (comments_parser.strip_comments(negative_prompt) if shared.opts.enable_prompt_comments else negative_prompt) else None
+                return hr_negative_prompt if hr_negative_prompt != negative_prompt else None
 
             self.extra_generation_params["Hires prompt"] = get_hr_prompt
             self.extra_generation_params["Hires negative prompt"] = get_hr_negative_prompt
