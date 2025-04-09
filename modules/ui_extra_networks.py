@@ -387,7 +387,7 @@ class ExtraNetworksPage:
                 "data_path": dir_path,
                 "data_hash": "",
                 "action_list_item_action_leading": "<i class='tree-list-item-action-chevron'></i>",
-                "action_list_item_visual_leading": "🗀",
+                "action_list_item_visual_leading": "≡ƒùÇ",
                 "action_list_item_label": os.path.basename(dir_path),
                 "action_list_item_visual_trailing": "",
                 "action_list_item_action_trailing": "",
@@ -438,7 +438,7 @@ class ExtraNetworksPage:
                 "data_path": file_path,
                 "data_hash": item["shorthash"],
                 "action_list_item_action_leading": "<i class='tree-list-item-action-chevron'></i>",
-                "action_list_item_visual_leading": "🗎",
+                "action_list_item_visual_leading": "≡ƒùÄ",
                 "action_list_item_label": item["name"],
                 "action_list_item_visual_trailing": "",
                 "action_list_item_action_trailing": action_buttons,
@@ -757,7 +757,7 @@ def create_ui(interface: gr.Blocks, unrelated_tabs, tabname):
     ui.preview_target_filename = gr.Textbox('Preview save filename', elem_id=f"{tabname}_preview_filename", visible=False)
 
     for tab in unrelated_tabs:
-        tab.select(fn=None, _js=f"function(){{extraNetworksUnrelatedTabSelected('{tabname}');}}", inputs=[], outputs=[], show_progress=False)
+        tab.select(fn=None, js=f"function(){{extraNetworksUnrelatedTabSelected('{tabname}');}}", inputs=[], outputs=[], show_progress=False)
 
     for page, tab in zip(ui.stored_extra_pages, related_tabs):
         jscode = (
@@ -766,7 +766,7 @@ def create_ui(interface: gr.Blocks, unrelated_tabs, tabname):
             f"applyExtraNetworkFilter('{tabname}_{page.extra_networks_tabname}');"
             "}}"
         )
-        tab.select(fn=None, _js=jscode, inputs=[], outputs=[], show_progress=False)
+        tab.select(fn=None, js=jscode, inputs=[], outputs=[], show_progress=False)
 
         def refresh():
             for pg in ui.stored_extra_pages:
@@ -775,7 +775,7 @@ def create_ui(interface: gr.Blocks, unrelated_tabs, tabname):
             return ui.pages_contents
 
         button_refresh = gr.Button("Refresh", elem_id=f"{tabname}_{page.extra_networks_tabname}_extra_refresh_internal", visible=False)
-        button_refresh.click(fn=refresh, inputs=[], outputs=ui.pages).then(fn=lambda: None, _js="function(){ " + f"applyExtraNetworkFilter('{tabname}_{page.extra_networks_tabname}');" + " }").then(fn=lambda: None, _js='setupAllResizeHandles')
+        button_refresh.click(fn=refresh, inputs=[], outputs=ui.pages).then(fn=lambda: None, js="function(){ " + f"applyExtraNetworkFilter('{tabname}_{page.extra_networks_tabname}');" + " }").then(fn=lambda: None, js='setupAllResizeHandles')
 
     def create_html():
         ui.pages_contents = [pg.create_html(ui.tabname) for pg in ui.stored_extra_pages]
@@ -785,7 +785,7 @@ def create_ui(interface: gr.Blocks, unrelated_tabs, tabname):
             create_html()
         return ui.pages_contents
 
-    interface.load(fn=pages_html, inputs=[], outputs=ui.pages).then(fn=lambda: None, _js='setupAllResizeHandles')
+    interface.load(fn=pages_html, inputs=[], outputs=ui.pages).then(fn=lambda: None, js='setupAllResizeHandles')
 
     return ui
 
@@ -827,7 +827,7 @@ def setup_ui(ui, gallery):
 
     ui.button_save_preview.click(
         fn=save_preview,
-        _js="function(x, y, z){return [selected_gallery_index(), y, z]}",
+        js="function(x, y, z){return [selected_gallery_index(), y, z]}",
         inputs=[ui.preview_target_filename, gallery, ui.preview_target_filename],
         outputs=[*ui.pages]
     )

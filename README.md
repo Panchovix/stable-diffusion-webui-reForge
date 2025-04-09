@@ -25,7 +25,7 @@ If you know what you are doing, you can install Forge/reForge using same method 
 ```bash
 git clone https://github.com/Panchovix/stable-diffusion-webui-reForge.git
 cd stable-diffusion-webui-reForge
-git checkout main
+git checkout dev2
 ```
 Then run webui-user.bat (Windows) or webui-user.sh (Linux, for this one make sure to uncomment the lines according of your folder, paths and setting you need).
 
@@ -43,7 +43,7 @@ For Windows CMD, it would be:
 ```bash
 git clone https://github.com/Panchovix/stable-diffusion-webui-reForge.git
 cd stable-diffusion-webui-reForge
-git checkout main
+git checkout dev2
 ren requirements_versions.txt requirements_versions_backup.txt
 copy requirements_versions_legacy.txt requirements_versions.txt
 ```
@@ -53,7 +53,7 @@ Windows PS1
 ```bash
 git clone https://github.com/Panchovix/stable-diffusion-webui-reForge.git
 cd stable-diffusion-webui-reForge
-git checkout main
+git checkout dev2
 Rename-Item requirements_versions.txt requirements_versions_backup.txt
 Copy-Item requirements_versions_legacy.txt requirements_versions.txt
 ```
@@ -65,14 +65,14 @@ Tutorial from: https://github.com/continue-revolution/sd-webui-animatediff/blob/
 If you have already had OG A1111 and you are familiar with git, An option is go to `/path/to/stable-diffusion-webui` and
 ```bash
 git remote add reForge https://github.com/Panchovix/stable-diffusion-webui-reForge
-git branch Panchovix/main
-git checkout Panchovix/main
+git branch Panchovix/dev
+git checkout Panchovix/dev
 git fetch reForge
-git branch -u reForge/main
+git branch -u reForge/dev
 git stash
 git pull
 ```
-To go back to OG A1111, just do `git checkout master` or `git checkout main`.
+To go back to OG A1111, just do `git checkout master` or `git checkout dev`.
 
 If you got stuck in a merge to resolve conflicts, you can go back with `git merge --abort`
 

@@ -2,21 +2,12 @@
 
 @import url('webui-assets/css/sourcesanspro.css');
 
-
-/* temporary fix to hide gradio crop tool until it's fixed https://github.com/gradio-app/gradio/issues/3810 */
-
-div.gradio-image button[aria-label="Edit"] {
-    display: none;
-}
-
-
 /* general gradio fixes */
 
 :root, .dark{
     --checkbox-label-gap: 0.25em 0.1em;
     --section-header-text-size: 12pt;
     --block-background-fill: transparent;
-
 }
 
 .block.padded:not(.gradio-accordion) {
@@ -137,6 +128,10 @@ div.gradio-html.min{
     background: var(--input-background-fill);
 }
 
+.gradio-gallery > button.preview{
+    width: 100%;
+}
+
 .gradio-container .prose a, .gradio-container .prose a:visited{
     color: unset;
     text-decoration: none;
@@ -145,6 +140,15 @@ div.gradio-html.min{
 a{
     font-weight: bold;
     cursor: pointer;
+}
+
+.upload-container {
+    width: 100%;
+    max-width: 100%;
+}
+
+.layer-wrap > ul {
+    background: var(--background-fill-primary) !important;
 }
 
 /* gradio 3.39 puts a lot of overflow: hidden all over the place for an unknown reason. */
@@ -391,14 +395,7 @@ div#extras_scale_to_tab div.form{
     flex-direction: row;
 }
 
-#img2img_sketch, #img2maskimg, #inpaint_sketch {
-    overflow: overlay !important;
-    resize: auto;
-    background: var(--panel-background-fill);
-    z-index: 5;
-}
-
-.image-buttons > .form{
+.image-buttons{
     justify-content: center;
 }
 
@@ -429,11 +426,11 @@ div.toprow-compact-tools{
 
 /* settings */
 #quicksettings {
+    --checkbox-label-padding: 6px 6px;
     align-items: end;
 }
 
 #quicksettings > div, #quicksettings > fieldset{
-    max-width: 36em;
     width: fit-content;
     flex: 0 1 fit-content;
     padding: 0;
@@ -441,8 +438,30 @@ div.toprow-compact-tools{
     box-shadow: none;
     background: none;
 }
-#quicksettings > div.gradio-dropdown{
-    min-width: 24em !important;
+
+#quicksettings > div#setting_sd_model_checkpoint, #quicksettings > div#setting_sd_vae{
+    min-width: 20em !important;
+}
+
+#quicksettings > div#setting_sd_model_checkpoint input, #quicksettings > div#setting_sd_vae input{
+    margin-left: 2% !important; /* override the margin set for subdued */
+    width: 100%;
+}
+
+#quicksettings .icon-wrap {
+    margin-right: -4% !important;
+    background-color: var(--background-fill-secondary);
+}
+
+#quicksettings > div#setting_sd_model_checkpoint li, #quicksettings > div#setting_sd_vae li{
+    overflow-x: visible !important;
+    width: 100% !important; /* Set size to max element */
+}
+
+#quicksettings .subdued{
+    display: block;
+    margin-left: auto;
+    width: 30px;
 }
 
 #settings{
@@ -635,7 +654,7 @@ table.popup-table .link{
 }
 
 .global-popup-close:before {
-    content: "×";
+    content: "├ù";
     position: fixed;
     right: 0.25em;
     top: 0;
@@ -980,15 +999,15 @@ footer {
 }
 
 .extra-network-pane .copy-path-button::before {
-    content: "⎘";
+    content: "ΓÄÿ";
 }
 
 .extra-network-pane .metadata-button::before{
-    content: "🛈";
+    content: "≡ƒ¢ê";
 }
 
 .extra-network-pane .edit-button::before{
-    content: "🛠";
+    content: "≡ƒ¢á";
 }
 
 .extra-network-pane .card-button {
@@ -1434,7 +1453,7 @@ body.resizing .resize-handle {
 /* ==== SEARCH INPUT ACTIONS ==== */
 /* Add icon to left side of <input> */
 .extra-network-control .extra-network-control--search::before {
-    content: "🔎︎";
+    content: "≡ƒöÄ∩╕Ä";
     position: absolute;
     margin: 0.5rem;
     font-size: 1rem;
