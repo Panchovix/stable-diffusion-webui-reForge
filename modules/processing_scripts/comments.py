@@ -3,8 +3,13 @@ import re
 
 
 def strip_comments(text):
-    text = re.sub('(^|\n)#[^\n]*(\n|$)', '\n', text)  # while line comment
-    text = re.sub('#[^\n]*(\n|$)', '\n', text)  # in the middle of the line comment
+    text = re.sub(r'(^/\*.*?\*/(\n|$))', '\n', text, flags=re.MULTILINE|re.DOTALL)  # multiline comments (/* */)
+    text = re.sub(r'(#.*(\n|$))', '\n', text)  # single line comment (#)
+    text = re.sub(r'(//.*(\n|$))', '\n', text)  # single line comment (//)
+    text = re.sub(r'(/\*.*(\n|$))|(\*/.*(\n|$))', '\n', text) # dangling multiline comment brackets (/* */)
+    #text = re.sub(r'[\n]{3,}', '\n\n', text)  # remove multiple consecutive newlines
+    #text = re.sub(r'[ ]{2,}', ' ', text)  # remove multiple consecutive spaces
+    #text = text.rstrip() # finally, strip leading and trailing whitespace
 
     return text
 
@@ -17,9 +22,6 @@ class ScriptStripComments(scripts.Script):
         return scripts.AlwaysVisible
 
     def process(self, p, *args):
-        if not shared.opts.enable_prompt_comments:
-            return
-
         p.all_prompts = [strip_comments(x) for x in p.all_prompts]
         p.all_negative_prompts = [strip_comments(x) for x in p.all_negative_prompts]
 
@@ -35,9 +37,6 @@ class ScriptStripComments(scripts.Script):
 
 
 def before_token_counter(params: script_callbacks.BeforeTokenCounterParams):
-    if not shared.opts.enable_prompt_comments:
-        return
-
     params.prompt = strip_comments(params.prompt)
 
 
@@ -45,5 +44,5 @@ script_callbacks.on_before_token_counter(before_token_counter)
 
 
 shared.options_templates.update(shared.options_section(('sd', "Stable Diffusion", "sd"), {
-    "enable_prompt_comments": shared.OptionInfo(True, "Enable comments").info("Use # anywhere in the prompt to hide the text between # and the end of the line from the generation."),
+    "enable_prompt_comments": shared.OptionInfo(True, "Save comments").info("Toggles saving of comments in finished image files. Use # anywhere in the prompt to hide the text between # and the end of the line from the generation. For multiline comments, use /* to open and */ to close."),
 }))
