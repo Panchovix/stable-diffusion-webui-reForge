@@ -44,5 +44,5 @@ script_callbacks.on_before_token_counter(before_token_counter)
 
 
 shared.options_templates.update(shared.options_section(('sd', "Stable Diffusion", "sd"), {
-    "enable_prompt_comments": shared.OptionInfo(True, "Save comments").info("Toggles saving of comments in finished image files. Use # anywhere in the prompt to hide the text between # and the end of the line from the generation. For multiline comments, use /* to open and */ to close."),
+    "enable_prompt_comments_def": shared.OptionInfo(True, "Save comments").info("Toggles saving of comments in finished image files. Use # anywhere in the prompt to hide the text between # and the end of the line from the generation. For multiline comments, use /* to open and */ to close."),
 }))
