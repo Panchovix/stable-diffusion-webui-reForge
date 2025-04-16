@@ -79,3 +79,5 @@ webui-user-7980-gpu1_main.bat
 main.obj
 main.lib
 main.exp
+/extensions
+webui-user-custom.bat

@@ -172,20 +172,29 @@ class NetworkModule:
 
         return 1.0
 
-    def apply_weight_decompose(self, updown, orig_weight):
+    def apply_weight_decompose(self, updown, orig_weight, wd_on_output=False):
         # Match the device/dtype
         orig_weight = orig_weight.to(updown.dtype)
         dora_scale = self.dora_scale.to(device=orig_weight.device, dtype=updown.dtype)
         updown = updown.to(orig_weight.device)
 
         merged_scale1 = updown + orig_weight
-        merged_scale1_norm = (
-            merged_scale1.transpose(0, 1)
-            .reshape(merged_scale1.shape[1], -1)
-            .norm(dim=1, keepdim=True)
-            .reshape(merged_scale1.shape[1], *[1] * self.dora_norm_dims)
-            .transpose(0, 1)
-        )
+
+        if wd_on_output:
+            merged_scale1_norm = (
+                merged_scale1
+                .reshape(merged_scale1.shape[0], -1)
+                .norm(dim=1, keepdim=True)
+                .reshape(merged_scale1.shape[0], *[1] * self.dora_norm_dims)
+            )
+        else:
+            merged_scale1_norm = (
+                merged_scale1.transpose(0, 1)
+                .reshape(merged_scale1.shape[1], -1)
+                .norm(dim=1, keepdim=True)
+                .reshape(merged_scale1.shape[1], *[1] * self.dora_norm_dims)
+                .transpose(0, 1)
+            )
 
         dora_merged = (
             merged_scale1 * (dora_scale / merged_scale1_norm)
@@ -193,7 +202,7 @@ class NetworkModule:
         final_updown = dora_merged - orig_weight
         return final_updown
 
-    def finalize_updown(self, updown, orig_weight, output_shape, ex_bias=None):
+    def finalize_updown(self, updown, orig_weight, output_shape, ex_bias=None, wd_on_output=False):
         if self.bias is not None:
             updown = updown.reshape(self.bias.shape)
             updown += self.bias.to(orig_weight.device, dtype=updown.dtype)
@@ -211,7 +220,7 @@ class NetworkModule:
         updown = updown * self.calc_scale()
 
         if self.dora_scale is not None:
-            updown = self.apply_weight_decompose(updown, orig_weight)
+            updown = self.apply_weight_decompose(updown, orig_weight, wd_on_output=wd_on_output)
 
         return updown * self.multiplier(), ex_bias
 

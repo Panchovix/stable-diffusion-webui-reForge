@@ -121,16 +121,16 @@ def move_weight_functions(m, device):
     return memory
 
 class LowVramPatch:
-    def __init__(self, key, patches):
+    def __init__(self, key, patches, wd_on_output=False):
         self.key = key
         self.patches = patches
+        self.wd_on_output = wd_on_output
     def __call__(self, weight):
         intermediate_dtype = weight.dtype
         if intermediate_dtype not in [torch.float32, torch.float16, torch.bfloat16]: #intermediate_dtype has to be one that is supported in math ops
             intermediate_dtype = torch.float32
-            return ldm_patched.float.stochastic_rounding(ldm_patched.modules.lora.calculate_weight(self.patches[self.key], weight.to(intermediate_dtype), self.key, intermediate_dtype=intermediate_dtype), weight.dtype, seed=string_to_seed(self.key))
-
-        return ldm_patched.modules.lora.calculate_weight(self.patches[self.key], weight, self.key, intermediate_dtype=intermediate_dtype)
+            return ldm_patched.float.stochastic_rounding(ldm_patched.modules.lora.calculate_weight(self.patches[self.key], weight.to(intermediate_dtype), self.key, intermediate_dtype=intermediate_dtype, wd_on_output = self.wd_on_output), weight.dtype, seed=string_to_seed(self.key))
+        return ldm_patched.modules.lora.calculate_weight(self.patches[self.key], weight, self.key, intermediate_dtype=intermediate_dtype, wd_on_output = self.wd_on_output)
 
 def get_key_weight(model, key):
     set_func = None
@@ -240,6 +240,8 @@ class ModelPatcher:
         self.forced_hooks: Optional[ldm_patched.hooks.HookGroup] = None  # NOTE: only used for CLIP at this time
         self.is_clip = False
         self.hook_mode = ldm_patched.hooks.EnumHookMode.MaxSpeed
+
+        self.wd_on_output = False
 
         if not hasattr(self.model, 'model_loaded_weight_memory'):
             self.model.model_loaded_weight_memory = 0
@@ -567,8 +569,7 @@ class ModelPatcher:
             temp_weight = weight.to(torch.float32, copy=True)
         if convert_func is not None:
             temp_weight = convert_func(temp_weight, inplace=True)
-
-        out_weight = ldm_patched.modules.lora.calculate_weight(self.patches[key], temp_weight, key)
+        out_weight = ldm_patched.modules.lora.calculate_weight(self.patches[key], temp_weight, key, wd_on_output=self.wd_on_output)
         if set_func is None:
             out_weight = ldm_patched.float.stochastic_rounding(out_weight, weight.dtype, seed=string_to_seed(key))
             if inplace_update:
@@ -855,9 +856,10 @@ class ModelPatcher:
     def current_loaded_device(self):
         return self.model.device
 
-    def calculate_weight(self, patches, weight, key, intermediate_dtype=torch.float32):
+    def calculate_weight(self, patches, weight, key, intermediate_dtype=torch.float32, wd_on_output=False):
         logging.warning("The ModelPatcher.calculate_weight function is deprecated, please use: ldm_patched.modules.lora.calculate_weight instead")
-        return ldm_patched.modules.lora.calculate_weight(patches, weight, key, intermediate_dtype=intermediate_dtype)
+        print("calculate_weight calc weight")
+        return ldm_patched.modules.lora.calculate_weight(patches, weight, key, intermediate_dtype=intermediate_dtype, wd_on_output=wd_on_output)
 
     def cleanup(self):
         self.clean_hooks()
@@ -1170,10 +1172,11 @@ class ModelPatcher:
         temp_weight = ldm_patched.modules.model_management.cast_to_device(weight, weight.device, torch.float32, copy=True)
         if convert_func is not None:
             temp_weight = convert_func(temp_weight, inplace=True)
-
+        print("patch_hook_weight_to_device calc weight")
         out_weight = ldm_patched.modules.lora.calculate_weight(combined_patches[key],
                                                  temp_weight,
-                                                 key, original_weights=original_weights)
+                                                 key, original_weights=original_weights,
+                                                 wd_on_output=self.wd_on_output)
         del original_weights[key]
         if set_func is None:
             out_weight = ldm_patched.float.stochastic_rounding(out_weight, weight.dtype, seed=string_to_seed(key))

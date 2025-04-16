@@ -18,7 +18,7 @@ from ldm_patched.modules.sd import load_lora_for_models
 
 @functools.lru_cache(maxsize=5)
 def load_lora_state_dict(filename):
-    return load_torch_file(filename, safe_load=True)
+    return load_torch_file(filename, safe_load=True, return_metadata=True)
 
 
 def convert_diffusers_name_to_compvis(key, is_sd2):
@@ -98,8 +98,8 @@ def load_networks(names, te_multipliers=None, unet_multipliers=None, dyn_dims=No
     for filename, strength_model, strength_clip in compiled_lora_targets:
         lora_sd = load_lora_state_dict(filename)
         current_sd.forge_objects.unet, current_sd.forge_objects.clip = load_lora_for_models(
-            current_sd.forge_objects.unet, current_sd.forge_objects.clip, lora_sd, strength_model, strength_clip,
-            filename=filename)
+            current_sd.forge_objects.unet, current_sd.forge_objects.clip, lora_sd[0], strength_model, strength_clip,
+            filename=filename, metadata=lora_sd[1])
 
     current_sd.forge_objects_after_applying_lora = current_sd.forge_objects.shallow_copy()
     return

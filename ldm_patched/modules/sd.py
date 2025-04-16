@@ -80,8 +80,16 @@ def load_clip_weights(model, sd):
     sd = ldm_patched.modules.utils.transformers_convert(sd, "cond_stage_model.model.", "cond_stage_model.transformer.text_model.", 24)
     return load_model_weights(model, sd)
 
-def load_lora_for_models(model, clip, lora, strength_model, strength_clip, filename='default'):
+def load_lora_for_models(model, clip, lora, strength_model, strength_clip, filename='default', metadata=None):
     model_flag = type(model.model).__name__ if model is not None else 'default'
+
+    if metadata is not None:
+        wd_on_output = metadata.get("wd_on_output", False)
+
+        if isinstance(wd_on_output, str):
+            wd_on_output = wd_on_output.lower().strip() == "true"
+
+        print("wd_on_output="+str(wd_on_output))
     
     # Only build key maps for components we'll actually use
     key_map = {}
@@ -96,14 +104,16 @@ def load_lora_for_models(model, clip, lora, strength_model, strength_clip, filen
 
     # Convert lora before loading
     lora = ldm_patched.modules.lora_convert.convert_lora(lora)
-    
+
     # Load LoRA weights
-    loaded = ldm_patched.modules.lora.load_lora(lora, key_map)
-    
+    loaded = ldm_patched.modules.lora.load_lora(lora, key_map, wd_on_output=wd_on_output)
+
     # Handle model patching
     if model is not None:
         new_modelpatcher = model.clone()
+        new_modelpatcher.wd_on_output = wd_on_output
         loaded_keys_unet = new_modelpatcher.add_patches(loaded, strength_model)
+
     else:
         new_modelpatcher = None
         loaded_keys_unet = set()
@@ -111,6 +121,7 @@ def load_lora_for_models(model, clip, lora, strength_model, strength_clip, filen
     # Handle clip patching
     if clip is not None:
         new_clip = clip.clone()
+        new_clip.wd_on_output = wd_on_output
         loaded_keys_clip = new_clip.add_patches(loaded, strength_clip)
     else:
         new_clip = None

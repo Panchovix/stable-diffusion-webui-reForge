@@ -634,10 +634,10 @@ class LoraLoader:
                 del temp
 
         if lora is None:
-            lora = ldm_patched.modules.utils.load_torch_file(lora_path, safe_load=True)
-            self.loaded_lora = (lora_path, lora)
+            lora = ldm_patched.modules.utils.load_torch_file(lora_path, safe_load=True, return_metadata=True)
+            self.loaded_lora = (lora_path, lora[0])
 
-        model_lora, clip_lora = ldm_patched.modules.sd.load_lora_for_models(model, clip, lora, strength_model, strength_clip)
+        model_lora, clip_lora = ldm_patched.modules.sd.load_lora_for_models(model, clip, lora[0], strength_model, strength_clip, metadata=lora[1])
         return (model_lora, clip_lora)
 
 class LoraLoaderModelOnly(LoraLoader):
