@@ -7,8 +7,8 @@ clean-fid
 diskcache
 einops
 facexlib
-fastapi==0.115.12
-gradio==3.44.4
+fastapi>=0.90.1
+gradio==3.41.2
 inflection
 jsonmerge
 kornia
@@ -25,10 +25,10 @@ requests
 resize-right
 
 safetensors
-scikit-image==0.25.2
+scikit-image>=0.19
 tomesd
 torch
 torchdiffeq
 torchsde
 transformers==4.50.3
-pillow-avif-plugin==1.5.1
+pillow-avif-plugin==1.4.3
