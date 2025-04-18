@@ -32,6 +32,23 @@ LORA_CLIP_MAP = {
     "self_attn.out_proj": "self_attn_out_proj",
 }
 
+class AID(torch.nn.Module):
+    def __init__(self, p=0.9):
+        super().__init__()
+        self.p = p
+
+    def forward(self, x: torch.Tensor):
+        if self.training:
+            pos_mask = (x >= 0) * torch.bernoulli(torch.ones_like(x) * self.p)
+            neg_mask = (x < 0) * torch.bernoulli(torch.ones_like(x) * (1 - self.p))
+            return x * (pos_mask + neg_mask)
+        else:
+            pos_part = (x >= 0) * x * self.p
+            neg_part = (x < 0) * x * (1 - self.p)
+            return pos_part + neg_part
+        
+        
+
 
 def load_lora(lora, to_load, log_missing=True, wd_on_output=False):
     patch_dict = {}
@@ -42,6 +59,12 @@ def load_lora(lora, to_load, log_missing=True, wd_on_output=False):
         if alpha_name in lora.keys():
             alpha = lora[alpha_name].item()
             loaded_keys.add(alpha_name)
+
+        aid_p_name = "{}.aid_p".format(x)
+        aid = None
+        if aid_p_name in lora.keys():
+            aid = AID(p=lora[aid_p_name].item())
+            loaded_keys.add(aid_p_name)
 
         dora_scale_name = "{}.dora_scale".format(x)
         dora_scale = None
@@ -96,7 +119,7 @@ def load_lora(lora, to_load, log_missing=True, wd_on_output=False):
             if mid_name is not None and mid_name in lora.keys():
                 mid = lora[mid_name]
                 loaded_keys.add(mid_name)
-            patch_dict[to_load[x]] = ("lora", (lora[A_name], lora[B_name], alpha, mid, dora_scale, reshape, wd_on_output))
+            patch_dict[to_load[x]] = ("lora", (lora[A_name], lora[B_name], alpha, mid, dora_scale, reshape, wd_on_output, aid))
             loaded_keys.add(A_name)
             loaded_keys.add(B_name)
 
@@ -117,7 +140,7 @@ def load_lora(lora, to_load, log_missing=True, wd_on_output=False):
                 loaded_keys.add(hada_t1_name)
                 loaded_keys.add(hada_t2_name)
 
-            patch_dict[to_load[x]] = ("loha", (lora[hada_w1_a_name], lora[hada_w1_b_name], alpha, lora[hada_w2_a_name], lora[hada_w2_b_name], hada_t1, hada_t2, dora_scale, wd_on_output))
+            patch_dict[to_load[x]] = ("loha", (lora[hada_w1_a_name], lora[hada_w1_b_name], alpha, lora[hada_w2_a_name], lora[hada_w2_b_name], hada_t1, hada_t2, dora_scale, wd_on_output, aid))
             loaded_keys.add(hada_w1_a_name)
             loaded_keys.add(hada_w1_b_name)
             loaded_keys.add(hada_w2_a_name)
@@ -169,7 +192,7 @@ def load_lora(lora, to_load, log_missing=True, wd_on_output=False):
             loaded_keys.add(lokr_t2_name)
 
         if (lokr_w1 is not None) or (lokr_w2 is not None) or (lokr_w1_a is not None) or (lokr_w2_a is not None):
-            patch_dict[to_load[x]] = ("lokr", (lokr_w1, lokr_w2, alpha, lokr_w1_a, lokr_w1_b, lokr_w2_a, lokr_w2_b, lokr_t2, dora_scale, wd_on_output))
+            patch_dict[to_load[x]] = ("lokr", (lokr_w1, lokr_w2, alpha, lokr_w1_a, lokr_w1_b, lokr_w2_a, lokr_w2_b, lokr_t2, dora_scale, wd_on_output, aid))
 
         #glora
         a1_name = "{}.a1.weight".format(x)
@@ -177,7 +200,7 @@ def load_lora(lora, to_load, log_missing=True, wd_on_output=False):
         b1_name = "{}.b1.weight".format(x)
         b2_name = "{}.b2.weight".format(x)
         if a1_name in lora:
-            patch_dict[to_load[x]] = ("glora", (lora[a1_name], lora[a2_name], lora[b1_name], lora[b2_name], alpha, dora_scale, wd_on_output))
+            patch_dict[to_load[x]] = ("glora", (lora[a1_name], lora[a2_name], lora[b1_name], lora[b2_name], alpha, dora_scale, wd_on_output, aid))
             loaded_keys.add(a1_name)
             loaded_keys.add(a2_name)
             loaded_keys.add(b1_name)
@@ -523,6 +546,7 @@ def calculate_weight(patches, weight, key, intermediate_dtype=torch.float32, ori
             dora_scale = v[4]
             reshape = v[5]
             wd_on_output = v[6]
+            aid = v[7]
 
             if reshape is not None:
                 weight = pad_tensor_to_shape(weight, reshape)
@@ -539,6 +563,8 @@ def calculate_weight(patches, weight, key, intermediate_dtype=torch.float32, ori
                 mat2 = torch.mm(mat2.transpose(0, 1).flatten(start_dim=1), mat3.transpose(0, 1).flatten(start_dim=1)).reshape(final_shape).transpose(0, 1)
             try:
                 lora_diff = torch.mm(mat1.flatten(start_dim=1), mat2.flatten(start_dim=1)).reshape(weight.shape)
+                if aid is not None:
+                    lora_diff = AID(lora_diff)
                 if dora_scale is not None:
                     weight = weight_decompose(dora_scale, weight, lora_diff, alpha, strength, intermediate_dtype, function, wd_on_output=wd_on_output)
                 else:
@@ -555,6 +581,7 @@ def calculate_weight(patches, weight, key, intermediate_dtype=torch.float32, ori
             t2 = v[7]
             dora_scale = v[8]
             wd_on_output = v[9]
+            aid = v[10]
             dim = None
 
             if w1 is None:
@@ -586,6 +613,8 @@ def calculate_weight(patches, weight, key, intermediate_dtype=torch.float32, ori
 
             try:
                 lora_diff = torch.kron(w1, w2).reshape(weight.shape)
+                if aid is not None:
+                    lora_diff = AID(lora_diff)
                 if dora_scale is not None:
                     weight = weight_decompose(dora_scale, weight, lora_diff, alpha, strength, intermediate_dtype, function, wd_on_output=wd_on_output)
                 else:
@@ -604,6 +633,7 @@ def calculate_weight(patches, weight, key, intermediate_dtype=torch.float32, ori
             w2b = v[4]
             dora_scale = v[7]
             wd_on_output = v[8]
+            aid = v[9]
             if v[5] is not None: #cp decomposition
                 t1 = v[5]
                 t2 = v[6]
@@ -624,6 +654,8 @@ def calculate_weight(patches, weight, key, intermediate_dtype=torch.float32, ori
 
             try:
                 lora_diff = (m1 * m2).reshape(weight.shape)
+                if aid is not None:
+                    lora_diff = AID(lora_diff)
                 if dora_scale is not None:
                     weight = weight_decompose(dora_scale, weight, lora_diff, alpha, strength, intermediate_dtype, function, wd_on_output=wd_on_output)
                 else:
@@ -633,6 +665,7 @@ def calculate_weight(patches, weight, key, intermediate_dtype=torch.float32, ori
         elif patch_type == "glora":
             dora_scale = v[5]
             wd_on_output = v[6]
+            aid = v[7]
 
             old_glora = False
             if v[3].shape[1] == v[2].shape[0] == v[0].shape[0] == v[1].shape[1]:
@@ -665,7 +698,8 @@ def calculate_weight(patches, weight, key, intermediate_dtype=torch.float32, ori
                     else:
                         lora_diff = torch.mm(torch.mm(weight.to(dtype=intermediate_dtype), a1), a2).reshape(weight.shape)
                     lora_diff += torch.mm(b1, b2).reshape(weight.shape)
-
+                if aid is not None:
+                    lora_diff = AID(lora_diff)
                 if dora_scale is not None:
                     weight = weight_decompose(dora_scale, weight, lora_diff, alpha, strength, intermediate_dtype, function, wd_on_output=wd_on_output)
                 else:
