@@ -71,7 +71,7 @@ def refresh_models():
     file_extensions = ['ckpt', 'pt', 'bin', 'safetensors', 'gguf']
 
     module_list.clear()
-    
+
     module_paths = [
         os.path.abspath(os.path.join(paths.models_path, "VAE")),
         os.path.abspath(os.path.join(paths.models_path, "text_encoder")),
@@ -120,7 +120,7 @@ def make_checkpoint_manager_ui():
         a, b = refresh_models()
         return gr.update(choices=a), gr.update(choices=b)
 
-    refresh_button = ui_common.ToolButton(value=ui_common.refresh_symbol, elem_id=f"forge_refresh_checkpoint", tooltip="Refresh")
+    refresh_button = ui_common.ToolButton(value=ui_common.refresh_symbol, elem_id="forge_refresh_checkpoint", tooltip="Refresh")
     refresh_button.click(
         fn=gr_refresh_models,
         inputs=None,
@@ -231,7 +231,7 @@ def refresh_model_loading_parameters():
 
 def checkpoint_change_ui(ckpt_name:str, vae_te:list):
     result = vae_te
-    
+
     new_ckpt_info = sd_models.get_closet_checkpoint_match(ckpt_name)
     current_ckpt_info = sd_models.get_closet_checkpoint_match(shared.opts.data.get('sd_model_checkpoint', ''))
     if new_ckpt_info != current_ckpt_info:
@@ -260,7 +260,7 @@ def checkpoint_change_ui(ckpt_name:str, vae_te:list):
         refresh_model_loading_parameters()
 
     return result
-    
+
 
 def checkpoint_change(ckpt_name:str, save=True, refresh=True):
     """ checkpoint name can be a number of valid aliases. Returns True if checkpoint changed. """
@@ -285,7 +285,7 @@ def modules_change(module_values:list, save=True, refresh=True) -> bool:
         module_name = os.path.basename(v) # If the input is a filepath, extract the file name
         if module_name in module_list:
             modules.append(module_list[module_name])
-    
+
     # skip further processing if value unchanged
     if sorted(modules) == sorted(shared.opts.data.get('forge_additional_modules', [])):
         return False
