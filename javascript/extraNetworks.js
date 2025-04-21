@@ -482,7 +482,7 @@ function extraNetworksControlTreeViewOnClick(event, tabname, extra_networks_tabn
 }
 
 function clickLoraRefresh() {
-    const targets = ['txt2img_lora', 'txt2img_checkpoints', 'txt2img_textural_inversion', 'img2img_lora', 'img2img_checkpoints', 'img2img_textural_inversion'];
+    const targets = ['txt2img_lora', 'txt2img_checkpoints', 'txt2img_textual_inversion', 'img2img_lora', 'img2img_checkpoints', 'img2img_textual_inversion'];
     targets.forEach(function(t) {
         const tab = gradioApp().getElementById(t + '-button');
         if (tab && tab.getAttribute('aria-selected') == "true") {
