@@ -9,7 +9,7 @@ import torch
 import tqdm
 from einops import rearrange, repeat
 from backend.nn.unet import default
-from modules import devices, sd_models, shared, sd_samplers, hashes, sd_hijack_checkpoint, errors
+from modules import devices, sd_models, shared, sd_samplers, hashes, errors
 from modules.textual_inversion import textual_inversion
 from torch import einsum
 from torch.nn.init import normal_, xavier_normal_, xavier_uniform_, kaiming_normal_, kaiming_uniform_, zeros_
