@@ -1,6 +1,6 @@
 import gradio as gr
 
-from modules import ui_extra_networks_user_metadata, sd_vae, shared
+from modules import ui_extra_networks_user_metadata
 from modules.ui_components import ToolButton
 from modules_forge import main_entry
 
@@ -25,7 +25,7 @@ class CheckpointUserMetadataEditor(ui_extra_networks_user_metadata.UserMetadataE
     def put_values_into_components(self, name):
         user_metadata = self.get_user_metadata(name)
         values = super().put_values_into_components(name)
-        
+
         vae = user_metadata.get('vae_te', None)
         if vae is None:     # fallback to old type
             vae = user_metadata.get('vae', None)
@@ -52,7 +52,7 @@ class CheckpointUserMetadataEditor(ui_extra_networks_user_metadata.UserMetadataE
             modules_list += list(modules)
         else:
             modules_list += list(main_entry.module_list.keys())
-        
+
         def refreshModules ():
             return gr.update(choices=['Built in'] + list(main_entry.module_list.keys()))
 
@@ -63,7 +63,7 @@ class CheckpointUserMetadataEditor(ui_extra_networks_user_metadata.UserMetadataE
         with gr.Row():
             self.select_vae = gr.Dropdown(choices=modules_list, value=None, label="Preferred VAE / Text encoder(s)", elem_id="checpoint_edit_user_metadata_preferred_vae", multiselect=True)
             self.refresh = ToolButton(refresh_symbol)
-            
+
             self.refresh.click(fn=refreshModules, outputs=self.select_vae, show_progress='hidden')
 
         self.edit_notes = gr.TextArea(label='Notes', lines=4)

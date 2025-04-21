@@ -1,23 +1,18 @@
 import collections
-import importlib
 import os
 import sys
 import math
-import threading
 import enum
 
 import torch
 import re
-import safetensors.torch
-from omegaconf import OmegaConf, ListConfig
-from urllib import request
 import gc
 import contextlib
 
-from modules import paths, shared, modelloader, devices, script_callbacks, sd_vae, sd_disable_initialization, errors, hashes, sd_models_config, sd_unet, sd_models_xl, cache, extra_networks, processing, lowvram, sd_hijack, patches
+from modules import paths, shared, modelloader, devices, script_callbacks, errors, hashes, cache
 from modules.shared import opts, cmd_opts
 from modules.timer import Timer
-import numpy as np
+
 from backend.loader import forge_loader
 from backend import memory_management
 from backend.args import dynamic_args

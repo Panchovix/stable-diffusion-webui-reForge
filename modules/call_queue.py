@@ -5,7 +5,7 @@ import time
 import traceback
 
 from modules_forge import main_thread
-from modules import shared, progress, errors, devices, fifo_lock, profiling
+from modules import shared, progress, devices, fifo_lock, profiling
 
 queue_lock = fifo_lock.FIFOLock()
 

@@ -8,15 +8,15 @@ from contextlib import ExitStack
 
 import gradio as gr
 import gradio.utils
-from gradio.components.image_editor import Brush
+
 from PIL import Image, PngImagePlugin  # noqa: F401
 from modules.call_queue import wrap_gradio_gpu_call, wrap_queued_call, wrap_gradio_call, wrap_gradio_call_no_job # noqa: F401
 
 from modules import gradio_extensions, sd_schedulers  # noqa: F401
-from modules import sd_hijack, sd_models, script_callbacks, ui_extensions, deepbooru, extra_networks, ui_common, ui_postprocessing, progress, ui_loadsave, shared_items, ui_settings, timer, sysinfo, ui_checkpoint_merger, scripts, sd_samplers, processing, ui_extra_networks, ui_toprow, launch_utils
+from modules import sd_models, script_callbacks, ui_extensions, deepbooru, extra_networks, ui_common, ui_postprocessing, progress, ui_loadsave, shared_items, ui_settings, timer, sysinfo, ui_checkpoint_merger, scripts, sd_samplers, processing, ui_extra_networks, ui_toprow, launch_utils
 from modules.ui_components import FormRow, FormGroup, ToolButton, FormHTML, InputAccordion, ResizeHandleRow
 from modules.paths import script_path
-from modules.ui_common import create_refresh_button
+
 from modules.ui_gradio_extensions import reload_javascript
 
 from modules.shared import opts, cmd_opts
@@ -110,7 +110,7 @@ def calc_resolution_hires(enable, width, height, hr_scale, hr_resize_x, hr_resiz
 
     new_width = hr_resize_x - (hr_resize_x % 8) #   note: hardcoded latent size 8
     new_height = hr_resize_y - (hr_resize_y % 8)
-    
+
     return f"from <span class='resolution'>{width}×{height}</span> to <span class='resolution'>{new_width}×{new_height}</span>"
 
 
@@ -194,7 +194,7 @@ def update_token_counter(text, steps, styles, *, is_positive=True):
         get_prompt_lengths_on_ui = sd_models.model_data.sd_model.get_prompt_lengths_on_ui
         assert get_prompt_lengths_on_ui is not None
     except Exception:
-        return f"<span class='gr-box gr-text-input'>?/?</span>"
+        return "<span class='gr-box gr-text-input'>?/?</span>"
 
     flat_prompts = reduce(lambda list1, list2: list1+list2, prompt_schedules)
     prompts = [prompt_text for step, prompt_text in flat_prompts]
@@ -345,7 +345,7 @@ def create_ui():
                                 with FormRow(elem_id="txt2img_hires_fix_row_cfg", variant="compact"):
                                     hr_distilled_cfg = gr.Slider(minimum=0.0, maximum=30.0, step=0.1, label="Hires Distilled CFG Scale", value=3.5, elem_id="txt2img_hr_distilled_cfg")
                                     hr_cfg = gr.Slider(minimum=1.0, maximum=30.0, step=0.1, label="Hires CFG Scale", value=7.0, elem_id="txt2img_hr_cfg")
-   
+
                                 with FormRow(elem_id="txt2img_hires_fix_row3", variant="compact", visible=shared.opts.hires_fix_show_sampler) as hr_checkpoint_container:
                                     hr_checkpoint_name = gr.Dropdown(label='Hires Checkpoint', elem_id="hr_checkpoint", choices=["Use same checkpoint"] + modules.sd_models.checkpoint_tiles(use_short=True), value="Use same checkpoint", scale=2)
 
@@ -359,7 +359,7 @@ def create_ui():
                                         else:
                                             modules_list += list(main_entry.module_list.keys())
                                         return modules_list
-                                        
+
                                     modules_list = get_additional_modules()
 
                                     def refresh_model_and_modules():
@@ -468,7 +468,7 @@ def create_ui():
                 if getattr(shared.opts, 'hires_button_gallery_insert', False):
                     index += 1
                 return gr.update(selected_index=index)
-            
+
             txt2img_upscale_inputs = txt2img_inputs[0:1] + [output_panel.gallery, dummy_component_number, output_panel.generation_info] + txt2img_inputs[1:]
             output_panel.button_upscale.click(
                 fn=wrap_gradio_gpu_call(modules.txt2img.txt2img_upscale, extra_outputs=[None, '', '']),
@@ -671,7 +671,7 @@ def create_ui():
                                     scale_by.change(**on_change_args)
 
                                     def updateWH (img, w, h):
-                                        if img and shared.opts.img2img_autosize == True:
+                                        if img and shared.opts.img2img_autosize:
                                             return img.size[0], img.size[1]
                                         else:
                                             return w, h
@@ -749,7 +749,7 @@ def create_ui():
                     inputs=None,
                     outputs=[img2img_selected_tab, inpaint_controls, mask_alpha],
                 )
-                
+
             def select_img2img_tab(tab):
                 return tab, gr.update(visible=tab in [2, 3, 4]), gr.update(visible=tab == 3),
 

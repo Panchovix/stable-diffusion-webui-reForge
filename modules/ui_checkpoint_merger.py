@@ -16,7 +16,7 @@ def update_interp_description(value, choices):
         "Extract VAE"               : (1, "Takes one model (A) as input. Only output name option is relevant."),
         "Extract Text encoder(s)"   : (1, "Takes one model (A) as input. Only output name option is relevant."),
     }
-    
+
     description = interp_descriptions[value][1]
     count = interp_descriptions[value][0]
     return gr.Dropdown(info=description), gr.Dropdown(max_choices=count, value=choices[0:count])
@@ -52,7 +52,7 @@ class UiCheckpointMerger:
             return gr.Dropdown(choices=vae_list), gr.Dropdown(choices=te_list)
         else:
             return vae_list, te_list
-            
+
     vae_list, te_list = refresh_additional (fromUI=False)
 
     def __init__(self):
@@ -108,7 +108,7 @@ class UiCheckpointMerger:
 
                         self.refresh_button = ToolButton(value=refresh_symbol)
                         self.refresh_button.click(fn=refresh_checkpoints, inputs=None, outputs=[self.model_names])
-                        
+
                     self.interp_method.change(fn=update_interp_description, inputs=[self.interp_method, self.model_names], outputs=[self.interp_method, self.model_names], show_progress=False)
 
                     self.interp_amount = gr.Slider(minimum=0.0, maximum=1.0, step=0.05, label='Multiplier (M)', value=0.5, elem_id="modelmerger_interp_amount")
@@ -163,7 +163,7 @@ class UiCheckpointMerger:
             _js='modelmerger',
             inputs=[
                 dummy_component,
-                self.model_names, 
+                self.model_names,
                 self.interp_method,
                 self.interp_amount,
                 self.save_u,
@@ -181,7 +181,7 @@ class UiCheckpointMerger:
                 self.metadata_json,
             ],
             outputs=[
-                self.model_names, 
+                self.model_names,
                 sd_model_checkpoint_component,
                 self.modelmerger_result,
             ]

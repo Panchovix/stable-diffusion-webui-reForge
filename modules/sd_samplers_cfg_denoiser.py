@@ -1,10 +1,9 @@
 import torch
 from modules import prompt_parser, sd_samplers_common
 
-from modules.shared import opts, state
+from modules.shared import state
 import modules.shared as shared
 from modules.script_callbacks import CFGDenoiserParams, cfg_denoiser_callback
-from modules.script_callbacks import CFGDenoisedParams, cfg_denoised_callback
 from modules.script_callbacks import AfterCFGCallbackParams, cfg_after_cfg_callback
 from backend.sampling.sampling_function import sampling_function
 
@@ -184,9 +183,9 @@ class CFGDenoiser(torch.nn.Module):
         cfg_denoiser_callback(denoiser_params)
 
         # NGMS
-        if self.p.is_hr_pass == True:
+        if self.p.is_hr_pass:
             cond_scale = self.p.hr_cfg
-        
+
         if shared.opts.skip_early_cond > 0 and self.step / self.total_steps <= shared.opts.skip_early_cond:
             cond_scale = 1.0
             self.p.extra_generation_params["Skip Early CFG"] = shared.opts.skip_early_cond

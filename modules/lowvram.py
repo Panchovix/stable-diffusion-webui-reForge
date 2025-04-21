@@ -1,7 +1,6 @@
 from collections import namedtuple
 
 import torch
-from modules import devices, shared
 
 module_in_gpu = None
 cpu = torch.device("cpu")

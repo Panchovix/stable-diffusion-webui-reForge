@@ -2,7 +2,6 @@ import gradio as gr
 from modules import scripts, shared, ui_common, postprocessing, call_queue, ui_toprow
 import modules.infotext_utils as parameters_copypaste
 from modules.ui_components import ResizeHandleRow
-from modules_forge.forge_canvas.canvas import ForgeCanvas
 
 
 def create_ui():
@@ -14,7 +13,6 @@ def create_ui():
             with gr.Tabs(elem_id="mode_extras"):
                 with gr.TabItem('Single Image', id="single_image", elem_id="extras_single_tab") as tab_single:
                     extras_image = gr.Image(label="Source", interactive=True, type="pil", elem_id="extras_image", image_mode="RGBA", height="60vh")
-                    #ForgeCanvas(elem_id="extras_image", height=512, no_scribbles=True).background
 
                 with gr.TabItem('Batch Process', id="batch_process", elem_id="extras_batch_process_tab") as tab_batch:
                     image_batch = gr.Files(label="Batch Process", interactive=True, elem_id="extras_image_batch")
@@ -50,7 +48,7 @@ def create_ui():
 
     submit.click(
         fn=call_queue.wrap_gradio_gpu_call(postprocessing.run_postprocessing_webui, extra_outputs=[None, '']),
-        _js=f"submit_extras",
+        _js="submit_extras",
         inputs=submit_click_inputs,
         outputs=[
             output_panel.gallery,

@@ -2,11 +2,10 @@ import os
 import collections
 from dataclasses import dataclass
 
-from modules import paths, shared, devices, script_callbacks, sd_models, extra_networks, lowvram, sd_hijack, hashes
+from modules import paths, shared, sd_models, extra_networks, hashes
 
 import glob
 from copy import deepcopy
-from backend.utils import load_torch_file
 
 
 vae_path = os.path.abspath(os.path.join(paths.models_path, "VAE"))

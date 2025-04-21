@@ -6,13 +6,12 @@ import json
 
 
 import torch
-import tqdm
 
-from modules import shared, images, sd_models, sd_vae, sd_models_config, errors, paths
+from modules import shared, images, sd_models, sd_vae, errors, paths
 from modules.ui_common import plaintext_to_html
 import gradio as gr
 import safetensors.torch
-from modules_forge.main_entry import module_list, refresh_models
+from modules_forge.main_entry import module_list
 from backend.loader import replace_state_dict
 import huggingface_guess
 
@@ -38,32 +37,6 @@ def run_pnginfo(image):
         info = f"<div><p>{message}<p></div>"
 
     return '', geninfo, info
-
-
-def create_config(ckpt_result, config_source, a, b, c):
-    def config(x):
-        res = sd_models_config.find_checkpoint_config_near_filename(x) if x else None
-        return res if res != shared.sd_default_config else None
-
-    if config_source == 0:
-        cfg = config(a) or config(b) or config(c)
-    elif config_source == 1:
-        cfg = config(b)
-    elif config_source == 2:
-        cfg = config(c)
-    else:
-        cfg = None
-
-    if cfg is None:
-        return
-
-    filename, _ = os.path.splitext(ckpt_result)
-    checkpoint_filename = filename + ".yaml"
-
-    print("Copying config:")
-    print("   from:", cfg)
-    print("     to:", checkpoint_filename)
-    shutil.copyfile(cfg, checkpoint_filename)
 
 
 checkpoint_dict_skip_on_merge = ["cond_stage_model.transformer.text_model.embeddings.position_ids"]
@@ -94,7 +67,7 @@ def read_metadata(model_names):
 
 @torch.no_grad()
 def run_modelmerger(id_task, model_names, interp_method, multiplier, save_u, save_v, save_t, calc_fp32, custom_name, config_source, bake_in_vae, bake_in_te, discard_weights, save_metadata, add_merge_recipe, copy_metadata_fields, metadata_json):
-    
+
     shared.state.begin(job="model-merge")
 
     if len(model_names) > 2:
@@ -156,12 +129,12 @@ def run_modelmerger(id_task, model_names, interp_method, multiplier, save_u, sav
     }
     filename_generator, theta_func1, theta_func2 = theta_funcs[interp_method]
     shared.state.job_count = (1 if theta_func1 else 0) + (1 if theta_func2 else 0)
-    
+
     if bake_in_vae != "":
         shared.state.job_count += 1
     if bake_in_te != []:
         shared.state.job_count += 1
-    
+
     if (save_u != "None (remove)" and save_u != "No change"):
         shared.state.job_count += 1
     if (save_v != "None (remove)" and save_v != "No change"):
@@ -210,7 +183,7 @@ def run_modelmerger(id_task, model_names, interp_method, multiplier, save_u, sav
                 strip += 2
             if save_u == "None (remove)":
                 strip += 4
-                
+
             match strip:
                 case 1:
                     regex = re.compile(r'(text_model|conditioner\.embedders|cond_stage_model|text_encoders)\.')
@@ -273,7 +246,7 @@ def run_modelmerger(id_task, model_names, interp_method, multiplier, save_u, sav
 
     shared.state.textinfo = 'Loading A'
     theta_0 = load_model(primary_model_info.filename, "A")
-    
+
     if "Extract" in interp_method:
         filename = filename_generator() if custom_name == '' else custom_name
         filename += ".safetensors"
@@ -348,7 +321,7 @@ def run_modelmerger(id_task, model_names, interp_method, multiplier, save_u, sav
     if "" != bake_in_vae:
         shared.state.textinfo = f'Baking in VAE from {bake_in_vae}'
         vae_dict = sd_vae.load_torch_file(sd_vae.vae_dict[bake_in_vae])
-        
+
         if guess:
             theta_0 = replace_state_dict (theta_0, vae_dict, guess)
         else:
@@ -499,9 +472,6 @@ def run_modelmerger(id_task, model_names, interp_method, multiplier, save_u, sav
     created_model = next((ckpt for ckpt in sd_models.checkpoints_list.values() if ckpt.name == filename), None)
     if created_model:
         created_model.calculate_shorthash()
-
-    # TODO inside create_config() sd_models_config.find_checkpoint_config_near_filename() is called which has been commented out
-    #create_config(output_modelname, config_source, primary_model_info, secondary_model_info, tertiary_model_info)
 
     shared.state.textinfo = f"Checkpoint saved to {output_modelname}"
     shared.state.end()
