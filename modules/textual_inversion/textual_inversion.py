@@ -3,18 +3,12 @@ from collections import namedtuple
 from contextlib import closing
 
 import torch
-import tqdm
-import html
-import datetime
-import csv
 import safetensors.torch
+from PIL import Image
 
-import numpy as np
-from PIL import Image, PngImagePlugin
+from modules import shared, devices, errors, hashes
 
-from modules import shared, devices, sd_hijack, sd_models, images, sd_samplers, sd_hijack_checkpoint, errors, hashes
-
-from modules.textual_inversion.image_embedding import embedding_to_b64, embedding_from_b64, insert_image_data_embed, extract_image_data_embed, caption_image_overlay
+from modules.textual_inversion.image_embedding import embedding_from_b64, extract_image_data_embed
 
 
 TextualInversionTemplate = namedtuple("TextualInversionTemplate", ["name", "path"])
@@ -59,13 +53,6 @@ class Embedding:
         }
 
         torch.save(embedding_data, filename)
-
-        if shared.opts.save_optimizer_state and self.optimizer_state_dict is not None:
-            optimizer_saved_dict = {
-                'hash': self.checksum(),
-                'optimizer_state_dict': self.optimizer_state_dict,
-            }
-            torch.save(optimizer_saved_dict, f"{filename}.optim")
 
     def checksum(self):
         if self.cached_checksum is not None:
