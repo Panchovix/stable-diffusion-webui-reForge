@@ -350,7 +350,7 @@ def forge_main_entry():
     ui_forge_preset.change(on_preset_change, inputs=[ui_forge_preset], outputs=output_targets, queue=False, show_progress=False)
     ui_forge_preset.change(js="clickLoraRefresh", fn=None, queue=False, show_progress=False)
 
-    Context.root_block.load(on_preset_change, inputs=None, outputs=output_targets, queue=False, show_progress=False)
+    # Context.root_block.load(on_preset_change, inputs=None, outputs=output_targets, queue=False, show_progress=False)
 
     refresh_model_loading_parameters()
     return
@@ -363,7 +363,6 @@ def on_preset_change(preset=None):
     else:
         preset = getattr(shared.opts, 'forge_preset', None)
 
-    # don't set values unless using Settings
     if shared.opts.forge_preset == 'sd':
         return [
             gr.update(visible=True, value=getattr(shared.opts, "sd_vae_te", [""])),
