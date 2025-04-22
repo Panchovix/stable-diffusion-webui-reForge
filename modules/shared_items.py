@@ -101,7 +101,6 @@ ui_reorder_categories_builtin_items = [
     "cfg",
     "denoising",
     "seed",
-    "batch",
     "override_settings",
 ]
 

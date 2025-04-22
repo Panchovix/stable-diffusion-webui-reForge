@@ -434,8 +434,6 @@ class StableDiffusionProcessing:
             opts.sdxl_crop_top,
             self.width,
             self.height,
-            opts.fp8_storage,
-            opts.cache_fp16_weight,
             opts.emphasis,
         )
 
@@ -751,10 +749,6 @@ def create_infotext(p, all_prompts, all_seeds, all_subseeds, comments=None, iter
         "Size": f"{p.width}x{p.height}",
         "Model hash": p.sd_model_hash if opts.add_model_hash_to_info else None,
         "Model": p.sd_model_name if opts.add_model_name_to_info else None,
-        "FP8 weight": opts.fp8_storage if devices.fp8 else None,
-        "Cache FP16 weight for LoRA": opts.cache_fp16_weight if devices.fp8 else None,
-        # "VAE hash": p.sd_vae_hash if opts.add_vae_hash_to_info else None,
-        # "VAE": p.sd_vae_name if opts.add_vae_name_to_info else None,
         "Variation seed": (None if p.subseed_strength == 0 else (p.all_subseeds[0] if use_main_prompt else all_subseeds[index])),
         "Variation seed strength": (None if p.subseed_strength == 0 else p.subseed_strength),
         "Seed resize from": (None if p.seed_resize_from_w <= 0 or p.seed_resize_from_h <= 0 else f"{p.seed_resize_from_w}x{p.seed_resize_from_h}"),

@@ -20,7 +20,6 @@ def calculate_sha256_real(filename):
 
 
 def calculate_sha256(filename):
-    print("Calculating real hash: ", filename)
     return calculate_sha256_real(filename)
 
 
@@ -57,7 +56,7 @@ def sha256(filename, title, use_addnet_hash=False):
     if sha256_value is not None:
         return sha256_value
 
-    if shared.cmd_opts.no_hashing:
+    if shared.cmd_opts.no_hashing or not shared.opts.use_real_SHA256:
         return None
 
     print(f"Calculating sha256 for {filename}: ", end='', flush=True)

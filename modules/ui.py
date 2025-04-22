@@ -59,10 +59,6 @@ if cmd_opts.ngrok is not None:
         )
 
 
-def gr_show(visible=True):
-    return {"visible": visible, "__type__": "update"}
-
-
 sample_img2img = "assets/stable-samples/img2img/sketch-mountains-input.jpg"
 sample_img2img = sample_img2img if os.path.exists(sample_img2img) else None
 
@@ -82,12 +78,6 @@ detect_image_size_symbol = '\U0001F4D0'  # 📐
 
 
 plaintext_to_html = ui_common.plaintext_to_html
-
-
-def send_gradio_gallery_to_image(x):
-    if len(x) == 0:
-        return None
-    return image_from_url_text(x[0])
 
 
 def calc_resolution_hires(enable, width, height, hr_scale, hr_resize_x, hr_resize_y):
@@ -210,39 +200,6 @@ def setup_progressbar(*args, **kwargs):
     pass
 
 
-def apply_setting(key, value):
-    if value is None:
-        return gr.update()
-
-    if shared.cmd_opts.freeze_settings:
-        return gr.update()
-
-    # dont allow model to be swapped when model hash exists in prompt
-    if key == "sd_model_checkpoint" and opts.disable_weights_auto_swap:
-        return gr.update()
-
-    if key == "sd_model_checkpoint":
-        ckpt_info = sd_models.get_closet_checkpoint_match(value)
-
-        if ckpt_info is not None:
-            value = ckpt_info.title
-        else:
-            return gr.update()
-
-    comp_args = opts.data_labels[key].component_args
-    if comp_args and isinstance(comp_args, dict) and comp_args.get('visible') is False:
-        return
-
-    valtype = type(opts.data_labels[key].default)
-    oldval = opts.data.get(key, None)
-    opts.data[key] = valtype(value) if valtype != type(None) else value
-    if oldval != value and opts.data_labels[key].onchange is not None:
-        opts.data_labels[key].onchange()
-
-    opts.save(shared.config_filename)
-    return getattr(opts, key)
-
-
 def create_output_panel(tabname, outdir, toprow=None):
     return ui_common.create_output_panel(tabname, outdir, toprow)
 
@@ -311,10 +268,9 @@ def create_ui():
                                 res_switch_btn = ToolButton(value=switch_values_symbol, elem_id="txt2img_res_switch_btn", tooltip="Switch width/height")
                                 res_switch_btn.click(fn=lambda w, h: (h, w), inputs=[width, height], outputs=[width, height], show_progress=False)
 
-                            if opts.dimensions_and_batch_together:
-                                with gr.Column(elem_id="txt2img_column_batch"):
-                                    batch_count = gr.Slider(minimum=1, step=1, label='Batch count', value=1, elem_id="txt2img_batch_count")
-                                    batch_size = gr.Slider(minimum=1, maximum=8, step=1, label='Batch size', value=1, elem_id="txt2img_batch_size")
+                            with gr.Column(elem_id="txt2img_column_batch"):
+                                batch_count = gr.Slider(minimum=1, step=1, label='Batch count', value=1, elem_id="txt2img_batch_count")
+                                batch_size = gr.Slider(minimum=1, maximum=8, step=1, label='Batch size', value=1, elem_id="txt2img_batch_size")
 
                     elif category == "cfg":
                         with gr.Row():
@@ -346,7 +302,7 @@ def create_ui():
                                     hr_distilled_cfg = gr.Slider(minimum=0.0, maximum=30.0, step=0.1, label="Hires Distilled CFG Scale", value=3.5, elem_id="txt2img_hr_distilled_cfg")
                                     hr_cfg = gr.Slider(minimum=1.0, maximum=30.0, step=0.1, label="Hires CFG Scale", value=7.0, elem_id="txt2img_hr_cfg")
 
-                                with FormRow(elem_id="txt2img_hires_fix_row3", variant="compact", visible=shared.opts.hires_fix_show_sampler) as hr_checkpoint_container:
+                                with FormRow(elem_id="txt2img_hires_fix_row3", variant="compact") as hr_checkpoint_container:
                                     hr_checkpoint_name = gr.Dropdown(label='Hires Checkpoint', elem_id="hr_checkpoint", choices=["Use same checkpoint"] + modules.sd_models.checkpoint_tiles(use_short=True), value="Use same checkpoint", scale=2)
 
                                     hr_checkpoint_refresh = ToolButton(value=refresh_symbol)
@@ -370,11 +326,11 @@ def create_ui():
 
                                     hr_checkpoint_refresh.click(fn=refresh_model_and_modules, outputs=[hr_checkpoint_name, hr_additional_modules], show_progress=False)
 
-                                with FormRow(elem_id="txt2img_hires_fix_row3b", variant="compact", visible=shared.opts.hires_fix_show_sampler) as hr_sampler_container:
+                                with FormRow(elem_id="txt2img_hires_fix_row3b", variant="compact") as hr_sampler_container:
                                     hr_sampler_name = gr.Dropdown(label='Hires sampling method', elem_id="hr_sampler", choices=["Use same sampler"] + sd_samplers.visible_sampler_names(), value="Use same sampler")
                                     hr_scheduler = gr.Dropdown(label='Hires schedule type', elem_id="hr_scheduler", choices=["Use same scheduler"] + [x.label for x in sd_schedulers.schedulers], value="Use same scheduler")
 
-                                with FormRow(elem_id="txt2img_hires_fix_row4", variant="compact", visible=shared.opts.hires_fix_show_prompts) as hr_prompts_container:
+                                with FormRow(elem_id="txt2img_hires_fix_row4", variant="compact") as hr_prompts_container:
                                     with gr.Column():
                                         hr_prompt = gr.Textbox(label="Hires prompt", elem_id="hires_prompt", show_label=False, lines=3, placeholder="Prompt for hires fix pass.\nLeave empty to use the same prompt as in first pass.", elem_classes=["prompt"])
                                     with gr.Column():
@@ -383,12 +339,6 @@ def create_ui():
                                 hr_cfg.change(lambda x: gr.update(interactive=(x != 1)), inputs=[hr_cfg], outputs=[hr_negative_prompt], queue=False, show_progress=False)
 
                             scripts.scripts_txt2img.setup_ui_for_section(category)
-
-                    elif category == "batch":
-                        if not opts.dimensions_and_batch_together:
-                            with FormRow(elem_id="txt2img_column_batch"):
-                                batch_count = gr.Slider(minimum=1, step=1, label='Batch count', value=1, elem_id="txt2img_batch_count")
-                                batch_size = gr.Slider(minimum=1, maximum=8, step=1, label='Batch size', value=1, elem_id="txt2img_batch_size")
 
                     elif category == "override_settings":
                         with FormRow(elem_id="txt2img_override_settings_row") as row:
@@ -684,10 +634,9 @@ def create_ui():
                             tab_scale_to.select(fn=lambda: 0, inputs=None, outputs=[selected_scale_tab])
                             tab_scale_by.select(fn=lambda: 1, inputs=None, outputs=[selected_scale_tab])
 
-                            if opts.dimensions_and_batch_together:
-                                with gr.Column(elem_id="img2img_column_batch"):
-                                    batch_count = gr.Slider(minimum=1, step=1, label='Batch count', value=1, elem_id="img2img_batch_count")
-                                    batch_size = gr.Slider(minimum=1, maximum=8, step=1, label='Batch size', value=1, elem_id="img2img_batch_size")
+                            with gr.Column(elem_id="img2img_column_batch"):
+                                batch_count = gr.Slider(minimum=1, step=1, label='Batch count', value=1, elem_id="img2img_batch_count")
+                                batch_size = gr.Slider(minimum=1, maximum=8, step=1, label='Batch size', value=1, elem_id="img2img_batch_size")
 
                     elif category == "denoising":
                         denoising_strength = gr.Slider(minimum=0.0, maximum=1.0, step=0.01, label='Denoising strength', value=0.75, elem_id="img2img_denoising_strength")
@@ -706,12 +655,6 @@ def create_ui():
                     elif category == "accordions":
                         with gr.Row(elem_id="img2img_accordions", elem_classes="accordions"):
                             scripts.scripts_img2img.setup_ui_for_section(category)
-
-                    elif category == "batch":
-                        if not opts.dimensions_and_batch_together:
-                            with FormRow(elem_id="img2img_column_batch"):
-                                batch_count = gr.Slider(minimum=1, step=1, label='Batch count', value=1, elem_id="img2img_batch_count")
-                                batch_size = gr.Slider(minimum=1, maximum=8, step=1, label='Batch size', value=1, elem_id="img2img_batch_size")
 
                     elif category == "override_settings":
                         with FormRow(elem_id="img2img_override_settings_row") as row:
@@ -972,9 +915,9 @@ def create_ui():
                 if ifid not in ["extensions", "settings"]:
                     loadsave.add_block(interface, ifid)
 
-#            loadsave.add_component(f"webui/Tabs@{tabs.elem_id}", tabs)
+            loadsave.add_component(f"webui/Tabs@{tabs.elem_id}", tabs)
 
-            loadsave.setup_ui() #redundant, and timewaste/slowdown ?
+            loadsave.setup_ui()
 
         def tab_changed(evt: gr.SelectData):
             no_quick_setting = getattr(shared.opts, "tabs_without_quick_settings_bar", [])
