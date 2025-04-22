@@ -44,6 +44,7 @@ def process_batch(p, input, output_dir, inpaint_mask_dir, args, to_scale=False, 
     seed = p.seed
     cfg_scale = p.cfg_scale
     sampler_name = p.sampler_name
+    scheduler = p.scheduler
     steps = p.steps
     override_settings = p.override_settings
     sd_model_checkpoint_override = get_closet_checkpoint_match(override_settings.get("sd_model_checkpoint", None))
@@ -109,6 +110,7 @@ def process_batch(p, input, output_dir, inpaint_mask_dir, args, to_scale=False, 
             p.seed = int(parsed_parameters.get("Seed", seed))
             p.cfg_scale = float(parsed_parameters.get("CFG scale", cfg_scale))
             p.sampler_name = parsed_parameters.get("Sampler", sampler_name)
+            p.scheduler = parsed_parameters.get("Schedule type", scheduler)
             p.steps = int(parsed_parameters.get("Steps", steps))
 
             model_info = get_closet_checkpoint_match(parsed_parameters.get("Model hash", None))

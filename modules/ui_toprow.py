@@ -36,34 +36,12 @@ class Toprow:
 
     submit_box = None
 
-    def __init__(self, is_img2img, is_compact=False, id_part=None):
-        if id_part is None:
-            id_part = "img2img" if is_img2img else "txt2img"
-
+    def __init__(self, id_part):
         self.id_part = id_part
-        self.is_img2img = is_img2img
-        self.is_compact = is_compact
 
-        if not is_compact:
-            with gr.Row(elem_id=f"{id_part}_toprow", variant="compact"):
-                self.create_classic_toprow()
-        else:
-            self.create_submit_box()
-
-    def create_classic_toprow(self):
-        self.create_prompts()
-
-        with gr.Column(scale=1, elem_id=f"{self.id_part}_actions_column"):
-            self.create_submit_box()
-
-            self.create_tools_row()
-
-            self.create_styles_ui()
+        self.create_submit_box()
 
     def create_inline_toprow_prompts(self):
-        if not self.is_compact:
-            return
-
         self.create_prompts()
 
         with gr.Row(elem_classes=["toprow-compact-stylerow"]):
@@ -73,13 +51,10 @@ class Toprow:
                 self.create_styles_ui()
 
     def create_inline_toprow_image(self):
-        if not self.is_compact:
-            return
-
         self.submit_box.render()
 
     def create_prompts(self):
-        with gr.Column(elem_id=f"{self.id_part}_prompt_container", elem_classes=["prompt-container-compact"] if self.is_compact else [], scale=6):
+        with gr.Column(elem_id=f"{self.id_part}_prompt_container", elem_classes=["prompt-container-compact"], scale=6):
             with gr.Row(elem_id=f"{self.id_part}_prompt_row", elem_classes=["prompt-row"]):
                 self.prompt = gr.Textbox(label="Prompt", elem_id=f"{self.id_part}_prompt", show_label=False, lines=3, placeholder="Prompt\n(Press Ctrl+Enter to generate, Alt+Enter to skip, Esc to interrupt)", elem_classes=["prompt"], value='')
                 self.prompt_img = gr.File(label="", elem_id=f"{self.id_part}_prompt_image", file_count="single", type="binary", visible=False)
@@ -95,7 +70,7 @@ class Toprow:
         )
 
     def create_submit_box(self):
-        with gr.Row(elem_id=f"{self.id_part}_generate_box", elem_classes=["generate-box"] + (["generate-box-compact"] if self.is_compact else []), render=not self.is_compact) as submit_box:
+        with gr.Row(elem_id=f"{self.id_part}_generate_box", elem_classes=["generate-box"] + (["generate-box-compact"]), render=False) as submit_box:
             self.submit_box = submit_box
 
             self.interrupt = gr.Button('Interrupt', elem_id=f"{self.id_part}_interrupt", elem_classes="generate-box-interrupt", tooltip="End generation immediately or after completing current batch")
@@ -122,7 +97,7 @@ class Toprow:
             self.clear_prompt_button = ToolButton(value=clear_prompt_symbol, elem_id=f"{self.id_part}_clear_prompt", tooltip="Clear prompt")
             self.apply_styles = ToolButton(value=ui_prompt_styles.styles_materialize_symbol, elem_id=f"{self.id_part}_style_apply", tooltip="Apply all selected styles to prompts. Strips comments, if enabled.")
 
-            if self.is_img2img:
+            if self.id_part == "img2img":
                 self.button_interrogate = ToolButton('📎', tooltip='Interrogate CLIP - use CLIP neural network to create a text describing the image, and put it into the prompt field', elem_id="interrogate")
                 self.button_deepbooru = ToolButton('📦', tooltip='Interrogate DeepBooru - use DeepBooru neural network to create a text describing the image, and put it into the prompt field', elem_id="deepbooru")
 

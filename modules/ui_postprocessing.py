@@ -25,7 +25,7 @@ def create_ui():
             script_inputs = scripts.scripts_postproc.setup_ui()
 
         with gr.Column():
-            toprow = ui_toprow.Toprow(is_compact=True, is_img2img=False, id_part="extras")
+            toprow = ui_toprow.Toprow(id_part="extras")
             toprow.create_inline_toprow_image()
             submit = toprow.submit
 
