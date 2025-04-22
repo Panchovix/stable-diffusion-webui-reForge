@@ -92,22 +92,16 @@ class ForgeSpace:
 
         self.label = gr.HTML(build_html(title=title, url=None), elem_classes=['forge_space_label'])
         self.btn_launch = gr.Button('Launch', elem_classes=['forge_space_btn'])
-        self.btn_terminate = gr.Button('Terminate', elem_classes=['forge_space_btn'])
         self.btn_install = gr.Button('Install', elem_classes=['forge_space_btn'])
-        self.btn_uninstall = gr.Button('Uninstall', elem_classes=['forge_space_btn'])
 
         comps = [
             self.label,
             self.btn_install,
-            self.btn_uninstall,
             self.btn_launch,
-            self.btn_terminate
         ]
 
         self.btn_launch.click(self.run, outputs=comps)
-        self.btn_terminate.click(self.terminate, outputs=comps)
         self.btn_install.click(self.install, outputs=comps)
-        self.btn_uninstall.click(self.uninstall, outputs=comps)
         Context.root_block.load(self.refresh_gradio, outputs=comps, queue=False, show_progress=False)
 
         return
@@ -124,54 +118,64 @@ class ForgeSpace:
         else:
             results.append(build_html(title=self.title, installed=installed, url=None))
 
-        results.append(gr.update(interactive=not self.is_running and not (installed and not has_requirement), value=("Reinstall" if (installed and has_requirement) else "Install")))
-        results.append(gr.update(interactive=not self.is_running and installed))
-        results.append(gr.update(interactive=installed and not self.is_running))
-        results.append(gr.update(interactive=installed and self.is_running))
+        if installed:
+            if has_requirement:
+                results.append(gr.update(value="Reinstall", variant="primary"))
+            else:
+                results.append(gr.update(value="Uninstall", variant="primary", interactive=True))
+
+            if self.is_running:
+                results.append(gr.update(value="Terminate", variant="primary"))
+            else:
+                results.append(gr.update(value="Launch", variant="secondary", interactive=True))
+        else: # not installed
+            results.append(gr.update(value="Install", variant="secondary"))
+            results.append(gr.update(value="Launch", variant="secondary", interactive=False))
+
         return results
 
     def install(self):
-        os.makedirs(self.hf_path, exist_ok=True)
+        if self.installed:
+            remove_dir(self.hf_path)
+            print('Uninstall finished. You can also manually delete some diffusers models in "/models/diffusers" to release more spaces, but those diffusers models may be reused by other spaces or extensions.')
+            return self.refresh_gradio()
+        else:
+            os.makedirs(self.hf_path, exist_ok=True)
 
-        if self.repo_id is not None:
-            downloaded = snapshot_download(
-                repo_id=self.repo_id,
-                repo_type=self.repo_type,
-                revision=self.revision,
-                local_dir=self.hf_path,
-                force_download=False,
-                allow_patterns=self.allow_patterns,
-                ignore_patterns=self.ignore_patterns
-            )
-            print(f'Downloaded: {downloaded}')
+            if self.repo_id is not None:
+                downloaded = snapshot_download(
+                    repo_id=self.repo_id,
+                    repo_type=self.repo_type,
+                    revision=self.revision,
+                    local_dir=self.hf_path,
+                    force_download=False,
+                    allow_patterns=self.allow_patterns,
+                    ignore_patterns=self.ignore_patterns
+                )
+                print(f'Downloaded: {downloaded}')
 
-        requirements_filename = os.path.abspath(os.path.realpath(os.path.join(self.root_path, 'requirements.txt')))
+            requirements_filename = os.path.abspath(os.path.realpath(os.path.join(self.root_path, 'requirements.txt')))
 
-        if os.path.exists(requirements_filename):
-            from modules.launch_utils import run_pip
-            run_pip(f'install -r "{requirements_filename}"', desc=f"space requirements for [{self.title}]")
+            if os.path.exists(requirements_filename):
+                from modules.launch_utils import run_pip
+                run_pip(f'install -r "{requirements_filename}"', desc=f"space requirements for [{self.title}]")
 
-        print(f'Install finished: {self.title}')
+            print(f'Install finished: {self.title}')
 
-        return self.refresh_gradio()
-
-    def uninstall(self):
-        remove_dir(self.hf_path)
-        print('Uninstall finished. You can also manually delete some diffusers models in "/models/diffusers" to release more spaces, but those diffusers models may be reused by other spaces or extensions. ')
-        return self.refresh_gradio()
-
-    def terminate(self):
-        self.is_running = False
-        while self.gradio_metas is not None:
-            time.sleep(0.1)
-        return self.refresh_gradio()
+            return self.refresh_gradio()
 
     def run(self):
-        self.is_running = True
-        Thread(target=self.gradio_worker).start()
-        while self.gradio_metas is None:
-            time.sleep(0.1)
-        return self.refresh_gradio()
+        if self.is_running:
+            self.is_running = False
+            while self.gradio_metas is not None:
+                time.sleep(0.1)
+            return self.refresh_gradio()
+        else:
+            self.is_running = True
+            Thread(target=self.gradio_worker).start()
+            while self.gradio_metas is None:
+                time.sleep(0.1)
+            return self.refresh_gradio()
 
     def gradio_worker(self):
         import spaces
