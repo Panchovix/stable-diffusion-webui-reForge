@@ -17,7 +17,7 @@ class PromptChunk:
 
 
 class T5TextProcessingEngine:
-    def __init__(self, text_encoder, tokenizer, emphasis_name="Original", min_length=256):
+    def __init__(self, text_encoder, tokenizer, emphasis_name="Original", min_length=256, end_with_pad=False):
         super().__init__()
 
         self.text_encoder = text_encoder.transformer
@@ -25,6 +25,7 @@ class T5TextProcessingEngine:
 
         self.emphasis = emphasis.get_current_option(opts.emphasis)()
         self.min_length = min_length
+        self.end_with_pad = end_with_pad
         self.id_end = 1
         self.id_pad = 0
 
@@ -80,6 +81,9 @@ class T5TextProcessingEngine:
 
             chunk.tokens = chunk.tokens + [self.id_end]
             chunk.multipliers = chunk.multipliers + [1.0]
+            if self.end_with_pad:
+                chunk.tokens = chunk.tokens + [self.id_pad]
+                chunk.multipliers = chunk.multipliers + [1.0]
             current_chunk_length = len(chunk.tokens)
 
             token_count += current_chunk_length
