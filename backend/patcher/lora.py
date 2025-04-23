@@ -55,14 +55,25 @@ def weight_decompose(dora_scale, weight, lora_diff, alpha, strength, computation
     dora_scale = memory_management.cast_to_device(dora_scale, weight.device, computation_dtype)
     lora_diff *= alpha
     weight_calc = weight + lora_diff.type(weight.dtype)
-    weight_norm = (
-        weight_calc.transpose(0, 1)
-        .reshape(weight_calc.shape[1], -1)
-        .norm(dim=1, keepdim=True)
-        .reshape(weight_calc.shape[1], *[1] * (weight_calc.dim() - 1))
-        .transpose(0, 1)
-    )
 
+    # fixed DoRA w/ backward compatibility by KohakuBlueleaf (https://github.com/comfyanonymous/ComfyUI/pull/7727)
+    wd_on_output_axis = dora_scale.shape[0] == weight_calc.shape[0]
+    if wd_on_output_axis:
+        weight_norm = (
+            weight.reshape(weight.shape[0], -1)
+            .norm(dim=1, keepdim=True)
+            .reshape(weight.shape[0], *[1] * (weight.dim() - 1))
+        )
+    else:
+        weight_norm = (
+            weight_calc.transpose(0, 1)
+            .reshape(weight_calc.shape[1], -1)
+            .norm(dim=1, keepdim=True)
+            .reshape(weight_calc.shape[1], *[1] * (weight_calc.dim() - 1))
+            .transpose(0, 1)
+        )
+    weight_norm = weight_norm + torch.finfo(weight.dtype).eps
+    
     weight_calc *= (dora_scale / weight_norm).type(weight.dtype)
     if strength != 1.0:
         weight_calc -= weight
