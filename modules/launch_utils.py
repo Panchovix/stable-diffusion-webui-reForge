@@ -367,56 +367,9 @@ def get_cuda_comp_cap():
     except Exception as _:
         return 0.0
 
-def early_access_blackwell_wheels():
-    """For Blackwell GPUs or when using --nightly-builds flag, use Nightly PyTorch Wheels"""
-    cuda_cap = get_cuda_comp_cap()
-   
-    # Import args from ldm_patched if available, otherwise default to false
-    try:
-        from ldm_patched.modules.args_parser import args
-        use_nightly = args.nightly_builds
-    except:
-        use_nightly = False
-   
-    # Check if we should use nightly builds
-    # Either Blackwell GPU (always use) or Ampere/Ada GPU with nightly flag
-    should_use_nightly = (
-        os.environ.get('TORCH_INDEX_URL') is None and
-        sys.version_info.major == 3 and
-        sys.version_info.minor in (10, 11, 12, 13) and
-        (
-            cuda_cap >= 10.0 or  # Always use for Blackwell
-            (use_nightly and cuda_cap >= 8.0)  # Use for Ampere/Ada if flag is set
-        )
-    )
-   
-    if should_use_nightly:
-        if platform.system() == "Windows":
-            # Use latest nightly builds for all Python versions
-            base_cmd = "pip install --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu128"
-            
-            # Install triton nightly
-            triton_pkg = "triton-windows==3.3.0a0.post17"
-            
-            # Add additional packages for Python 3.12
-            if sys.version_info.minor == 12:
-                xformers_url = "https://huggingface.co/Panchovix/xformers-windows-blackwell2.0-nightly/resolve/main/xformers-0.0.30%2B9a2cd3ef.d20250321-cp312-cp312-win_amd64.whl"
-                flash_attn_url = "https://huggingface.co/Panchovix/flash-attentionv2-blackwell2.0-nightly/resolve/main/flash_attn-2.7.4.post1-cp312-cp312-win_amd64.whl"
-                sage_attn_url = "https://huggingface.co/Panchovix/sageattention2.1.1-blackwell2.0-windows-nightly/resolve/main/sageattention-2.1.1-cp312-cp312-win_amd64.whl"
-                
-                return f"{base_cmd} && pip install {triton_pkg} {xformers_url} {flash_attn_url} {sage_attn_url}"
-            else:
-                return f"{base_cmd} && pip install {triton_pkg}"
-        
-        elif platform.system() == "Linux":
-            return "pip install --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu128"
-   
-    return None
-
-
 def prepare_environment():
-    torch_index_url = os.environ.get('TORCH_INDEX_URL', "https://download.pytorch.org/whl/cu124")
-    torch_command = os.environ.get('TORCH_COMMAND', early_access_blackwell_wheels() or f"pip install torch==2.6.0 torchvision==0.21.0 --extra-index-url {torch_index_url}")
+    torch_index_url = os.environ.get('TORCH_INDEX_URL', "https://download.pytorch.org/whl/cu128")
+    torch_command = os.environ.get('TORCH_COMMAND', f"pip install torch==2.7.0 torchvision==0.22.0 --extra-index-url {torch_index_url}")
     if args.use_ipex:
         if platform.system() == "Windows":
             # The "Nuullll/intel-extension-for-pytorch" wheels were built from IPEX source for Intel Arc GPU: https://github.com/intel/intel-extension-for-pytorch/tree/xpu-main

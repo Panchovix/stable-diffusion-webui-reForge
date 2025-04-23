@@ -1031,7 +1031,7 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
                 x_samples_ddim = batch_params.images
 
             def infotext(index=0, use_main_prompt=False):
-                if shared.opts.enable_prompt_comments:
+                if shared.opts.enable_prompt_comments_def:
                     commented_prompts = p.prompts
                     commented_prompts[index] = p.prompt
                     commented_negative_prompts = p.negative_prompts
@@ -1286,11 +1286,11 @@ class StableDiffusionProcessingTxt2Img(StableDiffusionProcessing):
 
             def get_hr_prompt(p, index, prompt_text, **kwargs):
                 hr_prompt = p.all_hr_prompts[index]
-                return hr_prompt if hr_prompt != (comments_parser.strip_comments(prompt_text) if shared.opts.enable_prompt_comments else prompt_text) else None
+                return hr_prompt if hr_prompt != (comments_parser.strip_comments(prompt_text) if shared.opts.enable_prompt_comments_def else prompt_text) else None
 
             def get_hr_negative_prompt(p, index, negative_prompt, **kwargs):
                 hr_negative_prompt = p.all_hr_negative_prompts[index]
-                return hr_negative_prompt if hr_negative_prompt != (comments_parser.strip_comments(negative_prompt) if shared.opts.enable_prompt_comments else negative_prompt) else None
+                return hr_negative_prompt if hr_negative_prompt != (comments_parser.strip_comments(negative_prompt) if shared.opts.enable_prompt_comments_def else negative_prompt) else None
 
             self.extra_generation_params["Hires prompt"] = get_hr_prompt
             self.extra_generation_params["Hires negative prompt"] = get_hr_negative_prompt
