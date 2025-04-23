@@ -48,9 +48,7 @@ def check_python_version():
         supported_minors = [7, 8, 9, 10, 11]
 
     if not (major == 3 and minor in supported_minors):
-        import modules.errors
-
-        modules.errors.print_error_explanation(f"""
+        errors.print_error_explanation(f"""
 INCOMPATIBLE PYTHON VERSION
 
 This program is tested with 3.10.6 Python, but you have {major}.{minor}.{micro}.
