@@ -22,7 +22,7 @@ def imports():
     import gradio  # noqa: F401
     startup_timer.record("import gradio")
 
-    from modules import paths, timer, import_hook, errors  # noqa: F401
+    from modules import paths, timer, errors  # noqa: F401
     startup_timer.record("setup paths")
 
     from modules import shared_init
