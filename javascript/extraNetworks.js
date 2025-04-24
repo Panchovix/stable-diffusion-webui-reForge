@@ -456,9 +456,11 @@ function extraNetworksControlSortDirOnClick(event, tabname, extra_networks_tabna
     if (event.currentTarget.dataset.sortdir == "Ascending") {
         event.currentTarget.dataset.sortdir = "Descending";
         event.currentTarget.setAttribute("title", "Sort descending");
+		event.currentTarget.innerText = "Z-A";
     } else {
         event.currentTarget.dataset.sortdir = "Ascending";
         event.currentTarget.setAttribute("title", "Sort ascending");
+		event.currentTarget.innerText = "A-Z";
     }
     applyExtraNetworkSort(tabname + "_" + extra_networks_tabname);
 }
