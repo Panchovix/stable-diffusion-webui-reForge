@@ -17,13 +17,11 @@ from pathlib import Path
 from modules import cmd_args, errors
 from modules.paths_internal import script_path, extensions_dir, extensions_builtin_dir
 from modules.timer import startup_timer
-from modules import logging_config
 from modules_forge import forge_version
 from modules_forge.config import always_disabled_extensions
 
 
 args, _ = cmd_args.parser.parse_known_args()
-logging_config.setup_logging(args.loglevel)
 
 python = sys.executable
 git = os.environ.get('GIT', "git")

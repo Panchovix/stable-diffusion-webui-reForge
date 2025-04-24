@@ -612,7 +612,6 @@ class ExtraNetworksPage:
             "data_sortdir": shared.opts.extra_networks_card_order,
             "sort_path_active": ' extra-network-control--enabled' if shared.opts.extra_networks_card_order_field == 'Path' else '',
             "sort_name_active": ' extra-network-control--enabled' if shared.opts.extra_networks_card_order_field == 'Name' else '',
-            "sort_date_created_active": ' extra-network-control--enabled' if shared.opts.extra_networks_card_order_field == 'Date Created' else '',
             "sort_date_modified_active": ' extra-network-control--enabled' if shared.opts.extra_networks_card_order_field == 'Date Modified' else '',
             "tree_view_btn_extra_class": "extra-network-control--enabled" if show_tree else "",
             "items_html": self.create_card_view_html(tabname, none_message="Loading..." if empty else None),
@@ -641,10 +640,9 @@ class ExtraNetworksPage:
         List of default keys used for sorting in the UI.
         """
         pth = Path(path)
-        mtime, ctime = self.lister.mctime(path)
+        mtime, _ = self.lister.mctime(path)
         return {
-            "date_created": int(mtime),
-            "date_modified": int(ctime),
+            "date_modified": int(mtime),
             "name": pth.name.lower(),
             "path": str(pth).lower(),
         }
