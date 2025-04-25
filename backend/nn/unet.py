@@ -4,6 +4,7 @@ from torch import nn
 from einops import rearrange, repeat
 from backend.attention import attention_function
 from diffusers.configuration_utils import ConfigMixin, register_to_config
+from modules import shared
 
 
 def checkpoint(f, args, parameters, enable=False):
@@ -149,12 +150,25 @@ class CrossAttention(nn.Module):
     def forward(self, x, context=None, value=None, mask=None, transformer_options={}):
         q = self.to_q(x)
         context = default(context, x)
-        k = self.to_k(context)
+
+        context_k = context
+        context_v = context
+        for hypernetwork in shared.loaded_hypernetworks:
+            hypernetwork_layers = (hypernetwork.layers if hypernetwork is not None else {}).get(context_k.shape[2], None)
+
+            if hypernetwork_layers is not None:
+                context_k = hypernetwork_layers[0](context_k)
+                context_v = hypernetwork_layers[1](context_v)
+
+
+        k = self.to_k(context_k)
+        # v = self.to_v(context_v)
+
         if value is not None:
             v = self.to_v(value)
             del value
         else:
-            v = self.to_v(context)
+            v = self.to_v(context_v)
         out = attention_function(q, k, v, self.heads, mask)
         return self.to_out(out)
 
