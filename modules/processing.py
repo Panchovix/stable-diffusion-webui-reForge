@@ -16,7 +16,7 @@ from skimage import exposure
 from typing import Any
 
 import modules.sd_hijack
-from modules import devices, prompt_parser, masking, sd_samplers, infotext_utils, extra_networks, sd_vae_approx, scripts, sd_samplers_common, sd_unet, errors, rng, profiling
+from modules import devices, prompt_parser, masking, sd_samplers, infotext_utils, extra_networks, sd_vae_approx, scripts, sd_samplers_common, errors, rng, profiling
 from modules.rng import slerp, get_noise_source_type  # noqa: F401
 from modules.sd_samplers_common import images_tensor_to_samples, decode_first_stage, approximation_indexes
 from modules.shared import opts, cmd_opts, state
@@ -909,8 +909,6 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
             # for OSX, loading the model during sampling changes the generated picture, so it is loaded here
             if shared.opts.live_previews_enable and opts.show_progress_type == "Approx NN":
                 sd_vae_approx.model()
-
-            sd_unet.apply_unet()
 
         if state.job_count == -1:
             state.job_count = p.n_iter

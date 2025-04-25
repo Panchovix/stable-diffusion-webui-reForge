@@ -40,9 +40,11 @@ def refresh_vae_list():
         os.path.join(sd_models.model_path, '**/*.vae.ckpt'),
         os.path.join(sd_models.model_path, '**/*.vae.pt'),
         os.path.join(sd_models.model_path, '**/*.vae.safetensors'),
+        os.path.join(sd_models.model_path, '**/*.vae.gguf'),
         os.path.join(vae_path, '**/*.ckpt'),
         os.path.join(vae_path, '**/*.pt'),
         os.path.join(vae_path, '**/*.safetensors'),
+        os.path.join(vae_path, '**/*.gguf'),
     ]
 
     if shared.cmd_opts.ckpt_dir is not None and os.path.isdir(shared.cmd_opts.ckpt_dir):
@@ -50,6 +52,7 @@ def refresh_vae_list():
             os.path.join(shared.cmd_opts.ckpt_dir, '**/*.vae.ckpt'),
             os.path.join(shared.cmd_opts.ckpt_dir, '**/*.vae.pt'),
             os.path.join(shared.cmd_opts.ckpt_dir, '**/*.vae.safetensors'),
+            os.path.join(shared.cmd_opts.ckpt_dir, '**/*.vae.gguf'),
         ]
 
     if shared.cmd_opts.vae_dir is not None and os.path.isdir(shared.cmd_opts.vae_dir):
@@ -57,6 +60,7 @@ def refresh_vae_list():
             os.path.join(shared.cmd_opts.vae_dir, '**/*.ckpt'),
             os.path.join(shared.cmd_opts.vae_dir, '**/*.pt'),
             os.path.join(shared.cmd_opts.vae_dir, '**/*.safetensors'),
+            os.path.join(shared.cmd_opts.vae_dir, '**/*.gguf'),
         ]
 
     candidates = []

@@ -48,7 +48,7 @@ class CheckpointUserMetadataEditor(ui_extra_networks_user_metadata.UserMetadataE
     def create_editor(self):    #happens before main_entry.modules_list is filled
         modules_list = ['Built in']
         if main_entry.module_list == {}:
-            _, modules = main_entry.refresh_models()
+            modules = main_entry.refresh_vaete()
             modules_list += list(modules)
         else:
             modules_list += list(main_entry.module_list.keys())

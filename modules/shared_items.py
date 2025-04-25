@@ -22,12 +22,6 @@ def postprocessing_scripts():
     return modules.scripts.scripts_postproc.scripts
 
 
-def sd_vae_items():
-    import modules.sd_vae
-
-    return ["Automatic", "None"] + list(modules.sd_vae.vae_dict)
-
-
 def refresh_vae_list():
     import modules.sd_vae
 
@@ -36,18 +30,6 @@ def refresh_vae_list():
 
 def cross_attention_optimizations():
     return ["Automatic"]
-
-
-def sd_unet_items():
-    import modules.sd_unet
-
-    return ["Automatic"] + [x.label for x in modules.sd_unet.unet_options] + ["None"]
-
-
-def refresh_unet_list():
-    import modules.sd_unet
-
-    modules.sd_unet.list_unets()
 
 
 def list_checkpoint_tiles(use_short=False):

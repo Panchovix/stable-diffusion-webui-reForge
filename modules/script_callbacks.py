@@ -599,13 +599,6 @@ def on_list_optimizers(callback, *, name=None):
     add_callback(callback_map['callbacks_list_optimizers'], callback, name=name, category='list_optimizers')
 
 
-def on_list_unets(callback, *, name=None):
-    """register a function to be called when UI is making a list of alternative options for unet.
-    The function will be called with one argument, a list, and shall add objects of type modules.sd_unet.SdUnetOption to it."""
-
-    add_callback(callback_map['callbacks_list_unets'], callback, name=name, category='list_unets')
-
-
 def on_before_token_counter(callback, *, name=None):
     """register a function to be called when UI is counting tokens for a prompt.
     The function will be called with one argument of type BeforeTokenCounterParams, and should modify its fields if necessary."""

@@ -149,9 +149,6 @@ def setup_model():
 
     os.makedirs(model_path, exist_ok=True)
 
-    enable_midas_autodownload()
-    patch_given_betas()
-
 
 def checkpoint_tiles(use_short=False):
     return [x.short_title if use_short else x.name for x in checkpoints_list.values()]
@@ -319,14 +316,6 @@ def set_model_fields(model):
 
 
 def load_model_weights(model, checkpoint_info: CheckpointInfo, state_dict, timer):
-    pass
-
-
-def enable_midas_autodownload():
-    pass
-
-
-def patch_given_betas():
     pass
 
 

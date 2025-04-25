@@ -310,7 +310,7 @@ def create_ui():
                                     def get_additional_modules():
                                         modules_list = ['Use same choices']
                                         if main_entry.module_list == {}:
-                                            _, modules = main_entry.refresh_models()
+                                            modules = main_entry.refresh_vaete()
                                             modules_list += list(modules)
                                         else:
                                             modules_list += list(main_entry.module_list.keys())

@@ -92,10 +92,6 @@ def initialize_rest(*, reload_script_modules=False):
         scripts.load_scripts()
         return
 
-    from modules import sd_models
-    sd_models.list_models()
-    startup_timer.record("list SD models")
-
     from modules import localization
     localization.list_localizations(cmd_opts.localizations_dir)
     startup_timer.record("list localizations")
@@ -112,13 +108,10 @@ def initialize_rest(*, reload_script_modules=False):
     modelloader.load_upscalers()
     startup_timer.record("load upscalers")
 
+    # this is different from loading all modules, so remains necessary
     from modules import sd_vae
     sd_vae.refresh_vae_list()
     startup_timer.record("refresh VAE")
-
-    from modules import sd_unet
-    sd_unet.list_unets()
-    startup_timer.record("scripts list_unets")
 
     from modules import shared_items
     shared_items.reload_hypernetworks()
