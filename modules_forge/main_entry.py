@@ -62,12 +62,15 @@ def find_files_with_extensions(base_path, extensions):
     return found_files
 
 
-def refresh_models():
-    global module_list
-
+def refresh_ckpt():
     shared_items.refresh_checkpoints()
     ckpt_list = shared_items.list_checkpoint_tiles(shared.opts.sd_checkpoint_dropdown_use_short)
-
+    return ckpt_list
+    
+    
+def refresh_vaete():
+    global module_list
+    
     file_extensions = ['ckpt', 'pt', 'bin', 'safetensors', 'gguf']
 
     module_list.clear()
@@ -86,9 +89,18 @@ def refresh_models():
         vae_files = find_files_with_extensions(vae_path, file_extensions)
         module_list.update(vae_files)
 
-    return ckpt_list, module_list.keys()
+    return module_list.keys()
 
-ckpt_list, _ = refresh_models()
+
+def refresh_models():
+    checkpoint_list = refresh_ckpt()
+    modules_list = refresh_vaete()
+
+    return checkpoint_list, modules_list
+
+ckpt_list = refresh_ckpt()
+if module_list == {}:
+    _ = refresh_vaete()
 
 
 def make_checkpoint_manager_ui():
