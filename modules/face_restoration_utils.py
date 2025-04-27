@@ -9,7 +9,7 @@ import cv2
 import numpy as np
 import torch
 
-from modules import devices, errors, face_restoration, shared
+from modules import devices, errors, face_restoration
 from modules_forge.utils import prepare_free_memory
 
 if TYPE_CHECKING:
@@ -80,7 +80,7 @@ def restore_with_face_helper(
         for cropped_face in face_helper.cropped_faces:
             cropped_face_t = bgr_image_to_rgb_tensor(cropped_face / 255.0)
             normalize(cropped_face_t, (0.5, 0.5, 0.5), (0.5, 0.5, 0.5), inplace=True)
-            cropped_face_t = cropped_face_t.unsqueeze(0).to(devices.device_codeformer)
+            cropped_face_t = cropped_face_t.unsqueeze(0).to(devices.device_face_restore)
 
             try:
                 with torch.no_grad():
@@ -158,8 +158,7 @@ class CommonFaceRestoration(face_restoration.FaceRestoration):
             self.send_model_to(self.get_device())
             return restore_with_face_helper(np_image, self.face_helper, restore_face)
         finally:
-            if shared.opts.face_restoration_unload:
-                self.send_model_to(devices.cpu)
+            self.send_model_to(devices.cpu)
 
 
 def patch_facexlib(dirname: str) -> None:

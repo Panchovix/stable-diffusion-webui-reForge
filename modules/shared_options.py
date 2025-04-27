@@ -64,8 +64,6 @@ options_templates.update(options_section(('saving-images', "Saving images/grids"
 
     "use_original_name_batch": OptionInfo(True, "Use original name for output filename during batch process in extras tab"),
     "use_upscaler_name_as_suffix": OptionInfo(False, "Use upscaler name as filename suffix in the extras tab"),
-    "save_selected_only": OptionInfo(True, "When using 'Save' button, only save a single selected image"),
-    "save_write_log_csv": OptionInfo(True, "Write log.csv when saving images using 'Save' button"),
     "save_init_img": OptionInfo(False, "Save init images when using img2img"),
 
     "temp_dir":  OptionInfo("", "Directory for temporary images; leave empty for default"),
@@ -100,7 +98,6 @@ options_templates.update(options_section(('upscaling', "Upscaling", "postprocess
     "ESRGAN_tile": OptionInfo(192, "Tile size for ESRGAN upscalers.", gr.Slider, {"minimum": 0, "maximum": 512, "step": 16}).info("0 = no tiling"),
     "ESRGAN_tile_overlap": OptionInfo(8, "Tile overlap for ESRGAN upscalers.", gr.Slider, {"minimum": 0, "maximum": 48, "step": 1}).info("Low values = visible seam"),
     "realesrgan_enabled_models": OptionInfo(["R-ESRGAN 4x+", "R-ESRGAN 4x+ Anime6B"], "Select which Real-ESRGAN models to show in the web UI.", gr.CheckboxGroup, lambda: {"choices": shared_items.realesrgan_models_names()}),
-    "dat_enabled_models": OptionInfo(["DAT x2", "DAT x3", "DAT x4"], "Select which DAT models to show in the web UI.", gr.CheckboxGroup, lambda: {"choices": shared_items.dat_models_names()}),
     "DAT_tile": OptionInfo(192, "Tile size for DAT upscalers.", gr.Slider, {"minimum": 0, "maximum": 512, "step": 16}).info("0 = no tiling"),
     "DAT_tile_overlap": OptionInfo(8, "Tile overlap for DAT upscalers.", gr.Slider, {"minimum": 0, "maximum": 48, "step": 1}).info("Low values = visible seam"),
     "upscaler_for_img2img": OptionInfo(None, "Upscaler for img2img", gr.Dropdown, lambda: {"choices": [x.name for x in shared.sd_upscalers]}),
@@ -111,12 +108,10 @@ options_templates.update(options_section(('face-restoration', "Face restoration"
     "face_restoration": OptionInfo(False, "Restore faces", infotext='Face restoration').info("will use a third-party model on generation result to reconstruct faces"),
     "face_restoration_model": OptionInfo("CodeFormer", "Face restoration model", gr.Radio, lambda: {"choices": [x.name() for x in shared.face_restorers]}),
     "code_former_weight": OptionInfo(0.5, "CodeFormer weight", gr.Slider, {"minimum": 0, "maximum": 1, "step": 0.01}).info("0 = maximum effect; 1 = minimum effect"),
-    "face_restoration_unload": OptionInfo(False, "Move face restoration model from VRAM into RAM after processing"),
 }))
 
 options_templates.update(options_section(('system', "System", "system"), {
     "auto_launch_browser": OptionInfo("Local", "Automatically open webui in browser on startup", gr.Radio, lambda: {"choices": ["Disable", "Local", "Remote"]}),
-    "enable_console_prompts": OptionInfo(False, "Print prompts to console when generating with txt2img and img2img."),
     "show_warnings": OptionInfo(False, "Show warnings in console.").needs_reload_ui(),
     "show_gradio_deprecation_warnings": OptionInfo(True, "Show gradio deprecation warnings in console.").needs_reload_ui(),
     "memmon_poll_rate": OptionInfo(8, "VRAM usage polls per second during generation.", gr.Slider, {"minimum": 0, "maximum": 40, "step": 1}).info("0 = disable"),
@@ -347,8 +342,6 @@ options_templates.update(options_section(('ui', "Live previews", "ui"), {
     "show_progress_grid": OptionInfo(True, "Show previews of all images generated in a batch as a grid"),
     "show_progress_every_n_steps": OptionInfo(10, "Live preview display period", gr.Slider, {"minimum": -1, "maximum": 32, "step": 1}).info("in sampling steps - show new live preview image every N sampling steps; -1 = only show after completion of batch"),
     "show_progress_type": OptionInfo("Approx NN", "Live preview method", gr.Radio, {"choices": ["Approx NN", "Approx cheap", "TAESD"]}).info("Approx NN: fast preview; TAESD = high-quality preview; Approx cheap = fastest but low-quality preview"),
-    "live_preview_allow_lowvram_full": OptionInfo(False, "Allow Full live preview method with lowvram/medvram").info("If not, Approx NN will be used instead; Full live preview method is very detrimental to speed if lowvram/medvram optimizations are enabled"),
-    "live_preview_content": OptionInfo("Prompt", "Live preview subject", gr.Radio, {"choices": ["Combined", "Prompt", "Negative prompt"]}),
     "live_preview_refresh_period": OptionInfo(1000, "Progressbar and preview update period").info("in milliseconds"),
     "live_preview_fast_interrupt": OptionInfo(False, "Return image with chosen live preview method on interrupt").info("makes interrupts faster"),
     "js_live_preview_in_modal_lightbox": OptionInfo(False, "Show Live preview in full page image viewer"),

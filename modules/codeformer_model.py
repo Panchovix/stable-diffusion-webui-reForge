@@ -36,13 +36,13 @@ class FaceRestorerCodeFormer(face_restoration_utils.CommonFaceRestoration):
         ):
             return modelloader.load_spandrel_model(
                 model_path,
-                device=devices.device_codeformer,
+                device=devices.device_face_restore,
                 expected_architecture='CodeFormer',
             ).model
         raise ValueError("No codeformer model found")
 
     def get_device(self):
-        return devices.device_codeformer
+        return devices.device_face_restore
 
     def restore(self, np_image, w: float | None = None):
         if w is None:

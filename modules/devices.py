@@ -50,15 +50,11 @@ def enable_tf32():
 cpu: torch.device = torch.device("cpu")
 fp8: bool = False
 device: torch.device = memory_management.get_torch_device()
-device_interrogate: torch.device = memory_management.text_encoder_device()  # for backward compatibility, not used now
-device_gfpgan: torch.device = memory_management.get_torch_device()  # will be managed by memory management system
-device_esrgan: torch.device = memory_management.get_torch_device()  # will be managed by memory management system
-device_codeformer: torch.device = memory_management.get_torch_device()  # will be managed by memory management system
+device_face_restore: torch.device = memory_management.get_torch_device()  # will be managed by memory management system, used for GFPGAN and codeformer
 dtype: torch.dtype = torch.float32 if memory_management.unet_dtype() is torch.float32 else torch.float16
 dtype_vae: torch.dtype = memory_management.vae_dtype()
 dtype_unet: torch.dtype = memory_management.unet_dtype()
 dtype_inference: torch.dtype = memory_management.unet_dtype()
-unet_needs_upcast = False
 
 
 def cond_cast_unet(input):
@@ -97,6 +93,3 @@ class NansException(Exception):
 def test_for_nans(x, where):
     return
 
-
-def first_time_calculation():
-    return

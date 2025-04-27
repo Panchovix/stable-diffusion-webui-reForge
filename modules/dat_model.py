@@ -14,14 +14,47 @@ class UpscalerDAT(Upscaler):
         self.scalers = []
         super().__init__()
 
+        gotDAT2 = False
+        gotDAT3 = False
+        gotDAT4 = False
         for file in self.find_models(ext_filter=[".pt", ".pth", ".safetensors"]):
             name = modelloader.friendly_name(file)
+            if name == "DAT_x2":
+                gotDAT2 = True
+            if name == "DAT_x3":
+                gotDAT3 = True
+            if name == "DAT_x4":
+                gotDAT4 = True
             scaler_data = UpscalerData(name, file, upscaler=self, scale=None)
             self.scalers.append(scaler_data)
 
-        for model in get_dat_models(self):
-            if model.name in opts.dat_enabled_models:
-                self.scalers.append(model)
+        if not gotDAT2:
+            DAT2 = UpscalerData(
+                name="DAT_x2",
+                path="https://huggingface.co/w-e-w/DAT/resolve/main/experiments/pretrained_models/DAT/DAT_x2.pth",
+                scale=2,
+                upscaler=self,
+                sha256='7760aa96e4ee77e29d4f89c3a4486200042e019461fdb8aa286f49aa00b89b51',
+            )
+            self.scalers.append(DAT2)
+        if not gotDAT3:
+            DAT3 = UpscalerData(
+                name="DAT_x3",
+                path="https://huggingface.co/w-e-w/DAT/resolve/main/experiments/pretrained_models/DAT/DAT_x3.pth",
+                scale=3,
+                upscaler=self,
+                sha256='581973e02c06f90d4eb90acf743ec9604f56f3c2c6f9e1e2c2b38ded1f80d197',
+            )
+            self.scalers.append(DAT3)
+        if not gotDAT4:
+            DAT4 = UpscalerData(
+                name="DAT_x4",
+                path="https://huggingface.co/w-e-w/DAT/resolve/main/experiments/pretrained_models/DAT/DAT_x4.pth",
+                scale=4,
+                upscaler=self,
+                sha256='391a6ce69899dff5ea3214557e9d585608254579217169faf3d4c353caff049e',
+            )
+            self.scalers.append(DAT4)
 
     def do_upscale(self, img, path):
         prepare_free_memory()
@@ -67,29 +100,3 @@ class UpscalerDAT(Upscaler):
                     raise FileNotFoundError(f"DAT data missing: {scaler.local_data_path}")
                 return scaler
         raise ValueError(f"Unable to find model info: {path}")
-
-
-def get_dat_models(scaler):
-    return [
-        UpscalerData(
-            name="DAT x2",
-            path="https://huggingface.co/w-e-w/DAT/resolve/main/experiments/pretrained_models/DAT/DAT_x2.pth",
-            scale=2,
-            upscaler=scaler,
-            sha256='7760aa96e4ee77e29d4f89c3a4486200042e019461fdb8aa286f49aa00b89b51',
-        ),
-        UpscalerData(
-            name="DAT x3",
-            path="https://huggingface.co/w-e-w/DAT/resolve/main/experiments/pretrained_models/DAT/DAT_x3.pth",
-            scale=3,
-            upscaler=scaler,
-            sha256='581973e02c06f90d4eb90acf743ec9604f56f3c2c6f9e1e2c2b38ded1f80d197',
-        ),
-        UpscalerData(
-            name="DAT x4",
-            path="https://huggingface.co/w-e-w/DAT/resolve/main/experiments/pretrained_models/DAT/DAT_x4.pth",
-            scale=4,
-            upscaler=scaler,
-            sha256='391a6ce69899dff5ea3214557e9d585608254579217169faf3d4c353caff049e',
-        ),
-    ]

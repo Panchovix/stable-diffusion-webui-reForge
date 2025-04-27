@@ -12,6 +12,8 @@ def imports():
     logging.getLogger("xformers").addFilter(lambda record: 'A matching Triton is not available' not in record.getMessage())
 
     import torch  # noqa: F401
+    torch.set_grad_enabled(False)
+
     startup_timer.record("import torch")
     import pytorch_lightning  # noqa: F401
     startup_timer.record("import torch")

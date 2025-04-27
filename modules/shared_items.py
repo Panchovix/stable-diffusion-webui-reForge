@@ -11,11 +11,6 @@ def realesrgan_models_names():
     return [x.name for x in modules.realesrgan_model.get_realesrgan_models(None)]
 
 
-def dat_models_names():
-    import modules.dat_model
-    return [x.name for x in modules.dat_model.get_dat_models(None)]
-
-
 def postprocessing_scripts():
     import modules.scripts
 
@@ -26,10 +21,6 @@ def refresh_vae_list():
     import modules.sd_vae
 
     modules.sd_vae.refresh_vae_list()
-
-
-def cross_attention_optimizations():
-    return ["Automatic"]
 
 
 def list_checkpoint_tiles(use_short=False):

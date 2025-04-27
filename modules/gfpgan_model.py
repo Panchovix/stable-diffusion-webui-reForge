@@ -24,9 +24,6 @@ class FaceRestorerGFPGAN(face_restoration_utils.CommonFaceRestoration):
     def name(self):
         return "GFPGAN"
 
-    def get_device(self):
-        return devices.device_gfpgan
-
     def load_net(self) -> torch.Module:
         for model_path in modelloader.load_models(
             model_path=self.model_path,
@@ -38,7 +35,7 @@ class FaceRestorerGFPGAN(face_restoration_utils.CommonFaceRestoration):
             if 'GFPGAN' in os.path.basename(model_path):
                 return modelloader.load_spandrel_model(
                     model_path,
-                    device=self.get_device(),
+                    device=devices.device_face_restore,
                     expected_architecture='GFPGAN',
                 ).model
 
@@ -48,7 +45,7 @@ class FaceRestorerGFPGAN(face_restoration_utils.CommonFaceRestoration):
             GFPGANmodel = modelloader.load_file_from_url(model_url, model_dir=self.model_path, file_name=model_download_name)
             return modelloader.load_spandrel_model(
                 GFPGANmodel,
-                device=self.get_device(),
+                device=devices.device_face_restore,
                 expected_architecture='GFPGAN',
             ).model
         except:

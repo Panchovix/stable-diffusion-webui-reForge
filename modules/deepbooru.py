@@ -15,7 +15,7 @@ re_special = re.compile(r'([\\()])')
 class DeepDanbooru:
     def __init__(self):
         self.model = None
-        self.load_device = memory_management.text_encoder_device()
+        self.load_device = memory_management.get_torch_device()     #text_encoder_device()
         self.offload_device = memory_management.text_encoder_offload_device()
         self.dtype = torch.float32
 

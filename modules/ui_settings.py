@@ -126,10 +126,8 @@ class UiSettings:
 
         with gr.Blocks(analytics_enabled=False) as settings_interface:
             with gr.Row():
-                with gr.Column(scale=6):
-                    self.submit = gr.Button(value="Apply settings", variant='primary', elem_id="settings_submit")
-                with gr.Column():
-                    restart_gradio = gr.Button(value='Reload UI', variant='primary', elem_id="settings_restart_gradio")
+                self.submit = gr.Button(value="Apply settings", variant='primary', elem_id="settings_submit")
+                restart_gradio = gr.Button(value='Reload UI', variant='primary', elem_id="settings_restart_gradio")
 
             self.result = gr.HTML(elem_id="settings_result")
 
@@ -181,20 +179,14 @@ class UiSettings:
                     gr.HTML('<a href="./internal/sysinfo-download" class="sysinfo_big_link" download>Download system info</a><br /><a href="./internal/sysinfo" target="_blank">(or open as text in a new page)</a>', elem_id="sysinfo_download")
 
                     with gr.Row():
-                        with gr.Column(scale=1):
-                            sysinfo_check_file = gr.File(label="Check system info for validity", type='binary')
-                        with gr.Column(scale=1):
-                            sysinfo_check_output = gr.HTML("", elem_id="sysinfo_validity")
-                        with gr.Column(scale=100):
-                            pass
+                        sysinfo_check_file = gr.File(label="Check system info for validity", type='binary')
+                        sysinfo_check_output = gr.HTML("", elem_id="sysinfo_validity")
 
                 with gr.TabItem("Actions", id="actions", elem_id="settings_tab_actions"):
-                    request_notifications = gr.Button(value='Request browser notifications', elem_id="request_notifications")
                     download_localization = gr.Button(value='Download localization template', elem_id="download_localization")
                     reload_script_bodies = gr.Button(value='Reload custom script bodies (No ui updates, No restart)', variant='secondary', elem_id="settings_reload_script_bodies")
                     with gr.Row():
                         unload_sd_model = gr.Button(value='Unload all models', elem_id="sett_unload_sd_model")
-#                        reload_sd_model = gr.Button(value='Load SD checkpoint to VRAM from RAM', elem_id="sett_reload_sd_model")
                     with gr.Row():
                         calculate_all_checkpoint_hash = gr.Button(value='Calculate hash for all checkpoint', elem_id="calculate_all_checkpoint_hash")
                         calculate_all_checkpoint_hash_threads = gr.Number(value=1, label="Number of parallel calculations", elem_id="calculate_all_checkpoint_hash_threads", precision=0, minimum=1)
@@ -224,19 +216,6 @@ class UiSettings:
                 fn=call_func_and_return_text(sd_models.unload_model_weights, 'Unloaded all models'),
                 inputs=None,
                 outputs=[self.result]
-            )
-
-#            reload_sd_model.click(
-#                fn=call_func_and_return_text(lambda: sd_models.send_model_to_device(shared.sd_model), 'Loaded the checkpoint'),
-#                inputs=None,
-#                outputs=[self.result]
-#            )
-
-            request_notifications.click(
-                fn=lambda: None,
-                inputs=None,
-                outputs=None,
-                _js='function(){}'
             )
 
             download_localization.click(
@@ -328,18 +307,6 @@ class UiSettings:
                     show_progress=False,
                 )
 
-        # def button_set_checkpoint_change(model, vae, dummy):
-            # if 'Built in' in vae:
-                # vae.remove('Built in')
-            # return model, vae, opts.dumpjson()
-
-        # button_set_checkpoint = gr.Button('Change checkpoint', elem_id='change_checkpoint', visible=False)
-        # button_set_checkpoint.click(
-            # fn=button_set_checkpoint_change,
-            # js="function(c, v, n){ var ckpt = desiredCheckpointName; var vae = desiredVAEName; if (ckpt == null) ckpt = c; if (vae == 0) vae = v; desiredCheckpointName = null; desiredVAEName = 0; return [ckpt, vae, null]; }",
-            # inputs=[main_entry.ui_checkpoint, main_entry.ui_vae, self.dummy_component],
-            # outputs=[main_entry.ui_checkpoint, main_entry.ui_vae, self.text_settings],
-        # )
 
         def button_set_checkpoint_change(model):
             # auto vae / te handled in checkpoint change function, as is saving
@@ -353,8 +320,6 @@ class UiSettings:
             inputs=[main_entry.ui_checkpoint],
             outputs=[main_entry.ui_checkpoint],
         )
-
-
 
 
         component_keys = [k for k in opts.data_labels.keys() if k in self.component_dict]
