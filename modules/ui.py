@@ -84,11 +84,7 @@ def calc_resolution_hires(enable, width, height, hr_scale, hr_resize_x, hr_resiz
     if not enable:
         return ""
 
-    if opts.use_old_hires_fix_width_height:
-        hr_resize_x = width
-        hr_resize_y = height
-        width, height = processing.old_hires_fix_first_pass_dimensions(width, height)
-    elif hr_resize_x == 0 and hr_resize_y == 0:
+    if hr_resize_x == 0 and hr_resize_y == 0:
         hr_resize_x = int(width * hr_scale)
         hr_resize_y = int(height * hr_scale)
     elif hr_resize_y == 0:
@@ -541,8 +537,8 @@ def create_ui():
                                 add_copy_image_controls('inpaint_sketch', inpaint_color_sketch)
 
                             with gr.TabItem('Inpaint upload', id='inpaint_upload', elem_id="img2img_inpaint_upload_tab") as tab_inpaint_upload:
-                                init_img_inpaint = gr.Image(label="Image for img2img", show_label=False, source="upload", interactive=True, type="pil", elem_id="img_inpaint_base")
-                                init_mask_inpaint = gr.Image(label="Mask", source="upload", interactive=True, type="pil", image_mode="RGBA", elem_id="img_inpaint_mask")
+                                init_img_inpaint = gr.Image(label="Image for img2img", show_label=False, source="upload", interactive=True, type="pil", height=360, elem_id="img_inpaint_base")
+                                init_mask_inpaint = gr.Image(label="Mask", source="upload", interactive=True, type="pil", image_mode="RGBA", height=360, elem_id="img_inpaint_mask")
 
                             with gr.TabItem('Batch', id='batch', elem_id="img2img_batch_tab") as tab_batch:
                                 with gr.Tabs(elem_id="img2img_batch_source"):
@@ -909,7 +905,6 @@ def create_ui():
                     loadsave.add_block(interface, ifid)
 
             loadsave.add_component(f"webui/Tabs@{tabs.elem_id}", tabs)
-
             loadsave.setup_ui()
 
         def tab_changed(evt: gr.SelectData):
