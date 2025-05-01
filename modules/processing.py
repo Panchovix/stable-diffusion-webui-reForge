@@ -760,7 +760,7 @@ def create_infotext(p, all_prompts, all_seeds, all_subseeds, comments=None, iter
         "Token merging ratio hr": None if not enable_hr or token_merging_ratio_hr == 0 else token_merging_ratio_hr,
         "Init image hash": getattr(p, 'init_img_hash', None),
         "RNG": noise_source_type if noise_source_type != "GPU" else None,
-        "Tiling": "True" if p.tiling else None,
+        "Tiling": p.tiling if p.tiling != "None" and (shared.sd_model.is_sd1 or shared.sd_model.is_sd2 or shared.sd_model.is_sdxl) else None,
         **p.extra_generation_params,
         "Version": program_version() if opts.add_version_to_infotext else None,
         "User": p.user if opts.add_user_name_to_info else None,
@@ -1203,7 +1203,7 @@ class StableDiffusionProcessingTxt2Img(StableDiffusionProcessing):
     hr_upscale_to_y: int = field(default=0, init=False)
     truncate_x: int = field(default=0, init=False)
     truncate_y: int = field(default=0, init=False)
-    applied_old_hires_behavior_to: tuple = field(default=None, init=False)
+    applied_old_hires_behavior_to: tuple = field(default=None, init=False)  # unused, but need for backcompat
     latent_scale_mode: dict = field(default=None, init=False)
     hr_c: tuple | None = field(default=None, init=False)
     hr_uc: tuple | None = field(default=None, init=False)
@@ -1226,15 +1226,6 @@ class StableDiffusionProcessingTxt2Img(StableDiffusionProcessing):
         self.cached_hr_c = StableDiffusionProcessingTxt2Img.cached_hr_c
 
     def calculate_target_resolution(self):
-        if opts.use_old_hires_fix_width_height and self.applied_old_hires_behavior_to != (self.width, self.height):
-            self.hr_resize_x = self.width
-            self.hr_resize_y = self.height
-            self.hr_upscale_to_x = self.width
-            self.hr_upscale_to_y = self.height
-
-            self.width, self.height = old_hires_fix_first_pass_dimensions(self.width, self.height)
-            self.applied_old_hires_behavior_to = (self.width, self.height)
-
         if self.hr_resize_x == 0 and self.hr_resize_y == 0:
             self.extra_generation_params["Hires upscale"] = self.hr_scale
             self.hr_upscale_to_x = int(self.width * self.hr_scale)

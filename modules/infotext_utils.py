@@ -219,15 +219,6 @@ def restore_old_hires_fix_params(res):
     firstpass_width = res.get('First pass size-1', None)
     firstpass_height = res.get('First pass size-2', None)
 
-    if shared.opts.use_old_hires_fix_width_height:
-        hires_width = int(res.get("Hires resize-1", 0))
-        hires_height = int(res.get("Hires resize-2", 0))
-
-        if hires_width and hires_height:
-            res['Size-1'] = hires_width
-            res['Size-2'] = hires_height
-            return
-
     if firstpass_width is None or firstpass_height is None:
         return
 
@@ -410,6 +401,10 @@ Steps: 20, Sampler: Euler a, CFG scale: 7, Seed: 965400086, Size: 512x512, Model
 
     if "Refiner switch by sampling steps" not in res:
         res["Refiner switch by sampling steps"] = False
+        
+    if "Tiling" in res:
+        if res["Tiling"] == "True":
+            res["Tiling"] = "X and Y"
 
     infotext_versions.backcompat(res)
 
