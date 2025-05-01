@@ -5,6 +5,9 @@ import time
 import random
 import string
 import cv2
+from typing import Optional
+
+from modules import shared
 
 from backend import memory_management
 
@@ -20,29 +23,35 @@ def prepare_free_memory(aggressive=False):
     print('Cleanup minimal inference memory.')
     return
 
+original_conv2dForward = torch.nn.Conv2d._conv_forward
 
-def apply_circular_forge(model, tiling_enabled=False):
+def apply_circular_forge(model, tiling_enabled="None"):
+    if not (model.is_sd1 or model.is_sd2 or model.is_sdxl):
+        return
+    
     if model.tiling_enabled == tiling_enabled:
         return
 
     print(f'Tiling: {tiling_enabled}')
     model.tiling_enabled = tiling_enabled
+    
+    def __replacementConv2DForward(self, input: torch.Tensor, weight: torch.Tensor, bias: Optional[torch.Tensor]):
+        modeX = 'circular' if 'X' in shared.opts.tiling else 'constant'
+        modeY = 'circular' if 'Y' in shared.opts.tiling else 'constant'
+        paddingX = (self._reversed_padding_repeated_twice[0], self._reversed_padding_repeated_twice[1], 0, 0)
+        paddingY = (0, 0, self._reversed_padding_repeated_twice[2], self._reversed_padding_repeated_twice[3])        
+        
+        working = torch.nn.functional.pad(input, paddingX, mode=modeX)
+        working = torch.nn.functional.pad(working, paddingY, mode=modeY)
+        
+        return torch.nn.functional.conv2d(working, weight, bias, self.stride, torch.nn.modules.utils._pair(0), self.dilation, self.groups)
+        
+    if tiling_enabled == "None":
+        torch.nn.Conv2d._conv_forward = original_conv2dForward
+    else:
+        torch.nn.Conv2d._conv_forward = __replacementConv2DForward
 
-    # def flatten(el):
-    #     flattened = [flatten(children) for children in el.children()]
-    #     res = [el]
-    #     for c in flattened:
-    #         res += c
-    #     return res
-    #
-    # layers = flatten(model)
-    #
-    # for layer in [layer for layer in layers if 'Conv' in type(layer).__name__]:
-    #     layer.padding_mode = 'circular' if tiling_enabled else 'zeros'
-
-    print(f'Tiling is currently under maintenance and unavailable. Sorry for the inconvenience.')
-
-    return
+    return            
 
 
 def HWC3(x):
