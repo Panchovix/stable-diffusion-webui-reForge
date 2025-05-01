@@ -7,8 +7,6 @@ import string
 import cv2
 from typing import Optional
 
-from modules import shared
-
 from backend import memory_management
 
 
@@ -32,12 +30,11 @@ def apply_circular_forge(model, tiling_enabled="None"):
     if model.tiling_enabled == tiling_enabled:
         return
 
-    print(f'Tiling: {tiling_enabled}')
     model.tiling_enabled = tiling_enabled
     
     def __replacementConv2DForward(self, input: torch.Tensor, weight: torch.Tensor, bias: Optional[torch.Tensor]):
-        modeX = 'circular' if 'X' in shared.opts.tiling else 'constant'
-        modeY = 'circular' if 'Y' in shared.opts.tiling else 'constant'
+        modeX = 'circular' if 'X' in model.tiling_enabled else 'constant'
+        modeY = 'circular' if 'Y' in model.tiling_enabled else 'constant'
         paddingX = (self._reversed_padding_repeated_twice[0], self._reversed_padding_repeated_twice[1], 0, 0)
         paddingY = (0, 0, self._reversed_padding_repeated_twice[2], self._reversed_padding_repeated_twice[3])        
         
