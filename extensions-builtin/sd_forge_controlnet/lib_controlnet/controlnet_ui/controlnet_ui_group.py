@@ -1,12 +1,10 @@
 import json
 import gradio as gr
-import functools
-from copy import copy
-from typing import List, Optional, Union, Callable, Dict, Tuple, Literal
+from typing import List, Optional, Dict
 from dataclasses import dataclass
 import numpy as np
 
-from lib_controlnet.utils import svg_preprocess, read_image, judge_image_type
+from lib_controlnet.utils import judge_image_type
 from lib_controlnet import (
     global_state,
     external_code,
@@ -15,7 +13,7 @@ from lib_controlnet.logging import logger
 from lib_controlnet.controlnet_ui.openpose_editor import OpenposeEditor
 from lib_controlnet.controlnet_ui.photopea import Photopea
 from lib_controlnet.enums import InputMode, HiResFixOption
-from modules import shared, script_callbacks
+from modules import shared
 from modules.ui_components import FormRow
 from modules_forge.utils import HWC3
 from lib_controlnet.external_code import UiControlNetUnit
@@ -218,7 +216,6 @@ class ControlNetUiGroup(object):
         self.openpose_editor = None
         self.upload_independent_img_in_img2img = None
         self.image_upload_panel = None
-        self.save_detected_map = None
         self.input_mode = gr.State(InputMode.SIMPLE)
         self.hr_option = None
         self.batch_image_dir_state = None
@@ -246,8 +243,6 @@ class ControlNetUiGroup(object):
         self.openpose_editor = OpenposeEditor()
 
         with gr.Group(visible=not self.is_img2img) as self.image_upload_panel:
-            self.save_detected_map = gr.Checkbox(value=True, visible=False)
-
             with gr.Tabs(visible=True):
                 with gr.Tab(label="Single Image") as self.upload_tab:
                     with gr.Row(elem_classes=["cnet-image-row"], equal_height=True):
@@ -425,7 +420,7 @@ class ControlNetUiGroup(object):
         with gr.Row(elem_classes=["controlnet_control_type", "controlnet_row"]):
             self.type_filter = gr.Radio(
                 global_state.get_all_preprocessor_tags(),
-                label=f"Control Type",
+                label="Control Type",
                 value="All",
                 elem_id=f"{elem_id_tabname}_{tabname}_controlnet_type_filter_radio",
                 elem_classes="controlnet_control_type_filter_group",
@@ -434,7 +429,7 @@ class ControlNetUiGroup(object):
         with gr.Row(elem_classes=["controlnet_preprocessor_model", "controlnet_row"]):
             self.module = gr.Dropdown(
                 global_state.get_all_preprocessor_names(),
-                label=f"Preprocessor",
+                label="Preprocessor",
                 value=self.default_unit.module,
                 elem_id=f"{elem_id_tabname}_{tabname}_controlnet_preprocessor_dropdown",
             )
@@ -447,7 +442,7 @@ class ControlNetUiGroup(object):
             )
             self.model = gr.Dropdown(
                 global_state.get_all_controlnet_names(),
-                label=f"Model",
+                label="Model",
                 value=self.default_unit.model,
                 elem_id=f"{elem_id_tabname}_{tabname}_controlnet_model_dropdown",
             )
@@ -460,7 +455,7 @@ class ControlNetUiGroup(object):
 
         with gr.Row(elem_classes=["controlnet_weight_steps", "controlnet_row"]):
             self.weight = gr.Slider(
-                label=f"Control Weight",
+                label="Control Weight",
                 value=self.default_unit.weight,
                 minimum=0.0,
                 maximum=2.0,
