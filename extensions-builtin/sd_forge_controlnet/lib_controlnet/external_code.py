@@ -66,7 +66,7 @@ def resize_mode_from_value(value: Union[str, int, ResizeMode]) -> ResizeMode:
             logger.warning(f'Unrecognized ResizeMode int value {value}. Fall back to RESIZE.')
             return ResizeMode.RESIZE
 
-        return [e for e in ResizeMode][value]
+        return list(ResizeMode)[value]
     else:
         return value
 
@@ -75,7 +75,7 @@ def control_mode_from_value(value: Union[str, int, ControlMode]) -> ControlMode:
     if isinstance(value, str):
         return ControlMode(value)
     elif isinstance(value, int):
-        return [e for e in ControlMode][value]
+        return list(ControlMode)[value]
     else:
         return value
 
@@ -130,7 +130,7 @@ def pixel_perfect_resolution(
     else:
         estimation = max(k0, k1) * float(min(raw_H, raw_W))
 
-    logger.debug(f"Pixel Perfect Computation:")
+    logger.debug("Pixel Perfect Computation:")
     logger.debug(f"resize_mode = {resize_mode}")
     logger.debug(f"raw_H = {raw_H}")
     logger.debug(f"raw_W = {raw_W}")
@@ -179,7 +179,6 @@ class ControlNetUnit:
     guidance_end: float = 1.0
     pixel_perfect: bool = False
     control_mode: Union[ControlMode, int, str] = ControlMode.BALANCED
-    save_detected_map: bool = True
 
     @staticmethod
     def infotext_fields():
