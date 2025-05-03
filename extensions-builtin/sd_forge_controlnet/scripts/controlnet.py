@@ -1,5 +1,5 @@
 import os
-from typing import Dict, Optional, Tuple, List, Union
+from typing import Optional, Tuple
 
 import cv2
 import torch
@@ -7,7 +7,6 @@ import torch
 import modules.scripts as scripts
 from modules import shared, script_callbacks, masking, images
 from modules.ui_components import InputAccordion
-from modules.api.api import decode_base64_to_image
 import gradio as gr
 
 from lib_controlnet import global_state, external_code
@@ -73,7 +72,7 @@ class ControlNetForForgeOfficial(scripts.Script):
         elem_id_tabname = gen_type + "_controlnet"
         default_unit = ControlNetUnit(enabled=False, module="None", model="None")
         with gr.Group(elem_id=elem_id_tabname):
-            with gr.Accordion(f"ControlNet Integrated", open=False, elem_id="controlnet",
+            with gr.Accordion("ControlNet Integrated", open=False, elem_id="controlnet",
                               elem_classes=["controlnet"]):
                 photopea = (
                     Photopea()
@@ -354,7 +353,7 @@ class ControlNetForForgeOfficial(scripts.Script):
             if (
                 (is_high_res and hr_option.high_res_enabled) or
                 (not is_high_res and hr_option.low_res_enabled)
-            ) and unit.save_detected_map:
+            ) and shared.opts.control_net_append_detectmap:
                 p.extra_result_images.append(img)
 
         if preprocessor_output_is_image:
@@ -441,11 +440,11 @@ class ControlNetForForgeOfficial(scripts.Script):
             hr_option = HiResFixOption.BOTH
 
         if has_high_res_fix and is_hr_pass and (not hr_option.high_res_enabled):
-            logger.info(f"ControlNet Skipped High-res pass.")
+            logger.info("ControlNet Skipped High-res pass.")
             return
 
         if has_high_res_fix and (not is_hr_pass) and (not hr_option.low_res_enabled):
-            logger.info(f"ControlNet Skipped Low-res pass.")
+            logger.info("ControlNet Skipped Low-res pass.")
             return
 
         if is_hr_pass:
@@ -574,8 +573,6 @@ class ControlNetForForgeOfficial(scripts.Script):
 
 def on_ui_settings():
     section = ('control_net', "ControlNet")
-    shared.opts.add_option("control_net_detectedmap_dir", shared.OptionInfo(
-        "detected_maps", "Directory for detected maps auto saving", section=section))
     shared.opts.add_option("control_net_models_path", shared.OptionInfo(
         "", "Extra path to scan for ControlNet models (e.g. training output directory)", section=section))
     shared.opts.add_option("control_net_modules_path", shared.OptionInfo(
@@ -587,10 +584,10 @@ def on_ui_settings():
         {"minimum": 1, "maximum": 10, "step": 1}, section=section))
     shared.opts.add_option("control_net_model_cache_size", shared.OptionInfo(
         5, "Model cache size (requires restart)", gr.Slider, {"minimum": 1, "maximum": 10, "step": 1}, section=section))
-    shared.opts.add_option("control_net_no_detectmap", shared.OptionInfo(
-        False, "Do not append detectmap to output", gr.Checkbox, {"interactive": True}, section=section))
-    shared.opts.add_option("control_net_detectmap_autosaving", shared.OptionInfo(
-        False, "Allow detectmap auto saving", gr.Checkbox, {"interactive": True}, section=section))
+    shared.opts.add_option("control_net_append_detectmap", shared.OptionInfo(
+        False, "Append detectmap to output", gr.Checkbox, {"interactive": True}, section=section))
+    # shared.opts.add_option("control_net_detectmap_autosaving", shared.OptionInfo(
+        # False, "Allow detectmap auto saving", gr.Checkbox, {"interactive": True}, section=section))
     shared.opts.add_option("control_net_allow_script_control", shared.OptionInfo(
         False, "Allow other script to control this extension", gr.Checkbox, {"interactive": True}, section=section))
     shared.opts.add_option("control_net_sync_field_args", shared.OptionInfo(
