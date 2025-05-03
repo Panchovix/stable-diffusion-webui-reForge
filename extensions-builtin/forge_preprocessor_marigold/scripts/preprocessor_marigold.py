@@ -1,11 +1,9 @@
 from modules_forge.supported_preprocessor import Preprocessor, PreprocessorParameter
 from modules_forge.shared import add_supported_preprocessor
 from backend.memory_management import get_torch_device, should_use_fp16
-# import spaces
 
 import torch
 import numpy as np
-import gc
 
 from diffusers import MarigoldDepthPipeline, MarigoldNormalsPipeline
 
@@ -18,7 +16,8 @@ class PreprocessorMarigoldDepth(Preprocessor):
         self.model_filename_filters = ['depth']
         self.slider_resolution = PreprocessorParameter(
             label='Resolution', minimum=256, maximum=2048, value=768, step=64, visible=True)
-        self.slider_1 = PreprocessorParameter(visible=False)
+        self.slider_1 = PreprocessorParameter(
+            label='Steps', minimum=4, maximum=32, value=4, step=1, visible=True)
         self.slider_2 = PreprocessorParameter(visible=False)
         self.slider_3 = PreprocessorParameter(visible=False)
         self.show_control_mode = True
@@ -31,18 +30,18 @@ class PreprocessorMarigoldDepth(Preprocessor):
         device = get_torch_device()
         if self.pipeline is None:
             dtype = torch.float16 if should_use_fp16(device=device, prioritize_performance=False, manual_cast=True) else torch.float32
-            self.pipeline = MarigoldDepthPipeline.from_pretrained("prs-eth/marigold-depth-v1-1", variant="fp16", torch_dtype=dtype).to(device)
-        else:
-            self.pipeline.to(device)
+            self.pipeline = MarigoldDepthPipeline.from_pretrained("prs-eth/marigold-depth-v1-1", variant="fp16", torch_dtype=dtype)
+            self.pipeline.enable_model_cpu_offload()
 
-        # spaces.automatically_move_pipeline_components(self.pipeline)
         return
 
-    def __call__(self, input_image, resolution, slider_1=None, slider_2=None, slider_3=None, **kwargs):
+    def __call__(self, input_image, resolution, slider_1=4, slider_2=None, slider_3=None, **kwargs):
         self.load_model()
         
+        resolution = 8 * (resolution // 8)
+
         with torch.no_grad():
-            depth = self.pipeline(input_image, num_inference_steps=20, processing_resolution=resolution)
+            depth = self.pipeline(input_image, num_inference_steps=slider_1, processing_resolution=resolution)
 
             depth_image = self.pipeline.image_processor.visualize_depth(depth.prediction, color_map="binary")
             # depth_16bit = self.pipeline.image_processor.export_depth_to_16bit_png(depth.prediction, color_map="binary")
@@ -51,8 +50,6 @@ class PreprocessorMarigoldDepth(Preprocessor):
             self.pipeline.to("cpu")
         else:
             self.pipeline = None
-            self.model_patcher = None
-        gc.collect()
         torch.cuda.empty_cache()
         
         return np.array(depth_image[0])
@@ -66,12 +63,13 @@ class PreprocessorMarigoldNormal(Preprocessor):
         self.model_filename_filters = ['normal']
         self.slider_resolution = PreprocessorParameter(
             label='Resolution', minimum=256, maximum=2048, value=768, step=64, visible=True)
-        self.slider_1 = PreprocessorParameter(visible=False)
+        self.slider_1 = PreprocessorParameter(
+            label='Steps', minimum=4, maximum=32, value=4, step=1, visible=True)
         self.slider_2 = PreprocessorParameter(visible=False)
         self.slider_3 = PreprocessorParameter(visible=False)
         self.show_control_mode = True
         self.do_not_need_model = False
-        self.sorting_priority = 100  # higher goes to top in the list
+        self.sorting_priority = 100
         self.pipeline = None
         self.keep_loaded = False
 
@@ -79,17 +77,18 @@ class PreprocessorMarigoldNormal(Preprocessor):
         device = get_torch_device()
         if self.pipeline is None:
             dtype = torch.float16 if should_use_fp16(device=device, prioritize_performance=False, manual_cast=True) else torch.float32
-            self.pipeline = MarigoldNormalsPipeline.from_pretrained("prs-eth/marigold-normals-v1-1", variant="fp16", torch_dtype=dtype).to(device)
-        else:
-            self.pipeline.to(device)
+            self.pipeline = MarigoldNormalsPipeline.from_pretrained("prs-eth/marigold-normals-v1-1", variant="fp16", torch_dtype=dtype)
+            self.pipeline.enable_model_cpu_offload()
 
         return
 
-    def __call__(self, input_image, resolution, slider_1=None, slider_2=None, slider_3=None, **kwargs):
+    def __call__(self, input_image, resolution, slider_1=4, slider_2=None, slider_3=None, **kwargs):
         self.load_model()
 
+        resolution = 8 * (resolution // 8)
+
         with torch.no_grad():
-            normal = self.pipeline(input_image, num_inference_steps=20, processing_resolution=resolution)
+            normal = self.pipeline(input_image, num_inference_steps=slider_1, processing_resolution=resolution)
 
             normal_image = self.pipeline.image_processor.visualize_normals(normal.prediction)
 
@@ -97,7 +96,6 @@ class PreprocessorMarigoldNormal(Preprocessor):
             self.pipeline.to("cpu")
         else:
             self.pipeline = None
-        gc.collect()
         torch.cuda.empty_cache()
         
         return np.array(normal_image[0])
