@@ -30,7 +30,8 @@ class PreprocessorMarigoldDepth(Preprocessor):
         device = get_torch_device()
         if self.pipeline is None:
             dtype = torch.float16 if should_use_fp16(device=device, prioritize_performance=False, manual_cast=True) else torch.float32
-            self.pipeline = MarigoldDepthPipeline.from_pretrained("prs-eth/marigold-depth-v1-1", variant="fp16", torch_dtype=dtype)
+            self.pipeline = MarigoldDepthPipeline.from_pretrained("prs-eth/marigold-depth-v1-1", variant="fp16", torch_dtype=torch.float16)
+            self.pipeline.unet.enable_layerwise_casting(storage_dtype=torch.float16, compute_dtype=dtype)
             self.pipeline.enable_model_cpu_offload()
 
         return
@@ -39,6 +40,9 @@ class PreprocessorMarigoldDepth(Preprocessor):
         self.load_model()
         
         resolution = 8 * (resolution // 8)
+
+        if not isinstance(slider_1, int) or slider_1 < 4:
+            slider_1 = 4
 
         with torch.no_grad():
             depth = self.pipeline(input_image, num_inference_steps=slider_1, processing_resolution=resolution)
@@ -86,6 +90,9 @@ class PreprocessorMarigoldNormal(Preprocessor):
         self.load_model()
 
         resolution = 8 * (resolution // 8)
+
+        if not isinstance(slider_1, int) or slider_1 < 4:
+            slider_1 = 4
 
         with torch.no_grad():
             normal = self.pipeline(input_image, num_inference_steps=slider_1, processing_resolution=resolution)
