@@ -322,7 +322,7 @@ class ControlNetUiGroup(object):
                                 self.batch_mask_gallery = gr.Gallery(
                                     columns=[4], rows=[2], object_fit="contain", height="auto", label="Masks"
                                 )
-#############
+
             self.upload_tab.select(fn=lambda: InputMode.SIMPLE, inputs=None, outputs=[self.input_mode], show_progress=False)
             self.batch_tab.select(fn=lambda: InputMode.BATCH, inputs=None, outputs=[self.input_mode], show_progress=False)
             self.merge_tab.select(fn=lambda: InputMode.MERGE, inputs=None, outputs=[self.input_mode], show_progress=False)
@@ -1039,41 +1039,6 @@ class ControlNetUiGroup(object):
         else:
             self.register_shift_hr_options()
 
-    @staticmethod
-    def register_input_mode_sync(ui_groups: List["ControlNetUiGroup"]):
-        """
-        - ui_group.input_mode should be updated when user switch tabs.
-        - Loopback checkbox should only be visible if at least one ControlNet unit
-        is set to batch mode.
-
-        Argument:
-            ui_groups: All ControlNetUiGroup instances defined in current Script context.
-
-        Returns:
-            None
-        """
-        
-        
-        if not ui_groups:
-            return
-
-        for ui_group in ui_groups:
-            batch_fn = lambda: InputMode.BATCH
-            simple_fn = lambda: InputMode.SIMPLE
-            merge_fn = lambda: InputMode.MERGE
-            for input_tab, fn in (
-                (ui_group.upload_tab, simple_fn),
-                (ui_group.batch_tab, batch_fn),
-                (ui_group.merge_tab, merge_fn),
-            ):
-                print ("register InputMode")
-              # Sync input_mode.
-                input_tab.select(
-                    fn=fn,
-                    inputs=None,
-                    outputs=[ui_group.input_mode],
-                    show_progress=False,
-                )
 
     @staticmethod
     def reset():
