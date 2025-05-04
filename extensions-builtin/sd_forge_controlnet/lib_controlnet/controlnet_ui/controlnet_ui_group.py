@@ -322,6 +322,10 @@ class ControlNetUiGroup(object):
                                 self.batch_mask_gallery = gr.Gallery(
                                     columns=[4], rows=[2], object_fit="contain", height="auto", label="Masks"
                                 )
+#############
+            self.upload_tab.select(fn=lambda: InputMode.SIMPLE, inputs=None, outputs=[self.input_mode], show_progress=False)
+            self.batch_tab.select(fn=lambda: InputMode.BATCH, inputs=None, outputs=[self.input_mode], show_progress=False)
+            self.merge_tab.select(fn=lambda: InputMode.MERGE, inputs=None, outputs=[self.input_mode], show_progress=False)
 
             if self.photopea:
                 self.photopea.attach_photopea_output(self.generated_image.background)
@@ -1048,6 +1052,8 @@ class ControlNetUiGroup(object):
         Returns:
             None
         """
+        
+        
         if not ui_groups:
             return
 
@@ -1060,7 +1066,8 @@ class ControlNetUiGroup(object):
                 (ui_group.batch_tab, batch_fn),
                 (ui_group.merge_tab, merge_fn),
             ):
-                # Sync input_mode.
+                print ("register InputMode")
+              # Sync input_mode.
                 input_tab.select(
                     fn=fn,
                     inputs=None,
@@ -1089,12 +1096,6 @@ class ControlNetUiGroup(object):
             for ui_group in ControlNetUiGroup.all_ui_groups:
                 ui_group.register_callbacks()
 
-            ControlNetUiGroup.register_input_mode_sync(
-                [g for g in ControlNetUiGroup.all_ui_groups if g.is_img2img]
-            )
-            ControlNetUiGroup.register_input_mode_sync(
-                [g for g in ControlNetUiGroup.all_ui_groups if not g.is_img2img]
-            )
             logger.info("ControlNet UI callback registered.")
 
     @staticmethod
