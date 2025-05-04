@@ -16,7 +16,7 @@ ui_checkpoint: gr.Dropdown = None
 ui_vae: gr.Dropdown = None
 ui_clip_skip: gr.Slider = None
 
-ui_forge_unet_storage_dtype_options: gr.Radio = None
+ui_forge_unet_storage_dtype_options: gr.Dropdown = None
 ui_forge_async_loading: gr.Radio = None
 ui_forge_pin_shared_memory: gr.Radio = None
 ui_forge_inference_memory: gr.Slider = None
@@ -26,6 +26,7 @@ ui_forge_inference_memory: gr.Slider = None
 forge_unet_storage_dtype_options = {
     'Automatic': (None, False),
     'Automatic (fp16 LoRA)': (None, True),
+    'float16 (fp16 LoRA)': (torch.float16, True),
     'bnb-nf4': ('nf4', False),
     'bnb-nf4 (fp16 LoRA)': ('nf4', True),
     'float8-e4m3fn': (torch.float8_e4m3fn, False),
@@ -405,7 +406,7 @@ def on_preset_change(preset=None):
             model_mem = total_vram - 1024
         return [
             gr.update(visible=True, value=getattr(shared.opts, "xl_vae_te", [""])),
-            gr.update(visible=False),                                                   # ui_clip_skip
+            gr.update(visible=True),                                                   # ui_clip_skip
             gr.update(visible=True, value=getattr(shared.opts, "xl_unet_dtype", 'Automatic')),
             gr.update(visible=False),                                                   # ui_forge_async_loading
             gr.update(visible=False),                                                   # ui_forge_pin_shared_memory
