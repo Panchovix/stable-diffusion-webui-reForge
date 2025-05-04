@@ -24,7 +24,7 @@ from lib_controlnet.enums import HiResFixOption
 from lib_controlnet.api import controlnet_api
 
 import numpy as np
-import functools
+# import functools
 
 from PIL import Image
 from modules_forge.shared import try_load_supported_control_model
@@ -39,7 +39,7 @@ os.makedirs(gradio_tempfile_path, exist_ok=True)
 global_state.update_controlnet_filenames()
 
 
-@functools.lru_cache(maxsize=shared.opts.data.get("control_net_model_cache_size", 5))
+# @functools.lru_cache(maxsize=shared.opts.data.get("control_net_model_cache_size", 5))
 def cached_controlnet_loader(filename):
     return try_load_supported_control_model(filename)
 
@@ -332,23 +332,24 @@ class ControlNetForForgeOfficial(scripts.Script):
                 slider_2=unit.threshold_b,
             )
 
-            preprocessor_outputs.append(preprocessor_output)
-
             preprocessor_output_is_image = judge_image_type(preprocessor_output)
+            # if len(input_list) > 1 and not preprocessor_output_is_image:
+                # logger.info('Batch wise input only support controlnet, control-lora, and t2i adapters!')
+                # break
+
+            preprocessor_outputs.append(preprocessor_output)
 
             if input_mask is not None:
                 control_masks.append(input_mask)
 
-            if len(input_list) > 1 and not preprocessor_output_is_image:
-                logger.info('Batch wise input only support controlnet, control-lora, and t2i adapters!')
-                break
 
         if has_high_res_fix:
             hr_option = HiResFixOption.from_value(unit.hr_option)
         else:
             hr_option = HiResFixOption.BOTH
 
-        alignment_indices = [i % len(preprocessor_outputs) for i in range(p.batch_size)]
+        alignment_indices = [i % len(preprocessor_outputs) for i in range(p.batch_size * p.n_iter)] #batch_count * batch_size = number of input images
+        # alignment_indices = [i % len(preprocessor_outputs) for i in range(p.batch_size)] #batch_size = number of inputs, batch_count = repeats (without tensor split in process_unit_before_every_sampling)
         def attach_extra_result_image(img: np.ndarray, is_high_res: bool = False):
             if (
                 (is_high_res and hr_option.high_res_enabled) or
@@ -375,10 +376,13 @@ class ControlNetForForgeOfficial(scripts.Script):
                 params.control_cond_for_hr_fix = torch.cat(params.control_cond_for_hr_fix, dim=0)[alignment_indices].contiguous()
             else:
                 params.control_cond_for_hr_fix = params.control_cond
+        elif 'image' in preprocessor_output:
+            params.control_cond = preprocessor_outputs
+            params.control_cond_for_hr_fix = params.control_cond
         else:
             params.control_cond = preprocessor_output
-            params.control_cond_for_hr_fix = preprocessor_output
-            attach_extra_result_image(input_image)
+            params.control_cond_for_hr_fix = params.control_cond
+            ## attach_extra_result_image(input_image)
 
         if len(control_masks) > 0:
             params.control_mask = []
@@ -448,11 +452,11 @@ class ControlNetForForgeOfficial(scripts.Script):
             return
 
         if is_hr_pass:
-            cond = params.control_cond_for_hr_fix
-            mask = params.control_mask_for_hr_fix
+            cond = torch.split(params.control_cond_for_hr_fix, p.batch_size)[p.iteration] if isinstance(params.control_cond_for_hr_fix, torch.Tensor) else params.control_cond_for_hr_fix
+            mask = torch.split(params.control_mask_for_hr_fix, p.batch_size)[p.iteration] if isinstance(params.control_mask_for_hr_fix, torch.Tensor) else params.control_mask_for_hr_fix
         else:
-            cond = params.control_cond
-            mask = params.control_mask
+            cond = torch.split(params.control_cond, p.batch_size)[p.iteration] if isinstance(params.control_cond, torch.Tensor) else params.control_cond
+            mask = torch.split(params.control_mask, p.batch_size)[p.iteration] if isinstance(params.control_mask, torch.Tensor) else params.control_mask
 
         kwargs.update(dict(
             unit=unit,
@@ -582,8 +586,8 @@ def on_ui_settings():
     shared.opts.add_option("control_net_unit_count", shared.OptionInfo(
         3, "Multi-ControlNet: ControlNet unit number (requires restart)", gr.Slider,
         {"minimum": 1, "maximum": 10, "step": 1}, section=section))
-    shared.opts.add_option("control_net_model_cache_size", shared.OptionInfo(
-        5, "Model cache size (requires restart)", gr.Slider, {"minimum": 1, "maximum": 10, "step": 1}, section=section))
+    # shared.opts.add_option("control_net_model_cache_size", shared.OptionInfo(
+        # 5, "Model cache size (requires restart)", gr.Slider, {"minimum": 1, "maximum": 10, "step": 1}, section=section))
     shared.opts.add_option("control_net_append_detectmap", shared.OptionInfo(
         False, "Append detectmap to output", gr.Checkbox, {"interactive": True}, section=section))
     # shared.opts.add_option("control_net_detectmap_autosaving", shared.OptionInfo(
