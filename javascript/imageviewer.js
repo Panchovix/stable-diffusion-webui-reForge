@@ -18,12 +18,7 @@ function showModal(event) {
 
     const tabTxt2Img = gradioApp().getElementById("tab_txt2img");
     const tabImg2Img = gradioApp().getElementById("tab_img2img");
-    // show the save button in modal only on txt2img or img2img tabs
-    if (tabTxt2Img.style.display != "none" || tabImg2Img.style.display != "none") {
-        gradioApp().getElementById("modal_save").style.display = "inline";
-    } else {
-        gradioApp().getElementById("modal_save").style.display = "none";
-    }
+
     event.stopPropagation();
 }
 
@@ -71,25 +66,6 @@ function modalImageSwitch(offset) {
     }
 }
 
-function saveImage() {
-    const tabTxt2Img = gradioApp().getElementById("tab_txt2img");
-    const tabImg2Img = gradioApp().getElementById("tab_img2img");
-    const saveTxt2Img = "save_txt2img";
-    const saveImg2Img = "save_img2img";
-    if (tabTxt2Img.style.display != "none") {
-        gradioApp().getElementById(saveTxt2Img).click();
-    } else if (tabImg2Img.style.display != "none") {
-        gradioApp().getElementById(saveImg2Img).click();
-    } else {
-        console.error("missing implementation for saving modal of this type");
-    }
-}
-
-function modalSaveImage(event) {
-    saveImage();
-    event.stopPropagation();
-}
-
 function modalNextImage(event) {
     modalImageSwitch(1);
     event.stopPropagation();
@@ -102,9 +78,6 @@ function modalPrevImage(event) {
 
 function modalKeyHandler(event) {
     switch (event.key) {
-    case "s":
-        saveImage();
-        break;
     case "ArrowLeft":
         modalPrevImage(event);
         break;
@@ -196,6 +169,7 @@ document.addEventListener("DOMContentLoaded", function() {
     modalControls.className = 'modalControls gradio-container';
     modal.append(modalControls);
 
+
     const modalZoom = document.createElement('span');
     modalZoom.className = 'modalZoom cursor';
     modalZoom.innerHTML = '&#10529;';
@@ -203,20 +177,13 @@ document.addEventListener("DOMContentLoaded", function() {
     modalZoom.title = "Toggle zoomed view";
     modalControls.appendChild(modalZoom);
 
+
     const modalTileImage = document.createElement('span');
     modalTileImage.className = 'modalTileImage cursor';
     modalTileImage.innerHTML = '&#8862;';
     modalTileImage.addEventListener('click', modalTileImageToggle, true);
     modalTileImage.title = "Preview tiling";
     modalControls.appendChild(modalTileImage);
-
-    const modalSave = document.createElement("span");
-    modalSave.className = "modalSave cursor";
-    modalSave.id = "modal_save";
-    modalSave.innerHTML = "&#x1F5AB;";
-    modalSave.addEventListener("click", modalSaveImage, true);
-    modalSave.title = "Save Image(s)";
-    modalControls.appendChild(modalSave);
 
     const modalToggleLivePreview = document.createElement('span');
     modalToggleLivePreview.className = 'modalToggleLivePreview cursor';
@@ -237,7 +204,6 @@ document.addEventListener("DOMContentLoaded", function() {
     modalImage.id = 'modalImage';
     modalImage.onclick = closeModal;
     modalImage.tabIndex = 0;
-    modalImage.addEventListener('keydown', modalKeyHandler, true);
     modal.appendChild(modalImage);
 
     const modalPrev = document.createElement('a');
@@ -245,7 +211,6 @@ document.addEventListener("DOMContentLoaded", function() {
     modalPrev.innerHTML = '&#10094;';
     modalPrev.tabIndex = 0;
     modalPrev.addEventListener('click', modalPrevImage, true);
-    modalPrev.addEventListener('keydown', modalKeyHandler, true);
     modal.appendChild(modalPrev);
 
     const modalNext = document.createElement('a');
@@ -253,15 +218,8 @@ document.addEventListener("DOMContentLoaded", function() {
     modalNext.innerHTML = '&#10095;';
     modalNext.tabIndex = 0;
     modalNext.addEventListener('click', modalNextImage, true);
-    modalNext.addEventListener('keydown', modalKeyHandler, true);
 
     modal.appendChild(modalNext);
-
-    try {
-        gradioApp().appendChild(modal);
-    } catch (e) {
-        gradioApp().body.appendChild(modal);
-    }
 
     document.body.appendChild(modal);
 
