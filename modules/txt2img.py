@@ -72,6 +72,7 @@ def txt2img_upscale_function(id_task: str, request: gr.Request, gallery, gallery
         return gallery, generation_info, 'Unable to upscale grid or control images.', ''
 
     p = txt2img_create_processing(id_task, request, *args, force_enable_hr=True)
+    iterations = p.n_iter
     p.batch_size = 1
     p.n_iter = 1
     # txt2img_upscale attribute that signifies this is called by txt2img_upscale
@@ -90,14 +91,41 @@ def txt2img_upscale_function(id_task: str, request: gr.Request, gallery, gallery
     p.extra_generation_params['Original Size'] = f'{args[8]}x{args[7]}'
 
     p.override_settings['save_images_before_highres_fix'] = False
+    p.override_settings['samples_save'] = False
+    p.override_settings['multiple_tqdm'] = False
 
-    with closing(p):
-        processed = modules.scripts.scripts_txt2img.run(p, *p.script_args)
+    start_denoise = p.denoising_strength
+    final_denoise = 0.5 * p.denoising_strength
+    start_steps = p.hr_second_pass_steps
+    for iteration in range(iterations):
+        with closing(p):
+            if iteration == iterations-1:
+                del p.override_settings['samples_save']
+                
+            processed = modules.scripts.scripts_txt2img.run(p, *p.script_args)
 
-        if processed is None:
-            processed = processing.process_images(p)
+            if processed is None:
+                processed = processing.process_images(p)
 
-    shared.total_tqdm.clear()
+        if iteration != iterations-1:
+            p.firstpass_image = processed.images[0]
+            p.width = p.firstpass_image.size[0]
+            p.height = p.firstpass_image.size[1]
+            nextIter = (iteration + 1) / (iterations - 1)
+            p.denoising_strength = final_denoise * nextIter + start_denoise * (1.0 - nextIter)
+            p.hr_second_pass_steps = int(0.5 + start_steps * (p.denoising_strength / start_denoise))
+            # print ("QUICKBUTTON: ", p.width, p.height, p.denoising_strength, p.hr_second_pass_steps)
+
+        shared.total_tqdm.clear()
+
+
+    # with closing(p):
+        # processed = modules.scripts.scripts_txt2img.run(p, *p.script_args)
+
+        # if processed is None:
+            # processed = processing.process_images(p)
+
+    # shared.total_tqdm.clear()
 
     insert = getattr(shared.opts, 'hires_button_gallery_insert', False)
     new_gallery = []

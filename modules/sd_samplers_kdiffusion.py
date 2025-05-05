@@ -93,7 +93,12 @@ class KDiffusionSampler(sd_samplers_common.Sampler):
         scheduler = sd_schedulers.schedulers_map.get(scheduler_name)
 
         m_sigma_min, m_sigma_max = self.model_wrap.sigmas[0].item(), self.model_wrap.sigmas[-1].item()
-        sigma_min, sigma_max = (0.1, 10) if opts.use_old_karras_scheduler_sigmas else (m_sigma_min, m_sigma_max)
+
+        if opts.use_old_karras_scheduler_sigmas:
+            sigma_min, sigma_max = (0.1, 10)
+            p.extra_generation_params["Old Karras sigmas"] = True
+        else:
+            sigma_min, sigma_max = (m_sigma_min, m_sigma_max)
 
         if p.sampler_noise_scheduler_override:
             sigmas = p.sampler_noise_scheduler_override(steps)

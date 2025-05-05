@@ -128,7 +128,7 @@ class UiCheckpointMerger:
 # if want to save fp32, must also set calc_fp32 for non-fp32 models
 
                     with FormRow():
-                        self.discard_weights = gr.Textbox(value="", label="Discard weights with matching name", elem_id="modelmerger_discard_weights")
+                        self.discard_weights = gr.Textbox(value="", label="Discard weights with matching name; e.g. Use 'model_ema' to discard EMA weights.", elem_id="modelmerger_discard_weights")
 
                     with FormRow():
                         with gr.Column():

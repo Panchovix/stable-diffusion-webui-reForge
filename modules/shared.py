@@ -51,14 +51,13 @@ settings_components: dict = None
 
 tab_names = []
 
-latent_upscale_default_mode = "Latent"
 latent_upscale_modes = {
-    "Latent": {"mode": "bilinear", "antialias": False},
-    "Latent (antialiased)": {"mode": "bilinear", "antialias": True},
-    "Latent (bicubic)": {"mode": "bicubic", "antialias": False},
-    "Latent (bicubic antialiased)": {"mode": "bicubic", "antialias": True},
-    "Latent (nearest)": {"mode": "nearest", "antialias": False},
-    "Latent (nearest-exact)": {"mode": "nearest-exact", "antialias": False},
+    "Latent":                       {"mode": "bilinear",        "antialias": False},
+    "Latent (antialiased)":         {"mode": "bilinear",        "antialias": True}, # identical?
+    "Latent (bicubic)":             {"mode": "bicubic",         "antialias": False},
+    "Latent (bicubic antialiased)": {"mode": "bicubic",         "antialias": True},
+    "Latent (nearest)":             {"mode": "nearest",         "antialias": False},
+    "Latent (nearest-exact)":       {"mode": "nearest-exact",   "antialias": False},
 }
 
 sd_upscalers = []

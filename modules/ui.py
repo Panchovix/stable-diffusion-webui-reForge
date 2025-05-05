@@ -13,7 +13,7 @@ from PIL import Image, PngImagePlugin  # noqa: F401
 from modules.call_queue import wrap_gradio_gpu_call, wrap_queued_call, wrap_gradio_call, wrap_gradio_call_no_job # noqa: F401
 
 from modules import gradio_extensions, sd_schedulers  # noqa: F401
-from modules import sd_models, script_callbacks, ui_extensions, deepbooru, extra_networks, ui_common, ui_postprocessing, progress, ui_loadsave, shared_items, ui_settings, timer, sysinfo, ui_checkpoint_merger, scripts, sd_samplers, processing, ui_extra_networks, ui_toprow, launch_utils
+from modules import sd_models, script_callbacks, ui_extensions, deepbooru, extra_networks, ui_common, ui_postprocessing, progress, shared_items, ui_settings, timer, sysinfo, ui_checkpoint_merger, scripts, sd_samplers, processing, ui_extra_networks, ui_toprow, launch_utils, ui_loadsave
 from modules.ui_components import FormRow, FormGroup, ToolButton, FormHTML, InputAccordion, ResizeHandleRow
 from modules.paths import script_path
 
@@ -257,10 +257,10 @@ def create_ui():
                     elif category == "dimensions":
                         with FormRow():
                             with gr.Column(elem_id="txt2img_column_size", scale=4):
-                                width = gr.Slider(minimum=64, maximum=2048, step=8, label="Width", value=512, elem_id="txt2img_width")
-                                height = gr.Slider(minimum=64, maximum=2048, step=8, label="Height", value=512, elem_id="txt2img_height")
+                                width = gr.Slider(minimum=256, maximum=4096, step=8, label="Width", value=512, elem_id="txt2img_width")
+                                height = gr.Slider(minimum=256, maximum=4096, step=8, label="Height", value=512, elem_id="txt2img_height")
 
-                            with gr.Column(elem_id="txt2img_dimensions_row", scale=1, elem_classes="dimensions-tools"):
+                            with gr.Column(elem_id="txt2img_dimensions_row", scale=0, elem_classes="dimensions-tools"):
                                 res_switch_btn = ToolButton(value=switch_values_symbol, elem_id="txt2img_res_switch_btn", tooltip="Switch width/height")
                                 res_switch_btn.click(fn=lambda w, h: (h, w), inputs=[width, height], outputs=[width, height], show_progress=False)
 
@@ -285,14 +285,14 @@ def create_ui():
                                     hr_final_resolution = FormHTML(value="", elem_id="txtimg_hr_finalres", show_label=False)
 
                                 with FormRow(elem_id="txt2img_hires_fix_row1", variant="compact"):
-                                    hr_upscaler = gr.Dropdown(label="Upscaler", elem_id="txt2img_hr_upscaler", choices=[*shared.latent_upscale_modes, *[x.name for x in shared.sd_upscalers]], value=shared.latent_upscale_default_mode)
+                                    hr_upscaler = gr.Dropdown(label="Upscaler", elem_id="txt2img_hr_upscaler", choices=[*shared.latent_upscale_modes, *[x.name for x in shared.sd_upscalers]], value="Lanczos")
                                     hr_second_pass_steps = gr.Slider(minimum=0, maximum=150, step=1, label='Hires steps', value=0, elem_id="txt2img_hires_steps")
-                                    denoising_strength = gr.Slider(minimum=0.0, maximum=1.0, step=0.01, label='Denoising strength', value=0.7, elem_id="txt2img_denoising_strength")
+                                    denoising_strength = gr.Slider(minimum=0.0, maximum=1.0, step=0.01, label='Denoising strength', value=0.4, elem_id="txt2img_denoising_strength")
 
                                 with FormRow(elem_id="txt2img_hires_fix_row2", variant="compact"):
                                     hr_scale = gr.Slider(minimum=1.0, maximum=4.0, step=0.05, label="Upscale by", value=2.0, elem_id="txt2img_hr_scale")
-                                    hr_resize_x = gr.Slider(minimum=0, maximum=2048, step=8, label="Resize width to", value=0, elem_id="txt2img_hr_resize_x")
-                                    hr_resize_y = gr.Slider(minimum=0, maximum=2048, step=8, label="Resize height to", value=0, elem_id="txt2img_hr_resize_y")
+                                    hr_resize_x = gr.Slider(minimum=256, maximum=4096, step=8, label="Resize width to", value=0, elem_id="txt2img_hr_resize_x")
+                                    hr_resize_y = gr.Slider(minimum=256, maximum=4096, step=8, label="Resize height to", value=0, elem_id="txt2img_hr_resize_y")
 
                                 with FormRow(elem_id="txt2img_hires_fix_row_cfg", variant="compact"):
                                     hr_distilled_cfg = gr.Slider(minimum=0.0, maximum=30.0, step=0.1, label="Hires Distilled CFG Scale", value=3.5, elem_id="txt2img_hr_distilled_cfg")
@@ -455,12 +455,10 @@ def create_ui():
                 PasteField(hr_additional_modules, "Hires VAE/TE", api="hr_additional_modules"),
                 PasteField(hr_sampler_name, sd_samplers.get_hr_sampler_from_infotext, api="hr_sampler_name"),
                 PasteField(hr_scheduler, sd_samplers.get_hr_scheduler_from_infotext, api="hr_scheduler"),
-                # PasteField(hr_sampler_container, lambda d: gr.update(visible=True) if d.get("Hires sampler", "Use same sampler") != "Use same sampler" or d.get("Hires checkpoint", "Use same checkpoint") != "Use same checkpoint" or d.get("Hires schedule type", "Use same scheduler") != "Use same scheduler" else gr.update()),
                 PasteField(hr_prompt, "Hires prompt", api="hr_prompt"),
                 PasteField(hr_negative_prompt, "Hires negative prompt", api="hr_negative_prompt"),
                 PasteField(hr_cfg, "Hires CFG Scale", api="hr_cfg"),
                 PasteField(hr_distilled_cfg, "Hires Distilled CFG Scale", api="hr_distilled_cfg"),
-                # PasteField(hr_prompts_container, lambda d: gr.update(visible=True) if d.get("Hires prompt", "") != "" or d.get("Hires negative prompt", "") != "" else gr.update()),
                 *scripts.scripts_txt2img.infotext_fields
             ]
             parameters_copypaste.add_paste_fields("txt2img", None, txt2img_paste_fields, override_settings)
@@ -594,11 +592,11 @@ def create_ui():
                                 with gr.Tabs(elem_id="img2img_tabs_resize"):
                                     with gr.Tab(label="Resize to", id="to", elem_id="img2img_tab_resize_to") as tab_scale_to:
                                         with gr.Row():
-                                            width = gr.Slider(minimum=64, maximum=2048, step=8, label="Width", value=512, elem_id="img2img_width")
+                                            width = gr.Slider(minimum=256, maximum=4096, step=8, label="Width", value=512, elem_id="img2img_width")
                                             res_switch_btn = ToolButton(value=switch_values_symbol, elem_id="img2img_res_switch_btn", tooltip="Switch width/height")
                                             res_switch_btn.click(fn=lambda w, h: (h, w), inputs=[width, height], outputs=[width, height], show_progress=False)
                                         with gr.Row():
-                                            height = gr.Slider(minimum=64, maximum=2048, step=8, label="Height", value=512, elem_id="img2img_height")
+                                            height = gr.Slider(minimum=256, maximum=4096, step=8, label="Height", value=512, elem_id="img2img_height")
                                             detect_image_size_btn = ToolButton(value=detect_image_size_symbol, elem_id="img2img_detect_image_size_btn", tooltip="Auto detect size from img2img")
 
                                     with gr.Tab(label="Resize by", id="by", elem_id="img2img_tab_resize_by") as tab_scale_by:
@@ -863,8 +861,11 @@ def create_ui():
 
     modelmerger_ui = ui_checkpoint_merger.UiCheckpointMerger()
 
-    loadsave = ui_loadsave.UiLoadsave(cmd_opts.ui_config_file)
-    ui_settings_from_file = loadsave.ui_settings.copy()
+    if shared.opts.use_ui_config_json:
+        loadsave = ui_loadsave.UiLoadsave(cmd_opts.ui_config_file)
+        ui_settings_from_file = loadsave.ui_settings.copy()
+    else:
+        loadsave = None
     settings.create_ui(loadsave, dummy_component)
 
     interfaces = [
@@ -901,11 +902,13 @@ def create_ui():
                 with gr.TabItem(label, id=ifid, elem_id=f"tab_{ifid}"):
                     interface.render()
 
-                if ifid not in ["extensions", "settings"]:
-                    loadsave.add_block(interface, ifid)
+                if shared.opts.use_ui_config_json:
+                    if ifid not in ["extensions", "settings"]:
+                        loadsave.add_block(interface, ifid)
 
-            loadsave.add_component(f"webui/Tabs@{tabs.elem_id}", tabs)
-            loadsave.setup_ui()
+            if shared.opts.use_ui_config_json:
+                loadsave.add_component(f"webui/Tabs@{tabs.elem_id}", tabs)
+                loadsave.setup_ui()
 
         def tab_changed(evt: gr.SelectData):
             no_quick_setting = getattr(shared.opts, "tabs_without_quick_settings_bar", [])
@@ -930,9 +933,10 @@ def create_ui():
 
         main_entry.forge_main_entry()
 
-    if ui_settings_from_file != loadsave.ui_settings:
-        loadsave.dump_defaults()
-    demo.ui_loadsave = loadsave
+    if shared.opts.use_ui_config_json:
+        if ui_settings_from_file != loadsave.ui_settings:
+            loadsave.dump_defaults()
+        demo.ui_loadsave = loadsave
 
     return demo
 

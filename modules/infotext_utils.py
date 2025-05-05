@@ -399,9 +399,6 @@ Steps: 20, Sampler: Euler a, CFG scale: 7, Seed: 965400086, Size: 512x512, Model
     if "Emphasis" not in res and prompt_uses_emphasis:
         res["Emphasis"] = "Original"
 
-    if "Refiner switch by sampling steps" not in res:
-        res["Refiner switch by sampling steps"] = False
-        
     if "Tiling" in res:
         if res["Tiling"] == "True":
             res["Tiling"] = "X and Y"
@@ -469,6 +466,7 @@ Steps: 20, Sampler: Euler a, CFG scale: 7, Seed: 965400086, Size: 512x512, Model
 
 infotext_to_setting_name_mapping = [
     ('VAE/TE', 'forge_additional_modules'),
+    ('Old Karras sigmas', 'use_old_karras_scheduler_sigmas'),
 ]
 """Mapping of infotext labels to setting names. Only left for backwards compatibility - use OptionInfo(..., infotext='...') instead.
 Example content:

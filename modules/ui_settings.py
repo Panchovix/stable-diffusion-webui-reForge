@@ -173,7 +173,10 @@ class UiSettings:
                     current_tab.__exit__()
 
                 with gr.TabItem("Defaults", id="defaults", elem_id="settings_tab_defaults"):
-                    loadsave.create_ui()
+                    if shared.opts.use_ui_config_json:
+                        loadsave.create_ui()
+                    else:
+                        gr.Markdown("This page intentionally left blank.")
 
                 with gr.TabItem("Sysinfo", id="sysinfo", elem_id="settings_tab_sysinfo"):
                     gr.HTML('<a href="./internal/sysinfo-download" class="sysinfo_big_link" download>Download system info</a><br /><a href="./internal/sysinfo" target="_blank">(or open as text in a new page)</a>', elem_id="sysinfo_download")

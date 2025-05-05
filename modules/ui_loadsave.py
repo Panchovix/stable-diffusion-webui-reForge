@@ -218,7 +218,7 @@ class UiLoadsave:
     def create_ui(self):
         """creates ui elements for editing defaults UI, without adding any logic to them"""
 
-        gr.HTML(
+        gr.Markdown(
             f"This page allows you to change default values in UI elements on other tabs.<br />"
             f"Make your changes, press 'View changes' to review the changed default values,<br />"
             f"then press 'Apply' to write them to {self.filename}.<br />"

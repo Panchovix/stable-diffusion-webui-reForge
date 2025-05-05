@@ -737,16 +737,17 @@ class ScriptRunner:
 
             return [gr.update(visible=selected_script == s) for s in self.selectable_scripts]
 
-        def init_field(title):
-            """called when an initial value is set from ui-config.json to show script's UI components"""
+        if shared.opts.use_ui_config_json:
+            def init_field(title):
+                """called when an initial value is set from ui-config.json to show script's UI components"""
 
-            if title == 'None':
-                return
+                if title == 'None':
+                    return
 
-            script_index = self.titles.index(title)
-            self.selectable_scripts[script_index].group.visible = True
+                script_index = self.titles.index(title)
+                self.selectable_scripts[script_index].group.visible = True
 
-        dropdown.init_field = init_field
+            dropdown.init_field = init_field
 
         dropdown.change(
             fn=select_script,
