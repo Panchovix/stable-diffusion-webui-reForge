@@ -49,8 +49,9 @@ def create_output_panel(tabname, outdir, toprow=None):
             return
 
         try:
-            if 'Sub' in shared.opts.open_dir_button_choice:
-                image_dir = os.path.split(images[index]["name"].rsplit('?', 1)[0])[0]
+            if 'Subdirectory' in shared.opts.open_dir_button_choice:
+                image_dir = os.path.split(images[index][0].filename.rsplit('?', 1)[0])[0]
+
                 if 'temp' in shared.opts.open_dir_button_choice or not ui_tempdir.is_gradio_temp_path(image_dir):
                     f = image_dir
         except Exception:
