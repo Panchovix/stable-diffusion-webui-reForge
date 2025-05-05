@@ -114,14 +114,7 @@ class HypernetworkModule(torch.nn.Module):
             state_dict[to] = x
 
     def forward(self, x):
-        return x + self.linear(x) * (self.multiplier if not self.training else 1)
-
-    def trainables(self):
-        layer_structure = []
-        for layer in self.linear:
-            if type(layer) == torch.nn.Linear or type(layer) == torch.nn.LayerNorm:
-                layer_structure += [layer.weight, layer.bias]
-        return layer_structure
+        return x + self.linear(x) * self.multiplier
 
 
 #param layer_structure : sequence used for length, use_dropout : controlling boolean, last_layer_dropout : for compatibility check.
@@ -180,13 +173,6 @@ class Hypernetwork:
             for layer in layers:
                 res += layer.parameters()
         return res
-
-    def train(self, mode=True):
-        for layers in self.layers.values():
-            for layer in layers:
-                layer.train(mode=mode)
-                for param in layer.parameters():
-                    param.requires_grad = mode
 
     def to(self, device):
         for layers in self.layers.values():
