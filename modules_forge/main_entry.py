@@ -378,9 +378,9 @@ def on_preset_change(preset=None):
 
     if shared.opts.forge_preset == 'sd':
         return [
-            gr.update(visible=True, value=getattr(shared.opts, "sd_vae_te", [""])),
+            gr.update(value=getattr(shared.opts, "sd_vae_te", [""])),
             gr.update(visible=True),                                                    # ui_clip_skip
-            gr.update(visible=True, value=getattr(shared.opts, "sd_unet_dtype", 'Automatic')),
+            gr.update(value=getattr(shared.opts, "sd_unet_dtype", 'Automatic')),
             gr.update(visible=False),                                                   # ui_forge_async_loading
             gr.update(visible=False),                                                   # ui_forge_pin_shared_memory
             gr.update(visible=False, value=total_vram - 1024),                          # ui_forge_inference_memory
@@ -396,7 +396,7 @@ def on_preset_change(preset=None):
             gr.update(value=getattr(shared.opts, "sd_i2i_sampler", 'Euler a')),
             gr.update(value=getattr(shared.opts, "sd_t2i_scheduler", 'Automatic')),
             gr.update(value=getattr(shared.opts, "sd_i2i_scheduler", 'Automatic')),
-            gr.update(visible=True, value=getattr(shared.opts, "sd_t2i_hr_cfg", 7.0)),
+            gr.update(value=getattr(shared.opts, "sd_t2i_hr_cfg", 7.0)),
             gr.update(visible=False),                                                   # ui_txt2img_hr_distilled_cfg
         ]
 
@@ -405,9 +405,9 @@ def on_preset_change(preset=None):
         if model_mem < 0 or model_mem > total_vram:
             model_mem = total_vram - 1024
         return [
-            gr.update(visible=True, value=getattr(shared.opts, "xl_vae_te", [""])),
+            gr.update(value=getattr(shared.opts, "xl_vae_te", [""])),
             gr.update(visible=True),                                                   # ui_clip_skip
-            gr.update(visible=True, value=getattr(shared.opts, "xl_unet_dtype", 'Automatic')),
+            gr.update(value=getattr(shared.opts, "xl_unet_dtype", 'Automatic')),
             gr.update(visible=False),                                                   # ui_forge_async_loading
             gr.update(visible=False),                                                   # ui_forge_pin_shared_memory
             gr.update(visible=True, value=model_mem),                                   # ui_forge_inference_memory
@@ -423,7 +423,7 @@ def on_preset_change(preset=None):
             gr.update(value=getattr(shared.opts, "xl_i2i_sampler", 'Euler a')),
             gr.update(value=getattr(shared.opts, "xl_t2i_scheduler", 'Automatic')),
             gr.update(value=getattr(shared.opts, "xl_i2i_scheduler", 'Automatic')),
-            gr.update(visible=True, value=getattr(shared.opts, "xl_t2i_hr_cfg", 5.0)),
+            gr.update(value=getattr(shared.opts, "xl_t2i_hr_cfg", 5.0)),
             gr.update(visible=False),                                                   # ui_txt2img_hr_distilled_cfg
         ]
 
@@ -432,9 +432,9 @@ def on_preset_change(preset=None):
         if model_mem < 0 or model_mem > total_vram:
             model_mem = total_vram - 1024
         return [
-            gr.update(visible=True, value=getattr(shared.opts, "flux_vae_te", [""])),
+            gr.update(value=getattr(shared.opts, "flux_vae_te", [""])),
             gr.update(visible=False),                                                   # ui_clip_skip
-            gr.update(visible=True, value=getattr(shared.opts, "flux_unet_dtype", 'Automatic')),
+            gr.update(value=getattr(shared.opts, "flux_unet_dtype", 'Automatic')),
             gr.update(visible=True),                                                    # ui_forge_async_loading
             gr.update(visible=True),                                                    # ui_forge_pin_shared_memory
             gr.update(visible=True, value=model_mem),                                   # ui_forge_inference_memory
@@ -450,35 +450,60 @@ def on_preset_change(preset=None):
             gr.update(value=getattr(shared.opts, "flux_i2i_sampler", 'Euler')),
             gr.update(value=getattr(shared.opts, "flux_t2i_scheduler", 'Simple')),
             gr.update(value=getattr(shared.opts, "flux_i2i_scheduler", 'Simple')),
-            gr.update(visible=True, value=getattr(shared.opts, "flux_t2i_hr_cfg", 1.0)),
+            gr.update(value=getattr(shared.opts, "flux_t2i_hr_cfg", 1.0)),
             gr.update(visible=True, value=getattr(shared.opts, "flux_t2i_hr_d_cfg", 3.5)),
         ]
 
-    loadsave = ui_loadsave.UiLoadsave(cmd_opts.ui_config_file)
-    ui_settings_from_file = loadsave.ui_settings.copy()
+    if shared.opts.use_ui_config_json:
+        loadsave = ui_loadsave.UiLoadsave(cmd_opts.ui_config_file)
+        ui_settings_from_file = loadsave.ui_settings.copy()
+
+        return [
+            gr.update(),                                                                    # ui_vae
+            gr.update(visible=True),                                                        # ui_clip_skip
+            gr.update(),                                                                    # ui_forge_unet_storage_dtype_options
+            gr.update(visible=True),                                                        # ui_forge_async_loading
+            gr.update(visible=True),                                                        # ui_forge_pin_shared_memory
+            gr.update(visible=True, value=total_vram - 1024),                               # ui_forge_inference_memory
+            gr.update(value=ui_settings_from_file['txt2img/Width/value']),
+            gr.update(value=ui_settings_from_file['img2img/Width/value']),
+            gr.update(value=ui_settings_from_file['txt2img/Height/value']),
+            gr.update(value=ui_settings_from_file['img2img/Height/value']),
+            gr.update(value=ui_settings_from_file['txt2img/CFG Scale/value']),
+            gr.update(value=ui_settings_from_file['img2img/CFG Scale/value']),
+            gr.update(visible=True, value=ui_settings_from_file['txt2img/Distilled CFG Scale/value']),
+            gr.update(visible=True, value=ui_settings_from_file['img2img/Distilled CFG Scale/value']),
+            gr.update(value=ui_settings_from_file['customscript/sampler.py/txt2img/Sampling method/value']),
+            gr.update(value=ui_settings_from_file['customscript/sampler.py/img2img/Sampling method/value']),
+            gr.update(value=ui_settings_from_file['customscript/sampler.py/txt2img/Schedule type/value']),
+            gr.update(value=ui_settings_from_file['customscript/sampler.py/img2img/Schedule type/value']),
+            gr.update(visible=True, value=ui_settings_from_file['txt2img/Hires CFG Scale/value']),
+            gr.update(visible=True, value=ui_settings_from_file['txt2img/Hires Distilled CFG Scale/value']),
+        ]
 
     return [
-        gr.update(visible=True),                                                        # ui_vae
+        gr.update(),                                                                    # ui_vae
         gr.update(visible=True),                                                        # ui_clip_skip
-        gr.update(visible=True),                                                        # ui_forge_unet_storage_dtype_options
+        gr.update(),                                                                    # ui_forge_unet_storage_dtype_options
         gr.update(visible=True),                                                        # ui_forge_async_loading
         gr.update(visible=True),                                                        # ui_forge_pin_shared_memory
         gr.update(visible=True, value=total_vram - 1024),                               # ui_forge_inference_memory
-        gr.update(value=ui_settings_from_file['txt2img/Width/value']),
-        gr.update(value=ui_settings_from_file['img2img/Width/value']),
-        gr.update(value=ui_settings_from_file['txt2img/Height/value']),
-        gr.update(value=ui_settings_from_file['img2img/Height/value']),
-        gr.update(value=ui_settings_from_file['txt2img/CFG Scale/value']),
-        gr.update(value=ui_settings_from_file['img2img/CFG Scale/value']),
-        gr.update(visible=True, value=ui_settings_from_file['txt2img/Distilled CFG Scale/value']),
-        gr.update(visible=True, value=ui_settings_from_file['img2img/Distilled CFG Scale/value']),
-        gr.update(value=ui_settings_from_file['customscript/sampler.py/txt2img/Sampling method/value']),
-        gr.update(value=ui_settings_from_file['customscript/sampler.py/img2img/Sampling method/value']),
-        gr.update(value=ui_settings_from_file['customscript/sampler.py/txt2img/Schedule type/value']),
-        gr.update(value=ui_settings_from_file['customscript/sampler.py/img2img/Schedule type/value']),
-        gr.update(visible=True, value=ui_settings_from_file['txt2img/Hires CFG Scale/value']),
-        gr.update(visible=True, value=ui_settings_from_file['txt2img/Hires Distilled CFG Scale/value']),
+        gr.update(value=1024),
+        gr.update(value=1024),
+        gr.update(value=1024),
+        gr.update(value=1024),
+        gr.update(value=5),
+        gr.update(value=5),
+        gr.update(visible=True, value=3.5),
+        gr.update(visible=True, value=3.5),
+        gr.update(value='Euler'),
+        gr.update(value='Euler'),
+        gr.update(value='Simple'),
+        gr.update(value='simple'),
+        gr.update(value=3),
+        gr.update(visible=True, value=3.5),
     ]
+
 
 shared.options_templates.update(shared.options_section(('ui_sd', "UI defaults 'sd'", "ui"), {
     "sd_t2i_width":  shared.OptionInfo(512,  "txt2img width",      gr.Slider, {"minimum": 64, "maximum": 2048, "step": 8}),
