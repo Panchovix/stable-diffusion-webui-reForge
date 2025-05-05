@@ -127,7 +127,7 @@ function keyupEditAttentionandOrder(event) {
 
 		updateInput(target);
 	}
-	else if (event.altKey && opts.keyedit_move)
+	else if (event.altKey)
 	{	// alt + left/right arrows moves text in prompt
 		let isLeft = event.key == "ArrowLeft";
 		let isRight = event.key == "ArrowRight";
