@@ -599,7 +599,7 @@ class IPAdapterApply:
                         noise=None, embeds=None, attn_mask=None, start_at=0.0, end_at=1.0, unfold_batch=False,
                         insightface=None, faceid_v2=False, weight_v2=False, instant_id=False):
 
-        self.dtype = torch.float16 if memory_management.should_use_fp16() else torch.float32
+        self.dtype = torch.float16 if memory_management.should_use_fp16(prioritize_performance=False, manual_cast=True) else torch.float32
         self.device = memory_management.get_torch_device()
         self.weight = weight
         self.is_full = "proj.3.weight" in ipadapter["image_proj"]
