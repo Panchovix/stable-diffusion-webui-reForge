@@ -376,7 +376,7 @@ class ControlNetForForgeOfficial(scripts.Script):
                 params.control_cond_for_hr_fix = torch.cat(params.control_cond_for_hr_fix, dim=0)[alignment_indices].contiguous()
             else:
                 params.control_cond_for_hr_fix = params.control_cond
-        elif 'image' in preprocessor_output:
+        elif isinstance(preprocessor_output, dict) and 'image' in preprocessor_output:  # multi-input for IPAdapters
             params.control_cond = preprocessor_outputs
             params.control_cond_for_hr_fix = params.control_cond
         else:
