@@ -8,26 +8,29 @@ from modules_forge.shared import add_supported_preprocessor
 def revision_conditioning_modifier(model, x, timestep, uncond, cond, cond_scale, model_options, seed):
     revision_condition = model_options['revision_conditions']
 
-    weight = float(revision_condition["weight"])
+    weight = revision_condition["weight"]
+    ignore = revision_condition["ignore_prompt"]
+
     adm_inputs = []
     for c in revision_condition['cond']:
-        adm_cond = c.image_embeds
+        adm_cond = c
         adm_inputs.append(adm_cond * weight)
     adm_out = torch.stack(adm_inputs).sum(0)
 
     new_y = adm_out[:, :1280]
-    cond = copy.deepcopy(cond)
-    uncond = copy.deepcopy(uncond)
 
+    cond = copy.deepcopy(cond)
     for c in cond:
         c['model_conds']['y'].cond[:, :1280] = new_y.clone()
-
-    for c in uncond:
-        c['model_conds']['y'].cond[:, :1280] = torch.zeros_like(new_y)
-
-    if revision_condition["ignore_prompt"]:
-        for c in cond + uncond:
+        if ignore:
             c['model_conds']['c_crossattn'].cond = torch.zeros_like(c['model_conds']['c_crossattn'].cond)
+
+    if uncond:
+        uncond = copy.deepcopy(uncond)
+        for c in uncond:
+            c['model_conds']['y'].cond[:, :1280] = torch.zeros_like(new_y)
+            if ignore:
+                c['model_conds']['c_crossattn'].cond = torch.zeros_like(c['model_conds']['c_crossattn'].cond)
 
     return model, x, timestep, uncond, cond, cond_scale, model_options, seed
 
@@ -46,19 +49,18 @@ class PreprocessorClipVisionForRevision(PreprocessorClipVision):
         
         if 'revision_conditions' not in process.sd_model.forge_objects.unet.model_options:
             unit = kwargs['unit']
-            weight = float(unit.weight)
 
             unet = process.sd_model.forge_objects.unet.clone()
             unet.model_options['revision_conditions'] = {}
-            unet.model_options['revision_conditions']['cond'] = [cond]
-            unet.model_options['revision_conditions']['weight'] = weight
+            unet.model_options['revision_conditions']['cond'] = [cond.image_embeds]
+            unet.model_options['revision_conditions']['weight'] = float(unit.weight)
             unet.model_options['revision_conditions']['ignore_prompt'] = self.ignore_prompt
 
             unet.add_conditioning_modifier(revision_conditioning_modifier, ensure_uniqueness=True)
 
             process.sd_model.forge_objects.unet = unet
         else:   # for multi-input (ControlNet > Batch Upload)
-            unet.model_options['revision_conditions']['cond'].append([cond])
+            unet.model_options['revision_conditions']['cond'].append([cond.image_embeds])
 
         return cond, mask
 
