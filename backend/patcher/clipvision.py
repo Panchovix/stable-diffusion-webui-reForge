@@ -92,10 +92,10 @@ class ClipVisionModel:
     def __init__(self, config):
         config = CLIPVisionConfig(**config)
 
-        self.load_device = memory_management.text_encoder_device()
+        self.load_device = memory_management.get_torch_device()     #text_encoder_device()
         self.offload_device = memory_management.text_encoder_offload_device()
 
-        if memory_management.should_use_fp16(self.load_device, prioritize_performance=False):
+        if memory_management.should_use_fp16(self.load_device, prioritize_performance=False, manual_cast=True):
             self.dtype = torch.float16
         else:
             self.dtype = torch.float32
