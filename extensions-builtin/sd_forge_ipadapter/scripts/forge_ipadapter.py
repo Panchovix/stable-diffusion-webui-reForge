@@ -14,19 +14,21 @@ opInsightFaceLoader = InsightFaceLoader().load_insight_face
 class PreprocessorClipVisionForIPAdapter(PreprocessorClipVision):
     def __init__(self, name, url, filename):
         super().__init__(name, url, filename)
-        self.slider_1 = PreprocessorParameter(label='Noise', minimum=0.0, maximum=1.0, value=0.0, step=0.01, visible=True)
+        self.slider_1 = PreprocessorParameter(label='Noise', minimum=0.0, maximum=1.0, value=0.33, step=0.01, visible=True)
         self.tags = ['IP-Adapter']
         self.model_filename_filters = ['IP-Adapter', 'IP_Adapter']
         self.sorting_priority = 20
+        self.do_tiled = False
 
-    def __call__(self, input_image, resolution, slider_1=None, slider_2=None, slider_3=None, **kwargs):
+    def __call__(self, input_image, resolution, slider_1=0.33, slider_2=None, slider_3=None, **kwargs):
         cond = dict(
             clip_vision=self.load_clipvision(),
-            image=numpy_to_pytorch(input_image),
+            image=input_image,
             weight_type="original",
             noise=slider_1,
             embeds=None,
             unfold_batch=False,
+            do_tiled=self.do_tiled,
         )
         return cond
 
@@ -35,23 +37,30 @@ class PreprocessorClipVisionWithInsightFaceForIPAdapter(PreprocessorClipVisionFo
     def __init__(self, name, url, filename):
         super().__init__(name, url, filename)
         self.cached_insightface = None
+        self.do_tiled = False
 
     def load_insightface(self):
         if self.cached_insightface is None:
             self.cached_insightface = opInsightFaceLoader()[0]
         return self.cached_insightface
 
-    def __call__(self, input_image, resolution, slider_1=None, slider_2=None, slider_3=None, **kwargs):
+    def __call__(self, input_image, resolution, slider_1=0.33, slider_2=None, slider_3=None, **kwargs):
         cond = dict(
             clip_vision=self.load_clipvision(),
             insightface=self.load_insightface(),
-            image=numpy_to_pytorch(input_image),
+            image=input_image,
             weight_type="original",
             noise=slider_1,
             embeds=None,
             unfold_batch=False,
+            do_tiled=self.do_tiled,
         )
         return cond
+
+class PreprocessorClipVisionWithInsightFaceForIPAdapter_Tiled(PreprocessorClipVisionWithInsightFaceForIPAdapter):
+    def __init__(self, name, url, filename):
+        super().__init__(name, url, filename)
+        self.do_tiled = True
 
 
 add_supported_preprocessor(PreprocessorClipVisionForIPAdapter(
@@ -68,6 +77,12 @@ add_supported_preprocessor(PreprocessorClipVisionForIPAdapter(
 
 add_supported_preprocessor(PreprocessorClipVisionWithInsightFaceForIPAdapter(
     name='InsightFace+CLIP-H (IPAdapter)',
+    url='https://huggingface.co/h94/IP-Adapter/resolve/main/models/image_encoder/model.safetensors',
+    filename='CLIP-ViT-H-14.safetensors'
+))
+
+add_supported_preprocessor(PreprocessorClipVisionWithInsightFaceForIPAdapter_Tiled(
+    name='InsightFace+CLIP-H (IPAdapter) (Tiled)',
     url='https://huggingface.co/h94/IP-Adapter/resolve/main/models/image_encoder/model.safetensors',
     filename='CLIP-ViT-H-14.safetensors'
 ))
@@ -111,10 +126,19 @@ class IPAdapterPatcher(ControlModelPatcher):
 
         if isinstance(cond, list):
             images = []
-            for i in cond:
-                images.append(i['image'])
+            for c in cond:
+                image = c['image']
+                r = min(image.shape[0] // 256, image.shape[1] // 256)   # 256 seems better than 224, maybe
+                if c['do_tiled'] and r >= 2:   #interleaved split into r*r images
+                    for i in range(r):
+                        for j in range(r):
+                            part = image[i::r, j::r]
+                            images.append(numpy_to_pytorch(part))
+                else:
+                    images.append(numpy_to_pytorch(image))
             cond = cond[0]
             cond['image'] = images
+            del cond['do_tiled']
 
         unet = opIPAdapterApply(
             ipadapter=self.ip_adapter,

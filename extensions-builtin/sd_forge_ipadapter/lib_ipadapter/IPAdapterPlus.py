@@ -360,9 +360,10 @@ class IPAdapter(nn.Module):
         embeds = self.image_proj_model(face_embed, clip_embed, scale=s_scale, shortcut=shortcut)
         return embeds
 
-    def get_image_embeds_instantid(self, prompt_image_emb):
+    def get_image_embeds_instantid(self, prompt_image_emb, noise):
         c = self.image_proj_model(prompt_image_emb)
-        uc = self.image_proj_model(torch.zeros_like(prompt_image_emb))
+        # uc = self.image_proj_model(torch.zeros_like(prompt_image_emb))
+        uc = self.image_proj_model(torch.randn_like(prompt_image_emb) * prompt_image_emb.std() * noise)
         return c, uc
 
 
@@ -596,7 +597,7 @@ class InsightFaceLoader:
 
 class IPAdapterApply:
     def apply_ipadapter(self, ipadapter, model, weight, clip_vision=None, image=None, weight_type="original",
-                        noise=None, embeds=None, attn_mask=None, start_at=0.0, end_at=1.0, unfold_batch=False,
+                        noise=0.0, embeds=None, attn_mask=None, start_at=0.0, end_at=1.0, unfold_batch=False,
                         insightface=None, faceid_v2=False, weight_v2=False, instant_id=False):
 
         self.dtype = torch.float16 if memory_management.should_use_fp16(prioritize_performance=False, manual_cast=True) else torch.float32
@@ -639,9 +640,6 @@ class IPAdapterApply:
                         face = insightface.get(face_img[0])
                         if face:
                             face_embed.append(torch.from_numpy(face[0].embedding).unsqueeze(0))
-
-                            if 640 not in size:
-                                print(f"\033[33mINFO: InsightFace detection resolution lowered to {size}.\033[0m")
                             break
                     else:
                         raise Exception('InsightFace: No face detected.')
@@ -653,7 +651,7 @@ class IPAdapterApply:
 
                 face_embed = []
                 face_clipvision = []
-                
+
                 for i in range(len(image)):
                     if isinstance(image[i], list):
                         image[i] = image[i][0]
@@ -665,9 +663,6 @@ class IPAdapterApply:
                         if face:
                             face_embed.append(torch.from_numpy(face[0].normed_embedding).unsqueeze(0))
                             face_clipvision.append(NPToTensor(insightface_face_align.norm_crop(face_img[0], landmark=face[0].kps, image_size=224)))
-
-                            if 640 not in size:
-                                print(f"\033[33mINFO: InsightFace detection resolution lowered to {size}.\033[0m")
                             break
                     else:
                         raise Exception('InsightFace: No face detected.')
@@ -684,30 +679,38 @@ class IPAdapterApply:
                     else:
                         clip_embed_zeroed = zeroed_hidden_states(clip_vision, image.shape[0])
 
-                    # TODO: check noise to the uncods too
-                    face_embed_zeroed = torch.zeros_like(face_embed)
+                    face_embed_zeroed = torch.randn_like(face_embed) * face_embed.std() * noise
                 else:
                     clip_embed = face_embed
-                    clip_embed_zeroed = torch.zeros_like(clip_embed)
+                    clip_embed_zeroed = torch.randn_like(clip_embed) * clip_embed.std() * noise
             else:
-                if image.shape[1] != image.shape[2]:
-                    print("\033[33mINFO: the IPAdapter reference image is not a square, CLIPImageProcessor will resize and crop it at the center. If the main focus of the picture is not in the middle the result might not be what you are expecting.\033[0m")
+                clip_embeds = []
+                zero_embeds = []
+                for i in range(len(image)):
+                    if isinstance(image[i], list):
+                        image[i] = image[i][0]
 
-                clip_embed = clip_vision.encode_image(image)
-                neg_image = image_add_noise(image, noise) if noise > 0 else None
+                    clip_embed = clip_vision.encode_image(image[i])
+                    neg_image = image_add_noise(image[i], noise) if noise > 0 else None
 
-                if self.is_plus:
-                    clip_embed = clip_embed.penultimate_hidden_states
-                    if noise > 0:
-                        clip_embed_zeroed = clip_vision.encode_image(neg_image).penultimate_hidden_states
+                    if self.is_plus:
+                        clip_embed = clip_embed.penultimate_hidden_states
+                        if noise > 0:
+                            clip_embed_zeroed = clip_vision.encode_image(neg_image).penultimate_hidden_states
+                        else:
+                            clip_embed_zeroed = zeroed_hidden_states(clip_vision, image[i].shape[0])
                     else:
-                        clip_embed_zeroed = zeroed_hidden_states(clip_vision, image.shape[0])
-                else:
-                    clip_embed = clip_embed.image_embeds
-                    if noise > 0:
-                        clip_embed_zeroed = clip_vision.encode_image(neg_image).image_embeds
-                    else:
-                        clip_embed_zeroed = torch.zeros_like(clip_embed)
+                        clip_embed = clip_embed.image_embeds
+                        if noise > 0:
+                            clip_embed_zeroed = clip_vision.encode_image(neg_image).image_embeds
+                        else:
+                            clip_embed_zeroed = torch.randn_like(clip_embed) * clip_embed.std() * noise
+
+                    clip_embeds.append(clip_embed)
+                    zero_embeds.append(clip_embed_zeroed)
+                    
+                    clip_embed = torch.cat(clip_embeds, dim=0)
+                    clip_embed_zeroed = torch.cat(zero_embeds, dim=0)
 
         clip_embeddings_dim = clip_embed.shape[-1]
 
@@ -727,7 +730,7 @@ class IPAdapterApply:
         self.ipadapter.to(self.device, dtype=self.dtype)
 
         if self.is_instant_id:
-            image_prompt_embeds, uncond_image_prompt_embeds = self.ipadapter.get_image_embeds_instantid(face_embed.to(self.device, dtype=self.dtype))
+            image_prompt_embeds, uncond_image_prompt_embeds = self.ipadapter.get_image_embeds_instantid(face_embed.to(self.device, dtype=self.dtype), noise)
         elif self.is_faceid and self.is_plus:
             image_prompt_embeds = self.ipadapter.get_image_embeds_faceid_plus(face_embed.to(self.device, dtype=self.dtype), clip_embed.to(self.device, dtype=self.dtype), weight_v2, faceid_v2)
             uncond_image_prompt_embeds = self.ipadapter.get_image_embeds_faceid_plus(face_embed_zeroed.to(self.device, dtype=self.dtype), clip_embed_zeroed.to(self.device, dtype=self.dtype), weight_v2, faceid_v2)
@@ -767,6 +770,8 @@ class IPAdapterApply:
             "unfold_batch": unfold_batch,
         }
 
+#patch different blocks for style/composition
+#Cubiq
         if not self.is_sdxl:
             for id in [1, 2, 4, 5, 7, 8]:  # id of input_blocks that have cross attention
                 set_model_patch_replace(work_model, patch_kwargs, ("input", id))
@@ -789,6 +794,7 @@ class IPAdapterApply:
             for index in range(10):
                 set_model_patch_replace(work_model, patch_kwargs, ("middle", 0, index))
                 patch_kwargs["number"] += 1
+
 
         return (work_model,)
 
