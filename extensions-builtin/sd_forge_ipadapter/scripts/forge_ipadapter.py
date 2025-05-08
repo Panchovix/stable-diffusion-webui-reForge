@@ -6,6 +6,7 @@ from modules_forge.supported_controlnet import ControlModelPatcher
 from lib_ipadapter.IPAdapterPlus import IPAdapterApply, InsightFaceLoader
 from pathlib import Path
 
+cached_insightface = None
 
 opIPAdapterApply = IPAdapterApply().apply_ipadapter
 opInsightFaceLoader = InsightFaceLoader().load_insight_face
@@ -18,7 +19,7 @@ class PreprocessorClipVisionForIPAdapter(PreprocessorClipVision):
         self.tags = ['IP-Adapter']
         self.model_filename_filters = ['IP-Adapter', 'IP_Adapter']
         self.sorting_priority = 20
-        self.do_tiled = False
+        self.do_tiled = (0, None)
 
     def __call__(self, input_image, resolution, slider_1=0.33, slider_2=None, slider_3=None, **kwargs):
         cond = dict(
@@ -33,20 +34,32 @@ class PreprocessorClipVisionForIPAdapter(PreprocessorClipVision):
         return cond
 
 
+# needs (simple enough) changes to backend.patcher.clipvision to preprocess image at greater size, but also needs retrained IPAdapters
+# class PreprocessorClipVisionForIPAdapter_448(PreprocessorClipVisionForIPAdapter):
+    # def __init__(self, name, url, filename):
+        # super().__init__(name, url, filename)
+        # self.do_tiled = (448, None)
+
+# add_supported_preprocessor(PreprocessorClipVisionForIPAdapter_448(
+    # name='CLIP-ViT-H-448 (Ostris) (IPAdapter)',
+    # url='https://huggingface.co/ostris/CLIP-ViT-H-14-448/resolve/main/model.safetensors',
+    # filename='CLIP-ViT-H-14-448.safetensors'
+# ))
+
 class PreprocessorClipVisionWithInsightFaceForIPAdapter(PreprocessorClipVisionForIPAdapter):
     def __init__(self, name, url, filename):
         super().__init__(name, url, filename)
-        self.cached_insightface = None
-        self.do_tiled = False
+        self.do_tiled = (0, None)
 
     def load_insightface(self):
-        if self.cached_insightface is None:
-            self.cached_insightface = opInsightFaceLoader()[0]
-        return self.cached_insightface
+        global cached_insightface
+        if cached_insightface is None:
+            cached_insightface = opInsightFaceLoader()[0]
+        return cached_insightface
 
     def __call__(self, input_image, resolution, slider_1=0.33, slider_2=None, slider_3=None, **kwargs):
         cond = dict(
-            clip_vision=self.load_clipvision(),
+            clip_vision=None if '(Portrait)' in self.name else self.load_clipvision(),
             insightface=self.load_insightface(),
             image=input_image,
             weight_type="original",
@@ -60,7 +73,14 @@ class PreprocessorClipVisionWithInsightFaceForIPAdapter(PreprocessorClipVisionFo
 class PreprocessorClipVisionWithInsightFaceForIPAdapter_Tiled(PreprocessorClipVisionWithInsightFaceForIPAdapter):
     def __init__(self, name, url, filename):
         super().__init__(name, url, filename)
-        self.do_tiled = True
+        self.do_tiled = (256, 'Interleaved')    # 256 seems better than 224, for Insightface, maybe
+
+
+add_supported_preprocessor(PreprocessorClipVisionForIPAdapter(
+    name='CLIP-H-Face (Ostris) (IPAdapter)',
+    url='https://huggingface.co/ostris/CLIP-H-Face-v3/resolve/main/model.safetensors',
+    filename='CLIP-H-Face-v3.safetensors'
+))
 
 
 add_supported_preprocessor(PreprocessorClipVisionForIPAdapter(
@@ -85,6 +105,17 @@ add_supported_preprocessor(PreprocessorClipVisionWithInsightFaceForIPAdapter_Til
     name='InsightFace+CLIP-H (IPAdapter) (Tiled)',
     url='https://huggingface.co/h94/IP-Adapter/resolve/main/models/image_encoder/model.safetensors',
     filename='CLIP-ViT-H-14.safetensors'
+))
+add_supported_preprocessor(PreprocessorClipVisionWithInsightFaceForIPAdapter_Tiled(
+    name='InsightFace+CLIP-H-Face (Ostris) (IPAdapter) (Tiled)',
+    url='https://huggingface.co/ostris/CLIP-H-Face-v3/resolve/main/model.safetensors',
+    filename='CLIP-H-Face-v3.safetensors'
+))
+
+add_supported_preprocessor(PreprocessorClipVisionWithInsightFaceForIPAdapter_Tiled(
+    name='InsightFace (IPAdapter) (Portrait) (Tiled)',
+    url='',
+    filename=''
 ))
 
 
@@ -127,18 +158,30 @@ class IPAdapterPatcher(ControlModelPatcher):
         if isinstance(cond, list):
             images = []
             for c in cond:
+                tile_size = c['do_tiled'][0]
+                tile_type = c['do_tiled'][1]
+
                 image = c['image']
-                r = min(image.shape[0] // 256, image.shape[1] // 256)   # 256 seems better than 224, maybe
-                if c['do_tiled'] and r >= 2:   #interleaved split into r*r images
-                    for i in range(r):
-                        for j in range(r):
-                            part = image[i::r, j::r]
-                            images.append(numpy_to_pytorch(part))
+                if tile_size > 0:
+                    r = min(image.shape[0] // tile_size, image.shape[1] // tile_size)
+                    if tile_type == 'Interleaved' and r >= 2:   #interleaved split into r*r images
+                        for i in range(r):
+                            for j in range(r):
+                                part = image[i::r, j::r]
+                                images.append(numpy_to_pytorch(part))
+                    elif tile_type == "Tiled" and r >= 1:
+                        for i in range(0, image.shape[0], tile_size):
+                            for j in range(0, image.shape[1], tile_size):
+                                tile = image[i:i+tile_size, j:j+tile_size]
+                                images.append(numpy_to_pytorch(tile))
+                    else:
+                        images.append(numpy_to_pytorch(image))
                 else:
                     images.append(numpy_to_pytorch(image))
             cond = cond[0]
+
             cond['image'] = images
-            del cond['do_tiled']
+        del cond['do_tiled']
 
         unet = opIPAdapterApply(
             ipadapter=self.ip_adapter,
