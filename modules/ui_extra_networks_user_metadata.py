@@ -48,9 +48,9 @@ class UserMetadataEditor:
     def create_default_editor_elems(self):
         with gr.Row():
             with gr.Column(scale=2):
-                self.edit_name = gr.HTML(elem_classes="extra-network-name")
+                self.edit_name = gr.Markdown()
                 self.edit_description = gr.Textbox(label="Description", lines=4)
-                self.html_filedata = gr.HTML()
+                self.html_filedata = gr.Markdown()
 
                 self.create_extra_default_items_in_left_column()
 
@@ -64,7 +64,7 @@ class UserMetadataEditor:
             self.button_replace_preview = gr.Button('Replace preview', variant='primary')
             self.button_save = gr.Button('Save', variant='primary')
 
-        self.html_status = gr.HTML(elem_classes="edit-user-metadata-status")
+        self.html_status = gr.Markdown()
 
         self.button_cancel.click(fn=None, _js="closePopup")
 
@@ -104,10 +104,10 @@ class UserMetadataEditor:
 
             stats = os.stat(filename)
             params = [
-                ('Filename: ', self.relative_path(filename)),
-                ('File size: ', sysinfo.pretty_bytes(stats.st_size)),
-                ('Hash: ', shorthash),
-                ('Modified: ', datetime.datetime.fromtimestamp(stats.st_mtime).strftime('%Y-%m-%d %H:%M')),
+                ('File path', filename),
+                ('File size', sysinfo.pretty_bytes(stats.st_size)),
+                ('Hash', shorthash),
+                ('Modified', datetime.datetime.fromtimestamp(stats.st_mtime).strftime('%Y-%m-%d %H:%M')),
             ]
 
             return params
@@ -124,9 +124,9 @@ class UserMetadataEditor:
             errors.display(e, f"reading metadata info for {name}")
             params = []
 
-        table = '<table class="file-metadata">' + "".join(f"<tr><th>{name}</th><td>{value}</td></tr>" for name, value in params if value is not None) + '</table>'
+        table = "| *metadata* | *value* | \n|---|---|\n" + "\n".join(f"| {name} | {html.escape(str(value))} |" for name, value in params if value is not None)
 
-        return html.escape(name), user_metadata.get('description', ''), table, self.get_card_html(name), user_metadata.get('notes', '')
+        return f'## {name}', user_metadata.get('description', ''), table, self.get_card_html(name), user_metadata.get('notes', '')
 
     def write_user_metadata(self, name, metadata):
         item = self.page.items.get(name, {})
@@ -173,7 +173,7 @@ class UserMetadataEditor:
             self.create_editor()
 
     def save_preview(self, index, gallery, name):
-        if len(gallery) == 0:
+        if not gallery or len(gallery) == 0:
             return self.get_card_html(name), "There is no image in gallery to save as a preview."
 
         item = self.page.items.get(name, {})

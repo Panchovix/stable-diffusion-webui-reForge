@@ -200,7 +200,6 @@ class ExtraNetworksPage:
         self.pane_content_dirs_tpl = shared.html("extra-networks-pane-dirs.html")
         self.card_tpl = shared.html("extra-networks-card.html")
         self.btn_tree_tpl = shared.html("extra-networks-tree-button.html")
-        self.btn_copy_path_tpl = shared.html("extra-networks-copy-path-button.html")
         self.btn_metadata_tpl = shared.html("extra-networks-metadata-button.html")
         self.btn_edit_item_tpl = shared.html("extra-networks-edit-item-button.html")
 
@@ -273,7 +272,6 @@ class ExtraNetworksPage:
             )
             onclick = html.escape(onclick)
 
-        btn_copy_path = self.btn_copy_path_tpl.format(**{"filename": item["filename"]})
         btn_metadata = ""
         metadata = item.get("metadata")
         if metadata:
@@ -334,7 +332,6 @@ class ExtraNetworksPage:
         args = {
             "background_image": background_image,
             "card_clicked": onclick,
-            "copy_path_button": btn_copy_path,
             "description": description,
             "edit_button": btn_edit_item,
             "local_preview": quote_js(item["local_preview"]),
@@ -429,7 +426,6 @@ class ExtraNetworksPage:
         item_html_args = self.create_item_html(tabname, item)
         action_buttons = "".join(
             [
-                item_html_args["copy_path_button"],
                 item_html_args["metadata_button"],
                 item_html_args["edit_button"],
             ]
