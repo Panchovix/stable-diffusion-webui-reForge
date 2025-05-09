@@ -15,13 +15,13 @@ opInsightFaceLoader = InsightFaceLoader().load_insight_face
 class PreprocessorClipVisionForIPAdapter(PreprocessorClipVision):
     def __init__(self, name, url, filename):
         super().__init__(name, url, filename)
-        self.slider_1 = PreprocessorParameter(label='Noise', minimum=0.0, maximum=1.0, value=0.33, step=0.01, visible=True)
+        self.slider_1 = PreprocessorParameter(label='Noise', minimum=0.0, maximum=1.0, value=0.23, step=0.01, visible=True)
         self.tags = ['IP-Adapter']
         self.model_filename_filters = ['IP-Adapter', 'IP_Adapter']
         self.sorting_priority = 20
         self.do_tiled = (0, None)
 
-    def __call__(self, input_image, resolution, slider_1=0.33, slider_2=None, slider_3=None, **kwargs):
+    def __call__(self, input_image, resolution, slider_1=0.23, slider_2=None, slider_3=None, **kwargs):
         cond = dict(
             clip_vision=self.load_clipvision(),
             image=input_image,
@@ -57,7 +57,7 @@ class PreprocessorClipVisionWithInsightFaceForIPAdapter(PreprocessorClipVisionFo
             cached_insightface = opInsightFaceLoader()[0]
         return cached_insightface
 
-    def __call__(self, input_image, resolution, slider_1=0.33, slider_2=None, slider_3=None, **kwargs):
+    def __call__(self, input_image, resolution, slider_1=0.23, slider_2=None, slider_3=None, **kwargs):
         cond = dict(
             clip_vision=None if '(Portrait)' in self.name else self.load_clipvision(),
             insightface=self.load_insightface(),
@@ -119,6 +119,14 @@ add_supported_preprocessor(PreprocessorClipVisionWithInsightFaceForIPAdapter_Til
 ))
 
 
+add_supported_preprocessor(PreprocessorClipVisionWithInsightFaceForIPAdapter(
+    name='InsightFace+CLIP-G (IPAdapter)',
+    url='https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/image_encoder/model.safetensors',
+    filename='CLIP-ViT-bigG.safetensors'
+))
+
+
+
 class IPAdapterPatcher(ControlModelPatcher):
     @staticmethod
     def try_build_from_state_dict(state_dict, ckpt_path):
@@ -155,7 +163,7 @@ class IPAdapterPatcher(ControlModelPatcher):
     def process_before_every_sampling(self, process, cond, mask, *args, **kwargs):
         unet = process.sd_model.forge_objects.unet
 
-        if isinstance(cond, list):
+        if isinstance(cond, list):  # should always be True
             images = []
             for c in cond:
                 tile_size = c['do_tiled'][0]
@@ -178,10 +186,13 @@ class IPAdapterPatcher(ControlModelPatcher):
                         images.append(numpy_to_pytorch(image))
                 else:
                     images.append(numpy_to_pytorch(image))
-            cond = cond[0]
 
-            cond['image'] = images
-        del cond['do_tiled']
+            pcond = cond[0].copy()
+            pcond['image'] = images
+        else:
+            pcond = cond.copy()
+
+        del pcond['do_tiled']
 
         unet = opIPAdapterApply(
             ipadapter=self.ip_adapter,
@@ -192,7 +203,7 @@ class IPAdapterPatcher(ControlModelPatcher):
             faceid_v2=self.faceid_v2,
             weight_v2=self.weight_v2,
             attn_mask=mask.squeeze(1) if mask is not None else None,
-            **cond,
+            **pcond,
         )[0]
 
         process.sd_model.forge_objects.unet = unet
