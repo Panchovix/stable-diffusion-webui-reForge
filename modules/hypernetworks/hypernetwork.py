@@ -1,25 +1,13 @@
-import datetime
 import glob
-import html
 import os
 import inspect
-from contextlib import closing
 
 import safetensors
 import torch
-import tqdm
-from einops import rearrange, repeat
-# from backend.nn.unet import default
-from modules import devices, sd_models, shared, sd_samplers, hashes, errors
-from modules.textual_inversion import textual_inversion
-from torch import einsum
+
+from modules import devices, shared, hashes, errors
 from torch.nn.init import normal_, xavier_normal_, xavier_uniform_, kaiming_normal_, kaiming_uniform_, zeros_
 
-from collections import deque
-from statistics import stdev, mean
-
-
-optimizer_dict = {optim_name : cls_obj for optim_name, cls_obj in inspect.getmembers(torch.optim, inspect.isclass) if optim_name != "Optimizer"}
 
 class HypernetworkModule(torch.nn.Module):
     activation_dict = {
@@ -195,36 +183,6 @@ class Hypernetwork:
                 for param in layer.parameters():
                     param.requires_grad = False
 
-    def save(self, filename):
-        state_dict = {}
-        optimizer_saved_dict = {}
-
-        for k, v in self.layers.items():
-            state_dict[k] = (v[0].state_dict(), v[1].state_dict())
-
-        state_dict['step'] = self.step
-        state_dict['name'] = self.name
-        state_dict['layer_structure'] = self.layer_structure
-        state_dict['activation_func'] = self.activation_func
-        state_dict['is_layer_norm'] = self.add_layer_norm
-        state_dict['weight_initialization'] = self.weight_init
-        state_dict['sd_checkpoint'] = self.sd_checkpoint
-        state_dict['sd_checkpoint_name'] = self.sd_checkpoint_name
-        state_dict['activate_output'] = self.activate_output
-        state_dict['use_dropout'] = self.use_dropout
-        state_dict['dropout_structure'] = self.dropout_structure
-        state_dict['last_layer_dropout'] = (self.dropout_structure[-2] != 0) if self.dropout_structure is not None else self.last_layer_dropout
-        state_dict['optional_info'] = self.optional_info if self.optional_info else None
-
-        if self.optimizer_name is not None:
-            optimizer_saved_dict['optimizer_name'] = self.optimizer_name
-
-        torch.save(state_dict, filename)
-        if shared.opts.save_optimizer_state and self.optimizer_state_dict:
-            optimizer_saved_dict['hash'] = self.shorthash()
-            optimizer_saved_dict['optimizer_state_dict'] = self.optimizer_state_dict
-            torch.save(optimizer_saved_dict, filename + '.optim')
-
     def load(self, filename):
         self.filename = filename
         if self.name is None:
@@ -299,7 +257,7 @@ class Hypernetwork:
 
 def list_hypernetworks(path):
     res = {}
-    
+
     for filename in sorted(glob.iglob(os.path.join(path, '**/*.pt'), recursive=True), key=str.lower):
         name = os.path.splitext(os.path.basename(filename))[0]
         # Prevent a hypothetical "None.pt" from being listed.
@@ -348,58 +306,6 @@ def load_hypernetworks(names, multipliers=None):
         shared.loaded_hypernetworks.append(hypernetwork)
 
 
-# def apply_single_hypernetwork(hypernetwork, context_k, context_v, layer=None):
-    # hypernetwork_layers = (hypernetwork.layers if hypernetwork is not None else {}).get(context_k.shape[2], None)
-
-    # if hypernetwork_layers is None:
-        # return context_k, context_v
-
-    # if layer is not None:
-        # layer.hyper_k = hypernetwork_layers[0]
-        # layer.hyper_v = hypernetwork_layers[1]
-
-    # context_k = devices.cond_cast_unet(hypernetwork_layers[0](devices.cond_cast_float(context_k)))
-    # context_v = devices.cond_cast_unet(hypernetwork_layers[1](devices.cond_cast_float(context_v)))
-    # return context_k, context_v
-
-
-# def apply_hypernetworks(hypernetworks, context, layer=None):
-    # context_k = context
-    # context_v = context
-    # for hypernetwork in hypernetworks:
-        # context_k, context_v = apply_single_hypernetwork(hypernetwork, context_k, context_v, layer)
-
-    # return context_k, context_v
-
-
-# def attention_CrossAttention_forward(self, x, context=None, mask=None, **kwargs):
-    # h = self.heads
-
-    # q = self.to_q(x)
-    # context = default(context, x)
-
-    # context_k, context_v = apply_hypernetworks(shared.loaded_hypernetworks, context, self)
-    # k = self.to_k(context_k)
-    # v = self.to_v(context_v)
-
-    # q, k, v = (rearrange(t, 'b n (h d) -> (b h) n d', h=h) for t in (q, k, v))
-
-    # sim = einsum('b i d, b j d -> b i j', q, k) * self.scale
-
-    # if mask is not None:
-        # mask = rearrange(mask, 'b ... -> b (...)')
-        # max_neg_value = -torch.finfo(sim.dtype).max
-        # mask = repeat(mask, 'b j -> (b h) () j', h=h)
-        # sim.masked_fill_(~mask, max_neg_value)
-
-    ##attention, what we cannot get enough of
-    # attn = sim.softmax(dim=-1)
-
-    # out = einsum('b i j, b j d -> b i d', attn, v)
-    # out = rearrange(out, '(b h) n d -> b n (h d)', h=h)
-    # return self.to_out(out)
-
-
 def stack_conds(conds):
     if len(conds) == 1:
         return torch.stack(conds)
@@ -413,18 +319,3 @@ def stack_conds(conds):
             conds[i] = torch.vstack([conds[i], last_vector_repeated])
 
     return torch.stack(conds)
-
-
-def statistics(data):
-    if len(data) < 2:
-        std = 0
-    else:
-        std = stdev(data)
-    total_information = f"loss:{mean(data):.3f}" + u"\u00B1" + f"({std/ (len(data) ** 0.5):.3f})"
-    recent_data = data[-32:]
-    if len(recent_data) < 2:
-        std = 0
-    else:
-        std = stdev(recent_data)
-    recent_information = f"recent 32 loss:{mean(recent_data):.3f}" + u"\u00B1" + f"({std / (len(recent_data) ** 0.5):.3f})"
-    return total_information, recent_information
