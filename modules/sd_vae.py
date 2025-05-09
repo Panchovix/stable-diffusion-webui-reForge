@@ -1,6 +1,6 @@
 import os
 
-from modules import paths, shared, sd_models, extra_networks, hashes
+from modules import paths, shared, sd_models, hashes
 
 import glob
 
