@@ -13,7 +13,7 @@ from PIL import Image, PngImagePlugin  # noqa: F401
 from modules.call_queue import wrap_gradio_gpu_call, wrap_queued_call, wrap_gradio_call, wrap_gradio_call_no_job # noqa: F401
 
 from modules import gradio_extensions, sd_schedulers  # noqa: F401
-from modules import sd_models, script_callbacks, ui_extensions, deepbooru, extra_networks, ui_common, ui_postprocessing, progress, shared_items, ui_settings, timer, sysinfo, ui_checkpoint_merger, scripts, sd_samplers, processing, ui_extra_networks, ui_toprow, launch_utils, ui_loadsave
+from modules import sd_models, script_callbacks, ui_extensions, deepbooru, extra_networks, ui_common, ui_postprocessing, progress, shared_items, ui_settings, timer, sysinfo, ui_checkpoint_merger, scripts, sd_samplers, ui_extra_networks, ui_toprow, launch_utils, ui_loadsave
 from modules.ui_components import FormRow, FormGroup, ToolButton, FormHTML, InputAccordion, ResizeHandleRow
 from modules.paths import script_path
 
@@ -24,7 +24,7 @@ from modules.shared import opts, cmd_opts
 import modules.infotext_utils as parameters_copypaste
 import modules.shared as shared
 from modules import prompt_parser
-from modules.infotext_utils import image_from_url_text, PasteField
+from modules.infotext_utils import PasteField
 from modules_forge.forge_canvas.canvas import ForgeCanvas, canvas_head
 from modules_forge import main_entry, forge_space
 import modules.processing_scripts.comments as comments
