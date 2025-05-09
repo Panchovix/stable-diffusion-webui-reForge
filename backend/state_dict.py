@@ -1,4 +1,3 @@
-import torch
 
 
 def load_state_dict(model, sd, ignore_errors=[], log_name=None, ignore_start=None):
