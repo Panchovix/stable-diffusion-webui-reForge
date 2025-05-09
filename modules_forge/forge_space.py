@@ -84,6 +84,7 @@ class ForgeSpace:
         self.repo_id = repo_id
         self.repo_type = repo_type
         self.revision = revision
+        self.installed = False
         self.is_running = False
         self.gradio_metas = None
 
@@ -109,16 +110,16 @@ class ForgeSpace:
     def refresh_gradio(self):
         results = []
 
-        installed = os.path.exists(self.hf_path)
+        self.installed = os.path.exists(self.hf_path)
         requirements_filename = os.path.abspath(os.path.realpath(os.path.join(self.root_path, 'requirements.txt')))
         has_requirement = os.path.exists(requirements_filename)
 
         if isinstance(self.gradio_metas, tuple):
-            results.append(build_html(title=self.title, installed=installed, url=self.gradio_metas[1]))
+            results.append(build_html(title=self.title, installed=self.installed, url=self.gradio_metas[1]))
         else:
-            results.append(build_html(title=self.title, installed=installed, url=None))
+            results.append(build_html(title=self.title, installed=self.installed, url=None))
 
-        if installed:
+        if self.installed:
             if has_requirement:
                 results.append(gr.update(value="Reinstall", variant="primary"))
             else:
