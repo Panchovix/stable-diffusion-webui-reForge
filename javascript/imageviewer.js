@@ -221,6 +221,6 @@ document.addEventListener("DOMContentLoaded", function() {
 
     modal.appendChild(modalNext);
 
-    document.body.appendChild(modal);
+    gradioApp().appendChild(modal);
 
 });
