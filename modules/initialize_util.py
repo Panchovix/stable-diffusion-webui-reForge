@@ -177,9 +177,7 @@ def configure_sigint_handler():
 
 
 def configure_opts_onchange():
-    from modules import shared, sd_models, sd_vae, ui_tempdir
-    from modules.call_queue import wrap_queued_call
-    from modules_forge import main_thread
+    from modules import shared, ui_tempdir
 
     shared.opts.onchange("temp_dir", ui_tempdir.on_tmpdir_changed)
     shared.opts.onchange("gradio_theme", shared.reload_gradio_theme)
