@@ -44,7 +44,7 @@ diffusers_modeling_utils.get_parameter_device = lambda *args, **kwargs: gpu
 transformers_modeling_utils.get_parameter_device = lambda *args, **kwargs: gpu
 
 
-def unload_module():
+def unload_module(silent=True):
     global module_in_gpu
 
     if module_in_gpu is None:
@@ -52,14 +52,15 @@ def unload_module():
 
     DynamicSwapInstaller.uninstall_model(module_in_gpu)
     module_in_gpu.to(cpu)
-    print(f'Move module to CPU: {type(module_in_gpu).__name__}')
+    if not silent:
+        print(f'Move module to CPU: {type(module_in_gpu).__name__}')
 
     module_in_gpu = None
     memory_management.soft_empty_cache()
     return
 
 
-def greedy_move_to_gpu(model, model_gpu_memory_when_using_cpu_swap):
+def greedy_move_to_gpu(model, model_gpu_memory_when_using_cpu_swap, silent=True):
     mem_counter = 0
     memory_in_swap = 0
     for m in model.modules():
@@ -72,12 +73,13 @@ def greedy_move_to_gpu(model, model_gpu_memory_when_using_cpu_swap):
                 m.to(cpu)
                 memory_in_swap += module_mem
 
-    print(f"[Memory Management] Loaded to CPU Swap: {memory_in_swap / (1024 * 1024):.2f} MB")
-    print(f"[Memory Management] Loaded to GPU: {mem_counter / (1024 * 1024):.2f} MB")
+    if not silent:
+        print(f"[Memory Management] Loaded to CPU Swap: {memory_in_swap / (1024 * 1024):.2f} MB")
+        print(f"[Memory Management] Loaded to GPU: {mem_counter / (1024 * 1024):.2f} MB")
     return
 
 
-def load_module(m):
+def load_module(m, silent=True):
     global module_in_gpu
 
     if module_in_gpu == m:
@@ -90,23 +92,27 @@ def load_module(m):
     inference_memory = 1.5 * 1024 * 1024 * 1024  # memory_management.minimum_inference_memory() # TODO: connect to main memory system
     estimated_remaining_memory = current_free_mem - model_memory - inference_memory
 
-    print(f"[Memory Management] Current Free GPU Memory: {current_free_mem / (1024 * 1024):.2f} MB")
-    print(f"[Memory Management] Required Model Memory: {model_memory / (1024 * 1024):.2f} MB")
-    print(f"[Memory Management] Required Inference Memory: {inference_memory / (1024 * 1024):.2f} MB")
-    print(f"[Memory Management] Estimated Remaining GPU Memory: {estimated_remaining_memory / (1024 * 1024):.2f} MB")
+    if not silent:
+        print(f"[Memory Management] Current Free GPU Memory: {current_free_mem / (1024 * 1024):.2f} MB")
+        print(f"[Memory Management] Required Model Memory: {model_memory / (1024 * 1024):.2f} MB")
+        print(f"[Memory Management] Required Inference Memory: {inference_memory / (1024 * 1024):.2f} MB")
+        print(f"[Memory Management] Estimated Remaining GPU Memory: {estimated_remaining_memory / (1024 * 1024):.2f} MB")
 
     is_torch_jit = 'ScriptModule' in type(m).__name__
 
     if is_torch_jit:
-        print(f'Detected torch jit module: {type(m).__name__}')
+        if not silent:
+            print(f'Detected torch jit module: {type(m).__name__}')
 
     if (ALWAYS_SWAP or estimated_remaining_memory < 0) and not is_torch_jit:
-        print(f'Move module to SWAP: {type(m).__name__}')
+        if not silent:
+            print(f'Move module to SWAP: {type(m).__name__}')
         DynamicSwapInstaller.install_model(m, target_device=gpu)
         model_gpu_memory_when_using_cpu_swap = memory_management.compute_model_gpu_memory_when_using_cpu_swap(current_free_mem, inference_memory)
         greedy_move_to_gpu(m, model_gpu_memory_when_using_cpu_swap)
     else:
-        print(f'Move module to GPU: {type(m).__name__}')
+        if not silent:
+            print(f'Move module to GPU: {type(m).__name__}')
         m.to(gpu)
 
     module_in_gpu = m
