@@ -54,7 +54,7 @@ function setupExtraNetworksForTab(tabname) {
             // get UI preset
             radioUI = gradioApp().querySelector('#forge_ui_preset');
             radioButtons = radioUI.getElementsByTagName('input');
-            UIresult = 3;   //  default to 'all'
+            UIresult = 4;   //  default to 'all'
             for (i = 0; i < radioButtons.length; i++) {
                 if (radioButtons[i].checked) {
                     UIresult = i;
@@ -79,14 +79,17 @@ function setupExtraNetworksForTab(tabname) {
                 if (sdversion == null) ;
                 else if (sdversion == 'SdVersion.Unknown')  ;
                 else if (opts.lora_filter_disabled == True) ;
-                else if (UIresult == 3) ;   //  'all'
+                else if (UIresult == 4) ;   //  'all'
                 else if (UIresult == 0) {   //  'sd'
                     if (sdversion != 'SdVersion.SD1' && sdversion != 'SdVersion.SD2')   visible = false;
                 }
                 else if (UIresult == 1) {   //  'xl'
                     if (sdversion != 'SdVersion.SDXL')  visible = false;
                 }
-                else if (UIresult == 2) {   //  'flux'
+                else if (UIresult == 2) {   //  'sd3'
+                    if (sdversion != 'SdVersion.SD3')   visible = false;
+                }
+                else if (UIresult == 3) {   //  'flux'
                     if (sdversion != 'SdVersion.Flux')  visible = false;
                 }
                 
