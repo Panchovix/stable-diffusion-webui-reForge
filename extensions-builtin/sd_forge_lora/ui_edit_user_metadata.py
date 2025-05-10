@@ -58,7 +58,7 @@ class LoraUserMetadataEditor(ui_extra_networks_user_metadata.UserMetadataEditor)
     def save_lora_user_metadata(self, name, desc, sd_version, activation_text, preferred_weight, negative_text, notes):
         user_metadata = self.get_user_metadata(name)
         user_metadata["description"] = desc
-        user_metadata["sd version"] = sd_version
+        user_metadata["sd_version_str"] = 'SdVersion.' + sd_version
         user_metadata["activation text"] = activation_text
         user_metadata["preferred weight"] = preferred_weight
         user_metadata["negative text"] = negative_text
@@ -120,12 +120,18 @@ class LoraUserMetadataEditor(ui_extra_networks_user_metadata.UserMetadataEditor)
         tags = build_tags(metadata)
         gradio_tags = [(tag, str(count)) for tag, count in tags[0:24]]
 
+        version = user_metadata.get('sd_version_str')
+        if version:
+            version = version.replace('SdVersion.', '')
+        else:
+            version = user_metadata.get("sd version", "Unknown")
+
         return [
             *values[0:5],
-            item.get("sd_version", "Unknown"),
+            version,
             gr.HighlightedText.update(value=gradio_tags, visible=True if tags else False),
             user_metadata.get('activation text', ''),
-            float(user_metadata.get('preferred weight', 0.0)),
+            float(user_metadata.get('preferred weight', 1.0)),
             user_metadata.get('negative text', ''),
             gr.update(visible=True if tags else False),
             gr.update(value=self.generate_random_prompt_from_tags(tags), visible=True if tags else False),
@@ -154,7 +160,7 @@ class LoraUserMetadataEditor(ui_extra_networks_user_metadata.UserMetadataEditor)
         return ", ".join(sorted(res))
 
     def create_extra_default_items_in_left_column(self):
-        self.select_sd_version = gr.Radio(['SD1', 'SD2', 'SDXL', 'Flux', 'Unknown'], value='Unknown', label='Base model', interactive=True)
+        self.select_sd_version = gr.Radio(['SD1', 'SD2', 'SDXL', 'SD3', 'Flux', 'Unknown'], value='Unknown', label='Base model', interactive=True)
 
     def create_editor(self):
         self.create_default_editor_elems()

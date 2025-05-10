@@ -21,7 +21,6 @@ def before_ui():
 script_callbacks.on_before_ui(before_ui)
 script_callbacks.on_infotext_pasted(networks.infotext_pasted)
 
-
 shared.options_templates.update(shared.options_section(('extra_networks', "Extra Networks"), {
     "lora_preferred_name": shared.OptionInfo("Alias from file", "When adding to prompt, refer to Lora by", gr.Radio, {"choices": ["Alias from file", "Filename"]}),
     "lora_add_hashes_to_infotext": shared.OptionInfo(True, "Add Lora hashes to infotext"),
@@ -31,8 +30,9 @@ shared.options_templates.update(shared.options_section(('extra_networks', "Extra
     "lora_not_found_warning_console": shared.OptionInfo(False, "Lora not found warning in console"),
     "lora_not_found_gradio_warning": shared.OptionInfo(False, "Lora not found warning popup in webui"),
 }))
+## check these options -4, -3, -1
 
-
+#and this
 shared.options_templates.update(shared.options_section(('compatibility', "Compatibility"), {
     "lora_functional": shared.OptionInfo(False, "Lora/Networks: use old method that takes longer when you have multiple Loras active and produces same results as kohya-ss/sd-webui-additional-networks extension"),
 }))

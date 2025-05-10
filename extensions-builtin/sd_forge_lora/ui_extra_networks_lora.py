@@ -49,15 +49,16 @@ class ExtraNetworksPageLora(ui_extra_networks.ExtraNetworksPage):
         item["negative_prompt"] = quote_js(negative_prompt)
 
         #   filter displayed loras by UI setting
-        sd_version = item["user_metadata"].get("sd version")
-        if sd_version in network.SdVersion.__members__:
-            item["sd_version"] = sd_version
-            sd_version = network.SdVersion[sd_version]
+        sd_version = item["user_metadata"].get("sd_version_str")
+        if sd_version:
+            item["sd_version_str"] = sd_version
         else:
-            sd_version = lora_on_disk.sd_version        #   use heuristics
-            #sd_version = network.SdVersion.Unknown     #   avoid heuristics 
-
-        item["sd_version_str"] = str(sd_version)
+            sd_version = item["user_metadata"].get("sd version")
+            if sd_version:
+                item["sd_version_str"] = "SdVersion." + sd_version
+            else:
+                item["sd_version_str"] = lora_on_disk.sd_version        #   use heuristics
+        #sd_version = network.SdVersion.Unknown     #   avoid heuristics 
 
         return item
 
