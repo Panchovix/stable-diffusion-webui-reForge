@@ -604,12 +604,32 @@ def save_image_with_geninfo(image, geninfo, filename, extension=None, existing_p
         image.save(filename, format=image_format, quality=opts.jpeg_quality, pnginfo=pnginfo_data)
 
     elif extension.lower() in (".jpg", ".jpeg", ".webp"):
-        if image.mode == 'RGBA':
-            image = image.convert("RGB")
-        elif image.mode == 'I;16':
-            image = image.point(lambda p: p * 0.0038910505836576).convert("RGB" if extension.lower() == ".webp" else "L")
+        img_to_save = image
+        save_options = {"quality": opts.jpeg_quality}
 
-        image.save(filename, format=image_format, quality=opts.jpeg_quality, lossless=opts.webp_lossless)
+        if img_to_save.mode == 'RGBA':
+            convertToRGB = True
+            if extension.lower() == ".webp":
+                stealth_pnginfo_opt = shared.opts.data.get('stealth_pnginfo_opt', 'Alpha')
+                if stealth_pnginfo_opt == 'Alpha':
+                    convertToRGB = False # Keep RGBA for stealth info in alpha
+                    if opts.webp_lossless:
+                        save_options["lossless"] = True
+                    else:
+                        # For lossy WebP, try to make alpha lossless for LSB steganography
+                        save_options["lossless"] = False
+                        save_options["alpha_quality"] = 100 # Crucial for attempting LSB on lossy WebP alpha
+
+            if convertToRGB:
+                img_to_save = img_to_save.convert("RGB")
+        elif img_to_save.mode == 'I;16':
+            img_to_save = img_to_save.point(lambda p: p * 0.0038910505836576).convert("RGB" if extension.lower() == ".webp" else "L")
+
+        # Ensure lossless is explicitly set for webp if not already by stealth logic
+        if extension.lower() == ".webp" and "lossless" not in save_options:
+            save_options["lossless"] = opts.webp_lossless
+
+        img_to_save.save(filename, format=image_format, **save_options)
 
         if opts.enable_pnginfo and geninfo is not None:
             exif_bytes = piexif.dump({
