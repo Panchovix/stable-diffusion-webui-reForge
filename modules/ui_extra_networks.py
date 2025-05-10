@@ -17,6 +17,7 @@ from PIL import Image
 
 from modules.infotext_utils import image_from_url_text
 
+
 extra_pages = []
 allowed_dirs = set()
 default_allowed_preview_extensions = ["png", "jpg", "jpeg", "webp", "gif"]
@@ -389,7 +390,6 @@ class ExtraNetworksPage:
                 "extra_networks_tabname": self.extra_networks_tabname,
                 "onclick_extra": "",
                 "data_path": dir_path,
-                "data_hash": "",
                 "action_list_item_action_leading": "<i class='tree-list-item-action-chevron'></i>",
                 "action_list_item_visual_leading": "🗀",
                 "action_list_item_label": os.path.basename(dir_path),
@@ -439,7 +439,6 @@ class ExtraNetworksPage:
                 "extra_networks_tabname": self.extra_networks_tabname,
                 "onclick_extra": item_html_args["card_clicked"],
                 "data_path": file_path,
-                "data_hash": item["shorthash"],
                 "action_list_item_action_leading": "<i class='tree-list-item-action-chevron'></i>",
                 "action_list_item_visual_leading": "🗎",
                 "action_list_item_label": item["name"],

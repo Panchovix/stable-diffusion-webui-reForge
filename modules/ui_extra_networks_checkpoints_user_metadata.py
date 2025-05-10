@@ -58,7 +58,7 @@ class CheckpointUserMetadataEditor(ui_extra_networks_user_metadata.UserMetadataE
 
         self.create_default_editor_elems()
 
-        self.sd_version = gr.Radio(['SD1', 'SD2', 'SDXL', 'Flux', 'Unknown'], value='Unknown', label='Base model', interactive=True)
+        self.sd_version = gr.Radio(['SD1', 'SD2', 'SDXL', 'SD3', 'Flux', 'Unknown'], value='Unknown', label='Base model', interactive=True)
 
         with gr.Row():
             self.select_vae = gr.Dropdown(choices=modules_list, value=None, label="Preferred VAE / Text encoder(s)", elem_id="checpoint_edit_user_metadata_preferred_vae", multiselect=True)

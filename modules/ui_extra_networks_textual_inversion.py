@@ -11,7 +11,7 @@ class SdVersion(enum.Enum): #   same as in lora.network
     SD1 = 2
     SD2 = 3
     SDXL = 4
-#    SD3 = 5
+    SD3 = 5
     Flux = 6
 
 embedding_db = modules.textual_inversion.textual_inversion.EmbeddingDatabase()
@@ -56,6 +56,8 @@ class ExtraNetworksPageTextualInversion(ui_extra_networks.ExtraNetworksPage):
                 sd_version = SdVersion.SD2
             case 2048:
                 sd_version = SdVersion.SDXL
+            # case 4096:
+                # sd_version = SdVersion.Flux
             case _:
                 sd_version = SdVersion.Unknown
 
