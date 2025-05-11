@@ -8,7 +8,7 @@ def add_stealth_pnginfo(params: ImageSaveParams):
     stealth_pnginfo_opt = shared.opts.data.get('stealth_pnginfo_opt', 'Alpha')
     if not stealth_pnginfo_opt or stealth_pnginfo_opt == 'None':
         return
-    if not params.filename.endswith('.png') or params.pnginfo is None:
+    if not params.filename.endswith(('.png', '.webp')) or params.pnginfo is None:
         return
     if 'parameters' not in params.pnginfo:
         return
