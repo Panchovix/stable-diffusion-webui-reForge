@@ -2,7 +2,7 @@ from __future__ import annotations
 import json
 import logging
 import math
-import os
+import os, gc
 import sys
 import hashlib
 from dataclasses import dataclass, field
@@ -37,6 +37,7 @@ from modules_forge import main_entry
 from backend import memory_management
 from backend.modules.k_prediction import rescale_zero_terminal_snr_sigmas
 
+from modules import latent_upscale_nn
 
 # some of those options should not be changed at all because they would break the model, so I removed them from options.
 opt_C = 4
@@ -921,7 +922,9 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
                 # hiresfix quickbutton may not need reload of firstpass model
                 sd_models.forge_model_reload()  # model can be changed for example by refiner, hiresfix
 
+            # is this necessary per iteration (batch count)?
             p.sd_model.forge_objects = p.sd_model.forge_objects_original.shallow_copy()
+            
             gc.collect()
             torch.cuda.empty_cache()
 
@@ -1436,7 +1439,24 @@ class StableDiffusionProcessingTxt2Img(StableDiffusionProcessing):
             for i in range(samples.shape[0]):
                 save_intermediate(samples, i)
 
-            samples = torch.nn.functional.interpolate(samples, size=(target_height // opt_f, target_width // opt_f), mode=self.latent_scale_mode["mode"], antialias=self.latent_scale_mode["antialias"])
+            if self.latent_scale_mode["mode"] == "NNet" and \
+                (shared.sd_model.is_sd1 or shared.sd_model.is_sd2 or shared.sd_model.is_sdxl) and \
+                (self.hr_scale == 1.25 or self.hr_scale == 1.5 or self.hr_scale == 2.0):
+                # use City96 NeuralNet latent upscalers: https://github.com/city96/SD-Latent-Upscaler/
+                version = "xl" if shared.sd_model.is_sdxl else "v1"
+                if self.hr_scale == 1.25:
+                    scale = "1.25"
+                elif self.hr_scale == 1.5:
+                    scale = "1.5"
+                elif self.hr_scale == 2:
+                    scale = "2.0"
+                    
+                latent_scale = 0.13025 if shared.sd_model.is_sdxl else 0.18215
+                samples = latent_upscale_nn.upscale (samples / latent_scale, version, scale) * latent_scale
+
+            else:
+                self.latent_scale_mode = shared.latent_upscale_modes['Latent (antialiased)']
+                samples = torch.nn.functional.interpolate(samples, size=(target_height // opt_f, target_width // opt_f), mode=self.latent_scale_mode["mode"], antialias=self.latent_scale_mode["antialias"])
 
             # Avoid making the inpainting conditioning unless necessary as
             # this does need some extra compute to decode / encode the image again.
