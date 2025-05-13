@@ -46,6 +46,8 @@ class UiCheckpointMerger:
             if vae in te_list:
                 te_list.remove(vae)
 
+        te_list = [te for te in te_list if 'other_module' not in module_list[te]]
+
         vae_list = [""] + vae_list
 
         if fromUI:

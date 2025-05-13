@@ -192,14 +192,6 @@ def update_negative_prompt_token_counter(*args):
     return update_token_counter(*args, is_positive=False)
 
 
-def setup_progressbar(*args, **kwargs):
-    pass
-
-
-def create_output_panel(tabname, outdir, toprow=None):
-    return ui_common.create_output_panel(tabname, outdir, toprow)
-
-
 def ordered_ui_categories():
     user_order = {x.strip(): i * 2 + 1 for i, x in enumerate(shared.opts.ui_reorder_list)}
 
@@ -318,7 +310,7 @@ def create_ui():
                                         modules_list = get_additional_modules()
                                         return gr.update(choices=["Use same checkpoint"] + modules.sd_models.checkpoint_tiles(use_short=True)), gr.update(choices=modules_list)
 
-                                    hr_additional_modules = gr.Dropdown(label='Hires VAE / Text Encoder', elem_id="hr_vae_te", choices=modules_list, value=["Use same choices"], multiselect=True, scale=3)
+                                    hr_additional_modules = gr.Dropdown(label='Hires additional modules', elem_id="hr_vae_te", choices=modules_list, value=["Use same choices"], multiselect=True, scale=3)
 
                                     hr_checkpoint_refresh.click(fn=refresh_model_and_modules, outputs=[hr_checkpoint_name, hr_additional_modules], show_progress=False)
 
@@ -358,7 +350,7 @@ def create_ui():
                     show_progress=False,
                 )
 
-            output_panel = create_output_panel("txt2img", opts.outdir_txt2img_samples, toprow)
+            output_panel = ui_common.create_output_panel("txt2img", opts.outdir_txt2img_samples, toprow)
 
             txt2img_inputs = [
                 dummy_component,
@@ -452,7 +444,7 @@ def create_ui():
                 PasteField(hr_resize_x, "Hires resize-1", api="hr_resize_x"),
                 PasteField(hr_resize_y, "Hires resize-2", api="hr_resize_y"),
                 PasteField(hr_checkpoint_name, "Hires checkpoint", api="hr_checkpoint_name"),
-                PasteField(hr_additional_modules, "Hires VAE/TE", api="hr_additional_modules"),
+                PasteField(hr_additional_modules, "Hires additional modules", api="hr_additional_modules"),
                 PasteField(hr_sampler_name, sd_samplers.get_hr_sampler_from_infotext, api="hr_sampler_name"),
                 PasteField(hr_scheduler, sd_samplers.get_hr_scheduler_from_infotext, api="hr_scheduler"),
                 PasteField(hr_prompt, "Hires prompt", api="hr_prompt"),
@@ -684,7 +676,7 @@ def create_ui():
                 return tab, gr.update(visible=tab in [2, 3, 4]), gr.update(visible=tab == 3),
 
 
-            output_panel = create_output_panel("img2img", opts.outdir_img2img_samples, toprow)
+            output_panel = ui_common.create_output_panel("img2img", opts.outdir_img2img_samples, toprow)
 
             submit_img2img_inputs = [
                 dummy_component,
