@@ -474,16 +474,6 @@ def replace_state_dict(sd, asd, guess):
     return sd
 
 
-# def patch(cls, model, unet_name, strength=1.0):
-        # sd = cls.load_state_dict(folder_paths.get_full_path("unet", unet_name))
-        # model = model.clone()
-        # model.add_patches(
-            # {f"diffusion_model.{k}": (v,) for k, v in sd.items()},
-            # strength_patch=strength,
-            # strength_model=min(1.0, max(0.0, 1.0 - strength)),
-        # )
-        # return (model,)
-
 def preprocess_state_dict(sd):
     if not any(k.startswith("model.diffusion_model") for k in sd.keys()):
         sd = {f"model.diffusion_model.{k}": v for k, v in sd.items()}
