@@ -79,6 +79,7 @@ def refresh_vaete():
     module_paths = [
         os.path.abspath(os.path.join(paths.models_path, "VAE")),
         os.path.abspath(os.path.join(paths.models_path, "text_encoder")),
+        os.path.abspath(os.path.join(paths.models_path, "other_module")),
     ]
 
     if isinstance(shared.cmd_opts.vae_dir, str):
@@ -125,7 +126,7 @@ def make_checkpoint_manager_ui():
     ui_vae = gr.Dropdown(
         value=lambda: [os.path.basename(x) for x in shared.opts.forge_additional_modules],
         multiselect=True,
-        label="VAE / Text Encoder",
+        label="Additional modules",
         choices=list(module_list.keys())
     )
 
