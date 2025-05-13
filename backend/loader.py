@@ -92,7 +92,7 @@ def load_huggingface_component(guess, component_name, lib_name, cls_name, repo_p
                 print(f'Using Detected T5 Data Type: {state_dict_dtype}')
                 storage_dtype = state_dict_dtype
                 if state_dict_dtype in ['nf4', 'fp4', 'gguf']:
-                    print(f'Using pre-quant state dict!')
+                    print('Using pre-quant state dict!')
                     if state_dict_dtype in ['gguf']:
                         beautiful_print_gguf_state_dict_statics(state_dict)
             else:
@@ -141,7 +141,7 @@ def load_huggingface_component(guess, component_name, lib_name, cls_name, repo_p
                 print(f'Using Detected UNet Type: {state_dict_dtype}')
                 storage_dtype = state_dict_dtype
                 if state_dict_dtype in ['nf4', 'fp4', 'gguf']:
-                    print(f'Using pre-quant state dict!')
+                    print('Using pre-quant state dict!')
                     if state_dict_dtype in ['gguf']:
                         beautiful_print_gguf_state_dict_statics(state_dict)
 
@@ -379,7 +379,7 @@ def replace_state_dict(sd, asd, guess):
         if CLIP_key in asd and asd[CLIP_key].shape[0] == 768:
             new_prefix = prefix_L[model_type]
             old_prefix = CLIP_L[CLIP_key]
-            
+
             if "text_projection" in asd:
                 asd["text_projection.weight"] = asd.pop("text_projection")
 
@@ -423,7 +423,7 @@ def replace_state_dict(sd, asd, guess):
                     asd = transformers_convert(asd, old_prefix, new_prefix, 12)
                     for k, v in asd.items():
                         sd[k] = v
-                
+
                 elif old_prefix == "":
                     for k, v in asd.items():
                         new_k = new_prefix + k
@@ -441,8 +441,48 @@ def replace_state_dict(sd, asd, guess):
         for k, v in asd.items():
             sd[f"{text_encoder_key_prefix}t5xxl.transformer.{k}"] = v
 
+
+    # ResAdapter (bytedance) unet patch (sd1.5 or sdxl)
+    if 'down_blocks.0.resnets.0.norm1.bias' in asd:
+        if (len(asd) == 88 and model_type == 'sd1') or (len(asd) == 68 and model_type == 'sdxl'):
+            pk = {
+                ".norm1.weight": ".in_layers.0.weight",
+                ".norm1.bias":   ".in_layers.0.bias",
+                ".norm2.weight": ".out_layers.0.weight",
+                ".norm2.bias":   ".out_layers.0.bias"
+                }
+
+            for k in pk:
+                for x in range(4 if model_type == 'sd1' else 3):
+                    for y in range(2):
+                        k_i = "down_blocks."  + str(x)           + ".resnets." + str(y) + k
+                        k_o = "input_blocks." + str(3*x + y + 1) + ".0"                 + pk[k]
+                        sd["model.diffusion_model." + k_o] = asd.pop(k_i)
+
+                    for y in range(3):
+                        k_i = "up_blocks."     + str(x)       + ".resnets." + str(y) + k
+                        k_o = "output_blocks." + str(3*x + y) + ".0"                 + pk[k]
+                        sd["model.diffusion_model." + k_o] = asd.pop(k_i)
+
+                for x in range(2):
+                    k_i = "mid_block.resnets." + str(x)   + k
+                    k_o = "middle_block."      + str(2*x) + pk[k]
+                    sd["model.diffusion_model." + k_o] = asd.pop(k_i)
+
+            print ("Loaded ResAdapter for " + model_type)
+
     return sd
 
+
+# def patch(cls, model, unet_name, strength=1.0):
+        # sd = cls.load_state_dict(folder_paths.get_full_path("unet", unet_name))
+        # model = model.clone()
+        # model.add_patches(
+            # {f"diffusion_model.{k}": (v,) for k, v in sd.items()},
+            # strength_patch=strength,
+            # strength_model=min(1.0, max(0.0, 1.0 - strength)),
+        # )
+        # return (model,)
 
 def preprocess_state_dict(sd):
     if not any(k.startswith("model.diffusion_model") for k in sd.keys()):
@@ -487,10 +527,6 @@ def split_state_dict(sd, additional_state_dicts: list = None):
 
     return state_dict, guess
 
-# class GuessChroma:
-    # huggingface_repo = 'Chroma'
-
-    # unet_remove_config = ['guidance_embed']
 
 @torch.inference_mode()
 def forge_loader(sd, additional_state_dicts=None):
@@ -499,16 +535,6 @@ def forge_loader(sd, additional_state_dicts=None):
     except:
         raise ValueError('Failed to recognize model type!')
 
-    # modifications for Chroma (derived from Flux Schnell, but significant differences)
-    # if estimated_config.huggingface_repo == "black-forest-labs/FLUX.1-schnell"  \
-        # and "transformer" in state_dicts \
-        # and "distilled_guidance_layer.layers.0.in_layer.bias" in state_dicts["transformer"]:
-        # estimated_config.huggingface_repo = GuessChroma.huggingface_repo
-        # for x in GuessChroma.unet_remove_config:
-            # del estimated_config.unet_config[x]
-        # state_dicts['text_encoder'] = state_dicts['text_encoder_2']
-        # del state_dicts['text_encoder_2']
-    
     repo_name = estimated_config.huggingface_repo
 
     local_path = os.path.join(dir_path, 'huggingface', repo_name)
@@ -562,9 +588,6 @@ def forge_loader(sd, additional_state_dicts=None):
             huggingface_components['scheduler'].config.prediction_type = yaml_config_prediction_type
         else:
             huggingface_components['scheduler'].config.prediction_type = prediction_types.get(estimated_config.model_type.name, huggingface_components['scheduler'].config.prediction_type)
-
-    # if estimated_config.huggingface_repo == "Chroma":
-        # return Chroma(estimated_config=estimated_config, huggingface_components=huggingface_components)
 
     for M in possible_models:
         if any(isinstance(estimated_config, x) for x in M.matched_guesses):
