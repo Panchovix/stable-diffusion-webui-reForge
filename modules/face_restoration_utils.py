@@ -122,6 +122,9 @@ class CommonFaceRestoration(face_restoration.FaceRestoration):
         self.model_path = model_path
         os.makedirs(model_path, exist_ok=True)
 
+    def get_device(self):
+        return devices.device_face_restore
+
     @cached_property
     def face_helper(self) -> FaceRestoreHelper:
         return create_face_helper(self.get_device())
@@ -134,9 +137,6 @@ class CommonFaceRestoration(face_restoration.FaceRestoration):
             logger.debug("Sending face helper to %s", device)
             self.face_helper.face_det.to(device)
             self.face_helper.face_parse.to(device)
-
-    def get_device(self):
-        raise NotImplementedError("get_device must be implemented by subclasses")
 
     def load_net(self) -> torch.Module:
         raise NotImplementedError("load_net must be implemented by subclasses")
