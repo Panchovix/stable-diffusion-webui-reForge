@@ -41,16 +41,14 @@ class FaceRestorerCodeFormer(face_restoration_utils.CommonFaceRestoration):
             ).model
         raise ValueError("No codeformer model found")
 
-    def get_device(self):
-        return devices.device_face_restore
-
     def restore(self, np_image, w: float | None = None):
         if w is None:
             w = getattr(shared.opts, "code_former_weight", 0.5)
 
         def restore_face(cropped_face_t):
             assert self.net is not None
-            return self.net(cropped_face_t, weight=w, adain=True)[0]
+            with torch.no_grad():
+                return self.net(cropped_face_t, weight=w, adain=True)[0]
 
         return self.restore_with_helper(np_image, restore_face)
 
