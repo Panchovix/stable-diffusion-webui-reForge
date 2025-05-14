@@ -46,7 +46,7 @@ class KModel(torch.nn.Module):
         return self.predictor.calculate_denoised(sigma, model_output, x)
 
     def memory_required(self, input_shape):
-        area = input_shape[0] * input_shape[2] * input_shape[3]
+#        area = input_shape[0] * input_shape[2] * input_shape[3]
         dtype_size = memory_management.dtype_size(self.computation_dtype)
 
         if attention.attention_function in [attention.attention_pytorch, attention.attention_xformers]:
@@ -56,4 +56,6 @@ class KModel(torch.nn.Module):
             if attention.get_attn_precision() == torch.float32:
                 dtype_size = 4
 
-        return scaler * area * dtype_size * 16384
+        return input_shape[0] * input_shape[1] * input_shape[2] * input_shape[3] * dtype_size * scaler * 1024
+
+#        return scaler * area * dtype_size * 16384
