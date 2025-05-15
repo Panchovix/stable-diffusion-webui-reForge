@@ -88,7 +88,7 @@ class KohyaHRFixForForge(scripts.Script):
         if enabled:
             if p.is_hr_pass:
                 return
-            if p.sd_model.is_webui_legacy_model() or p.sd_model.is_sd3:
+            if not p.sd_model.is_webui_legacy_model() or p.sd_model.is_sd3:
                 return
 
             #auto calc downscale factor based on model and width/height?
