@@ -187,6 +187,9 @@ document.addEventListener('keydown', function(e) {
                 e.preventDefault();
             }
         }
+		else {
+			globalPopup.style.display = "none";
+		}
     }
 });
 
