@@ -1,8 +1,5 @@
-
-from modules import scripts_postprocessing, ui_components, errors
+from modules import scripts_postprocessing, ui_components, errors, autocrop
 import gradio as gr
-
-from modules.textual_inversion import autocrop
 
 
 class ScriptPostprocessingFocalCrop(scripts_postprocessing.ScriptPostprocessing):
@@ -53,4 +50,3 @@ class ScriptPostprocessingFocalCrop(scripts_postprocessing.ScriptPostprocessing)
 
         pp.image = result
         pp.extra_images = [pp.create_copy(x, nametags=["focal-crop-debug"], disable_processing=True) for x in others]
-
