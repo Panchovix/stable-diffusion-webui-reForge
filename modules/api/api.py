@@ -21,7 +21,7 @@ from modules import sd_samplers, deepbooru, images, scripts, ui, postprocessing,
 from modules.api import models
 from modules.shared import opts
 from modules.processing import StableDiffusionProcessingTxt2Img, StableDiffusionProcessingImg2Img, process_images, process_extra_images
-import modules.textual_inversion.textual_inversion
+import backend.text_processing.textual_inversion as textual_inversion
 from modules.shared import cmd_opts
 
 from PIL import PngImagePlugin
@@ -267,10 +267,9 @@ class Api:
         if not self.default_script_arg_img2img:
             self.default_script_arg_img2img = self.init_default_script_args(img2img_script_runner)
 
-        self.embedding_db = modules.textual_inversion.textual_inversion.EmbeddingDatabase()
+        self.embedding_db = textual_inversion.EmbeddingDatabase(None)
         self.embedding_db.add_embedding_dir(cmd_opts.embeddings_dir)
-        self.embedding_db.load_textual_inversion_embeddings(force_reload=True, sync_with_sd_model=False)
-
+        self.embedding_db.load_textual_inversion_embeddings(find_only=True)
 
 
     def add_api_route(self, path: str, endpoint, **kwargs):
@@ -769,7 +768,7 @@ class Api:
 
     def refresh_embeddings(self):
         with self.queue_lock:
-            self.embedding_db.load_textual_inversion_embeddings(force_reload=True, sync_with_sd_model=False)
+            self.embedding_db.load_textual_inversion_embeddings(find_only=True)
 
     def refresh_checkpoints(self):
         with self.queue_lock:
@@ -780,15 +779,7 @@ class Api:
             shared_items.refresh_vae_list()
 
     def create_embedding(self, args: dict):
-        try:
-            shared.state.begin(job="create_embedding")
-            filename = modules.textual_inversion.textual_inversion.create_embedding(**args) # create empty embedding
-            self.embedding_db.load_textual_inversion_embeddings(force_reload=True, sync_with_sd_model=False) # reload embeddings so new one can be immediately used
-            return models.CreateResponse(info=f"create embedding filename: {filename}")
-        except AssertionError as e:
-            return models.TrainResponse(info=f"create embedding error: {e}")
-        finally:
-            shared.state.end()
+        pass
 
     def create_hypernetwork(self, args: dict):
         try:
