@@ -8,6 +8,8 @@ import safetensors.torch
 
 from PIL import Image
 
+from modules import hashes
+
 
 class EmbeddingEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -86,7 +88,8 @@ class Embedding:
         self.vectors = 0
         self.sd_checkpoint = None
         self.sd_checkpoint_name = None
-
+        self.hash = None
+        self.shorthash = None
 
 class DirWithTextualInversionEmbeddings:
     def __init__(self, path):
@@ -124,10 +127,11 @@ class EmbeddingDatabase:
     def clear_embedding_dirs(self):
         self.embedding_dirs.clear()
 
-    def register_embedding(self, embedding):
-        return self.register_embedding_by_name(embedding, embedding.name)
+    # def register_embedding(self, embedding):
+        # return self.register_embedding_by_name(embedding)
 
-    def register_embedding_by_name(self, embedding, name):
+    def register_embedding_by_name(self, embedding):
+        name = embedding.name
         ids = self.tokenizer([name], truncation=False, add_special_tokens=False)["input_ids"][0]
         first_id = ids[0]
         if first_id not in self.ids_lookup:
@@ -148,7 +152,7 @@ class EmbeddingDatabase:
         self.word_embeddings[name] = embedding
         return embedding
 
-    def load_from_file(self, path, filename):
+    def load_from_file(self, path, filename, find_only=False):
         name, ext = os.path.splitext(filename)
         ext = ext.upper()
 
@@ -178,13 +182,16 @@ class EmbeddingDatabase:
             embedding = create_embedding_from_data(data, name, filename=filename, filepath=path)
 
             if self.expected_shape == -1 or self.expected_shape == embedding.shape:
-                self.register_embedding(embedding)
+                if find_only:
+                    self.word_embeddings[name] = embedding
+                else:
+                    self.register_embedding_by_name(embedding)
             else:
                 self.skipped_embeddings[name] = embedding
         else:
             print(f"Unable to load Textual inversion embedding due to data issue: '{name}'.")
 
-    def load_from_dir(self, embdir):
+    def load_from_dir(self, embdir, find_only=False):
         if not os.path.isdir(embdir.path):
             return
 
@@ -196,21 +203,29 @@ class EmbeddingDatabase:
                     if os.stat(fullfn).st_size == 0:
                         continue
 
-                    self.load_from_file(fullfn, fn)
+                    self.load_from_file(fullfn, fn, find_only)
                 except Exception:
                     print(f"Error loading embedding {fn}")
                     continue
 
-    def load_textual_inversion_embeddings(self):
+    def load_textual_inversion_embeddings(self, find_only=False):
         self.ids_lookup.clear()
         self.word_embeddings.clear()
         self.skipped_embeddings.clear()
 
         for embdir in self.embedding_dirs.values():
-            self.load_from_dir(embdir)
+            self.load_from_dir(embdir, find_only)
             embdir.update()
 
+        # if find_only:
+            # re-sort word_embeddings because load_from_dir may not load in alphabetic order. *seems unnecessary ?*
+            # using a temporary copy so we don't reinitialize self.word_embeddings in case other objects have a reference to it.
+            # sorted_word_embeddings = {e.name: e for e in sorted(self.word_embeddings.values(), key=lambda e: e.name.lower())}
+            # self.word_embeddings.clear()
+            # self.word_embeddings.update(sorted_word_embeddings)
+
         return
+
 
     def find_embedding_at_position(self, tokens, offset):
         token = tokens[offset]
@@ -260,5 +275,7 @@ def create_embedding_from_data(data, name, filename='unknown embedding file', fi
 
     if filepath:
         embedding.filename = filepath
+        embedding.hash = hashes.sha256(filepath, "textual_inversion/" + name) or ''
+        embedding.shorthash = embedding.hash[0:12]
 
     return embedding
