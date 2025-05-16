@@ -1,5 +1,5 @@
 import os
-import modules.textual_inversion.textual_inversion
+import backend.text_processing.textual_inversion as textual_inversion
 
 from modules.shared import cmd_opts
 from modules import ui_extra_networks, shared
@@ -14,9 +14,9 @@ class SdVersion(enum.Enum): #   same as in lora.network
     SD3 = 5
     Flux = 6
 
-embedding_db = modules.textual_inversion.textual_inversion.EmbeddingDatabase()
+embedding_db = textual_inversion.EmbeddingDatabase(None)
 embedding_db.add_embedding_dir(cmd_opts.embeddings_dir)
-embedding_db.load_textual_inversion_embeddings(force_reload=True, sync_with_sd_model=False)
+embedding_db.load_textual_inversion_embeddings(find_only=True)
 
 
 class ExtraNetworksPageTextualInversion(ui_extra_networks.ExtraNetworksPage):
@@ -26,7 +26,7 @@ class ExtraNetworksPageTextualInversion(ui_extra_networks.ExtraNetworksPage):
         self.allow_negative_prompt = True
 
     def refresh(self):
-        embedding_db.load_textual_inversion_embeddings(force_reload=True, sync_with_sd_model=False)
+        embedding_db.load_textual_inversion_embeddings(find_only=True)
 
     def create_item(self, name, index=None, enable_filter=True):
         embedding = embedding_db.word_embeddings.get(name)
