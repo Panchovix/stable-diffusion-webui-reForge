@@ -113,3 +113,59 @@ def adaptive_resize(samples, width, height, upscale_method, crop):
         return torch.nn.functional.adaptive_avg_pool2d(samples, (height, width))
     else:
         return torch.nn.functional.interpolate(s, size=(height, width), mode=upscale_method)
+
+
+# From https://github.com/Jamy-L/Pytorch-Contrast-Adaptive-Sharpening/
+def contrast_adaptive_sharpening(image, amount):
+    #convert to luminance based colourspce, run only on L
+    
+    # 0.0 <= amount <= 1.0
+    def min_(tensor_list):
+        # return the element-wise min of the tensor list.
+        x = torch.stack(tensor_list)
+        mn = x.min(axis=0)[0]
+        return torch.clamp(mn, min=0)
+
+    def max_(tensor_list):
+        # return the element-wise max of the tensor list.
+        x = torch.stack(tensor_list)
+        mx = x.max(axis=0)[0]
+        return torch.clamp(mx, max=1)
+
+    img = torch.nn.functional.pad(image, pad=(1, 1, 1, 1)).cpu()
+
+    a = img[..., :-2, :-2]
+    b = img[..., :-2, 1:-1]
+    c = img[..., :-2, 2:]
+    d = img[..., 1:-1, :-2]
+    e = img[..., 1:-1, 1:-1]
+    f = img[..., 1:-1, 2:]
+    g = img[..., 2:, :-2]
+    h = img[..., 2:, 1:-1]
+    i = img[..., 2:, 2:]
+
+    # Computing contrast
+    cross = (b, d, e, f, h)
+    mn = min_(cross)
+    mx = max_(cross)
+
+    diag = (a, c, g, i)
+    mn2 = min_(diag)
+    mx2 = max_(diag)
+    mx = mx + mx2
+    mn = mn + mn2
+
+    # Computing local weight
+    inv_mx = torch.reciprocal(mx + 1e-6)
+    amp = inv_mx * torch.minimum(mn, (2 - mx))
+
+    # scaling
+    amp = torch.sqrt(amp)
+    w = - amp * (amount * (1 / 5 - 1 / 8) + 1 / 8)
+    div = torch.reciprocal(1 + 4 * w)
+
+    output = ((b + d + f + h) * w + e) * div
+    output = output.clamp(0, 1)
+    output = torch.nan_to_num(output)
+
+    return (output)
