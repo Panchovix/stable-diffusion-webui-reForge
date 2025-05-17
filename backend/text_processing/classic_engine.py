@@ -41,9 +41,12 @@ class CLIPEmbeddingForTextualInversion(torch.nn.Module):
         for fixes, tensor in zip(batch_fixes, inputs_embeds):
             for offset, embedding in fixes:
                 emb = embedding.vec[self.textual_inversion_key] if isinstance(embedding.vec, dict) else embedding.vec
-                emb = emb.to(inputs_embeds)
-                emb_len = min(tensor.shape[0] - offset - 1, emb.shape[0])
-                tensor = torch.cat([tensor[0:offset + 1], emb[0:emb_len], tensor[offset + 1 + emb_len:]]).to(dtype=inputs_embeds.dtype)
+
+                if emb.shape[-1] == tensor.shape[-1]:
+                    emb = emb.to(inputs_embeds)
+                    emb_len = min(tensor.shape[0] - offset - 1, emb.shape[0])
+                    tensor = torch.cat([tensor[0:offset + 1], emb[0:emb_len], tensor[offset + 1 + emb_len:]]).to(dtype=inputs_embeds.dtype)
+                    print(f'[Textual Inversion] Used Embedding [{embedding.name}] in CLIP of [{self.textual_inversion_key}]')
 
             vecs.append(tensor)
 
@@ -254,7 +257,7 @@ class ClassicTextProcessingEngine:
 
         batch_chunks, token_count = self.process_texts(texts)
 
-        used_embeddings = {}
+        # used_embeddings = {}
         chunk_count = max([len(x) for x in batch_chunks])
 
         zs = []
@@ -265,26 +268,26 @@ class ClassicTextProcessingEngine:
             multipliers = [x.multipliers for x in batch_chunk]
             self.embeddings.fixes = [x.fixes for x in batch_chunk]
 
-            for fixes in self.embeddings.fixes:
-                for _position, embedding in fixes:
-                    used_embeddings[embedding.name] = embedding
+            # for fixes in self.embeddings.fixes:
+                # for _position, embedding in fixes:
+                    # used_embeddings[embedding.name] = embedding
 
             z = self.process_tokens(tokens, multipliers)
             zs.append(z)
 
         global last_extra_generation_params
 
-        if used_embeddings:
-            names = []
+        # if used_embeddings:
+            # names = []
 
-            for name, embedding in used_embeddings.items():
-                print(f'[Textual Inversion] Used Embedding [{name}] in CLIP of [{self.embedding_key}]')
-                names.append(name.replace(":", "").replace(",", ""))
+            # for name, embedding in used_embeddings.items():
+                # print(f'[Textual Inversion] Used Embedding [{name}] in CLIP of [{self.embedding_key}]')
+                # names.append(name.replace(":", "").replace(",", ""))
 
-            if "TI" in last_extra_generation_params:
-                last_extra_generation_params["TI"] += ", " + ", ".join(names)
-            else:
-                last_extra_generation_params["TI"] = ", ".join(names)
+            # if "TI" in last_extra_generation_params:
+                # last_extra_generation_params["TI"] += ", " + ", ".join(names)
+            # else:
+                # last_extra_generation_params["TI"] = ", ".join(names)
 
         if any(x for x in texts if "(" in x or "[" in x) and self.emphasis.name != "Original":
             last_extra_generation_params["Emphasis"] = self.emphasis.name

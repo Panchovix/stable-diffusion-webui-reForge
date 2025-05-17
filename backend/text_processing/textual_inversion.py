@@ -116,9 +116,9 @@ class EmbeddingDatabase:
         self.ids_lookup = {}
         self.word_embeddings = {}
         self.embedding_dirs = {}
-        self.skipped_embeddings = {}
-        self.expected_shape = expected_shape
+        self.skipped_embeddings = {}    # unused
         self.tokenizer = tokenizer
+        self.expected_shape = expected_shape
         self.fixes = []
 
     def add_embedding_dir(self, path):
@@ -126,9 +126,6 @@ class EmbeddingDatabase:
 
     def clear_embedding_dirs(self):
         self.embedding_dirs.clear()
-
-    # def register_embedding(self, embedding):
-        # return self.register_embedding_by_name(embedding)
 
     def register_embedding_by_name(self, embedding):
         name = embedding.name
@@ -181,13 +178,20 @@ class EmbeddingDatabase:
         if data is not None:
             embedding = create_embedding_from_data(data, name, filename=filename, filepath=path)
 
-            if self.expected_shape == -1 or self.expected_shape == embedding.shape:
-                if find_only:
-                    self.word_embeddings[name] = embedding
-                else:
+            if find_only:
+                self.word_embeddings[name] = embedding
+            elif self.expected_shape == embedding.shape:
                     self.register_embedding_by_name(embedding)
             else:
-                self.skipped_embeddings[name] = embedding
+                registered = False
+                if isinstance(embedding.vec, dict):
+                    for v in embedding.vec.values():
+                        if self.expected_shape == v.shape[-1]:
+                            self.register_embedding_by_name(embedding)  #could keep only relevant embed for this text encoder
+                            registered = True
+                            break
+                if not registered:
+                    self.skipped_embeddings[name] = embedding
         else:
             print(f"Unable to load Textual inversion embedding due to data issue: '{name}'.")
 
@@ -211,7 +215,6 @@ class EmbeddingDatabase:
     def load_textual_inversion_embeddings(self, find_only=False):
         self.ids_lookup.clear()
         self.word_embeddings.clear()
-        self.skipped_embeddings.clear()
 
         for embdir in self.embedding_dirs.values():
             self.load_from_dir(embdir, find_only)
