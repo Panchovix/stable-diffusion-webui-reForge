@@ -46,7 +46,7 @@ class StableDiffusionXL(ForgeDiffusionEngine):
             tokenizer=clip.tokenizer.clip_l,
             embedding_dir=dynamic_args['embedding_dir'],
             embedding_key='clip_l',
-            embedding_expected_shape=2048,
+            embedding_expected_shape=768,
             emphasis_name=dynamic_args['emphasis_name'],
             text_projection=False,
             minimal_clip_skip=2,
@@ -60,7 +60,7 @@ class StableDiffusionXL(ForgeDiffusionEngine):
             tokenizer=clip.tokenizer.clip_g,
             embedding_dir=dynamic_args['embedding_dir'],
             embedding_key='clip_g',
-            embedding_expected_shape=2048,
+            embedding_expected_shape=1280,
             emphasis_name=dynamic_args['emphasis_name'],
             text_projection=True,
             minimal_clip_skip=2,
@@ -88,6 +88,16 @@ class StableDiffusionXL(ForgeDiffusionEngine):
 
         cond_l = self.text_processing_engine_l(prompt)
         cond_g, clip_pooled = self.text_processing_engine_g(prompt)
+
+        #   conds get concatenated later, in dimension 2, so sizes of dimension 1 must match
+        #   seems like some embeddings contribute different numbers of tokens to _l and _g
+        pad = cond_g.size(1) - cond_l.size(1)
+        if pad > 1:
+            padding = (0,0, 0, pad, 0,0)
+            cond_l = torch.nn.functional.pad (cond_l, padding, mode='constant', value=0)
+        elif pad < 1:
+            padding = (0,0, 0, -pad, 0,0)
+            cond_g = torch.nn.functional.pad (cond_g, padding, mode='constant', value=0)
 
         width = getattr(prompt, 'width', 1024) or 1024
         height = getattr(prompt, 'height', 1024) or 1024
@@ -182,7 +192,7 @@ class StableDiffusionXLRefiner(ForgeDiffusionEngine):
             tokenizer=clip.tokenizer.clip_g,
             embedding_dir=dynamic_args['embedding_dir'],
             embedding_key='clip_g',
-            embedding_expected_shape=2048,
+            embedding_expected_shape=1280,
             emphasis_name=dynamic_args['emphasis_name'],
             text_projection=True,
             minimal_clip_skip=2,
