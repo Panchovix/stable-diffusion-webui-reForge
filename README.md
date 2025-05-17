@@ -41,7 +41,7 @@ git pull
 
 ### If using Windows 7 and/or CUDA 11.x
 
-For this, way to install is a bit different, since it uses another req file. We will rename the original req file to a backup, and then copy the legacy one renmaed as the original, to keep updates working.
+For this, way to install is a bit different, since it uses another req file. We will rename the original req file to a backup, and then copy the legacy one renamed as the original, to keep updates working.
 For Windows CMD, it would be:
 
 ```bash
