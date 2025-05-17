@@ -1,11 +1,12 @@
 import os
-from abc import abstractmethod
 
-import PIL
+import torch, numpy
+
 from PIL import Image
 
-import modules.shared
 from modules import modelloader, shared
+
+from backend.misc.image_resize import contrast_adaptive_sharpening
 
 LANCZOS = (Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS)
 NEAREST = (Image.Resampling.NEAREST if hasattr(Image, 'Resampling') else Image.NEAREST)
@@ -25,13 +26,13 @@ class Upscaler:
 
     def __init__(self, create_dirs=False):
         self.mod_pad_h = None
-        self.tile_size = modules.shared.opts.ESRGAN_tile
-        self.tile_pad = modules.shared.opts.ESRGAN_tile_overlap
-        self.device = modules.shared.device
+        self.tile_size = shared.opts.ESRGAN_tile
+        self.tile_pad = shared.opts.ESRGAN_tile_overlap
+        self.device = shared.device
         self.img = None
         self.output = None
         self.scale = 1
-        self.half = not modules.shared.cmd_opts.no_half
+        self.half = not shared.cmd_opts.no_half
         self.pre_pad = 0
         self.mod_scale = None
         self.model_download_path = None
@@ -47,11 +48,10 @@ class Upscaler:
         except Exception:
             pass
 
-    @abstractmethod
-    def do_upscale(self, img: PIL.Image, selected_model: str):
+    def do_upscale(self, img: Image, selected_model: str):
         return img
 
-    def upscale(self, img: PIL.Image, scale, selected_model: str = None):
+    def upscale(self, img: Image, scale, selected_model: str = None):
         self.scale = scale
         dest_w = int((img.width * scale) // 8 * 8)
         dest_h = int((img.height * scale) // 8 * 8)
@@ -75,7 +75,6 @@ class Upscaler:
 
         return img
 
-    @abstractmethod
     def load_model(self, path: str):
         pass
 
@@ -131,6 +130,29 @@ class UpscalerLanczos(Upscaler):
         super().__init__(False)
         self.name = "Lanczos"
         self.scalers = [UpscalerData("Lanczos", None, self)]
+
+
+class UpscalerLanczosCAS(Upscaler):
+    scalers = []
+
+    def do_upscale(self, img, selected_model=None):
+        img =  img.resize((int(img.width * self.scale), int(img.height * self.scale)), resample=LANCZOS)
+
+        image = torch.Tensor(numpy.array(img.convert('RGB')) / 255.0)
+        image = image ** 2.0
+        image = contrast_adaptive_sharpening(image, 0.75)
+        image = image ** 0.5
+        image = image.numpy()
+        
+        return Image.fromarray((image * 255).astype(numpy.uint8), mode="RGB")
+
+    def load_model(self, _):
+        pass
+
+    def __init__(self, dirname=None):
+        super().__init__(False)
+        self.name = "Lanczos (Contrast Adaptive Sharpening)"
+        self.scalers = [UpscalerData("Lanczos (Contrast Adaptive Sharpening)", None, self)]
 
 
 class UpscalerNearest(Upscaler):

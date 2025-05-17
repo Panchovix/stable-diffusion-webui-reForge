@@ -31,6 +31,99 @@ def modelmerger(*args):
         return [*[gr.Dropdown.update(choices=sd_models.checkpoint_tiles()) for _ in range(4)], f"Error merging checkpoints: {e}"]
     return results
 
+def convert_embeds(one, many, output_dir):
+    # https://github.com/nArn0/sdxl-embedding-converter
+    import safetensors.torch
+    import torch
+    from tqdm import tqdm
+    from modules.util import load_file_from_url, walk_files
+
+    converter_model = torch.nn.Sequential(
+        torch.nn.Linear(768, 3072),
+        torch.nn.ReLU(),
+        torch.nn.Linear(3072, 3072),
+        torch.nn.ReLU(),
+        torch.nn.Linear(3072, 1280),
+    )
+
+    try:
+        converter_model_path = load_file_from_url("https://github.com/nArn0/sdxl-embedding-converter/releases/download/v1.0/model.safetensors", 
+                                                  model_dir="models", file_name="embedding_converter.safetensors")
+        safetensors.torch.load_model(converter_model, converter_model_path)
+    except:
+        return "ERROR: could not load 'models/embedding_converter.safetensors'"
+
+    success_count = 0
+    fail_count = 0
+
+    if many != "":
+        embeds = walk_files(many, allowed_extensions=[".pt", ".safetensors"])
+    elif one != "":
+        embeds = [one]
+    else:
+        return "Nothing to process"
+
+    if output_dir == "":
+        output_dir = ".\\embeddings"
+    
+    os.makedirs(output_dir, exist_ok=True)
+
+    for embed in embeds:
+        print (f"Embedding converter: {embed}", end="\r", flush=True)
+
+        loaded = False
+        if embed.endswith(".pt"):
+            try:
+                e = torch.load(embed, map_location=torch.device('cpu'))
+                emb = e['string_to_param']['*']
+                loaded = True
+            except:
+                print(f"Embedding converter: {embed} ERROR: could not load")
+        elif embed.endswith(".safetensors"):
+            try:
+                e = safetensors.torch.load_file(embed)
+                emb = e["emb_params"]
+                loaded = True
+            except:
+                print(f"Embedding converter: {embed} ERROR: could not load")
+        else:
+            print (f"Embedding converter: {embed} ERROR: unknown filetype")
+
+        if loaded and emb.shape[-1] == 768:
+            length = emb.shape[0]
+            print (f"Embedding converter: {embed} CONVERTING")
+
+            clip_l = []
+            clip_g = []
+            for i in tqdm(range(length)):
+                clip_l.append(emb[i])
+                clip_g.append(converter_model(emb[i]))
+
+            output = {}
+            output['clip_l'] = torch.stack(clip_l, dim=0)
+            output['clip_g'] = torch.stack(clip_g, dim=0)
+
+            input_filename, _ = os.path.splitext(embed.split('\\')[-1])
+
+            output_filename = os.path.join(output_dir, input_filename + "_SDXL.safetensors")
+
+            if os.path.exists(output_filename):
+                print (f"Embedding converter: {embed} NOT SAVED - output name already exists")
+                fail_count += 1
+            else:
+                safetensors.torch.save_file(output, output_filename)
+                print (f"Embedding converter: {embed} SAVED to {output_filename}")
+                success_count += 1
+        else:
+            if loaded:
+                print(f"Embedding converter: {embed} ERROR: wrong shape, probably SD2 embedding")
+            fail_count += 1
+
+    del converter_model
+
+    return f"DONE: {success_count} processed; {fail_count} failures"
+    
+
 
 class UiCheckpointMerger:
     vae_list = []
@@ -59,11 +152,11 @@ class UiCheckpointMerger:
 
     def __init__(self):
         with gr.Blocks(analytics_enabled=False) as modelmerger_interface:
-            with gr.Accordion(open=True, label='Save Current Checkpoint (including all quantization)'):
+            with gr.Accordion(open=False, label='Save current checkpoint (including all quantization)'):
                 with gr.Row():
                     textbox_file_name_forge = gr.Textbox(label="Filename (will save in /models/Stable-diffusion)", value='my_model.safetensors')
                     btn_save_unet_forge = gr.Button('Save UNet')
-                    btn_save_ckpt_forge = gr.Button('Save Checkpoint')
+                    btn_save_ckpt_forge = gr.Button('Save checkpoint')
 
                 with gr.Row():
                     result_html = gr.Markdown('Ready to save ...')
@@ -93,6 +186,18 @@ class UiCheckpointMerger:
 
 # add checkbox to specifiy checkbox is vpred (add vpred key)
 # similar possible for cos? etc
+
+            with gr.Accordion(open=False, label='Convert SD1 embedding to SDXL'):
+                with gr.Row():
+                    embeds_dir = gr.Textbox(label='Directory to convert', value='')
+                    embeds_one = gr.Textbox(label='Single file to convert (if no Directory set)', value='')
+                    output_dir = gr.Textbox(label='Save results to directory', value='.\embeddings')
+                    convert = gr.Button('Convert', variant='primary', scale=0)
+                with gr.Row():
+                    message = gr.Markdown("")
+
+                convert.click(fn=convert_embeds, inputs=[embeds_one, embeds_dir, output_dir], outputs=[message])
+
 
             with gr.Row(equal_height=False):
                 with gr.Column(variant='compact'):

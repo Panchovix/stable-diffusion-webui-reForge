@@ -254,7 +254,7 @@ def create_ui():
 
                             with gr.Column(elem_id="txt2img_dimensions_row", scale=0, elem_classes="dimensions-tools"):
                                 res_switch_btn = ToolButton(value=switch_values_symbol, elem_id="txt2img_res_switch_btn", tooltip="Switch width/height")
-                                res_switch_btn.click(fn=lambda w, h: (h, w), inputs=[width, height], outputs=[width, height], show_progress=False)
+                                res_switch_btn.click(fn=lambda w, h: (h, w), inputs=[width, height], outputs=[width, height], show_progress='hidden', queue=False)
 
                             with gr.Column(elem_id="txt2img_column_batch"):
                                 batch_count = gr.Slider(minimum=1, step=1, label='Batch count', value=1, elem_id="txt2img_batch_count")
@@ -264,7 +264,7 @@ def create_ui():
                         with gr.Row():
                             distilled_cfg_scale = gr.Slider(minimum=0.0, maximum=30.0, step=0.1, label='Distilled CFG Scale', value=3.5, elem_id="txt2img_distilled_cfg_scale")
                             cfg_scale = gr.Slider(minimum=1.0, maximum=30.0, step=0.1, label='CFG Scale', value=7.0, elem_id="txt2img_cfg_scale")
-                            cfg_scale.change(lambda x: gr.update(interactive=(x != 1)), inputs=[cfg_scale], outputs=[toprow.negative_prompt], queue=False, show_progress=False)
+                            cfg_scale.change(lambda x: gr.update(interactive=(x != 1)), inputs=[cfg_scale], outputs=[toprow.negative_prompt], queue=False, show_progress='hidden')
 
                     elif category == "checkboxes":
                         with FormRow(elem_classes="checkboxes-row", variant="compact"):
@@ -312,7 +312,7 @@ def create_ui():
 
                                     hr_additional_modules = gr.Dropdown(label='Hires additional modules', elem_id="hr_vae_te", choices=modules_list, value=["Use same choices"], multiselect=True, scale=3)
 
-                                    hr_checkpoint_refresh.click(fn=refresh_model_and_modules, outputs=[hr_checkpoint_name, hr_additional_modules], show_progress=False)
+                                    hr_checkpoint_refresh.click(fn=refresh_model_and_modules, outputs=[hr_checkpoint_name, hr_additional_modules], show_progress='hidden')
 
                                 with FormRow(elem_id="txt2img_hires_fix_row3b", variant="compact") as hr_sampler_container:
                                     hr_sampler_name = gr.Dropdown(label='Hires sampling method', elem_id="hr_sampler", choices=["Use same sampler"] + sd_samplers.visible_sampler_names(), value="Use same sampler")
@@ -322,7 +322,7 @@ def create_ui():
                                     hr_prompt = gr.Textbox(label="Hires prompt", elem_id="hires_prompt", show_label=False, lines=3, placeholder="Prompt for hires fix pass.\nLeave empty to use the same prompt as in first pass.", elem_classes=["prompt"])
                                     hr_negative_prompt = gr.Textbox(label="Hires negative prompt", elem_id="hires_neg_prompt", show_label=False, lines=3, placeholder="Negative prompt for hires fix pass.\nLeave empty to use the same negative prompt as in first pass.", elem_classes=["prompt"])
 
-                                hr_cfg.change(lambda x: gr.update(interactive=(x != 1)), inputs=[hr_cfg], outputs=[hr_negative_prompt], queue=False, show_progress=False)
+                                hr_cfg.change(lambda x: gr.update(interactive=(x != 1)), inputs=[hr_cfg], outputs=[hr_negative_prompt], queue=False, show_progress='hidden')
 
                             scripts.scripts_txt2img.setup_ui_for_section(category)
 
@@ -347,7 +347,7 @@ def create_ui():
                     _js="onCalcResolutionHires",
                     inputs=hr_resolution_preview_inputs,
                     outputs=[hr_final_resolution],
-                    show_progress=False,
+                    show_progress='hidden',
                 )
 
             output_panel = ui_common.create_output_panel("txt2img", opts.outdir_txt2img_samples, toprow)
@@ -393,7 +393,7 @@ def create_ui():
                 _js="submit",
                 inputs=txt2img_inputs,
                 outputs=txt2img_outputs,
-                show_progress=False,
+                show_progress='hidden',
             )
 
             toprow.prompt.submit(**txt2img_args)
@@ -411,7 +411,7 @@ def create_ui():
                 _js="submit_txt2img_upscale",
                 inputs=txt2img_upscale_inputs,
                 outputs=txt2img_outputs,
-                show_progress=False,
+                show_progress='hidden',
             ).then(fn=select_gallery_image, js="selected_gallery_index", inputs=[dummy_component], outputs=[output_panel.gallery])
 
             toprow.restore_progress_button.click(
@@ -424,7 +424,7 @@ def create_ui():
                     output_panel.infotext,
                     output_panel.html_log,
                 ],
-                show_progress=False,
+                show_progress='hidden',
             )
 
             txt2img_paste_fields = [
@@ -461,10 +461,10 @@ def create_ui():
             steps = scripts.scripts_txt2img.script('Sampler').steps
 
             if not opts.disable_token_counters:
-                toprow.ui_styles.dropdown.change(fn=wrap_queued_call(update_token_counter), inputs=[toprow.prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.token_counter])
-                toprow.ui_styles.dropdown.change(fn=wrap_queued_call(update_negative_prompt_token_counter), inputs=[toprow.negative_prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.negative_token_counter])
-                toprow.token_button.click(fn=wrap_queued_call(update_token_counter), inputs=[toprow.prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.token_counter])
-                toprow.negative_token_button.click(fn=wrap_queued_call(update_negative_prompt_token_counter), inputs=[toprow.negative_prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.negative_token_counter])
+                toprow.ui_styles.dropdown.change(fn=wrap_queued_call(update_token_counter), inputs=[toprow.prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.token_counter], show_progress='hidden', queue=False)
+                toprow.ui_styles.dropdown.change(fn=wrap_queued_call(update_negative_prompt_token_counter), inputs=[toprow.negative_prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.negative_token_counter], show_progress='hidden', queue=False)
+                toprow.token_button.click(fn=wrap_queued_call(update_token_counter), inputs=[toprow.prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.token_counter], show_progress='hidden', queue=False)
+                toprow.negative_token_button.click(fn=wrap_queued_call(update_negative_prompt_token_counter), inputs=[toprow.negative_prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.negative_token_counter], show_progress='hidden', queue=False)
 
         extra_networks_ui = ui_extra_networks.create_ui(txt2img_interface, [txt2img_generation_tab], 'txt2img')
         ui_extra_networks.setup_ui(extra_networks_ui, output_panel.gallery)
@@ -586,7 +586,7 @@ def create_ui():
                                         with gr.Row():
                                             width = gr.Slider(minimum=256, maximum=4096, step=8, label="Width", value=512, elem_id="img2img_width")
                                             res_switch_btn = ToolButton(value=switch_values_symbol, elem_id="img2img_res_switch_btn", tooltip="Switch width/height")
-                                            res_switch_btn.click(fn=lambda w, h: (h, w), inputs=[width, height], outputs=[width, height], show_progress=False)
+                                            res_switch_btn.click(fn=lambda w, h: (h, w), inputs=[width, height], outputs=[width, height], show_progress='hidden', queue=False)
                                         with gr.Row():
                                             height = gr.Slider(minimum=256, maximum=4096, step=8, label="Height", value=512, elem_id="img2img_height")
                                             detect_image_size_btn = ToolButton(value=detect_image_size_symbol, elem_id="img2img_detect_image_size_btn", tooltip="Auto detect size from img2img")
@@ -599,7 +599,7 @@ def create_ui():
                                         _js="currentImg2imgSourceResolution",
                                         inputs=[dummy_component, dummy_component, scale_by],
                                         outputs=scale_by,
-                                        show_progress=False,
+                                        show_progress='hidden',
                                     )
 
                                     scale_by.change(**on_change_args)
@@ -630,7 +630,7 @@ def create_ui():
                             distilled_cfg_scale = gr.Slider(minimum=0.0, maximum=30.0, step=0.1, label='Distilled CFG Scale', value=3.5, elem_id="img2img_distilled_cfg_scale")
                             cfg_scale = gr.Slider(minimum=1.0, maximum=30.0, step=0.1, label='CFG Scale', value=7.0, elem_id="img2img_cfg_scale")
                             image_cfg_scale = gr.Slider(minimum=0, maximum=3.0, step=0.05, label='Image CFG Scale', value=1.5, elem_id="img2img_image_cfg_scale", visible=False)
-                            cfg_scale.change(lambda x: gr.update(interactive=(x != 1)), inputs=[cfg_scale], outputs=[toprow.negative_prompt], queue=False, show_progress=False)
+                            cfg_scale.change(lambda x: gr.update(interactive=(x != 1)), inputs=[cfg_scale], outputs=[toprow.negative_prompt], queue=False, show_progress='hidden')
 
                     elif category == "checkboxes":
                         with FormRow(elem_classes="checkboxes-row", variant="compact"):
@@ -731,7 +731,7 @@ def create_ui():
                     output_panel.infotext,
                     output_panel.html_log,
                 ],
-                show_progress=False,
+                show_progress='hidden',
             )
 
             interrogate_args = dict(
@@ -757,7 +757,7 @@ def create_ui():
                 _js="currentImg2imgSourceResolution",
                 inputs=[dummy_component, dummy_component],
                 outputs=[width, height],
-                show_progress=False,
+                show_progress='hidden',
             )
 
             toprow.restore_progress_button.click(
@@ -770,7 +770,7 @@ def create_ui():
                     output_panel.infotext,
                     output_panel.html_log,
                 ],
-                show_progress=False,
+                show_progress='hidden',
             )
 
             toprow.button_interrogate.click(
@@ -786,10 +786,10 @@ def create_ui():
             steps = scripts.scripts_img2img.script('Sampler').steps
 
             if not opts.disable_token_counters:
-                toprow.ui_styles.dropdown.change(fn=wrap_queued_call(update_token_counter), inputs=[toprow.prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.token_counter])
-                toprow.ui_styles.dropdown.change(fn=wrap_queued_call(update_negative_prompt_token_counter), inputs=[toprow.negative_prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.negative_token_counter])
-                toprow.token_button.click(fn=update_token_counter, inputs=[toprow.prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.token_counter])
-                toprow.negative_token_button.click(fn=wrap_queued_call(update_negative_prompt_token_counter), inputs=[toprow.negative_prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.negative_token_counter])
+                toprow.ui_styles.dropdown.change(fn=wrap_queued_call(update_token_counter), inputs=[toprow.prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.token_counter], show_progress='hidden', queue=False)
+                toprow.ui_styles.dropdown.change(fn=wrap_queued_call(update_negative_prompt_token_counter), inputs=[toprow.negative_prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.negative_token_counter], show_progress='hidden', queue=False)
+                toprow.token_button.click(fn=wrap_queued_call(update_token_counter), inputs=[toprow.prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.token_counter], show_progress='hidden', queue=False)
+                toprow.negative_token_button.click(fn=wrap_queued_call(update_negative_prompt_token_counter), inputs=[toprow.negative_prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.negative_token_counter], show_progress='hidden', queue=False)
 
             img2img_paste_fields = [
                 (toprow.prompt, "Prompt"),
@@ -906,7 +906,7 @@ def create_ui():
             no_quick_setting = getattr(shared.opts, "tabs_without_quick_settings_bar", [])
             return gr.update(visible=evt.value not in no_quick_setting)
 
-        tabs.select(tab_changed, outputs=[quicksettings_row], show_progress=False, queue=False)
+        tabs.select(tab_changed, outputs=[quicksettings_row], show_progress='hidden', queue=False)
 
         if os.path.exists(os.path.join(script_path, "notification.mp3")) and shared.opts.notification_audio:
             gr.Audio(interactive=False, value=os.path.join(script_path, "notification.mp3"), elem_id="audio_notification", visible=False)

@@ -433,8 +433,8 @@ class StableDiffusionProcessing:
             extra_network_data,
             opts.sdxl_crop_left,
             opts.sdxl_crop_top,
-            self.width,
-            self.height,
+            # self.width,
+            # self.height,
             opts.emphasis,
         )
 
@@ -1299,7 +1299,7 @@ class StableDiffusionProcessingTxt2Img(StableDiffusionProcessing):
             if self.hr_scheduler is None:
                 self.hr_scheduler = self.scheduler
 
-            self.latent_scale_mode = shared.latent_upscale_modes.get(self.hr_upscaler, None) if self.hr_upscaler is not None else shared.latent_upscale_modes.get(shared.latent_upscale_default_mode, "nearest")
+            self.latent_scale_mode = shared.latent_upscale_modes.get(self.hr_upscaler, None) if self.hr_upscaler is not None else "Lanczos"
             if self.enable_hr and self.latent_scale_mode is None:
                 if not any(x.name == self.hr_upscaler for x in shared.sd_upscalers):
                     raise Exception(f"could not find upscaler named {self.hr_upscaler}")
