@@ -1,37 +1,39 @@
-from modules_forge.supported_preprocessor import PreprocessorClipVision, Preprocessor, PreprocessorParameter
+from modules_forge.supported_preprocessor import PreprocessorClipVision, PreprocessorParameter
 from modules_forge.shared import add_supported_preprocessor
 from modules_forge.utils import numpy_to_pytorch
 from modules_forge.shared import add_supported_control_model
 from modules_forge.supported_controlnet import ControlModelPatcher
 from lib_ipadapter.IPAdapterPlus import IPAdapterApply, InsightFaceLoader
 from pathlib import Path
+import random
 
 cached_insightface = None
 
-opIPAdapterApply = IPAdapterApply().apply_ipadapter
-opInsightFaceLoader = InsightFaceLoader().load_insight_face
 
+# class PreprocessorClipVisionForIPAdapter(PreprocessorClipVision):
+    # def __init__(self, name, url, filename):
+        # super().__init__(name, url, filename)
+        # self.slider_resolution = PreprocessorParameter(
+            # label='Tile size', minimum=224, maximum=1024, value=1024, step=32, visible=True)
+        # self.slider_1 = PreprocessorParameter(label='Noise', minimum=0.0, maximum=1.0, value=0.23, step=0.01, visible=True)
+        # self.slider_2 = PreprocessorParameter(label='Sharpening', minimum=0.0, maximum=1.0, value=0.0, step=0.01, visible=True)
+        # self.tags = ['IP-Adapter']
+        # self.model_filename_filters = ['IP-Adapter', 'IP_Adapter']
+        # self.sorting_priority = 20
+        # self.do_tiled = None
 
-class PreprocessorClipVisionForIPAdapter(PreprocessorClipVision):
-    def __init__(self, name, url, filename):
-        super().__init__(name, url, filename)
-        self.slider_1 = PreprocessorParameter(label='Noise', minimum=0.0, maximum=1.0, value=0.23, step=0.01, visible=True)
-        self.tags = ['IP-Adapter']
-        self.model_filename_filters = ['IP-Adapter', 'IP_Adapter']
-        self.sorting_priority = 20
-        self.do_tiled = (0, None)
-
-    def __call__(self, input_image, resolution, slider_1=0.23, slider_2=None, slider_3=None, **kwargs):
-        cond = dict(
-            clip_vision=self.load_clipvision(),
-            image=input_image,
-            weight_type="original",
-            noise=slider_1,
-            embeds=None,
-            unfold_batch=False,
-            do_tiled=self.do_tiled,
-        )
-        return cond
+    # def __call__(self, input_image, resolution, slider_1=0.23, slider_2=0.0, **kwargs):
+        # cond = dict(
+            # clip_vision=self.load_clipvision(),
+            # image=input_image,
+            # weight_type="original",
+            # noise=slider_1,
+            # sharpening=slider_2,
+            # embeds=None,
+            # unfold_batch=False,
+            # do_tiled=(resolution, self.do_tiled),
+        # )
+        # return cond
 
 
 # needs (simple enough) changes to backend.patcher.clipvision to preprocess image at greater size, but also needs retrained IPAdapters
@@ -46,85 +48,79 @@ class PreprocessorClipVisionForIPAdapter(PreprocessorClipVision):
     # filename='CLIP-ViT-H-14-448.safetensors'
 # ))
 
-class PreprocessorClipVisionWithInsightFaceForIPAdapter(PreprocessorClipVisionForIPAdapter):
+class PreprocessorForIPAdapter(PreprocessorClipVision):
     def __init__(self, name, url, filename):
         super().__init__(name, url, filename)
-        self.do_tiled = (0, None)
+        self.slider_resolution = PreprocessorParameter(
+            label='Tiles (n * n) (limited by source(s))', minimum=1, maximum=16, value=1, step=1, visible=True)
+        self.slider_1 = PreprocessorParameter(label='Noise', minimum=0.0, maximum=1.0, value=0.23, step=0.01, visible=True)
+        self.slider_2 = PreprocessorParameter(label='Sharpening', minimum=0.0, maximum=1.0, value=0.0, step=0.01, visible=True)
+        self.tags = ['IP-Adapter']
+        self.model_filename_filters = ['IP-Adapter', 'IP_Adapter']
+        self.sorting_priority = 20
 
     def load_insightface(self):
         global cached_insightface
         if cached_insightface is None:
-            cached_insightface = opInsightFaceLoader()[0]
+            cached_insightface = InsightFaceLoader().load_insight_face()[0]
         return cached_insightface
 
-    def __call__(self, input_image, resolution, slider_1=0.23, slider_2=None, slider_3=None, **kwargs):
+    def __call__(self, input_image, resolution, slider_1=0.23, slider_2=0.0, **kwargs):
         cond = dict(
             clip_vision=None if '(Portrait)' in self.name else self.load_clipvision(),
-            insightface=self.load_insightface(),
+            insightface=self.load_insightface() if 'InsightFace' in self.name else None,
             image=input_image,
             weight_type="original",
             noise=slider_1,
+            sharpening=slider_2,
             embeds=None,
             unfold_batch=False,
-            do_tiled=self.do_tiled,
+            tiles=resolution,
         )
         return cond
 
-class PreprocessorClipVisionWithInsightFaceForIPAdapter_Tiled(PreprocessorClipVisionWithInsightFaceForIPAdapter):
-    def __init__(self, name, url, filename):
-        super().__init__(name, url, filename)
-        self.do_tiled = (256, 'Interleaved')    # 256 seems better than 224, for Insightface, maybe
 
-
-add_supported_preprocessor(PreprocessorClipVisionForIPAdapter(
+add_supported_preprocessor(PreprocessorForIPAdapter(
     name='CLIP-H-Face (Ostris) (IPAdapter)',
+    url='https://huggingface.co/ostris/CLIP-H-Face-v3/resolve/main/model.safetensors',
+    filename='CLIP-H-Face-v3.safetensors'
+))
+add_supported_preprocessor(PreprocessorForIPAdapter(
+    name='InsightFace+CLIP-H-Face (Ostris) (IPAdapter)',
     url='https://huggingface.co/ostris/CLIP-H-Face-v3/resolve/main/model.safetensors',
     filename='CLIP-H-Face-v3.safetensors'
 ))
 
 
-add_supported_preprocessor(PreprocessorClipVisionForIPAdapter(
+add_supported_preprocessor(PreprocessorForIPAdapter(
     name='CLIP-ViT-H (IPAdapter)',
     url='https://huggingface.co/h94/IP-Adapter/resolve/main/models/image_encoder/model.safetensors',
     filename='CLIP-ViT-H-14.safetensors'
 ))
-
-add_supported_preprocessor(PreprocessorClipVisionForIPAdapter(
-    name='CLIP-ViT-bigG (IPAdapter)',
-    url='https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/image_encoder/model.safetensors',
-    filename='CLIP-ViT-bigG.safetensors'
-))
-
-add_supported_preprocessor(PreprocessorClipVisionWithInsightFaceForIPAdapter(
+add_supported_preprocessor(PreprocessorForIPAdapter(
     name='InsightFace+CLIP-H (IPAdapter)',
     url='https://huggingface.co/h94/IP-Adapter/resolve/main/models/image_encoder/model.safetensors',
     filename='CLIP-ViT-H-14.safetensors'
 ))
 
-add_supported_preprocessor(PreprocessorClipVisionWithInsightFaceForIPAdapter_Tiled(
-    name='InsightFace+CLIP-H (IPAdapter) (Tiled)',
-    url='https://huggingface.co/h94/IP-Adapter/resolve/main/models/image_encoder/model.safetensors',
-    filename='CLIP-ViT-H-14.safetensors'
-))
-add_supported_preprocessor(PreprocessorClipVisionWithInsightFaceForIPAdapter_Tiled(
-    name='InsightFace+CLIP-H-Face (Ostris) (IPAdapter) (Tiled)',
-    url='https://huggingface.co/ostris/CLIP-H-Face-v3/resolve/main/model.safetensors',
-    filename='CLIP-H-Face-v3.safetensors'
-))
 
-add_supported_preprocessor(PreprocessorClipVisionWithInsightFaceForIPAdapter_Tiled(
-    name='InsightFace (IPAdapter) (Portrait) (Tiled)',
-    url='',
-    filename=''
+add_supported_preprocessor(PreprocessorForIPAdapter(
+    name='CLIP-ViT-bigG (IPAdapter)',
+    url='https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/image_encoder/model.safetensors',
+    filename='CLIP-ViT-bigG.safetensors'
 ))
-
-
-add_supported_preprocessor(PreprocessorClipVisionWithInsightFaceForIPAdapter(
+add_supported_preprocessor(PreprocessorForIPAdapter(
     name='InsightFace+CLIP-G (IPAdapter)',
     url='https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/image_encoder/model.safetensors',
     filename='CLIP-ViT-bigG.safetensors'
 ))
 
+
+add_supported_preprocessor(PreprocessorForIPAdapter(
+    name='InsightFace (IPAdapter) (Portrait)',
+    url='',
+    filename=''
+))
 
 
 class IPAdapterPatcher(ControlModelPatcher):
@@ -166,35 +162,52 @@ class IPAdapterPatcher(ControlModelPatcher):
         if isinstance(cond, list):  # should always be True
             images = []
             for c in cond:
-                tile_size = c['do_tiled'][0]
-                tile_type = c['do_tiled'][1]
+                tile_count = c['tiles']
 
                 image = c['image']
-                if tile_size > 0:
-                    r = min(image.shape[0] // tile_size, image.shape[1] // tile_size)
+                
+                if c['insightface'] is None:
+                    tile_type = 'Tiled'
+                else:
+                    tile_type = 'Interleaved'
+
+                if tile_count > 1:
+                    r = min(image.shape[0] // 128, image.shape[1] // 128)
+                    r = min(r, tile_count)
                     if tile_type == 'Interleaved' and r >= 2:   #interleaved split into r*r images
                         for i in range(r):
                             for j in range(r):
                                 part = image[i::r, j::r]
                                 images.append(numpy_to_pytorch(part))
-                    elif tile_type == "Tiled" and r >= 1:
-                        for i in range(0, image.shape[0], tile_size):
-                            for j in range(0, image.shape[1], tile_size):
-                                tile = image[i:i+tile_size, j:j+tile_size]
-                                images.append(numpy_to_pytorch(tile))
+                    elif tile_type == "Tiled":
+                        if tile_count > 1:
+                            images.append(numpy_to_pytorch(image))
+
+                        tiles = []
+                        tile_sizeX = max(image.shape[0] // tile_count, 224)
+                        tile_sizeY = max(image.shape[1] // tile_count, 224)
+                        for i in range(0, image.shape[0], tile_sizeX):
+                            for j in range(0, image.shape[1], tile_sizeY):
+                                tile = image[i:i+tile_sizeX, j:j+tile_sizeY]
+                                tiles.append(numpy_to_pytorch(tile))
+
+                        # random.shuffle(tiles)
+                        images.append(tiles)
                     else:
                         images.append(numpy_to_pytorch(image))
                 else:
                     images.append(numpy_to_pytorch(image))
 
+            random.seed(42)
+            random.shuffle(images)
+
             pcond = cond[0].copy()
-            pcond['image'] = images
-        else:
-            pcond = cond.copy()
+            pcond['images'] = images
 
-        del pcond['do_tiled']
+        del pcond['tiles']
+        del pcond['image']
 
-        unet = opIPAdapterApply(
+        unet = IPAdapterApply().apply_ipadapter(
             ipadapter=self.ip_adapter,
             model=unet,
             weight=self.strength,

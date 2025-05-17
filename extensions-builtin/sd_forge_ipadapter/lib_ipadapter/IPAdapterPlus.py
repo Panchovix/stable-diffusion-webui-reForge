@@ -8,7 +8,8 @@ import os
 import math
 
 from backend import memory_management, attention, utils
-from backend.misc.image_resize import adaptive_resize
+from backend.misc.image_resize import contrast_adaptive_sharpening
+
 from backend.patcher.clipvision import clip_preprocess
 from modules_forge.shared import controlnet_dir, models_path
 
@@ -194,61 +195,6 @@ def zeroed_hidden_states(clip_vision, batch_size):
     outputs = clip_vision.model(pixel_values=pixel_values, output_hidden_states=True)
     outputs = outputs.hidden_states[-2].to(memory_management.intermediate_device())
     return outputs
-
-
-def min_(tensor_list):
-    # return the element-wise min of the tensor list.
-    x = torch.stack(tensor_list)
-    mn = x.min(axis=0)[0]
-    return torch.clamp(mn, min=0)
-
-
-def max_(tensor_list):
-    # return the element-wise max of the tensor list.
-    x = torch.stack(tensor_list)
-    mx = x.max(axis=0)[0]
-    return torch.clamp(mx, max=1)
-
-
-# From https://github.com/Jamy-L/Pytorch-Contrast-Adaptive-Sharpening/
-def contrast_adaptive_sharpening(image, amount):
-    img = F.pad(image, pad=(1, 1, 1, 1)).cpu()
-
-    a = img[..., :-2, :-2]
-    b = img[..., :-2, 1:-1]
-    c = img[..., :-2, 2:]
-    d = img[..., 1:-1, :-2]
-    e = img[..., 1:-1, 1:-1]
-    f = img[..., 1:-1, 2:]
-    g = img[..., 2:, :-2]
-    h = img[..., 2:, 1:-1]
-    i = img[..., 2:, 2:]
-
-    # Computing contrast
-    cross = (b, d, e, f, h)
-    mn = min_(cross)
-    mx = max_(cross)
-
-    diag = (a, c, g, i)
-    mn2 = min_(diag)
-    mx2 = max_(diag)
-    mx = mx + mx2
-    mn = mn + mn2
-
-    # Computing local weight
-    inv_mx = torch.reciprocal(mx)
-    amp = inv_mx * torch.minimum(mn, (2 - mx))
-
-    # scaling
-    amp = torch.sqrt(amp)
-    w = - amp * (amount * (1 / 5 - 1 / 8) + 1 / 8)
-    div = torch.reciprocal(1 + 4 * w)
-
-    output = ((b + d + f + h) * w + e) * div
-    output = output.clamp(0, 1)
-    output = torch.nan_to_num(output)
-
-    return (output)
 
 
 def tensorToNP(image):
@@ -568,6 +514,9 @@ class InsightFaceLoader:
         except ImportError as e:
             raise Exception(e)
 
+        if torch.cuda.is_available():
+            provider = "CUDA"
+
         if name == 'antelopev2':
             from modules.modelloader import load_file_from_url
             model_root = os.path.join(INSIGHTFACE_DIR, 'models', "antelopev2")
@@ -596,8 +545,8 @@ class InsightFaceLoader:
 
 
 class IPAdapterApply:
-    def apply_ipadapter(self, ipadapter, model, weight, clip_vision=None, image=None, weight_type="original",
-                        noise=0.0, embeds=None, attn_mask=None, start_at=0.0, end_at=1.0, unfold_batch=False,
+    def apply_ipadapter(self, ipadapter, model, weight, clip_vision=None, images=None, weight_type="original",
+                        noise=0.0, sharpening=0.0, embeds=None, attn_mask=None, start_at=0.0, end_at=1.0, unfold_batch=False,
                         insightface=None, faceid_v2=False, weight_v2=False, instant_id=False):
 
         self.dtype = torch.float16 if memory_management.should_use_fp16(prioritize_performance=False, manual_cast=True) else torch.float32
@@ -630,11 +579,12 @@ class IPAdapterApply:
 
                 face_embed = []
 
-                for i in range(len(image)):
-                    if isinstance(image[i], list):  # not sure why this happens with batch count > 1
-                        image[i] = image[i][0]
+                for i in range(len(images)):
+                    if isinstance(images[i], list):  # not sure why this happens with batch count > 1
+                        images[i] = images[i][0]
 
-                    face_img = tensorToNP(image[i])
+                    face_img = self.prep_image(images[i], sharpening)
+
                     for size in [(size, size) for size in range(640, 128, -64)]:
                         insightface.det_model.input_size = size  # TODO: hacky but seems to be working
                         face = insightface.get(face_img[0])
@@ -652,11 +602,12 @@ class IPAdapterApply:
                 face_embed = []
                 face_clipvision = []
 
-                for i in range(len(image)):
-                    if isinstance(image[i], list):
-                        image[i] = image[i][0]
+                for i in range(len(images)):
+                    if isinstance(images[i], list):
+                        images[i] = images[i][0]
 
-                    face_img = tensorToNP(image[i])
+                    face_img = self.prep_image(images[i], sharpening)
+
                     for size in [(size, size) for size in range(640, 128, -64)]:
                         insightface.det_model.input_size = size  # TODO: hacky but seems to be working
                         face = insightface.get(face_img[0])
@@ -686,19 +637,21 @@ class IPAdapterApply:
             else:
                 clip_embeds = []
                 zero_embeds = []
-                for i in range(len(image)):
-                    if isinstance(image[i], list):
-                        image[i] = image[i][0]
+                for i in range(len(images)):
+                    if isinstance(images[i], list):
+                        images[i] = images[i][0]
 
-                    clip_embed = clip_vision.encode_image(image[i])
-                    neg_image = image_add_noise(image[i], noise) if noise > 0 else None
+                    image = self.prep_image(images[i], sharpening, convertNP=False)
+
+                    clip_embed = clip_vision.encode_image(image)
+                    neg_image = image_add_noise(image, noise) if noise > 0 else None
 
                     if self.is_plus:
                         clip_embed = clip_embed.penultimate_hidden_states
                         if noise > 0:
                             clip_embed_zeroed = clip_vision.encode_image(neg_image).penultimate_hidden_states
                         else:
-                            clip_embed_zeroed = zeroed_hidden_states(clip_vision, image[i].shape[0])
+                            clip_embed_zeroed = zeroed_hidden_states(clip_vision, image.shape[0])
                     else:
                         clip_embed = clip_embed.image_embeds
                         if noise > 0:
@@ -798,201 +751,15 @@ class IPAdapterApply:
 
         return (work_model,)
 
-
-class IPAdapterApplyFaceID(IPAdapterApply):
-    @classmethod
-    def INPUT_TYPES(s):
-        return {
-            "required": {
-                "ipadapter": ("IPADAPTER",),
-                "clip_vision": ("CLIP_VISION",),
-                "insightface": ("INSIGHTFACE",),
-                "image": ("IMAGE",),
-                "model": ("MODEL",),
-                "weight": ("FLOAT", {"default": 1.0, "min": -1, "max": 3, "step": 0.05}),
-                "noise": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "weight_type": (["original", "linear", "channel penalty"],),
-                "start_at": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.001}),
-                "end_at": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.001}),
-                "faceid_v2": ("BOOLEAN", {"default": False}),
-                "weight_v2": ("FLOAT", {"default": 1.0, "min": -1, "max": 3, "step": 0.05}),
-                "unfold_batch": ("BOOLEAN", {"default": False}),
-            },
-            "optional": {
-                "attn_mask": ("MASK",),
-            }
-        }
-
-
-def prepImage(image, interpolation="LANCZOS", crop_position="center", size=(224, 224), sharpening=0.0, padding=0):
-    _, oh, ow, _ = image.shape
-    output = image.permute([0, 3, 1, 2])
-
-    if "pad" in crop_position:
-        target_length = max(oh, ow)
-        pad_l = (target_length - ow) // 2
-        pad_r = (target_length - ow) - pad_l
-        pad_t = (target_length - oh) // 2
-        pad_b = (target_length - oh) - pad_t
-        output = F.pad(output, (pad_l, pad_r, pad_t, pad_b), value=0, mode="constant")
-    else:
-        crop_size = min(oh, ow)
-        x = (ow - crop_size) // 2
-        y = (oh - crop_size) // 2
-        if "top" in crop_position:
-            y = 0
-        elif "bottom" in crop_position:
-            y = oh - crop_size
-        elif "left" in crop_position:
-            x = 0
-        elif "right" in crop_position:
-            x = ow - crop_size
-
-        x2 = x + crop_size
-        y2 = y + crop_size
-
-        # crop
-        output = output[:, :, y:y2, x:x2]
-
-    # resize (apparently PIL resize is better than tourchvision interpolate)
-    imgs = []
-    for i in range(output.shape[0]):
-        img = TT.ToPILImage()(output[i])
-        img = img.resize(size, resample=Image.Resampling[interpolation])
-        imgs.append(TT.ToTensor()(img))
-    output = torch.stack(imgs, dim=0)
-    imgs = None  # zelous GC
-
-    if sharpening > 0:
-        output = contrast_adaptive_sharpening(output, sharpening)
-
-    if padding > 0:
-        output = F.pad(output, (padding, padding, padding, padding), value=255, mode="constant")
-
-    output = output.permute([0, 2, 3, 1])
-
-    return output
-
-
-class PrepImageForInsightFace:
-    @classmethod
-    def INPUT_TYPES(s):
-        return {"required": {
-            "image": ("IMAGE",),
-            "crop_position": (["center", "top", "bottom", "left", "right"],),
-            "sharpening": ("FLOAT", {"default": 0.0, "min": 0, "max": 1, "step": 0.05}),
-            "pad_around": ("BOOLEAN", {"default": True}),
-        },
-        }
-
-    RETURN_TYPES = ("IMAGE",)
-    FUNCTION = "prep_image"
-
-    CATEGORY = "ipadapter"
-
-    def prep_image(self, image, crop_position, sharpening=0.0, pad_around=True):
-        if pad_around:
-            padding = 30
-            size = (580, 580)
+    def prep_image(self, image, sharpening, convertNP=True):
+        # maybe gamma before and after
+        if sharpening > 0.0:
+            image = image ** 2.2
+            image = contrast_adaptive_sharpening(image, sharpening)
+            image = image ** (1/2.2)
+        
+        if convertNP:
+            return tensorToNP(image)
         else:
-            padding = 0
-            size = (640, 640)
-        output = prepImage(image, "LANCZOS", crop_position, size, sharpening, padding)
+            return image
 
-        return (output,)
-
-
-class PrepImageForClipVision:
-    @classmethod
-    def INPUT_TYPES(s):
-        return {"required": {
-            "image": ("IMAGE",),
-            "interpolation": (["LANCZOS", "BICUBIC", "HAMMING", "BILINEAR", "BOX", "NEAREST"],),
-            "crop_position": (["top", "bottom", "left", "right", "center", "pad"],),
-            "sharpening": ("FLOAT", {"default": 0.0, "min": 0, "max": 1, "step": 0.05}),
-        },
-        }
-
-    RETURN_TYPES = ("IMAGE",)
-    FUNCTION = "prep_image"
-
-    CATEGORY = "ipadapter"
-
-    def prep_image(self, image, interpolation="LANCZOS", crop_position="center", sharpening=0.0):
-        size = (224, 224)
-        output = prepImage(image, interpolation, crop_position, size, sharpening, 0)
-        return (output,)
-
-
-class IPAdapterEncoder:
-    @classmethod
-    def INPUT_TYPES(s):
-        return {"required": {
-            "clip_vision": ("CLIP_VISION",),
-            "image_1": ("IMAGE",),
-            "ipadapter_plus": ("BOOLEAN", {"default": False}),
-            "noise": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.01}),
-            "weight_1": ("FLOAT", {"default": 1.0, "min": 0, "max": 1.0, "step": 0.01}),
-        },
-            "optional": {
-                "image_2": ("IMAGE",),
-                "image_3": ("IMAGE",),
-                "image_4": ("IMAGE",),
-                "weight_2": ("FLOAT", {"default": 1.0, "min": 0, "max": 1.0, "step": 0.01}),
-                "weight_3": ("FLOAT", {"default": 1.0, "min": 0, "max": 1.0, "step": 0.01}),
-                "weight_4": ("FLOAT", {"default": 1.0, "min": 0, "max": 1.0, "step": 0.01}),
-            }
-        }
-
-    RETURN_TYPES = ("EMBEDS",)
-    FUNCTION = "preprocess"
-    CATEGORY = "ipadapter"
-
-    def preprocess(self, clip_vision, image_1, ipadapter_plus, noise, weight_1, image_2=None, image_3=None, image_4=None, weight_2=1.0, weight_3=1.0, weight_4=1.0):
-        weight_1 *= (0.1 + (weight_1 - 0.1))
-        weight_2 *= (0.1 + (weight_2 - 0.1))
-        weight_3 *= (0.1 + (weight_3 - 0.1))
-        weight_4 *= (0.1 + (weight_4 - 0.1))
-
-        image = image_1
-        weight = [weight_1] * image_1.shape[0]
-
-        if image_2 is not None:
-            if image_1.shape[1:] != image_2.shape[1:]:
-                image_2 = adaptive_resize(image_2.movedim(-1, 1), image.shape[2], image.shape[1], "bilinear", "center").movedim(1, -1)
-            image = torch.cat((image, image_2), dim=0)
-            weight += [weight_2] * image_2.shape[0]
-        if image_3 is not None:
-            if image.shape[1:] != image_3.shape[1:]:
-                image_3 = adaptive_resize(image_3.movedim(-1, 1), image.shape[2], image.shape[1], "bilinear", "center").movedim(1, -1)
-            image = torch.cat((image, image_3), dim=0)
-            weight += [weight_3] * image_3.shape[0]
-        if image_4 is not None:
-            if image.shape[1:] != image_4.shape[1:]:
-                image_4 = adaptive_resize(image_4.movedim(-1, 1), image.shape[2], image.shape[1], "bilinear", "center").movedim(1, -1)
-            image = torch.cat((image, image_4), dim=0)
-            weight += [weight_4] * image_4.shape[0]
-
-        clip_embed = clip_vision.encode_image(image)
-        neg_image = image_add_noise(image, noise) if noise > 0 else None
-
-        if ipadapter_plus:
-            clip_embed = clip_embed.penultimate_hidden_states
-            if noise > 0:
-                clip_embed_zeroed = clip_vision.encode_image(neg_image).penultimate_hidden_states
-            else:
-                clip_embed_zeroed = zeroed_hidden_states(clip_vision, image.shape[0])
-        else:
-            clip_embed = clip_embed.image_embeds
-            if noise > 0:
-                clip_embed_zeroed = clip_vision.encode_image(neg_image).image_embeds
-            else:
-                clip_embed_zeroed = torch.zeros_like(clip_embed)
-
-        if any(e != 1.0 for e in weight):
-            weight = torch.tensor(weight).unsqueeze(-1) if not ipadapter_plus else torch.tensor(weight).unsqueeze(-1).unsqueeze(-1)
-            clip_embed = clip_embed * weight
-
-        output = torch.stack((clip_embed, clip_embed_zeroed))
-
-        return (output,)
