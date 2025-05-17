@@ -9,4 +9,5 @@ a backup of my local (experimental, opinionated) changes to Forge2 webUI
 * all embeddings everywhere all at once: SD1.5 embeddings (CLIP-L only) can be used with SDXL, SD3, maybe Flux (haven't tested); SDXL embeddings can be used with SD1 (applies CLIP-L only, CLIP-G ignored), SD3
 * new preprocessors for IPAdapter, including tiling, noising (for uncond) and sharpening of inputs. And multi-input.
 * Latent NeuralNet upscaler by city96 (based on https://github.com/city96/SD-Latent-Upscaler)
+* ResAdapter support: download models to `models/other_modules`, load via 'Additional modules' selector (as VAE, text encoder), LoRA as usual (https://huggingface.co/jiaxiangc/res-adapter)
 
