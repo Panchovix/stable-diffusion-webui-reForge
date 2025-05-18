@@ -10,44 +10,6 @@ import random
 cached_insightface = None
 
 
-# class PreprocessorClipVisionForIPAdapter(PreprocessorClipVision):
-    # def __init__(self, name, url, filename):
-        # super().__init__(name, url, filename)
-        # self.slider_resolution = PreprocessorParameter(
-            # label='Tile size', minimum=224, maximum=1024, value=1024, step=32, visible=True)
-        # self.slider_1 = PreprocessorParameter(label='Noise', minimum=0.0, maximum=1.0, value=0.23, step=0.01, visible=True)
-        # self.slider_2 = PreprocessorParameter(label='Sharpening', minimum=0.0, maximum=1.0, value=0.0, step=0.01, visible=True)
-        # self.tags = ['IP-Adapter']
-        # self.model_filename_filters = ['IP-Adapter', 'IP_Adapter']
-        # self.sorting_priority = 20
-        # self.do_tiled = None
-
-    # def __call__(self, input_image, resolution, slider_1=0.23, slider_2=0.0, **kwargs):
-        # cond = dict(
-            # clip_vision=self.load_clipvision(),
-            # image=input_image,
-            # weight_type="original",
-            # noise=slider_1,
-            # sharpening=slider_2,
-            # embeds=None,
-            # unfold_batch=False,
-            # do_tiled=(resolution, self.do_tiled),
-        # )
-        # return cond
-
-
-# needs (simple enough) changes to backend.patcher.clipvision to preprocess image at greater size, but also needs retrained IPAdapters
-# class PreprocessorClipVisionForIPAdapter_448(PreprocessorClipVisionForIPAdapter):
-    # def __init__(self, name, url, filename):
-        # super().__init__(name, url, filename)
-        # self.do_tiled = (448, None)
-
-# add_supported_preprocessor(PreprocessorClipVisionForIPAdapter_448(
-    # name='CLIP-ViT-H-448 (Ostris) (IPAdapter)',
-    # url='https://huggingface.co/ostris/CLIP-ViT-H-14-448/resolve/main/model.safetensors',
-    # filename='CLIP-ViT-H-14-448.safetensors'
-# ))
-
 class PreprocessorForIPAdapter(PreprocessorClipVision):
     def __init__(self, name, url, filename):
         super().__init__(name, url, filename)
@@ -198,7 +160,6 @@ class IPAdapterPatcher(ControlModelPatcher):
                 else:
                     images.append(numpy_to_pytorch(image))
 
-            random.seed(42)
             random.shuffle(images)
 
             pcond = cond[0].copy()
