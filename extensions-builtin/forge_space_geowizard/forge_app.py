@@ -63,7 +63,15 @@ TITLE = "# GeoWizard: Unleashing the Diffusion Priors for 3D Geometry Estimation
 DESCRIPTION = "Generate consistent depth and normal from single image. High quality and rich details. https://github.com/fuxiao0719/GeoWizard/"
 GPU_ID = 0
 
-with gr.Blocks(analytics_enabled=False) as demo:
+
+css = """
+footer {
+    display: none !important;
+}
+"""
+
+
+with gr.Blocks(analytics_enabled=False, css=css, title="GeoWizard Depth and Normal Estimation") as demo:
     gr.Markdown(TITLE)
     gr.Markdown(DESCRIPTION)
     with gr.Row(variant='panel'):
@@ -115,4 +123,4 @@ with gr.Blocks(analytics_enabled=False) as demo:
             run_btn.click(fn=depth_normal, inputs=[input_image, denoising_steps, ensemble_size, processing_res, seed, domain], outputs=[depth, normal])
 
 if __name__ == '__main__':
-    demo.queue().launch(share=True, max_threads=80)
+    demo.queue().launch()
