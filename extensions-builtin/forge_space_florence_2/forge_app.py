@@ -5,7 +5,7 @@ import os
 
 import copy
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 import io
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -44,7 +44,7 @@ def run_example(task_prompt, image, text_input=None, model_id='microsoft/Florenc
         model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True).to(device).to(dtype).eval()
         processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
         loadedModel = model_id
-    
+
     if text_input is None:
         prompt = task_prompt
     else:
@@ -247,7 +247,7 @@ def run_example_batch(directory, task_prompt, model_id='microsoft/Florence-2-lar
         model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True).to(device).to(dtype).eval()
         processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
         loadedModel = model_id
-    
+
     match task_prompt:
         case 'More Detailed Caption':
             prompt = '<MORE_DETAILED_CAPTION>'
@@ -257,7 +257,7 @@ def run_example_batch(directory, task_prompt, model_id='microsoft/Florence-2-lar
             prompt = '<CAPTION>'
         case _:
             prompt = '<CAPTION>'
-    
+
     results = ""
 
     # batch_images block lifted from modules/img2img.py
@@ -299,9 +299,12 @@ def run_example_batch(directory, task_prompt, model_id='microsoft/Florence-2-lar
 
 css = """
   #output {
-    height: 500px; 
-    overflow: auto; 
-    border: 1px solid #ccc; 
+    height: 500px;
+    overflow: auto;
+    border: 1px solid #ccc;
+  }
+  footer {
+    display: none !important;
   }
 """
 
@@ -341,7 +344,7 @@ def unload():
     del model, processor
 
 
-with gr.Blocks(css=css) as demo:
+with gr.Blocks(analytics_enabled=False, css=css, title="Florence-2") as demo:
     gr.Markdown(DESCRIPTION)
     with gr.Tab(label="Florence-2 Image Captioning"):
         with gr.Row():
@@ -358,7 +361,7 @@ with gr.Blocks(css=css) as demo:
 
         model_selector.change(fn=update_task_dropdown, inputs=[model_selector, task_type], outputs=task_prompt)
         task_type.change(fn=update_task_dropdown, inputs=[model_selector, task_type], outputs=task_prompt)
-        
+
         submit_btn.click(process_image, [input_img, task_prompt, text_input, model_selector], [output_text, output_img])
 
     with gr.Tab(label="Batch captioning"):
@@ -367,7 +370,7 @@ with gr.Blocks(css=css) as demo:
                 input_directory = gr.Textbox(label="Input directory")
                 model_selector = gr.Dropdown(choices=models_list, label="Model", value=models_list[0])
                 task_prompt = gr.Dropdown(choices=caption_task_list, label="Task prompt", value="More Detailed Caption")
-                save_captions = gr.Checkbox(label="Save captions to textfiles (same filename, same directory)", value=False)  
+                save_captions = gr.Checkbox(label="Save captions to textfiles (same filename, same directory)", value=False)
                 prefix_input = gr.Textbox(label="Prefix to add to captions (optional)")
                 batch_btn = gr.Button(value="Submit")
             with gr.Column():

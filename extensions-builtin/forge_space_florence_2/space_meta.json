@@ -2,5 +2,6 @@
   "tag": "Computer Vision: Image Caption, Object Detection, and Image Segmentation",
   "title": "Florence-2: Image Captioning and Object Detection",
   "repo_id": null,
-  "revision": null
+  "revision": null,
+  "block_uninstall": "True"
 }
