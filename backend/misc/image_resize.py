@@ -132,6 +132,11 @@ def contrast_adaptive_sharpening(image, amount):
         mx = x.max(axis=0)[0]
         return torch.clamp(mx, max=1)
 
+    if image.ndim == 4:         # B, H, W, C -> B, C, H, W
+        image = image.permute(0, 3, 1, 2)
+    elif image.ndim == 3:       # H, W, C -> C, H, W
+        image = image.permute(2, 0, 1)
+
     img = torch.nn.functional.pad(image, pad=(1, 1, 1, 1)).cpu()
 
     a = img[..., :-2, :-2]
@@ -167,5 +172,10 @@ def contrast_adaptive_sharpening(image, amount):
     output = ((b + d + f + h) * w + e) * div
     output = output.clamp(0, 1)
     output = torch.nan_to_num(output)
+
+    if image.ndim == 4:         # B, C, H, W -> B, H, W, C
+        output = output.permute(0, 2, 3, 1)
+    elif image.ndim == 3:       # C, H, W -> H, W, C
+        output = output.permute(1, 2, 0)
 
     return (output)
