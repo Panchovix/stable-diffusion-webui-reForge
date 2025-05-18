@@ -77,7 +77,7 @@ def remove_dir(dir_path):
 
 
 class ForgeSpace:
-    def __init__(self, root_path, title, repo_id=None, repo_type='space', revision=None, allow_patterns=None, ignore_patterns=None, **kwargs):
+    def __init__(self, root_path, title, repo_id=None, repo_type='space', revision=None, allow_patterns=None, ignore_patterns=None, block_uninstall=False, **kwargs):
         self.title = title
         self.root_path = root_path
         self.hf_path = os.path.join(root_path, 'huggingface_space_mirror')
@@ -85,6 +85,7 @@ class ForgeSpace:
         self.repo_type = repo_type
         self.revision = revision
         self.installed = False
+        self.block_uninstall = block_uninstall
         self.is_running = False
         self.gradio_metas = None
 
@@ -122,6 +123,8 @@ class ForgeSpace:
         if self.installed:
             if has_requirement:
                 results.append(gr.update(value="Reinstall", variant="primary"))
+            elif self.block_uninstall:
+                results.append(gr.update(value="", variant="primary", interactive=False))
             else:
                 results.append(gr.update(value="Uninstall", variant="primary", interactive=True))
 
@@ -131,14 +134,14 @@ class ForgeSpace:
                 results.append(gr.update(value="Launch", variant="secondary", interactive=True))
         else: # not installed
             results.append(gr.update(value="Install", variant="secondary"))
-            results.append(gr.update(value="Launch", variant="secondary", interactive=False))
+            results.append(gr.update(value="", variant="secondary", interactive=False))
 
         return results
 
     def install(self):
         if self.installed:
             remove_dir(self.hf_path)
-            print('Uninstall finished. You can also manually delete some diffusers models in "/models/diffusers" to release more spaces, but those diffusers models may be reused by other spaces or extensions.')
+            print('Uninstall finished. You can also manually delete some diffusers models in "/models/diffusers", but those diffusers models may be reused by other spaces or extensions.')
             return self.refresh_gradio()
         else:
             os.makedirs(self.hf_path, exist_ok=True)
