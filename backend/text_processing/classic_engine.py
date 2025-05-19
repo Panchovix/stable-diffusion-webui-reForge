@@ -79,7 +79,8 @@ class ClassicTextProcessingEngine:
         self.return_pooled = return_pooled
         self.final_layer_norm = final_layer_norm
 
-        self.chunk_length = chunk_length
+        # self.chunk_length = chunk_length
+        self.chunk_length = self.text_encoder.transformer.text_model.embeddings.position_embedding.num_embeddings - 2
 
         self.id_start = self.tokenizer.bos_token_id
         self.id_end = self.tokenizer.eos_token_id

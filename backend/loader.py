@@ -66,6 +66,8 @@ def load_huggingface_component(guess, component_name, lib_name, cls_name, repo_p
             from transformers import CLIPTextConfig, CLIPTextModel
             config = CLIPTextConfig.from_pretrained(config_path)
 
+            config.max_position_embeddings = state_dict['transformer.text_model.embeddings.position_embedding.weight'].shape[0]
+
             to_args = dict(device=memory_management.cpu, dtype=memory_management.text_encoder_dtype())
 
             with modeling_utils.no_init_weights():
@@ -75,7 +77,7 @@ def load_huggingface_component(guess, component_name, lib_name, cls_name, repo_p
             load_state_dict(model, state_dict, ignore_errors=[
                 'transformer.text_projection.weight',
                 'transformer.text_model.embeddings.position_ids',
-                'logit_scale'
+                'logit_scale',
             ], log_name=cls_name)
 
             return model
