@@ -74,10 +74,6 @@ def visible_sampler_names():
     return [x.name for x in samplers if x.name not in samplers_hidden]
 
 
-def visible_samplers():
-    return [x for x in samplers if x.name not in samplers_hidden]
-
-
 def get_sampler_from_infotext(d: dict):
     return get_sampler_and_scheduler(d.get("Sampler"), d.get("Schedule type"))[0]
 

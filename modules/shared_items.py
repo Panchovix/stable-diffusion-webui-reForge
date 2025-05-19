@@ -38,6 +38,11 @@ def list_samplers():
     return modules.sd_samplers.all_samplers
 
 
+def list_schedulers():
+    import modules.sd_schedulers
+    return modules.sd_schedulers.schedulers
+
+
 def reload_hypernetworks():
     from modules.hypernetworks import hypernetwork
     from modules import shared

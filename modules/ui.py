@@ -315,8 +315,10 @@ def create_ui():
                                     hr_checkpoint_refresh.click(fn=refresh_model_and_modules, outputs=[hr_checkpoint_name, hr_additional_modules], show_progress='hidden')
 
                                 with FormRow(elem_id="txt2img_hires_fix_row3b", variant="compact") as hr_sampler_container:
-                                    hr_sampler_name = gr.Dropdown(label='Hires sampling method', elem_id="hr_sampler", choices=["Use same sampler"] + sd_samplers.visible_sampler_names(), value="Use same sampler")
-                                    hr_scheduler = gr.Dropdown(label='Hires schedule type', elem_id="hr_scheduler", choices=["Use same scheduler"] + [x.label for x in sd_schedulers.schedulers], value="Use same scheduler")
+                                    sampler_names = sd_samplers.visible_sampler_names()
+                                    scheduler_names = sd_schedulers.visible_scheduler_names()
+                                    hr_sampler_name = gr.Dropdown(label='Hires sampling method', elem_id="hr_sampler", choices=["Use same sampler"] + sampler_names, value="Use same sampler")
+                                    hr_scheduler = gr.Dropdown(label='Hires schedule type', elem_id="hr_scheduler", choices=["Use same scheduler"] + scheduler_names, value="Use same scheduler")
 
                                 with FormRow(elem_id="txt2img_hires_fix_row4", variant="compact") as hr_prompts_container:
                                     hr_prompt = gr.Textbox(label="Hires prompt", elem_id="hires_prompt", show_label=False, lines=3, placeholder="Prompt for hires fix pass.\nLeave empty to use the same prompt as in first pass.", elem_classes=["prompt"])
