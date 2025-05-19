@@ -1,4 +1,4 @@
-setuptools==69.5.1  # temp fix for compatibility with some old packages
+setuptools==78.1.1  # temp fix for compatibility with some old packages
 GitPython==3.1.32
 pillow==10.4.0
 accelerate==0.21.0
