@@ -109,6 +109,16 @@ class StableDiffusion3(ForgeDiffusionEngine):
         else:
             cond_t5 = torch.zeros([len(prompt), 256, 4096]).to(cond_l.device)
 
+        #   conds get concatenated later, in dimension 2, so sizes of dimension 1 must match
+        #   seems like some embeddings contribute different numbers of tokens to _l and _g
+        pad = cond_g.size(1) - cond_l.size(1)
+        if pad > 1:
+            padding = (0,0, 0, pad, 0,0)
+            cond_l = torch.nn.functional.pad (cond_l, padding, mode='constant', value=0)
+        elif pad < 1:
+            padding = (0,0, 0, -pad, 0,0)
+            cond_g = torch.nn.functional.pad (cond_g, padding, mode='constant', value=0)
+
         is_negative_prompt = getattr(prompt, 'is_negative_prompt', False)
 
         force_zero_negative_prompt = is_negative_prompt and all(x == '' for x in prompt)
