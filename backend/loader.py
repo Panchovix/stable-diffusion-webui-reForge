@@ -87,6 +87,47 @@ def load_huggingface_component(guess, component_name, lib_name, cls_name, repo_p
             from backend.nn.t5 import IntegratedT5
             config = read_arbitrary_config(config_path)
 
+            # detect distilled T5 by LifuWang
+            match state_dict['transformer.encoder.block.0.layer.0.SelfAttention.k.weight'].shape[0]:
+                case 384:   #   small (shape is [384,512])
+                    config['d_ff'] = 1024
+                    config['d_model'] = 512
+                    config['num_heads'] = 6
+                    config['num_layers'] = 8
+                    config['num_decoder_layers'] = 8
+                    # config['dense_act_fn'] = "gelu_new"
+                    config['project_in_dim'] = 512
+                    config['project_out_dim'] = 4096
+                case 768:   #   base
+                    config['d_ff'] = 2048
+                    config['d_model'] = 768
+                    config['num_heads'] = 12
+                    config['num_layers'] = 12
+                    config['num_decoder_layers'] = 12
+                    # config['dense_act_fn'] = "gelu_new"
+                    config['project_in_dim'] = 768
+                    config['project_out_dim'] = 4096
+                case 1024:   #   large
+                    config['d_ff'] = 2816
+                    config['d_model'] = 1024
+                    config['num_heads'] = 16
+                    config['num_layers'] = 24
+                    config['num_decoder_layers'] = 24
+                    # config['dense_act_fn'] = "gelu_new"
+                    config['project_in_dim'] = 1024
+                    config['project_out_dim'] = 4096
+                case 2048:   #   xl
+                    config['d_ff'] = 5120
+                    config['d_model'] = 2048
+                    config['num_heads'] = 32
+                    config['num_layers'] = 24
+                    config['num_decoder_layers'] = 24
+                    # config['dense_act_fn'] = "gelu_new"
+                    config['project_in_dim'] = 2048
+                    config['project_out_dim'] = 4096
+                case _:     # default xxl
+                    pass
+
             storage_dtype = memory_management.text_encoder_dtype()
             state_dict_dtype = memory_management.state_dict_dtype(state_dict)
 
@@ -442,6 +483,13 @@ def replace_state_dict(sd, asd, guess):
             del sd[k]
         for k, v in asd.items():
             sd[f"{text_encoder_key_prefix}t5xxl.transformer.{k}"] = v
+
+    if 'encoder.encoder.block.0.layer.0.SelfAttention.k.weight' in asd:
+        keys_to_delete = [k for k in sd if k.startswith(f"{text_encoder_key_prefix}t5xxl.")]
+        for k in keys_to_delete:
+            del sd[k]
+        for k, v in asd.items():
+            sd[f"{text_encoder_key_prefix}t5xxl.transformer.{k.replace('encoder.', '', 1)}"] = v
 
 
     # ResAdapter (bytedance) unet patch (sd1.5 or sdxl)

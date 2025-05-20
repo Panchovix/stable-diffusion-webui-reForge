@@ -200,11 +200,25 @@ class T5(torch.nn.Module):
         self.encoder = T5Stack(self.num_layers, model_dim, model_dim, config["d_ff"], config["dense_act_fn"], config["is_gated_act"], config["num_heads"], config["model_type"] != "umt5")
         self.shared = torch.nn.Embedding(config["vocab_size"], model_dim)
 
+        # for distilled T5 by LifuWang
+        project_in_dim = config.get('project_in_dim', 4096)
+        if project_in_dim in [512, 768, 1024, 2048] and config.get('project_out_dim') == 4096:
+            self.final_projection = torch.nn.Sequential(
+                torch.nn.Linear(project_in_dim, 4096, bias=False), 
+                torch.nn.ReLU(), 
+                torch.nn.Dropout(0.1), 
+                torch.nn.Linear(4096, 4096, bias=False) 
+            )
+        else:
+            self.final_projection = None
+
     def forward(self, input_ids, *args, **kwargs):
         x = self.shared(input_ids)
         x = torch.nan_to_num(x)
-        return self.encoder(x, *args, **kwargs)
-
+        x = self.encoder(x, *args, **kwargs)
+        if self.final_projection:
+            x = self.final_projection(x)
+        return x
 
 class IntegratedT5(torch.nn.Module):
     def __init__(self, config):
