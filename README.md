@@ -10,4 +10,5 @@ a backup of my local (experimental, opinionated) changes to Forge2 webUI
 * new preprocessors for IPAdapter, including tiling, noising (for uncond) and sharpening of inputs. And multi-input.
 * Latent NeuralNet upscaler by city96 (based on https://github.com/city96/SD-Latent-Upscaler)
 * ResAdapter support: download models to `models/other_modules`, load via 'Additional modules' selector (as VAE, text encoder), LoRA as usual (https://huggingface.co/jiaxiangc/res-adapter)
-
+* long CLIP
+* distilled T5 models for Flux by LifuWang (see https://huggingface.co/LifuWang/DistillT5)
