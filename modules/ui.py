@@ -959,8 +959,6 @@ torch: {getattr(torch, '__long_version__',torch.__version__)}
 xformers: {xformers_version}
 &#x2000;•&#x2000;
 gradio: {gr.__version__}
-&#x2000;•&#x2000;
-checkpoint: <a id="sd_checkpoint_hash">N/A</a>
 """
 
 
