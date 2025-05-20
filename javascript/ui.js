@@ -333,17 +333,6 @@ onAfterUiUpdate(function() {
     json_elem.parentElement.style.display = "none";
 });
 
-onOptionsChanged(function() {
-    var elem = gradioApp().getElementById('sd_checkpoint_hash');
-    var sd_checkpoint_hash = opts.sd_checkpoint_hash || "";
-    var shorthash = sd_checkpoint_hash.substring(0, 10);
-
-    if (elem && elem.textContent != shorthash) {
-        elem.textContent = shorthash;
-        elem.title = sd_checkpoint_hash;
-        elem.href = "https://google.com/search?q=" + sd_checkpoint_hash;
-    }
-});
 
 let txt2img_textarea, img2img_textarea = undefined;
 
