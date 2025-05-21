@@ -1,7 +1,7 @@
 import os
 
 from modules import modelloader, errors
-from modules.shared import cmd_opts, opts
+from modules.shared import opts
 from modules.upscaler import Upscaler, UpscalerData
 from modules.upscaler_utils import upscale_with_model
 from modules_forge.utils import prepare_free_memory
@@ -42,7 +42,6 @@ class UpscalerRealESRGAN(Upscaler):
         model_descriptor = modelloader.load_spandrel_model(
             info.local_data_path,
             device=self.device,
-            prefer_half=(not cmd_opts.no_half and not cmd_opts.upcast_sampling),
             expected_architecture="ESRGAN",  # "RealESRGAN" isn't a specific thing for Spandrel
         )
         return upscale_with_model(

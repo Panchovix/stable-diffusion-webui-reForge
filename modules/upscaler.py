@@ -32,7 +32,6 @@ class Upscaler:
         self.img = None
         self.output = None
         self.scale = 1
-        self.half = not shared.cmd_opts.no_half
         self.pre_pad = 0
         self.mod_scale = None
         self.model_download_path = None
@@ -139,9 +138,9 @@ class UpscalerLanczosCAS(Upscaler):
         img =  img.resize((int(img.width * self.scale), int(img.height * self.scale)), resample=LANCZOS)
 
         image = torch.Tensor(numpy.array(img.convert('RGB')) / 255.0)
-        image = image ** 2.0
-        image = contrast_adaptive_sharpening(image, 0.75)
-        image = image ** 0.5
+        image = image ** 2.2
+        image = contrast_adaptive_sharpening(image, 0.55)
+        image = image ** (1/2.2)
         image = image.numpy()
         
         return Image.fromarray((image * 255).astype(numpy.uint8), mode="RGB")

@@ -57,11 +57,11 @@ class InterrogateModels:
         self.skip_categories = []
         self.content_dir = content_dir
 
-        self.load_device = memory_management.text_encoder_device()
+        self.load_device = memory_management.get_torch_device()     #text_encoder_device()
         self.offload_device = memory_management.text_encoder_offload_device()
-        self.dtype = torch.float32
+        self.dtype = torch.float32 
 
-        if memory_management.should_use_fp16(device=self.load_device):
+        if memory_management.should_use_fp16(device=self.load_device, prioritize_performance=False, manual_cast=True):
             self.dtype = torch.float16
 
         self.blip_patcher = None
