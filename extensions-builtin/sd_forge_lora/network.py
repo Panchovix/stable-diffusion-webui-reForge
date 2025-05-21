@@ -44,8 +44,9 @@ class NetworkOnDisk:
         self.hash = None
         self.shorthash = None
         self.set_hash(
-            self.metadata.get('sshs_model_hash') or
             hashes.sha256_from_cache(self.filename, "lora/" + self.name, use_addnet_hash=self.is_safetensors) or
+            self.metadata.get('sshs_model_hash') or
+            self.metadata.get('modelspec.hash_sha256') or
             ''
         )
 

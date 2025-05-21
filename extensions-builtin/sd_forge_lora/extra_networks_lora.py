@@ -21,17 +21,19 @@ class ExtraNetworkLora(extra_networks.ExtraNetwork):
         for params in params_list:
             assert params.items
 
-            names.append(params.positional[0])
-
             te_multiplier = float(params.positional[1]) if len(params.positional) > 1 else 1.0
             te_multiplier = float(params.named.get("te", te_multiplier))
 
             unet_multiplier = float(params.positional[2]) if len(params.positional) > 2 else te_multiplier
             unet_multiplier = float(params.named.get("unet", unet_multiplier))
 
+            if te_multiplier == 0.0 and unet_multiplier == 0.0:
+                continue
+
             dyn_dim = int(params.positional[3]) if len(params.positional) > 3 else None
             dyn_dim = int(params.named["dyn"]) if "dyn" in params.named else dyn_dim
 
+            names.append(params.positional[0])
             te_multipliers.append(te_multiplier)
             unet_multipliers.append(unet_multiplier)
             dyn_dims.append(dyn_dim)
