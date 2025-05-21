@@ -130,17 +130,13 @@ def load_with_extra(filename, extra_handler=None, *args, **kwargs):
     definitely unsafe.
     """
 
-    from modules import shared
-
     try:
-        if not shared.cmd_opts.disable_safe_unpickle:
-            check_pt(filename, extra_handler)
+        check_pt(filename, extra_handler)
 
     except pickle.UnpicklingError:
         errors.report(
             f"Error verifying pickled file from {filename}\n"
             "-----> !!!! The file is most likely corrupted !!!! <-----\n"
-            "You can skip this check with --disable-safe-unpickle commandline argument, but that is not going to help you.\n\n",
             exc_info=True,
         )
         return None
@@ -148,7 +144,6 @@ def load_with_extra(filename, extra_handler=None, *args, **kwargs):
         errors.report(
             f"Error verifying pickled file from {filename}\n"
             f"The file may be malicious, so the program is not going to read it.\n"
-            f"You can skip this check with --disable-safe-unpickle commandline argument.\n\n",
             exc_info=True,
         )
         return None

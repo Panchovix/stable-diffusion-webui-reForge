@@ -8,7 +8,8 @@ import re
 from pathlib import Path
 from typing import Any
 
-from modules import paths_internal, timer, shared_cmd_options, errors, launch_utils
+from modules import timer, shared_cmd_options, errors, launch_utils
+from modules.paths_internal import script_path, data_path, extensions_dir
 
 checksum_token = "DontStealMyGamePlz__WINNERS_DONT_USE_DRUGS__DONT_COPY_THAT_FLOPPY"
 environment_whitelist = {
@@ -107,10 +108,10 @@ def get_dict():
         "Python": platform.python_version(),
         "Version": launch_utils.git_tag(),
         "Commit": launch_utils.commit_hash(),
-        "Git status": git_status(paths_internal.script_path),
-        "Script path": paths_internal.script_path,
-        "Data path": paths_internal.data_path,
-        "Extensions dir": paths_internal.extensions_dir,
+        "Git status": git_status(script_path),
+        "Script path": script_path,
+        "Data path": data_path,
+        "Extensions dir": extensions_dir,
         "Checksum": checksum_token,
         "Commandline": get_argv(),
         "Torch env info": get_torch_sysinfo(),
@@ -171,7 +172,7 @@ def run_git(path, *args):
 
 def git_status(path):
     if (Path(path) / '.git').is_dir():
-        return run_git(paths_internal.script_path, 'status')
+        return run_git(script_path, 'status')
 
 
 def get_info_from_repo_path(path: Path):
@@ -199,7 +200,7 @@ def get_extensions(*, enabled, fallback_disabled_extensions=None):
                 }
             return [to_json(x) for x in extensions.extensions if not x.is_builtin and x.enabled == enabled]
         else:
-            return [get_info_from_repo_path(d) for d in Path(paths_internal.extensions_dir).iterdir() if d.is_dir() and enabled != (str(d.name) in fallback_disabled_extensions)]
+            return [get_info_from_repo_path(d) for d in Path(extensions_dir).iterdir() if d.is_dir() and enabled != (str(d.name) in fallback_disabled_extensions)]
     except Exception as e:
         return str(e)
 
