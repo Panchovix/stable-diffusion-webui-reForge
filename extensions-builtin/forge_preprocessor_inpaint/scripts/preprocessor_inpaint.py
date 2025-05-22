@@ -2,15 +2,12 @@ import os
 import cv2
 import torch
 import numpy as np
-import yaml
 import einops
 
-from omegaconf import OmegaConf
 from modules_forge.supported_preprocessor import Preprocessor, PreprocessorParameter
-from modules_forge.utils import numpy_to_pytorch, resize_image_with_pad
+from modules_forge.utils import resize_image_with_pad
 from modules_forge.shared import preprocessor_dir, add_supported_preprocessor
 from modules.modelloader import load_file_from_url
-from annotator.lama.saicinpainting.training.trainers import load_checkpoint
 
 
 class PreprocessorInpaint(Preprocessor):
@@ -103,12 +100,37 @@ class PreprocessorInpaintLama(PreprocessorInpaintOnly):
     def load_model(self):
         remote_model_path = "https://huggingface.co/lllyasviel/Annotators/resolve/main/ControlNetLama.pth"
         model_path = load_file_from_url(remote_model_path, model_dir=preprocessor_dir)
-        config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'lama_config.yaml')
-        cfg = yaml.safe_load(open(config_path, 'rt'))
-        cfg = OmegaConf.create(cfg)
-        cfg.training_model.predict_only = True
-        cfg.visualizer.kind = 'noop'
-        model = load_checkpoint(cfg, os.path.abspath(model_path), strict=False, map_location='cpu')
+
+        config_generator = {
+            "input_nc": 4,
+            "output_nc": 3,
+            "ngf": 64,
+            "n_downsampling": 3,
+            "n_blocks": 18,
+            "add_out_act": 'sigmoid',
+            "init_conv_kwargs":
+            {
+                "ratio_gin": 0,
+                "ratio_gout": 0,
+                "enable_lfu": False,
+            },
+            "downsample_conv_kwargs":
+            {
+                "ratio_gin": 0,
+                "ratio_gout": 0,
+                "enable_lfu": False,
+            },
+            "resnet_conv_kwargs":
+            {
+                "ratio_gin": 0.75,
+                "ratio_gout": 0.75,
+                "enable_lfu": False,
+            },
+        }
+        
+        from annotator.FFCResNet import FFCResNetGenerator
+        model = FFCResNetGenerator(**config_generator)
+
         self.setup_model_patcher(model)
         return
 
@@ -169,40 +191,40 @@ class PreprocessorInpaintNoobAIXL(Preprocessor):
          self.slider_resolution = PreprocessorParameter(visible=False)
          self.fill_mask_with_one_when_resize_and_fill = True
          self.expand_mask_when_resize_and_fill = True
- 
+
      def __call__(self, input_image, resolution=512, slider_1=None, slider_2=None, slider_3=None, input_mask=None, **kwargs):
          if input_mask is None:
              return input_image
-             
+
          if not isinstance(input_image, np.ndarray):
              input_image = np.array(input_image)
          if not isinstance(input_mask, np.ndarray):
              input_mask = np.array(input_mask)
-             
+
          mask = input_mask.astype(np.float32) / 255.0
          mask = (mask > 0.5).astype(np.float32)
-             
+
          # Create a copy of the input image
          result = input_image.copy()
-         
+
          # Convert mask to proper shape if needed
          if mask.ndim == 2:
              mask = np.expand_dims(mask, axis=-1)
          if mask.shape[-1] == 1:
              mask = np.repeat(mask, 3, axis=-1)
-             
+
          mask_indices = mask > 0.5
          result[mask_indices] = 0.0
-         
+
          return result
-         
+
      def process_before_every_sampling(self, process, cond, mask, *args, **kwargs):
          mask = mask.round()
          mixed_cond = cond.clone()
          mixed_cond = mixed_cond * (1.0 - mask)
-         
+
          return mixed_cond, None
-         
+
 add_supported_preprocessor(PreprocessorInpaint())
 
 add_supported_preprocessor(PreprocessorInpaintOnly())
