@@ -12,6 +12,9 @@ from modules import shared
 from modules.upscaler import Upscaler, UpscalerLanczos, UpscalerLanczosCAS, UpscalerNearest, UpscalerNone
 from modules.util import load_file_from_url # noqa, backwards compatibility
 
+from backend.memory_management import should_use_fp16
+
+
 if TYPE_CHECKING:
     import spandrel
 
@@ -81,16 +84,14 @@ def load_upscalers():
     # so we'll try to import any _model.py files before looking in __subclasses__
     modules_dir = os.path.join(shared.script_path, "modules")
     for file in os.listdir(modules_dir):
-        if "_model.py" in file:
-            model_name = file.replace("_model.py", "")
-            full_model = f"modules.{model_name}_model"
+        if file.startswith("upscaler_") and file.endswith("_model.py"):
+            full_model = f"modules.{file[:-3]}"
             try:
                 importlib.import_module(full_model)
             except Exception:
                 pass
 
     data = []
-    commandline_options = vars(shared.cmd_opts)
 
     # some of upscaler classes will not go away after reloading their modules, and we'll end
     # up with two copies of those classes. The newest copy will always be the last in the list,
@@ -103,11 +104,8 @@ def load_upscalers():
 
     for cls in reversed(used_classes.values()):
         name = cls.__name__
-        cmd_name = f"{name.lower().replace('upscaler', '')}_models_path"
-        commandline_model_path = commandline_options.get(cmd_name, None)
-        scaler = cls(commandline_model_path)
-        scaler.user_path = commandline_model_path
-        scaler.model_download_path = commandline_model_path or scaler.model_path
+        scaler = cls()
+        scaler.model_download_path = scaler.model_path
         data += scaler.scalers
 
     shared.sd_upscalers = sorted(
@@ -115,6 +113,23 @@ def load_upscalers():
         # Special case for UpscalerNone keeps it at the beginning of the list.
         key=lambda x: x.name.lower() if not isinstance(x.scaler, (UpscalerNone, UpscalerNearest, UpscalerLanczos, UpscalerLanczosCAS)) else ""
     )
+
+
+def load_upscalersX():
+    modules_dir = os.path.join(shared.script_path, "modules")
+    for file in os.listdir(modules_dir):
+        if file.startswith("upscaler_") and file.endswith("_model.py"):
+            full_model = f"modules.{file[:-3]}"
+            try:
+                importlib.import_module(full_model)
+            except Exception:
+                pass
+
+    data = []
+
+    upscalers_dir = shared.cmd_opts.upscalers_dir
+    for model in shared.walk_files(upscalers_dir, allowed_extensions=[".pt", ".pth", ".safetensors"]):
+        scaler = GenericUpscaler()
 
 # None: not loaded, False: failed to load, True: loaded
 _spandrel_extra_init_state = None
@@ -142,21 +157,18 @@ def load_spandrel_model(
     path: str | os.PathLike,
     *,
     device: str | torch.device | None,
-    prefer_half: bool = False,
     dtype: str | torch.dtype | None = None,
-    expected_architecture: str | None = None,
 ) -> spandrel.ModelDescriptor:
     global _spandrel_extra_init_state
 
     import spandrel
     _init_spandrel_extra_archs()
+    
+    prefer_half = should_use_fp16(device=device, prioritize_performance=True, manual_cast=True)
 
     model_descriptor = spandrel.ModelLoader(device=device).load_from_file(str(path))
     arch = model_descriptor.architecture
-    if expected_architecture and arch.name != expected_architecture:
-        logger.warning(
-            f"Model {path!r} is not a {expected_architecture!r} model (got {arch.name!r})",
-        )
+
     half = False
     if prefer_half:
         if model_descriptor.supports_half:

@@ -25,7 +25,7 @@ import backend.text_processing.textual_inversion as textual_inversion
 from modules.shared import cmd_opts
 
 from PIL import PngImagePlugin
-from modules.realesrgan_model import get_realesrgan_models
+from modules.upscaler_realesrgan_model import get_realesrgan_models
 from modules import devices
 from typing import Any, Union, get_origin, get_args
 import piexif

@@ -20,7 +20,6 @@ class Upscaler:
     enable = True
     filter = None
     model = None
-    user_path = None
     scalers: list
     tile = True
 
@@ -37,7 +36,7 @@ class Upscaler:
         self.model_download_path = None
 
         if self.model_path is None and self.name:
-            self.model_path = os.path.join(shared.models_path, self.name)
+            self.model_path = os.path.join(shared.models_path, self.name)   #make unified storage?
         if self.model_path and create_dirs:
             os.makedirs(self.model_path, exist_ok=True)
 
@@ -77,8 +76,8 @@ class Upscaler:
     def load_model(self, path: str):
         pass
 
-    def find_models(self, ext_filter=None) -> list:
-        return modelloader.load_models(model_path=self.model_path, model_url=self.model_url, command_path=self.user_path, ext_filter=ext_filter)
+    def find_models(self) -> list:
+        return modelloader.load_models(model_path=self.model_path, model_url=self.model_url, ext_filter=[".pt", ".pth", ".safetensors"])
 
 
 class UpscalerData:
