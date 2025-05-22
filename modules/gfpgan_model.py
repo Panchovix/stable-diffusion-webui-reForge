@@ -36,7 +36,6 @@ class FaceRestorerGFPGAN(face_restoration_utils.CommonFaceRestoration):
                 return modelloader.load_spandrel_model(
                     model_path,
                     device=devices.device_face_restore,
-                    expected_architecture='GFPGAN',
                 ).model
 
         #   if reach here, model not found. previous code will download it iff there are no models in GFPGAN directory
