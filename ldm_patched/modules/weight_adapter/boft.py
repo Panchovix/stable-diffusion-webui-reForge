@@ -62,9 +62,9 @@ class BOFTAdapter(WeightAdapterBase):
         alpha = v[2]
         dora_scale = v[3]
 
-        blocks = ldm_patched.model_management.cast_to_device(blocks, weight.device, intermediate_dtype)
+        blocks = ldm_patched.modules.model_management.cast_to_device(blocks, weight.device, intermediate_dtype)
         if rescale is not None:
-            rescale = ldm_patched.model_management.cast_to_device(rescale, weight.device, intermediate_dtype)
+            rescale = ldm_patched.modules.model_management.cast_to_device(rescale, weight.device, intermediate_dtype)
 
         boft_m, block_num, boft_b, *_ = blocks.shape
 
