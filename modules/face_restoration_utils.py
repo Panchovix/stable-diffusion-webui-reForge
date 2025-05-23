@@ -120,7 +120,8 @@ class CommonFaceRestoration(face_restoration.FaceRestoration):
         super().__init__()
         self.net = None
         self.model_path = model_path
-        os.makedirs(model_path, exist_ok=True)
+        if model_path:
+            os.makedirs(model_path, exist_ok=True)
 
     def get_device(self):
         return devices.device_face_restore

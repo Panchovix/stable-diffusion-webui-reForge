@@ -63,6 +63,10 @@ def initialize():
     gfpgan_model.setup_model(cmd_opts.gfpgan_models_path)
     startup_timer.record("setup gfpgan")
 
+    from modules import face_bopb2l_model
+    face_bopb2l_model.setup_model()
+    startup_timer.record("setup ms-bopb2l")
+
     initialize_rest(reload_script_modules=False)
 
 

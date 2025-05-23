@@ -144,7 +144,6 @@ class StableDiffusionProcessing:
     distilled_cfg_scale: float = 3.5
     width: int = 512
     height: int = 512
-    restore_faces: bool = None
     tiling: bool = None
     do_not_save_samples: bool = False
     do_not_save_grid: bool = False
@@ -532,8 +531,7 @@ class Processed:
         self.image_cfg_scale = getattr(p, 'image_cfg_scale', None)
         self.steps = p.steps
         self.batch_size = p.batch_size
-        self.restore_faces = p.restore_faces
-        self.face_restoration_model = opts.face_restoration_model if p.restore_faces else None
+        self.face_restoration_model = opts.face_restoration_model
         self.sd_model_name = p.sd_model_name
         self.sd_model_hash = p.sd_model_hash
         self.sd_vae_name = p.sd_vae_name
@@ -587,8 +585,7 @@ class Processed:
             "cfg_scale": self.cfg_scale,
             "steps": self.steps,
             "batch_size": self.batch_size,
-            "restore_faces": self.restore_faces,
-            "face_restoration_model": self.face_restoration_model,
+            "face_restoration_model": self.face_restoration_model if self.face_restoration_model not in ["None", None] else None,
             "sd_model_name": self.sd_model_name,
             "sd_model_hash": self.sd_model_hash,
             "sd_vae_name": self.sd_vae_name,
@@ -746,7 +743,7 @@ def create_infotext(p, all_prompts, all_seeds, all_subseeds, comments=None, iter
     generation_params.update({
         "Image CFG scale": getattr(p, 'image_cfg_scale', None),
         "Seed": p.all_seeds[0] if use_main_prompt else all_seeds[index],
-        "Face restoration": opts.face_restoration_model if p.restore_faces else None,
+        "Face restoration": opts.face_restoration_model if opts.face_restoration_model not in ["None", None] else None,
         "Size": f"{p.width}x{p.height}",
         "Model hash": p.sd_model_hash if opts.add_model_hash_to_info else None,
         "Model": p.sd_model_name if opts.add_model_name_to_info else None,
@@ -856,9 +853,6 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
 
     seed = get_fixed_seed(p.seed)
     subseed = get_fixed_seed(p.subseed)
-
-    if p.restore_faces is None:
-        p.restore_faces = opts.face_restoration
 
     if p.tiling is None:
         p.tiling = opts.tiling
@@ -1032,7 +1026,7 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
                 x_sample = 255. * np.moveaxis(x_sample.cpu().numpy(), 0, 2)
                 x_sample = x_sample.astype(np.uint8)
 
-                if p.restore_faces:
+                if opts.face_restoration_model != "None":
                     if save_samples and opts.save_images_before_face_restoration:
                         images.save_image(Image.fromarray(x_sample), p.outpath_samples, "", p.seeds[i], p.prompts[i], opts.samples_format, info=infotext(i), p=p, suffix="-before-face-restoration")
 
