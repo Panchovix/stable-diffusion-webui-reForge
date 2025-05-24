@@ -37,6 +37,7 @@ class FaceRestorerBOPB2L(face_restoration_utils.CommonFaceRestoration):
         pass
 
 
+    @torch.no_grad()
     def restore(self, np_image):
         image = Image.fromarray(np_image)
 
