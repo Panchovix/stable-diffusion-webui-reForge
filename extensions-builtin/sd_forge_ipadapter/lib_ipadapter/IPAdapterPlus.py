@@ -558,8 +558,8 @@ class IPAdapterApply:
         self.is_plus = (self.is_full or "latents" in ipadapter["image_proj"] or "perceiver_resampler.proj_in.weight" in ipadapter["image_proj"])
         self.is_instant_id = instant_id
 
-        if self.is_faceid and not insightface:
-            raise Exception('InsightFace must be provided for FaceID models.')
+        if (self.is_faceid or self.is_instant_id) and not insightface:
+            raise Exception('InsightFace must be provided for FaceID/InstantID models.')
 
         output_cross_attention_dim = ipadapter["ip_adapter"]["1.to_k_ip.weight"].shape[1]
         self.is_sdxl = output_cross_attention_dim == 2048
@@ -575,30 +575,35 @@ class IPAdapterApply:
             clip_embed_zeroed = embeds[1].cpu()
         else:
             if self.is_instant_id:
-                insightface.det_model.input_size = (640, 640)  # reset the detection size
-
                 face_embed = []
 
                 for i in range(len(images)):
-                    if isinstance(images[i], list):  # not sure why this happens with batch count > 1
+                    if isinstance(images[i], list):
                         images[i] = images[i][0]
 
                     face_img = self.prep_image(images[i], sharpening)
 
                     for size in [(size, size) for size in range(640, 128, -64)]:
-                        insightface.det_model.input_size = size  # TODO: hacky but seems to be working
+                        insightface.det_model.input_size = size
                         face = insightface.get(face_img[0])
                         if face:
-                            face_embed.append(torch.from_numpy(face[0].embedding).unsqueeze(0))
+                            if len(face) > 1:   # only use the largest face
+                                face = sorted(face, key=lambda x:(x['bbox'][2]-x['bbox'][0])*x['bbox'][3]-x['bbox'][1])[-1]
+ 
+                            if isinstance(face, list):
+                                face = face[0]
+
+                            embed = face.get('embedding', None)
+                            if embed is not None:
+                                face_embed.append(torch.from_numpy(embed).unsqueeze(0))
                             break
                     else:
                         raise Exception('InsightFace: No face detected.')
 
-                face_embed = torch.stack(face_embed, dim=0)
+                face_embed = torch.stack(face_embed, dim=0).mean(dim=0, keepdim=True)
                 clip_embed = face_embed
-            elif self.is_faceid:
-                insightface.det_model.input_size = (640, 640)  # reset the detection size
 
+            elif self.is_faceid:
                 face_embed = []
                 face_clipvision = []
 
@@ -612,8 +617,14 @@ class IPAdapterApply:
                         insightface.det_model.input_size = size  # TODO: hacky but seems to be working
                         face = insightface.get(face_img[0])
                         if face:
-                            face_embed.append(torch.from_numpy(face[0].normed_embedding).unsqueeze(0))
-                            face_clipvision.append(NPToTensor(insightface_face_align.norm_crop(face_img[0], landmark=face[0].kps, image_size=224)))
+                            if len(face) > 1:   # only use the largest face
+                                face = sorted(face, key=lambda x:(x['bbox'][2]-x['bbox'][0])*x['bbox'][3]-x['bbox'][1])[-1]
+
+                            if isinstance(face, list):
+                                face = face[0]
+
+                            face_embed.append(torch.from_numpy(face.normed_embedding).unsqueeze(0))
+                            face_clipvision.append(NPToTensor(insightface_face_align.norm_crop(face_img[0], landmark=face.kps, image_size=224)))
                             break
                     else:
                         raise Exception('InsightFace: No face detected.')
@@ -751,11 +762,10 @@ class IPAdapterApply:
 
         return (work_model,)
 
-    def prep_image(self, image, sharpening, convertNP=True):
-        # maybe gamma before and after
+    def prep_image(self, image, sharpening, convertNP=True, channels_last=True):
         if sharpening > 0.0:
             image = image ** 2.2
-            image = contrast_adaptive_sharpening(image, sharpening)
+            image = contrast_adaptive_sharpening(image, sharpening, channels_last)
             image = image ** (1/2.2)
         
         if convertNP:

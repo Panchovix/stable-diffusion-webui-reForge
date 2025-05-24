@@ -1,13 +1,55 @@
-from modules_forge.supported_preprocessor import PreprocessorClipVision, PreprocessorParameter
+from modules_forge.supported_preprocessor import Preprocessor, PreprocessorClipVision, PreprocessorParameter
 from modules_forge.shared import add_supported_preprocessor
 from modules_forge.utils import numpy_to_pytorch
 from modules_forge.shared import add_supported_control_model
 from modules_forge.supported_controlnet import ControlModelPatcher
 from lib_ipadapter.IPAdapterPlus import IPAdapterApply, InsightFaceLoader
 from pathlib import Path
-import random
+import random, os, torch
 
-cached_insightface = None
+cached_insightfaceA = None  # antelopev2
+cached_insightface = None   # buffalo_l
+
+
+class PreprocessorForInstantID(Preprocessor):
+    def __init__(self, name):
+        super().__init__()
+        self.name = name
+        self.slider_resolution = PreprocessorParameter(
+            label='Tiles (n * n) (limited by source(s))', minimum=1, maximum=16, value=1, step=1, visible=True)
+        self.slider_1 = PreprocessorParameter(label='Noise', minimum=0.0, maximum=1.0, value=0.23, step=0.01, visible=True)
+        self.slider_2 = PreprocessorParameter(label='Sharpening', minimum=0.0, maximum=1.0, value=0.0, step=0.01, visible=True)
+        self.tags = ['Instant-ID']
+        self.model_filename_filters = ['Instant-ID', 'Instant_ID']
+        self.sorting_priority = 20
+        self.model = None
+
+    def load_insightface(self):
+        global cached_insightfaceA
+        if cached_insightfaceA is None:
+            cached_insightfaceA = InsightFaceLoader().load_insight_face(name="antelopev2")[0]
+        return cached_insightfaceA
+
+
+    def __call__(self, input_image, resolution, slider_1=0.23, slider_2=0.0, **kwargs):
+        cond = dict(
+            clip_vision=None,
+            insightface=self.load_insightface(),
+            image=input_image,
+            weight_type="original",
+            noise=slider_1,
+            sharpening=slider_2,
+            embeds=None,
+            unfold_batch=False,
+            tiles=resolution,
+            instant_id=True,
+        )
+        return cond
+
+
+add_supported_preprocessor(PreprocessorForInstantID(
+    name='Insightface (Instant-ID)',
+))
 
 
 class PreprocessorForIPAdapter(PreprocessorClipVision):
@@ -85,6 +127,11 @@ add_supported_preprocessor(PreprocessorForIPAdapter(
 ))
 
 
+#make new precossor for instantid, combined keypoints and eembedding
+# _call with input image, get keypoints and embedding, pass to ipadapter functiom
+# no extra processing necessay
+# where to put keypoints? cross-attn
+
 class IPAdapterPatcher(ControlModelPatcher):
     @staticmethod
     def try_build_from_state_dict(state_dict, ckpt_path):
@@ -128,10 +175,10 @@ class IPAdapterPatcher(ControlModelPatcher):
 
                 image = c['image']
                 
-                if c['insightface'] is None:
-                    tile_type = 'Tiled'
-                else:
+                if c['insightface']:
                     tile_type = 'Interleaved'
+                elif c['clip_vision']:
+                    tile_type = 'Tiled'
 
                 if tile_count > 1:
                     r = min(image.shape[0] // 128, image.shape[1] // 128)
@@ -157,16 +204,27 @@ class IPAdapterPatcher(ControlModelPatcher):
                         images.append(tiles)
                     else:
                         images.append(numpy_to_pytorch(image))
-                else:
+                elif c['insightface'] or c['clip_vision']:
                     images.append(numpy_to_pytorch(image))
+                else:
+                    images.append(image)    # unused, but could be for already calculated embeds
 
             random.shuffle(images)
 
             pcond = cond[0].copy()
             pcond['images'] = images
+            del pcond['tiles']
+            del pcond['image']
 
-        del pcond['tiles']
-        del pcond['image']
+        # else:
+            # global cached_insightfaceA
+            # if cached_insightfaceA is None:
+                # cached_insightfaceA = InsightFaceLoader().load_insight_face(name="antelopev2")[0]
+
+            # print (cond.shape, cond)
+
+            # pcond = { 'insightface': cached_insightfaceA, 'images': cond, 'instant_id': True, }
+
 
         unet = IPAdapterApply().apply_ipadapter(
             ipadapter=self.ip_adapter,
@@ -182,6 +240,8 @@ class IPAdapterPatcher(ControlModelPatcher):
 
         process.sd_model.forge_objects.unet = unet
         return
+
+
 
 
 add_supported_control_model(IPAdapterPatcher)
