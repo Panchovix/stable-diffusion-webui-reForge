@@ -24,6 +24,7 @@ from lib_controlnet.enums import HiResFixOption
 from lib_controlnet.api import controlnet_api
 
 import numpy as np
+import hashlib
 # import functools
 
 from PIL import Image
@@ -200,6 +201,7 @@ class ControlNetForForgeOfficial(scripts.Script):
             unit_image_fg = unit.image_fg[:, :, 3] if unit.image_fg is not None else None
 
             if unit.use_preview_as_input and unit.generated_image is not None:
+                # this caching is single input only, and requires preview to have been generated
                 image = unit.generated_image
             elif unit.image is None:
                 resize_mode = external_code.resize_mode_from_value(p.resize_mode)
@@ -295,7 +297,8 @@ class ControlNetForForgeOfficial(scripts.Script):
                 and getattr(p, 'enable_hr', False)
         )
 
-        if unit.use_preview_as_input:
+        if unit.use_preview_as_input and unit.generated_image is not None:
+            # this caching is single input only, and requires preview to have been generated
             unit.module = 'None'
 
         preprocessor = global_state.get_preprocessor(unit.module)
@@ -321,16 +324,36 @@ class ControlNetForForgeOfficial(scripts.Script):
 
             seed = set_numpy_seed(p)
             logger.debug(f"Use numpy seed {seed}.")
-            logger.info(f"Using preprocessor: {unit.module}")
-            logger.info(f'preprocessor resolution = {unit.processor_res}')
 
-            preprocessor_output = preprocessor(
-                input_image=input_image,
-                input_mask=input_mask,
-                resolution=unit.processor_res,
-                slider_1=unit.threshold_a,
-                slider_2=unit.threshold_b,
-            )
+            # this caching must be enabled per preprocessor by adding 'cache' and 'cacheHash' attributes
+            # applies on generate, not on preview
+            cacheAvailable = hasattr(preprocessor, "cache") and hasattr(preprocessor, "cacheHash")
+            usedCache = False
+            preprocessorHash = None
+
+            if cacheAvailable:
+                hash_sha256 = hashlib.sha256()
+                simpleHash = str(unit.image[:, :, :3]) + str(unit.module) + str(unit.processor_res) + str(unit.threshold_a) + str(unit.threshold_b)
+                hash_sha256.update(simpleHash.encode('utf-8'))
+                preprocessorHash = hash_sha256.hexdigest()
+
+                if preprocessor.cache is not None and preprocessor.cacheHash == preprocessorHash:
+                    logger.info(f"Using preprocessor (resolution): {unit.module} (cached) ({unit.processor_res})")
+                    preprocessor_output = preprocessor.cache
+                    usedCache = True
+
+            if not usedCache:
+                logger.info(f"Using preprocessor (resolution): {unit.module} ({unit.processor_res})")
+                preprocessor_output = preprocessor(
+                    input_image=input_image,
+                    input_mask=input_mask,
+                    resolution=unit.processor_res,
+                    slider_1=unit.threshold_a,
+                    slider_2=unit.threshold_b,
+                )
+                if cacheAvailable:
+                    preprocessor.cache = preprocessor_output
+                    preprocessor.cacheHash = preprocessorHash
 
             preprocessor_output_is_image = judge_image_type(preprocessor_output)
             # if len(input_list) > 1 and not preprocessor_output_is_image:
