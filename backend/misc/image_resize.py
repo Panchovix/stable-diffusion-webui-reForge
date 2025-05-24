@@ -116,10 +116,9 @@ def adaptive_resize(samples, width, height, upscale_method, crop):
 
 
 # From https://github.com/Jamy-L/Pytorch-Contrast-Adaptive-Sharpening/
-def contrast_adaptive_sharpening(image, amount):
-    #convert to luminance based colourspce, run only on L
-    
+def contrast_adaptive_sharpening(image, amount, channels_last=True):
     # 0.0 <= amount <= 1.0
+
     def min_(tensor_list):
         # return the element-wise min of the tensor list.
         x = torch.stack(tensor_list)
@@ -132,10 +131,12 @@ def contrast_adaptive_sharpening(image, amount):
         mx = x.max(axis=0)[0]
         return torch.clamp(mx, max=1)
 
-    if image.ndim == 4:         # B, H, W, C -> B, C, H, W
-        image = image.permute(0, 3, 1, 2)
-    elif image.ndim == 3:       # H, W, C -> C, H, W
-        image = image.permute(2, 0, 1)
+    if image.ndim == 4:
+        if channels_last:       # B, H, W, C -> B, C, H, W
+            image = image.permute(0, 3, 1, 2)
+    elif image.ndim == 3:
+        if channels_last:       # H, W, C -> C, H, W
+            image = image.permute(2, 0, 1)
 
     img = torch.nn.functional.pad(image, pad=(1, 1, 1, 1)).cpu()
 
@@ -174,8 +175,10 @@ def contrast_adaptive_sharpening(image, amount):
     output = torch.nan_to_num(output)
 
     if image.ndim == 4:         # B, C, H, W -> B, H, W, C
-        output = output.permute(0, 2, 3, 1)
+        if channels_last:
+            output = output.permute(0, 2, 3, 1)
     elif image.ndim == 3:       # C, H, W -> H, W, C
-        output = output.permute(1, 2, 0)
+        if channels_last:
+            output = output.permute(1, 2, 0)
 
     return (output)
