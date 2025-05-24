@@ -3,6 +3,7 @@ import gradio as gr
 from typing import List, Optional, Dict
 from dataclasses import dataclass
 import numpy as np
+import hashlib
 
 from lib_controlnet.utils import judge_image_type
 from lib_controlnet import (
@@ -463,7 +464,7 @@ class ControlNetUiGroup(object):
                 value=self.default_unit.weight,
                 minimum=0.0,
                 maximum=2.0,
-                step=0.05,
+                step=0.01,
                 elem_id=f"{elem_id_tabname}_{tabname}_controlnet_control_weight_slider",
                 elem_classes="controlnet_control_weight_slider",
             )
@@ -771,16 +772,41 @@ class ControlNetUiGroup(object):
             # effect.
             # TODO: Maybe we should let `preprocessor` return a Dict to alleviate this issue?
             # This requires changing all callsites though.
-            result = preprocessor(
-                input_image=img,
-                resolution=pres,
-                slider_1=pthr_a,
-                slider_2=pthr_b,
-                input_mask=mask,
-                json_pose_callback=json_acceptor.accept
-                if is_openpose(module)
-                else None,
-            )
+
+            # the cache referred to in the preceding paragraph is the preview image
+            # the new additional caching implemented below must be enabled per preprocessor by adding 'cache' and 'cacheHash' attributes
+            # (could be added to the base Preprocessor class, but can't apply to some preprocessors so seems better not to)
+            # applies on preview, if a cached result was already saved on Generate
+            # and saves a cached result anyway for the case where preview is generated then removed but settings are unchanged, so the cache is still valid
+            # equivalent code has been added to 'process_unit_after_click_generate' in controlnet.py
+            cacheAvailable = hasattr(preprocessor, "cache") and hasattr(preprocessor, "cacheHash")
+            usedCache = False
+            preprocessorHash = None
+
+            if cacheAvailable:
+                hash_sha256 = hashlib.sha256()
+                simpleHash = str(img) + str(module) + str(pres) + str(pthr_a) + str(pthr_b)
+                hash_sha256.update(simpleHash.encode('utf-8'))
+                preprocessorHash = hash_sha256.hexdigest()
+
+                if preprocessor.cache is not None and preprocessor.cacheHash == preprocessorHash:
+                    result = preprocessor.cache
+                    usedCache = True
+
+            if not usedCache:
+                result = preprocessor(
+                    input_image=img,
+                    resolution=pres,
+                    slider_1=pthr_a,
+                    slider_2=pthr_b,
+                    input_mask=mask,
+                    json_pose_callback=json_acceptor.accept
+                    if is_openpose(module)
+                    else None,
+                )
+                if cacheAvailable:
+                    preprocessor.cache = result
+                    preprocessor.cacheHash = preprocessorHash
 
             is_image = judge_image_type(result)
 
@@ -827,7 +853,7 @@ class ControlNetUiGroup(object):
                 # generated_image_group
                 gr.update(visible=is_on),
                 # use_preview_as_input,
-                gr.update(visible=False),  # Now this is automatically managed
+                gr.update(value=is_on),  # Now this is automatically managed ??
                 # download_pose_link
                 gr.update() if is_on else gr.update(value=None),
                 # modal edit button
@@ -981,7 +1007,7 @@ class ControlNetUiGroup(object):
         for comp in (
             self.pixel_perfect,
             self.module,
-            self.image,
+            self.image.background,
             self.processor_res,
             self.threshold_a,
             self.threshold_b,
