@@ -19,12 +19,14 @@ class PreprocessorMarigoldDepth(Preprocessor):
         self.slider_1 = PreprocessorParameter(
             label='Steps', minimum=4, maximum=32, value=4, step=1, visible=True)
         self.slider_2 = PreprocessorParameter(visible=False)
-        self.slider_3 = PreprocessorParameter(visible=False)
         self.show_control_mode = True
         self.do_not_need_model = False
         self.sorting_priority = 100  # higher goes to top in the list
         self.pipeline = None
         self.keep_loaded = False # make an option?
+
+        self.cache = None
+        self.cacheHash = None
 
     def load_model(self):
         device = get_torch_device()
@@ -36,9 +38,9 @@ class PreprocessorMarigoldDepth(Preprocessor):
 
         return
 
-    def __call__(self, input_image, resolution, slider_1=4, slider_2=None, slider_3=None, **kwargs):
+    def __call__(self, input_image, resolution, slider_1=4, slider_2=None, **kwargs):
         self.load_model()
-        
+
         resolution = 8 * (resolution // 8)
 
         if not isinstance(slider_1, int) or slider_1 < 4:
@@ -55,7 +57,7 @@ class PreprocessorMarigoldDepth(Preprocessor):
         else:
             self.pipeline = None
         torch.cuda.empty_cache()
-        
+
         return np.array(depth_image[0])
 
 
@@ -70,12 +72,14 @@ class PreprocessorMarigoldNormal(Preprocessor):
         self.slider_1 = PreprocessorParameter(
             label='Steps', minimum=4, maximum=32, value=4, step=1, visible=True)
         self.slider_2 = PreprocessorParameter(visible=False)
-        self.slider_3 = PreprocessorParameter(visible=False)
         self.show_control_mode = True
         self.do_not_need_model = False
         self.sorting_priority = 100
         self.pipeline = None
         self.keep_loaded = False
+
+        self.cache = None
+        self.cacheHash = None
 
     def load_model(self):
         device = get_torch_device()
@@ -86,7 +90,7 @@ class PreprocessorMarigoldNormal(Preprocessor):
 
         return
 
-    def __call__(self, input_image, resolution, slider_1=4, slider_2=None, slider_3=None, **kwargs):
+    def __call__(self, input_image, resolution, slider_1=4, slider_2=None, **kwargs):
         self.load_model()
 
         resolution = 8 * (resolution // 8)
@@ -104,9 +108,8 @@ class PreprocessorMarigoldNormal(Preprocessor):
         else:
             self.pipeline = None
         torch.cuda.empty_cache()
-        
-        return np.array(normal_image[0])
 
+        return np.array(normal_image[0])
 
 
 add_supported_preprocessor(PreprocessorMarigoldDepth())
