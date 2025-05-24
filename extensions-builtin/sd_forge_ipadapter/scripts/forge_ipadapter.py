@@ -5,7 +5,7 @@ from modules_forge.shared import add_supported_control_model
 from modules_forge.supported_controlnet import ControlModelPatcher
 from lib_ipadapter.IPAdapterPlus import IPAdapterApply, InsightFaceLoader
 from pathlib import Path
-import random, os, torch
+import random
 
 cached_insightfaceA = None  # antelopev2
 cached_insightface = None   # buffalo_l
