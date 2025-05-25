@@ -114,7 +114,8 @@ def make_checkpoint_manager_ui():
         if len(sd_models.checkpoints_list) > 0:
             shared.opts.set('sd_model_checkpoint', next(iter(sd_models.checkpoints_list.values())).name)
 
-    ui_forge_preset = gr.Radio(label="UI", value=lambda: shared.opts.forge_preset, choices=['sd', 'xl', 'sd3', 'flux', 'all'], elem_id="forge_ui_preset", scale=0)
+    ui_forge_preset = gr.Radio(label="UI", elem_id="forge_ui_preset", value=lambda: shared.opts.forge_preset, 
+                                  choices=['sd', 'xl', 'sd3', 'flux', 'all'], scale=0)
 
     ui_checkpoint = gr.Dropdown(
         value=lambda: shared.opts.sd_model_checkpoint,
@@ -324,19 +325,19 @@ def forge_main_entry():
     ui_txt2img_width = get_a1111_ui_component('txt2img', 'Size-1')
     ui_txt2img_height = get_a1111_ui_component('txt2img', 'Size-2')
     ui_txt2img_cfg = get_a1111_ui_component('txt2img', 'CFG scale')
-    ui_txt2img_distilled_cfg = get_a1111_ui_component('txt2img', 'Distilled CFG Scale')
+    ui_txt2img_distilled_cfg = get_a1111_ui_component('txt2img', 'Distilled CFG scale')
     ui_txt2img_sampler = get_a1111_ui_component('txt2img', 'sampler_name')
     ui_txt2img_scheduler = get_a1111_ui_component('txt2img', 'scheduler')
 
     ui_img2img_width = get_a1111_ui_component('img2img', 'Size-1')
     ui_img2img_height = get_a1111_ui_component('img2img', 'Size-2')
     ui_img2img_cfg = get_a1111_ui_component('img2img', 'CFG scale')
-    ui_img2img_distilled_cfg = get_a1111_ui_component('img2img', 'Distilled CFG Scale')
+    ui_img2img_distilled_cfg = get_a1111_ui_component('img2img', 'Distilled CFG scale')
     ui_img2img_sampler = get_a1111_ui_component('img2img', 'sampler_name')
     ui_img2img_scheduler = get_a1111_ui_component('img2img', 'scheduler')
 
-    ui_txt2img_hr_cfg = get_a1111_ui_component('txt2img', 'Hires CFG Scale')
-    ui_txt2img_hr_distilled_cfg = get_a1111_ui_component('txt2img', 'Hires Distilled CFG Scale')
+    ui_txt2img_hr_cfg = get_a1111_ui_component('txt2img', 'HiRes CFG scale')
+    ui_txt2img_hr_distilled_cfg = get_a1111_ui_component('txt2img', 'HiRes Distilled CFG scale')
 
     output_targets = [
         ui_vae,
@@ -361,8 +362,8 @@ def forge_main_entry():
         ui_txt2img_hr_distilled_cfg,
     ]
 
-    ui_forge_preset.change(on_preset_change, inputs=[ui_forge_preset], outputs=output_targets, queue=False, show_progress=False)
-    ui_forge_preset.change(js="clickLoraRefresh", fn=None, queue=False, show_progress=False)
+    ui_forge_preset.change(on_preset_change, inputs=[ui_forge_preset], outputs=output_targets, queue=False, show_progress=False).then(
+                          js="clickLoraRefresh", fn=None, queue=False, show_progress=False)
 
     Context.root_block.load(on_preset_change, inputs=None, outputs=output_targets, queue=True, show_progress=False)
 
@@ -497,16 +498,16 @@ def on_preset_change(preset=None):
             gr.update(value=ui_settings_from_file['img2img/Width/value']),
             gr.update(value=ui_settings_from_file['txt2img/Height/value']),
             gr.update(value=ui_settings_from_file['img2img/Height/value']),
-            gr.update(value=ui_settings_from_file['txt2img/CFG Scale/value']),
-            gr.update(value=ui_settings_from_file['img2img/CFG Scale/value']),
-            gr.update(visible=True, value=ui_settings_from_file['txt2img/Distilled CFG Scale/value']),
-            gr.update(visible=True, value=ui_settings_from_file['img2img/Distilled CFG Scale/value']),
+            gr.update(value=ui_settings_from_file['txt2img/CFG scale/value']),
+            gr.update(value=ui_settings_from_file['img2img/CFG scale/value']),
+            gr.update(visible=True, value=ui_settings_from_file['txt2img/Distilled CFG scale/value']),
+            gr.update(visible=True, value=ui_settings_from_file['img2img/Distilled CFG scale/value']),
             gr.update(value=ui_settings_from_file['customscript/sampler.py/txt2img/Sampling method/value']),
             gr.update(value=ui_settings_from_file['customscript/sampler.py/img2img/Sampling method/value']),
             gr.update(value=ui_settings_from_file['customscript/sampler.py/txt2img/Schedule type/value']),
             gr.update(value=ui_settings_from_file['customscript/sampler.py/img2img/Schedule type/value']),
-            gr.update(visible=True, value=ui_settings_from_file['txt2img/Hires CFG Scale/value']),
-            gr.update(visible=True, value=ui_settings_from_file['txt2img/Hires Distilled CFG Scale/value']),
+            gr.update(visible=True, value=ui_settings_from_file['txt2img/HiRes CFG scale/value']),
+            gr.update(visible=True, value=ui_settings_from_file['txt2img/HiRes Distilled CFG scale/value']),
         ]
 
     return [
