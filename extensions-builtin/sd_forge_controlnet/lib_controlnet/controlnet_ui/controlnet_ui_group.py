@@ -760,8 +760,6 @@ class ControlNetUiGroup(object):
 
             json_acceptor = JsonAcceptor()
 
-            logger.info(f"Preview Resolution = {pres}")
-
             def is_openpose(module: str):
                 return "openpose" in module
 
@@ -790,10 +788,12 @@ class ControlNetUiGroup(object):
                 preprocessorHash = hash_sha256.hexdigest()
 
                 if preprocessor.cache is not None and preprocessor.cacheHash == preprocessorHash:
+                    logger.info(f"Preview Resolution = (cached) {pres}")
                     result = preprocessor.cache
                     usedCache = True
 
             if not usedCache:
+                logger.info(f"Preview Resolution = {pres}")
                 result = preprocessor(
                     input_image=img,
                     resolution=pres,
