@@ -196,7 +196,7 @@
 }
 
 .controlnet_row {
-    margin-top: 10px !important;
+    margin-top: 4px !important;
 }
 
 /* JSON pose upload button styling */
@@ -238,7 +238,7 @@
 }
 
 .controlnet_control_type_filter_group > .wrap {
-    margin-top: -20px !important;
+    margin-top: -8px !important;
 }
 
 .cnet-toolbutton {
