@@ -51,6 +51,24 @@ def apply_circular_forge(model, tiling_enabled="None"):
     return            
 
 
+def nms(x, t, s):
+    x = cv2.GaussianBlur(x.astype(np.float32), (0, 0), s)
+
+    f1 = np.array([[0, 0, 0], [1, 1, 1], [0, 0, 0]], dtype=np.uint8)
+    f2 = np.array([[0, 1, 0], [0, 1, 0], [0, 1, 0]], dtype=np.uint8)
+    f3 = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=np.uint8)
+    f4 = np.array([[0, 0, 1], [0, 1, 0], [1, 0, 0]], dtype=np.uint8)
+
+    y = np.zeros_like(x)
+
+    for f in [f1, f2, f3, f4]:
+        np.putmask(y, cv2.dilate(x, kernel=f) == x, x)
+
+    z = np.zeros_like(y, dtype=np.uint8)
+    z[y > t] = 255
+    return z
+
+
 def HWC3(x):
     assert x.dtype == np.uint8
     if x.ndim == 2:
@@ -89,7 +107,7 @@ def numpy_to_pytorch(x):
     y = x.astype(np.float32) / 255.0
     y = y[None]
     y = np.ascontiguousarray(y.copy())
-    y = torch.from_numpy(y).float()
+    y = torch.from_numpy(y).to(torch.float32)
     return y
 
 
