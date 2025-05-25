@@ -191,7 +191,7 @@ def image_add_noise(image, noise):
 def zeroed_hidden_states(clip_vision, batch_size):
     image = torch.zeros([batch_size, 224, 224, 3])
     memory_management.load_model_gpu(clip_vision.patcher)
-    pixel_values = clip_preprocess(image.to(clip_vision.load_device)).float()
+    pixel_values = clip_preprocess(image.to(clip_vision.load_device)).to(torch.float32)
     outputs = clip_vision.model(pixel_values=pixel_values, output_hidden_states=True)
     outputs = outputs.hidden_states[-2].to(memory_management.intermediate_device())
     return outputs

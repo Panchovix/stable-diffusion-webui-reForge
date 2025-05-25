@@ -1,11 +1,12 @@
 from modules_forge.supported_preprocessor import Preprocessor, PreprocessorClipVision, PreprocessorParameter
 from modules_forge.shared import add_supported_preprocessor
-from modules_forge.utils import numpy_to_pytorch
+from modules_forge.utils import numpy_to_pytorch, resize_image_with_pad
 from modules_forge.shared import add_supported_control_model
 from modules_forge.supported_controlnet import ControlModelPatcher
 from lib_ipadapter.IPAdapterPlus import IPAdapterApply, InsightFaceLoader
 from pathlib import Path
-import random
+import random, numpy, math
+from cv2 import circle, ellipse2Poly, fillConvexPoly
 
 cached_insightfaceA = None  # antelopev2
 cached_insightface = None   # buffalo_l
@@ -15,10 +16,17 @@ class PreprocessorForInstantID(Preprocessor):
     def __init__(self, name):
         super().__init__()
         self.name = name
-        self.slider_resolution = PreprocessorParameter(
-            label='Tiles (n * n) (limited by source(s))', minimum=1, maximum=16, value=1, step=1, visible=True)
-        self.slider_1 = PreprocessorParameter(label='Noise', minimum=0.0, maximum=1.0, value=0.23, step=0.01, visible=True)
-        self.slider_2 = PreprocessorParameter(label='Sharpening', minimum=0.0, maximum=1.0, value=0.0, step=0.01, visible=True)
+        if 'keypoints' in name: #resolution useful? maybe just set to reasonable value
+            self.slider_resolution = PreprocessorParameter(label='Resolution', minimum=256, maximum=2048, value=512, step=64, visible=True)
+            self.slider_1 = PreprocessorParameter(visible=False)
+            self.slider_2 = PreprocessorParameter(visible=False)
+            self.cache = None
+            self.cacheHash = None
+        else:
+            self.slider_resolution = PreprocessorParameter(
+                label='Tiles (n * n) (limited by source(s))', minimum=1, maximum=16, value=1, step=1, visible=True)
+            self.slider_1 = PreprocessorParameter(label='Noise', minimum=0.0, maximum=1.0, value=0.23, step=0.01, visible=True)
+            self.slider_2 = PreprocessorParameter(label='Sharpening', minimum=0.0, maximum=1.0, value=0.0, step=0.01, visible=True)
         self.tags = ['Instant-ID']
         self.model_filename_filters = ['Instant-ID', 'Instant_ID']
         self.sorting_priority = 20
@@ -32,23 +40,76 @@ class PreprocessorForInstantID(Preprocessor):
 
 
     def __call__(self, input_image, resolution, slider_1=0.23, slider_2=0.0, **kwargs):
-        cond = dict(
-            clip_vision=None,
-            insightface=self.load_insightface(),
-            image=input_image,
-            weight_type="original",
-            noise=slider_1,
-            sharpening=slider_2,
-            embeds=None,
-            unfold_batch=False,
-            tiles=resolution,
-            instant_id=True,
-        )
+        if 'keypoints' in self.name:
+            insightface = self.load_insightface()
+
+            def draw_kps(img: numpy.ndarray, kps, color_list=[(255,0,0), (0,255,0), (0,0,255), (255,255,0), (255,0,255)]):
+                stickwidth = 4
+                limbSeq = numpy.array([[0, 2], [1, 2], [3, 2], [4, 2]])
+                kps = numpy.array(kps)
+
+                h, w, _ = img.shape
+                out_img = numpy.zeros([h, w, 3])
+
+                for i in range(len(limbSeq)):
+                    index = limbSeq[i]
+                    color = color_list[index[0]]
+
+                    x = kps[index][:, 0]
+                    y = kps[index][:, 1]
+                    length = ((x[0] - x[1]) ** 2 + (y[0] - y[1]) ** 2) ** 0.5
+                    angle = math.degrees(math.atan2(y[0] - y[1], x[0] - x[1]))
+                    polygon = ellipse2Poly((int(numpy.mean(x)), int(numpy.mean(y))), (int(length / 2), stickwidth), int(angle), 0, 360, 1)
+                    out_img = fillConvexPoly(out_img.copy(), polygon, color)
+                out_img = (out_img * 0.6).astype(numpy.uint8)
+
+                for idx_kp, kp in enumerate(kps):
+                    color = color_list[idx_kp]
+                    x, y = kp
+                    out_img = circle(out_img.copy(), (int(x), int(y)), 10, color, -1)
+
+                return out_img.astype(numpy.uint8)
+
+            img, remove_pad = resize_image_with_pad(input_image, resolution)
+
+            for size in [(size, size) for size in range(640, 128, -64)]:
+                insightface.det_model.input_size = size
+                face = insightface.get(img)
+                if face:
+                    if len(face) > 1: # only use the maximum face
+                        face = sorted(face, key=lambda x:(x['bbox'][2]-x['bbox'][0])*x['bbox'][3]-x['bbox'][1])[-1]
+
+                    if isinstance(face, list):
+                        face = face[0]
+
+                    result = remove_pad(draw_kps(img, face['kps']))
+
+                    cond = result
+                    break
+                else:
+                    raise Exception('InsightFace: No face detected.')
+
+        else:
+            cond = dict(
+                clip_vision=None,
+                insightface=self.load_insightface(),
+                image=input_image,
+                weight_type="original",
+                noise=slider_1,
+                sharpening=slider_2,
+                embeds=None,
+                unfold_batch=False,
+                tiles=resolution,
+                instant_id=True,
+            )
+
         return cond
 
-
 add_supported_preprocessor(PreprocessorForInstantID(
-    name='Insightface (Instant-ID)',
+    name='Insightface (Instant-ID) embeds',
+))
+add_supported_preprocessor(PreprocessorForInstantID(
+    name='Insightface (Instant-ID) keypoints',
 ))
 
 

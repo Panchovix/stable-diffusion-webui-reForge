@@ -70,7 +70,7 @@ class PerceiverAttention(nn.Module):
         # attention
         scale = 1 / math.sqrt(math.sqrt(self.dim_head))
         weight = (q * scale) @ (k * scale).transpose(-2, -1)  # More stable with f16 than dividing afterwards
-        weight = torch.softmax(weight.float(), dim=-1).type(weight.dtype)
+        weight = torch.softmax(weight.to(torch.float32), dim=-1).type(weight.dtype)
         out = weight @ v
 
         out = out.permute(0, 2, 1, 3).reshape(b, l, -1)
