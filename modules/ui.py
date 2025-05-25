@@ -262,8 +262,8 @@ def create_ui():
 
                     elif category == "cfg":
                         with gr.Row():
-                            distilled_cfg_scale = gr.Slider(minimum=0.0, maximum=30.0, step=0.1, label='Distilled CFG Scale', value=3.5, elem_id="txt2img_distilled_cfg_scale")
-                            cfg_scale = gr.Slider(minimum=1.0, maximum=30.0, step=0.1, label='CFG Scale', value=7.0, elem_id="txt2img_cfg_scale")
+                            distilled_cfg_scale = gr.Slider(minimum=0.0, maximum=30.0, step=0.1, label='Distilled CFG scale', value=3.5, elem_id="txt2img_distilled_cfg_scale")
+                            cfg_scale = gr.Slider(minimum=1.0, maximum=30.0, step=0.1, label='CFG scale', value=7.0, elem_id="txt2img_cfg_scale")
                             cfg_scale.change(lambda x: gr.update(interactive=(x != 1)), inputs=[cfg_scale], outputs=[toprow.negative_prompt], queue=False, show_progress='hidden')
 
                     elif category == "checkboxes":
@@ -272,13 +272,13 @@ def create_ui():
 
                     elif category == "accordions":
                         with gr.Row(elem_id="txt2img_accordions", elem_classes="accordions"):
-                            with InputAccordion(False, label="Hires. fix", elem_id="txt2img_hr") as enable_hr:
+                            with InputAccordion(False, label="HiRes-fix", elem_id="txt2img_hr") as enable_hr:
                                 with enable_hr.extra():
                                     hr_final_resolution = FormHTML(value="", elem_id="txtimg_hr_finalres", show_label=False)
 
                                 with FormRow(elem_id="txt2img_hires_fix_row1", variant="compact"):
                                     hr_upscaler = gr.Dropdown(label="Upscaler", elem_id="txt2img_hr_upscaler", choices=[*shared.latent_upscale_modes, *[x.name for x in shared.sd_upscalers]], value="Lanczos")
-                                    hr_second_pass_steps = gr.Slider(minimum=0, maximum=150, step=1, label='Hires steps', value=0, elem_id="txt2img_hires_steps")
+                                    hr_second_pass_steps = gr.Slider(minimum=0, maximum=150, step=1, label='HiRes steps', value=0, elem_id="txt2img_hires_steps")
                                     denoising_strength = gr.Slider(minimum=0.0, maximum=1.0, step=0.01, label='Denoising strength', value=0.4, elem_id="txt2img_denoising_strength")
 
                                 with FormRow(elem_id="txt2img_hires_fix_row2", variant="compact"):
@@ -287,11 +287,11 @@ def create_ui():
                                     hr_resize_y = gr.Slider(minimum=256, maximum=4096, step=8, label="Resize height to", value=0, elem_id="txt2img_hr_resize_y")
 
                                 with FormRow(elem_id="txt2img_hires_fix_row_cfg", variant="compact"):
-                                    hr_distilled_cfg = gr.Slider(minimum=0.0, maximum=30.0, step=0.1, label="Hires Distilled CFG Scale", value=3.5, elem_id="txt2img_hr_distilled_cfg")
-                                    hr_cfg = gr.Slider(minimum=1.0, maximum=30.0, step=0.1, label="Hires CFG Scale", value=7.0, elem_id="txt2img_hr_cfg")
+                                    hr_distilled_cfg = gr.Slider(minimum=0.0, maximum=30.0, step=0.1, label="HiRes Distilled CFG scale", value=3.5, elem_id="txt2img_hr_distilled_cfg")
+                                    hr_cfg = gr.Slider(minimum=1.0, maximum=30.0, step=0.1, label="HiRes CFG scale", value=7.0, elem_id="txt2img_hr_cfg")
 
                                 with FormRow(elem_id="txt2img_hires_fix_row3", variant="compact") as hr_checkpoint_container:
-                                    hr_checkpoint_name = gr.Dropdown(label='Hires Checkpoint', elem_id="hr_checkpoint", choices=["Use same checkpoint"] + modules.sd_models.checkpoint_tiles(use_short=True), value="Use same checkpoint", scale=2)
+                                    hr_checkpoint_name = gr.Dropdown(label='HiRes checkpoint', elem_id="hr_checkpoint", choices=["Use same checkpoint"] + modules.sd_models.checkpoint_tiles(use_short=True), value="Use same checkpoint", scale=2)
 
                                     hr_checkpoint_refresh = ToolButton(value=refresh_symbol)
 
@@ -310,19 +310,19 @@ def create_ui():
                                         modules_list = get_additional_modules()
                                         return gr.update(choices=["Use same checkpoint"] + modules.sd_models.checkpoint_tiles(use_short=True)), gr.update(choices=modules_list)
 
-                                    hr_additional_modules = gr.Dropdown(label='Hires additional modules', elem_id="hr_vae_te", choices=modules_list, value=["Use same choices"], multiselect=True, scale=3)
+                                    hr_additional_modules = gr.Dropdown(label='HiRes additional modules', elem_id="hr_vae_te", choices=modules_list, value=["Use same choices"], multiselect=True, scale=3)
 
                                     hr_checkpoint_refresh.click(fn=refresh_model_and_modules, outputs=[hr_checkpoint_name, hr_additional_modules], show_progress='hidden')
 
                                 with FormRow(elem_id="txt2img_hires_fix_row3b", variant="compact") as hr_sampler_container:
                                     sampler_names = sd_samplers.visible_sampler_names()
                                     scheduler_names = sd_schedulers.visible_scheduler_names()
-                                    hr_sampler_name = gr.Dropdown(label='Hires sampling method', elem_id="hr_sampler", choices=["Use same sampler"] + sampler_names, value="Use same sampler")
-                                    hr_scheduler = gr.Dropdown(label='Hires schedule type', elem_id="hr_scheduler", choices=["Use same scheduler"] + scheduler_names, value="Use same scheduler")
+                                    hr_sampler_name = gr.Dropdown(label='HiRes sampling method', elem_id="hr_sampler", choices=["Use same sampler"] + sampler_names, value="Use same sampler")
+                                    hr_scheduler = gr.Dropdown(label='HiRes schedule type', elem_id="hr_scheduler", choices=["Use same scheduler"] + scheduler_names, value="Use same scheduler")
 
                                 with FormRow(elem_id="txt2img_hires_fix_row4", variant="compact") as hr_prompts_container:
-                                    hr_prompt = gr.Textbox(label="Hires prompt", elem_id="hires_prompt", show_label=False, lines=3, placeholder="Prompt for hires fix pass.\nLeave empty to use the same prompt as in first pass.", elem_classes=["prompt"])
-                                    hr_negative_prompt = gr.Textbox(label="Hires negative prompt", elem_id="hires_neg_prompt", show_label=False, lines=3, placeholder="Negative prompt for hires fix pass.\nLeave empty to use the same negative prompt as in first pass.", elem_classes=["prompt"])
+                                    hr_prompt = gr.Textbox(label="HiRes prompt", elem_id="hires_prompt", show_label=False, lines=3, placeholder="Prompt for hires fix pass.\nLeave empty to use the same prompt as in first pass.", elem_classes=["prompt"])
+                                    hr_negative_prompt = gr.Textbox(label="HiRes negative prompt", elem_id="hires_neg_prompt", show_label=False, lines=3, placeholder="Negative prompt for hires fix pass.\nLeave empty to use the same negative prompt as in first pass.", elem_classes=["prompt"])
 
                                 hr_cfg.change(lambda x: gr.update(interactive=(x != 1)), inputs=[hr_cfg], outputs=[hr_negative_prompt], queue=False, show_progress='hidden')
 
@@ -433,7 +433,7 @@ def create_ui():
                 PasteField(toprow.prompt, "Prompt", api="prompt"),
                 PasteField(toprow.negative_prompt, "Negative prompt", api="negative_prompt"),
                 PasteField(cfg_scale, "CFG scale", api="cfg_scale"),
-                PasteField(distilled_cfg_scale, "Distilled CFG Scale", api="distilled_cfg_scale"),
+                PasteField(distilled_cfg_scale, "Distilled CFG scale", api="distilled_cfg_scale"),
                 PasteField(width, "Size-1", api="width"),
                 PasteField(height, "Size-2", api="height"),
                 PasteField(batch_size, "Batch size", api="batch_size"),
@@ -442,17 +442,17 @@ def create_ui():
                 PasteField(enable_hr, lambda d: "Denoising strength" in d and ("Hires upscale" in d or "Hires upscaler" in d or "Hires resize-1" in d), api="enable_hr"),
                 PasteField(hr_scale, "Hires upscale", api="hr_scale"),
                 PasteField(hr_upscaler, "Hires upscaler", api="hr_upscaler"),
-                PasteField(hr_second_pass_steps, "Hires steps", api="hr_second_pass_steps"),
+                PasteField(hr_second_pass_steps, "HiRes steps", api="hr_second_pass_steps"),
                 PasteField(hr_resize_x, "Hires resize-1", api="hr_resize_x"),
                 PasteField(hr_resize_y, "Hires resize-2", api="hr_resize_y"),
-                PasteField(hr_checkpoint_name, "Hires checkpoint", api="hr_checkpoint_name"),
-                PasteField(hr_additional_modules, "Hires additional modules", api="hr_additional_modules"),
+                PasteField(hr_checkpoint_name, "HiRes checkpoint", api="hr_checkpoint_name"),
+                PasteField(hr_additional_modules, "HiRes additional modules", api="hr_additional_modules"),
                 PasteField(hr_sampler_name, sd_samplers.get_hr_sampler_from_infotext, api="hr_sampler_name"),
                 PasteField(hr_scheduler, sd_samplers.get_hr_scheduler_from_infotext, api="hr_scheduler"),
-                PasteField(hr_prompt, "Hires prompt", api="hr_prompt"),
-                PasteField(hr_negative_prompt, "Hires negative prompt", api="hr_negative_prompt"),
-                PasteField(hr_cfg, "Hires CFG Scale", api="hr_cfg"),
-                PasteField(hr_distilled_cfg, "Hires Distilled CFG Scale", api="hr_distilled_cfg"),
+                PasteField(hr_prompt, "HiRes prompt", api="hr_prompt"),
+                PasteField(hr_negative_prompt, "HiRes negative prompt", api="hr_negative_prompt"),
+                PasteField(hr_cfg, "HiRes CFG scale", api="hr_cfg"),
+                PasteField(hr_distilled_cfg, "HiRes Distilled CFG scale", api="hr_distilled_cfg"),
                 *scripts.scripts_txt2img.infotext_fields
             ]
             parameters_copypaste.add_paste_fields("txt2img", None, txt2img_paste_fields, override_settings)
@@ -629,9 +629,9 @@ def create_ui():
 
                     elif category == "cfg":
                         with gr.Row():
-                            distilled_cfg_scale = gr.Slider(minimum=0.0, maximum=30.0, step=0.1, label='Distilled CFG Scale', value=3.5, elem_id="img2img_distilled_cfg_scale")
-                            cfg_scale = gr.Slider(minimum=1.0, maximum=30.0, step=0.1, label='CFG Scale', value=7.0, elem_id="img2img_cfg_scale")
-                            image_cfg_scale = gr.Slider(minimum=0, maximum=3.0, step=0.05, label='Image CFG Scale', value=1.5, elem_id="img2img_image_cfg_scale", visible=False)
+                            distilled_cfg_scale = gr.Slider(minimum=0.0, maximum=30.0, step=0.1, label='Distilled CFG scale', value=3.5, elem_id="img2img_distilled_cfg_scale")
+                            cfg_scale = gr.Slider(minimum=1.0, maximum=30.0, step=0.1, label='CFG scale', value=7.0, elem_id="img2img_cfg_scale")
+                            image_cfg_scale = gr.Slider(minimum=0, maximum=3.0, step=0.05, label='Image CFG scale', value=1.5, elem_id="img2img_image_cfg_scale", visible=False)
                             cfg_scale.change(lambda x: gr.update(interactive=(x != 1)), inputs=[cfg_scale], outputs=[toprow.negative_prompt], queue=False, show_progress='hidden')
 
                     elif category == "checkboxes":
@@ -797,7 +797,7 @@ def create_ui():
                 (toprow.prompt, "Prompt"),
                 (toprow.negative_prompt, "Negative prompt"),
                 (cfg_scale, "CFG scale"),
-                (distilled_cfg_scale, "Distilled CFG Scale"),
+                (distilled_cfg_scale, "Distilled CFG scale"),
                 (image_cfg_scale, "Image CFG scale"),
                 (width, "Size-1"),
                 (height, "Size-2"),

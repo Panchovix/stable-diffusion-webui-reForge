@@ -121,7 +121,7 @@ def beta_scheduler(n, sigma_min, sigma_max, inner_model, device):
 
 def turbo_scheduler(n, sigma_min, sigma_max, inner_model, device):
     unet = inner_model.inner_model.forge_objects.unet
-    timesteps = torch.flip(torch.arange(1, n + 1) * float(1000.0 / n) - 1, (0,)).round().long().clip(0, 999)
+    timesteps = torch.flip(torch.arange(1, n + 1) * float(1000.0 / n) - 1, (0,)).round().to(torch.int64).clip(0, 999)
     sigmas = unet.model.predictor.sigma(timesteps)
     sigmas = torch.cat([sigmas, sigmas.new_zeros([1])])
     return sigmas.to(device)

@@ -162,7 +162,7 @@ class CFGDenoiser(torch.nn.Module):
         if self.classic_ddim_eps_estimation:
             acd = self.inner_model.inner_model.alphas_cumprod
             fake_sigmas = ((1 - acd) / acd) ** 0.5
-            real_sigma = fake_sigmas[sigma.round().long().clip(0, int(fake_sigmas.shape[0]))]
+            real_sigma = fake_sigmas[sigma.round().to(torch.int64).clip(0, int(fake_sigmas.shape[0]))]
             real_sigma_data = 1.0
             x = x * (((real_sigma ** 2.0 + real_sigma_data ** 2.0) ** 0.5)[:, None, None, None])
             sigma = real_sigma

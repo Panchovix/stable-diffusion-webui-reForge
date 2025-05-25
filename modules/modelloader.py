@@ -172,7 +172,7 @@ def load_spandrel_model(
     half = False
     if prefer_half:
         if model_descriptor.supports_half:
-            model_descriptor.model.half()
+            model_descriptor.model.to(torch.float16)
             half = True
         else:
             logger.info("Model %s does not support half precision, ignoring --half", path)

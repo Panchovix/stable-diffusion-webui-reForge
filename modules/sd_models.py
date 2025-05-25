@@ -347,7 +347,7 @@ def apply_alpha_schedule_override(sd_model, p=None):
     if opts.use_downcasted_alpha_bar:
         if p is not None:
             p.extra_generation_params['Downcast alphas_cumprod'] = opts.use_downcasted_alpha_bar
-        sd_model.alphas_cumprod = sd_model.alphas_cumprod.half().to(shared.device)
+        sd_model.alphas_cumprod = sd_model.alphas_cumprod.to(torch.float16).to(shared.device)
 
     if opts.sd_noise_schedule == "Zero Terminal SNR":
         if p is not None:

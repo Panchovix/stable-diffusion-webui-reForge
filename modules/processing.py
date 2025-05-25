@@ -996,7 +996,7 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
                     p.extra_generation_params['VAE Decoder'] = opts.sd_vae_decode_method
                 x_samples_ddim = decode_latent_batch(p.sd_model, samples_ddim, target_device=devices.cpu, check_for_nans=True)
 
-            x_samples_ddim = torch.stack(x_samples_ddim).float()
+            x_samples_ddim = torch.stack(x_samples_ddim).to(torch.float32)
             x_samples_ddim = torch.clamp((x_samples_ddim + 1.0) / 2.0, min=0.0, max=1.0)
 
             del samples_ddim

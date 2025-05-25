@@ -178,7 +178,7 @@ def draw_grid_annotations(im, width, height, hor_texts, ver_texts, margin=0):
 
             draw_y += line.size[1] + line_spacing
 
-    fontsize = (width + height) // 25
+    fontsize = (width + height) // 32
     line_spacing = fontsize // 2
 
     fnt = get_font(fontsize)
