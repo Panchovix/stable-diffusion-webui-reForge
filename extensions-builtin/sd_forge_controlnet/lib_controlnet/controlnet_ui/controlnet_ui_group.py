@@ -386,35 +386,29 @@ class ControlNetUiGroup(object):
                 elem_classes=["cnet-unit-enabled"],
             )
             self.pixel_perfect = gr.Checkbox(
-                label="Pixel Perfect",
+                label="Pixel perfect",
                 value=self.default_unit.pixel_perfect,
                 elem_id=f"{elem_id_tabname}_{tabname}_controlnet_pixel_perfect_checkbox",
             )
             self.preprocessor_preview = gr.Checkbox(
-                label="Allow Preview",
+                label="Allow preview",
                 value=False,
                 elem_classes=["cnet-allow-preview"],
                 elem_id=preview_check_elem_id,
                 visible=not self.is_img2img,
             )
             self.mask_upload = gr.Checkbox(
-                label="Use Mask",
+                label="Use mask",
                 value=False,
                 elem_classes=["cnet-mask-upload"],
                 elem_id=f"{elem_id_tabname}_{tabname}_controlnet_mask_upload_checkbox",
                 visible=not self.is_img2img,
             )
-            self.use_preview_as_input = gr.Checkbox(
-                label="Preview as Input",
-                value=False,
-                elem_classes=["cnet-preview-as-input"],
-                visible=False,
-            )
+            self.use_preview_as_input = gr.State(value=False)
 
-        with gr.Row(elem_classes="controlnet_img2img_options"):
             if self.is_img2img:
                 self.upload_independent_img_in_img2img = gr.Checkbox(
-                    label="Upload independent control image",
+                    label="Independent control",
                     value=False,
                     elem_id=f"{elem_id_tabname}_{tabname}_controlnet_same_img2img_checkbox",
                     elem_classes=["cnet-unit-same_img2img"],
@@ -422,14 +416,14 @@ class ControlNetUiGroup(object):
             else:
                 self.upload_independent_img_in_img2img = None
 
-        with gr.Row(elem_classes=["controlnet_control_type", "controlnet_row"]):
-            self.type_filter = gr.Radio(
-                global_state.get_all_preprocessor_tags(),
-                label="Control Type",
-                value="All",
-                elem_id=f"{elem_id_tabname}_{tabname}_controlnet_type_filter_radio",
-                elem_classes="controlnet_control_type_filter_group",
-            )
+        self.type_filter = gr.Radio(
+            global_state.get_all_preprocessor_tags(),
+            label="Control type",
+            value="All",
+            elem_id=f"{elem_id_tabname}_{tabname}_controlnet_type_filter_radio",
+            elem_classes="controlnet_control_type_filter_group",
+            scale=0,
+        )
 
         with gr.Row(elem_classes=["controlnet_preprocessor_model", "controlnet_row"]):
             self.module = gr.Dropdown(
@@ -479,6 +473,31 @@ class ControlNetUiGroup(object):
             self.guidance_start = gr.State(self.default_unit.guidance_start)
             self.guidance_end = gr.State(self.default_unit.guidance_end)
 
+        with FormRow(elem_classes=["controlnet_control_type", "controlnet_row"]):
+            self.control_mode = gr.Dropdown(
+                choices=[e.value for e in external_code.ControlMode],
+                value=self.default_unit.control_mode.value,
+                label="Control mode",
+                elem_id=f"{elem_id_tabname}_{tabname}_controlnet_control_mode_radio",
+                elem_classes="controlnet_control_mode_radio",
+            )
+            self.resize_mode = gr.Dropdown(
+                choices=[e.value for e in external_code.ResizeMode],
+                value=self.default_unit.resize_mode.value,
+                label="Resize mode",
+                elem_id=f"{elem_id_tabname}_{tabname}_controlnet_resize_mode_radio",
+                elem_classes="controlnet_resize_mode_radio",
+                visible=not self.is_img2img,
+            )
+            self.hr_option = gr.Dropdown(
+                choices=[e.value for e in HiResFixOption],
+                value=self.default_unit.hr_option.value,
+                label="HiRes-fix option",
+                elem_id=f"{elem_id_tabname}_{tabname}_controlnet_hr_option_radio",
+                elem_classes="controlnet_hr_option_radio",
+                visible=not self.is_img2img,
+            )
+
         self.timestep_range.change(
             lambda x: (x[0], x[1]),
             inputs=[self.timestep_range],
@@ -514,32 +533,6 @@ class ControlNetUiGroup(object):
                 interactive=True,
                 elem_id=f"{elem_id_tabname}_{tabname}_controlnet_threshold_B_slider",
             )
-
-        self.control_mode = gr.Radio(
-            choices=[e.value for e in external_code.ControlMode],
-            value=self.default_unit.control_mode.value,
-            label="Control Mode",
-            elem_id=f"{elem_id_tabname}_{tabname}_controlnet_control_mode_radio",
-            elem_classes="controlnet_control_mode_radio",
-        )
-
-        self.resize_mode = gr.Radio(
-            choices=[e.value for e in external_code.ResizeMode],
-            value=self.default_unit.resize_mode.value,
-            label="Resize Mode",
-            elem_id=f"{elem_id_tabname}_{tabname}_controlnet_resize_mode_radio",
-            elem_classes="controlnet_resize_mode_radio",
-            visible=not self.is_img2img,
-        )
-
-        self.hr_option = gr.Radio(
-            choices=[e.value for e in HiResFixOption],
-            value=self.default_unit.hr_option.value,
-            label="Hires-Fix Option",
-            elem_id=f"{elem_id_tabname}_{tabname}_controlnet_hr_option_radio",
-            elem_classes="controlnet_hr_option_radio",
-            visible=False,
-        )
 
         self.batch_image_dir_state = gr.State("")
         self.output_dir_state = gr.State("")
@@ -662,7 +655,7 @@ class ControlNetUiGroup(object):
                 gr.update(visible=True),
                 gr.update(visible=not preprocessor.do_not_need_model),
                 gr.update(visible=not preprocessor.do_not_need_model),
-                gr.update(visible=preprocessor.show_control_mode),
+                gr.update(interactive=preprocessor.show_control_mode),
             ]
 
             return grs
@@ -924,14 +917,6 @@ class ControlNetUiGroup(object):
     def register_shift_crop_input_image(self):
         return
 
-    def register_shift_hr_options(self):
-        ControlNetUiGroup.a1111_context.txt2img_enable_hr.change(
-            fn=lambda checked: gr.update(visible=checked),
-            inputs=[ControlNetUiGroup.a1111_context.txt2img_enable_hr],
-            outputs=[self.hr_option],
-            show_progress=False,
-        )
-
     def register_shift_upload_mask(self):
         """Controls whether the upload mask input should be visible."""
         def on_checkbox_click(checked: bool, canvas_height: int, canvas_width: int):
@@ -1062,8 +1047,6 @@ class ControlNetUiGroup(object):
         self.register_shift_upload_mask()
         if self.is_img2img:
             self.register_shift_crop_input_image()
-        else:
-            self.register_shift_hr_options()
 
 
     @staticmethod
