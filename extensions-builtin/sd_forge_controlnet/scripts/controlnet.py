@@ -332,6 +332,7 @@ class ControlNetForForgeOfficial(scripts.Script):
             preprocessorHash = None
 
             if cacheAvailable:
+                image = unit.image if unit.image is not None else input_image
                 hash_sha256 = hashlib.sha256()
                 simpleHash = str(unit.image[:, :, :3]) + str(unit.module) + str(unit.processor_res) + str(unit.threshold_a) + str(unit.threshold_b)
                 hash_sha256.update(simpleHash.encode('utf-8'))
