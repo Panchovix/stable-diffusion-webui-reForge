@@ -2,7 +2,6 @@ import math
 import torch
 import numpy as np
 
-from diffusers import FlowMatchEulerDiscreteScheduler
 from diffusers.pipelines.flux.pipeline_flux import calculate_shift
 
 
@@ -128,14 +127,14 @@ class Prediction(AbstractPrediction):
         alphas_cumprod = torch.cumprod(alphas, dim=0)
         sigmas = ((1 - alphas_cumprod) / alphas_cumprod) ** 0.5
 
-        self.register_buffer('alphas_cumprod', alphas_cumprod.float())
-        self.register_buffer('sigmas', sigmas.float())
-        self.register_buffer('log_sigmas', sigmas.log().float())
+        self.register_buffer('alphas_cumprod', alphas_cumprod.to(torch.float32))
+        self.register_buffer('sigmas', sigmas.to(torch.float32))
+        self.register_buffer('log_sigmas', sigmas.log().to(torch.float32))
         return
 
     def set_sigmas(self, sigmas):
-        self.register_buffer('sigmas', sigmas.float())
-        self.register_buffer('log_sigmas', sigmas.log().float())
+        self.register_buffer('sigmas', sigmas.to(torch.float32))
+        self.register_buffer('log_sigmas', sigmas.log().to(torch.float32))
 
     @property
     def sigma_min(self):
@@ -151,9 +150,9 @@ class Prediction(AbstractPrediction):
         return dists.abs().argmin(dim=0).view(sigma.shape).to(sigma.device)
 
     def sigma(self, timestep):
-        t = torch.clamp(timestep.float().to(self.log_sigmas.device), min=0, max=(len(self.sigmas) - 1))
-        low_idx = t.floor().long()
-        high_idx = t.ceil().long()
+        t = torch.clamp(timestep.to(torch.float32).to(self.log_sigmas.device), min=0, max=(len(self.sigmas) - 1))
+        low_idx = t.floor().to(torch.int64)
+        high_idx = t.ceil().to(torch.int64)
         w = t.frac()
         log_sigma = (1 - w) * self.log_sigmas[low_idx] + w * self.log_sigmas[high_idx]
         return log_sigma.exp().to(timestep.device)
@@ -298,7 +297,6 @@ class PredictionFlux(AbstractPrediction):
             self.mu = mu
         sigmas = torch.arange(1, self.pseudo_timestep_range + 1, 1) / self.pseudo_timestep_range
         sigmas = math.exp(self.mu) / (math.exp(self.mu) + (1 / sigmas - 1) ** 1.0)
-#        sigmas = FlowMatchEulerDiscreteScheduler.time_shift(None, self.mu, 1.0, sigmas)
         self.register_buffer('sigmas', sigmas)
 
     @property

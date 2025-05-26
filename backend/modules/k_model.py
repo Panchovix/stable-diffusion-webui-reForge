@@ -32,7 +32,7 @@ class KModel(torch.nn.Module):
         dtype = self.computation_dtype
 
         xc = xc.to(dtype)
-        t = self.predictor.timestep(t).float()
+        t = self.predictor.timestep(t).to(torch.float32)
         context = context.to(dtype)
         extra_conds = {}
         for o in kwargs:
@@ -42,11 +42,11 @@ class KModel(torch.nn.Module):
                     extra = extra.to(dtype)
             extra_conds[o] = extra
 
-        model_output = self.diffusion_model(xc, t, context=context, control=control, transformer_options=transformer_options, **extra_conds).float()
+        model_output = self.diffusion_model(xc, t, context=context, control=control, transformer_options=transformer_options, **extra_conds).to(torch.float32)
         return self.predictor.calculate_denoised(sigma, model_output, x)
 
     def memory_required(self, input_shape):
-#        area = input_shape[0] * input_shape[2] * input_shape[3]
+        # area = input_shape[0] * input_shape[2] * input_shape[3]
         dtype_size = memory_management.dtype_size(self.computation_dtype)
 
         if attention.attention_function in [attention.attention_pytorch, attention.attention_xformers]:
@@ -58,4 +58,4 @@ class KModel(torch.nn.Module):
 
         return input_shape[0] * input_shape[1] * input_shape[2] * input_shape[3] * dtype_size * scaler * 1024
 
-#        return scaler * area * dtype_size * 16384
+        # return scaler * area * dtype_size * 16384
