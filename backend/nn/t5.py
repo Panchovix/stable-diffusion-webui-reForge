@@ -98,7 +98,7 @@ class T5Attention(torch.nn.Module):
         is_small = relative_position < max_exact
 
         relative_position_if_large = max_exact + (
-                torch.log(relative_position.float() / max_exact)
+                torch.log(relative_position.to(torch.float32) / max_exact)
                 / math.log(max_distance / max_exact)
                 * (num_buckets - max_exact)
         ).to(torch.long)

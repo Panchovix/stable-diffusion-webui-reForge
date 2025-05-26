@@ -63,7 +63,7 @@ def timestep_embedding(timesteps, dim, max_period=10000, repeat_only=False):
     if not repeat_only:
         half = dim // 2
         freqs = torch.exp(-math.log(max_period) * torch.arange(start=0, end=half, dtype=torch.float32, device=timesteps.device) / half)
-        args = timesteps[:, None].float() * freqs[None]
+        args = timesteps[:, None].to(torch.float32) * freqs[None]
         embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
         if dim % 2:
             embedding = torch.cat([embedding, torch.zeros_like(embedding[:, :1])], dim=-1)
@@ -162,13 +162,13 @@ class CrossAttention(nn.Module):
 
 
         k = self.to_k(context_k)
-        # v = self.to_v(context_v)
 
         if value is not None:
             v = self.to_v(value)
             del value
         else:
             v = self.to_v(context_v)
+
         out = attention_function(q, k, v, self.heads, mask)
         return self.to_out(out)
 

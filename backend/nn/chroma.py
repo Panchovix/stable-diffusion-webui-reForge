@@ -36,12 +36,12 @@ def rope(pos, dim, theta):
     b, n, d, _ = out.shape
     out = out.view(b, n, d, 2, 2)
 
-    return out.float()
+    return out.to(torch.float32)
 
 
 def apply_rope(xq, xk, freqs_cis):
-    xq_ = xq.float().reshape(*xq.shape[:-1], -1, 1, 2)
-    xk_ = xk.float().reshape(*xk.shape[:-1], -1, 1, 2)
+    xq_ = xq.to(torch.float32).reshape(*xq.shape[:-1], -1, 1, 2)
+    xk_ = xk.to(torch.float32).reshape(*xk.shape[:-1], -1, 1, 2)
     xq_out = freqs_cis[..., 0] * xq_[..., 0] + freqs_cis[..., 1] * xq_[..., 1]
     xk_out = freqs_cis[..., 0] * xk_[..., 0] + freqs_cis[..., 1] * xk_[..., 1]
     del xq_, xk_
@@ -60,7 +60,7 @@ def timestep_embedding(t, dim, max_period=10000, time_factor=1000.0):
     # Block CUDA steam, but consistent with official codes:
     # freqs = torch.exp(-math.log(max_period) * torch.arange(start=0, end=half, dtype=torch.float32) / half).to(t.device)
 
-    args = t[:, None].float() * freqs[None]
+    args = t[:, None].to(torch.float32) * freqs[None]
     del freqs
     embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
     del args
@@ -107,7 +107,7 @@ else:
         if x.dtype in [torch.bfloat16, torch.float32]:
             n = torch.rsqrt(torch.mean(x ** 2, dim=-1, keepdim=True) + eps) * weight
         else:
-            n = torch.rsqrt(torch.mean(x.float() ** 2, dim=-1, keepdim=True) + eps).to(x.dtype) * weight
+            n = torch.rsqrt(torch.mean(x.to(torch.float32) ** 2, dim=-1, keepdim=True) + eps).to(x.dtype) * weight
         return x * n
 
 
