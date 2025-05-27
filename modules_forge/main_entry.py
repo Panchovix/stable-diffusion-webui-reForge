@@ -10,7 +10,7 @@ from modules.shared import cmd_opts
 
 total_vram = int(memory_management.total_vram)
 
-ui_forge_preset: gr.Radio = None
+ui_forge_preset: gr.Dropdown = None
 
 ui_checkpoint: gr.Dropdown = None
 ui_vae: gr.Dropdown = None
@@ -37,8 +37,9 @@ forge_unet_storage_dtype_options = {
     'float8-e5m2 (fp16 LoRA)': (torch.float8_e5m2, True),
 }
 
-module_list = {}
-
+module_list = {}        # vae + te + other
+module_vae_list = {}
+module_te_list = {}
 
 def bind_to_opts(comp, k, save=False, callback=None):
     def on_change(v):
@@ -60,6 +61,7 @@ def find_files_with_extensions(base_path, extensions):
             if any(file.endswith(ext) for ext in extensions):
                 full_path = os.path.join(root, file)
                 found_files[file] = full_path
+                # found_files[os.path.splitext(file)[0]] = full_path
     return found_files
 
 
@@ -70,26 +72,33 @@ def refresh_ckpt():
     
     
 def refresh_vaete():
-    global module_list
+    global module_list, module_vae_list, module_te_list
     
     file_extensions = ['ckpt', 'pt', 'bin', 'safetensors', 'gguf']
 
     module_list.clear()
+    module_vae_list.clear()
+    module_te_list.clear()
 
-    module_paths = [
-        os.path.abspath(os.path.join(paths.models_path, "VAE")),
-        os.path.abspath(os.path.join(paths.models_path, "text_encoder")),
-        os.path.abspath(os.path.join(paths.models_path, "other_module")),
-    ]
-
+    # VAE
+    vae_files = find_files_with_extensions(os.path.abspath(os.path.join(paths.models_path, "VAE")), file_extensions)
+    module_vae_list.update(vae_files)
     if isinstance(shared.cmd_opts.vae_dir, str):
-        module_paths.append(os.path.abspath(shared.cmd_opts.vae_dir))
-    if isinstance(shared.cmd_opts.text_encoder_dir, str):
-        module_paths.append(os.path.abspath(shared.cmd_opts.text_encoder_dir))
+        vae_files = find_files_with_extensions(os.path.abspath(shared.cmd_opts.vae_dir), file_extensions)
+        module_vae_list.update(vae_files)
+    module_list.update(module_vae_list)
 
-    for vae_path in module_paths:
-        vae_files = find_files_with_extensions(vae_path, file_extensions)
-        module_list.update(vae_files)
+    # TE
+    te_files = find_files_with_extensions(os.path.abspath(os.path.join(paths.models_path, "text_encoder")), file_extensions)
+    module_te_list.update(te_files)
+    if isinstance(shared.cmd_opts.text_encoder_dir, str):
+        te_files = find_files_with_extensions(os.path.abspath(shared.cmd_opts.text_encoder_dir), file_extensions)
+        module_te_list.update(te_files)
+    module_list.update(module_te_list)
+
+    # other
+    other_list = find_files_with_extensions(os.path.abspath(os.path.join(paths.models_path, "other_module")), file_extensions)
+    module_list.update(other_list)
 
     return module_list.keys()
 
@@ -114,7 +123,7 @@ def make_checkpoint_manager_ui():
         if len(sd_models.checkpoints_list) > 0:
             shared.opts.set('sd_model_checkpoint', next(iter(sd_models.checkpoints_list.values())).name)
 
-    ui_forge_preset = gr.Radio(label="UI", elem_id="forge_ui_preset", value=lambda: shared.opts.forge_preset, 
+    ui_forge_preset = gr.Dropdown(label="UI", elem_id="forge_ui_preset", value=lambda: shared.opts.forge_preset, 
                                   choices=['sd', 'xl', 'sd3', 'flux', 'all'], scale=0)
 
     ui_checkpoint = gr.Dropdown(
