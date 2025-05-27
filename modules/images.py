@@ -411,7 +411,6 @@ class FilenameGenerator:
         'clip_skip': lambda self: opts.data["CLIP_stop_at_last_layers"],
         'denoising': lambda self: self.p.denoising_strength if self.p and self.p.denoising_strength else NOTHING_AND_SKIP_PREVIOUS_TEXT,
         'user': lambda self: self.p.user,
-        'vae_filename': lambda self: self.get_vae_filename(),
         'none': lambda self: '',  # Overrides the default, so you can get just the sequence number
         'image_hash': lambda self, *args: self.image_hash(*args)  # accepts formats: [image_hash<length>] default full hash
     }
@@ -424,22 +423,6 @@ class FilenameGenerator:
         self.image = image
         self.zip = zip
         self.basename = basename
-
-    def get_vae_filename(self):
-        """Get the name of the VAE file."""
-
-        import modules.sd_vae as sd_vae
-
-        if sd_vae.loaded_vae_file is None:
-            return "NoneType"
-
-        file_name = os.path.basename(sd_vae.loaded_vae_file)
-        split_file_name = file_name.split('.')
-        if len(split_file_name) > 1 and split_file_name[0] == '':
-            return split_file_name[1]  # if the first character of the filename is "." then [1] is obtained.
-        else:
-            return split_file_name[0]
-
 
     def hasprompt(self, *args):
         lower = self.prompt.lower()

@@ -610,7 +610,7 @@ def create_ui():
 
                         with FormRow():
                             inpainting_mask_invert = gr.Dropdown(label='Mask mode', choices=['Inpaint masked', 'Inpaint not masked'], value='Inpaint masked', type="index", elem_id="img2img_mask_mode")
-                            inpainting_fill = gr.Dropdown(label='Masked content', choices=['fill', 'original', 'latent noise', 'latent nothing'], value='original', type="index", elem_id="img2img_inpainting_fill")
+                            inpainting_fill = gr.Dropdown(label='Masked content', choices=['fill', 'original', 'latent noise', 'latent nothing', 'MAT', 'lama'], value='original', type="index", elem_id="img2img_inpainting_fill")
                             inpaint_full_res = gr.Dropdown(label="Inpaint area", choices=["Whole picture", "Only masked"], type="index", value="Whole picture", elem_id="img2img_inpaint_full_res")
 
                     if category not in {"accordions"}:

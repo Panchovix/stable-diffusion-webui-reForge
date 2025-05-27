@@ -5,12 +5,14 @@ import json
 
 import torch
 
-from modules import shared, images, sd_models, sd_vae, errors, paths
+from modules import shared, images, sd_models, errors, paths
 from modules.ui_common import plaintext_to_html
 import gradio as gr
 import safetensors.torch
-from modules_forge.main_entry import module_list
+from modules_forge.main_entry import module_list, module_vae_list
 from backend.loader import replace_state_dict
+from backend.utils import load_torch_file
+
 import huggingface_guess
 
 
@@ -161,7 +163,7 @@ def run_modelmerger(id_task, model_names, interp_method, multiplier, save_u, sav
     def load_model (filename, message):
         shared.state.textinfo = f"Loading {message}: {filename} ..."
 
-        theta = sd_models.load_torch_file(filename)
+        theta = load_torch_file(filename)
 
         #   strip unwanted keys immediately - reduce memory use and processing
         if interp_method == "Extract Unet":
@@ -318,7 +320,7 @@ def run_modelmerger(id_task, model_names, interp_method, multiplier, save_u, sav
     # bake in vae
     if "" != bake_in_vae:
         shared.state.textinfo = f'Baking in VAE from {bake_in_vae}'
-        vae_dict = sd_vae.load_torch_file(sd_vae.vae_dict[bake_in_vae])
+        vae_dict = load_torch_file(module_vae_list[bake_in_vae])
 
         if guess:
             theta_0 = replace_state_dict (theta_0, vae_dict, guess)
@@ -334,7 +336,7 @@ def run_modelmerger(id_task, model_names, interp_method, multiplier, save_u, sav
     if bake_in_te != []:
         for te in bake_in_te:
             shared.state.textinfo = f'Baking in Text encoder from {te}'
-            te_dict = sd_models.load_torch_file(module_list[te])
+            te_dict = load_torch_file(module_list[te])
 
             if guess:
                 theta_0 = replace_state_dict (theta_0, te_dict, guess)

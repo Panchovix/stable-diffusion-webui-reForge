@@ -18,9 +18,10 @@ def postprocessing_scripts():
 
 
 def refresh_vae_list():
+    import forge_modules.main_entry
     import modules.sd_vae
-
-    modules.sd_vae.refresh_vae_list()
+    forge_modules.main_entry.refresh_vaete()
+    modules.sd_vae.vae_dict = forge_modules.main_entry.module_vae_list
 
 
 def list_checkpoint_tiles(use_short=False):

@@ -4,7 +4,7 @@ import gradio as gr
 from modules import sd_models, sd_vae, errors, extras, call_queue
 from modules.ui_components import FormRow
 from modules.ui_common import ToolButton, refresh_symbol
-from modules_forge.main_entry import module_list, refresh_models
+from modules_forge.main_entry import module_list, module_vae_list, module_te_list, refresh_models
 
 
 def update_interp_description(value, choices):
@@ -131,17 +131,9 @@ class UiCheckpointMerger:
 
     def refresh_additional (fromUI=True):
         refresh_models()
-        sd_vae.refresh_vae_list()
 
-        vae_list = list(sd_vae.vae_dict)
-        te_list = list(module_list.keys())
-        for vae in vae_list:
-            if vae in te_list:
-                te_list.remove(vae)
-
-        te_list = [te for te in te_list if 'other_module' not in module_list[te]]
-
-        vae_list = [""] + vae_list
+        te_list = list(module_te_list.keys())
+        vae_list = [""] + list(module_vae_list.keys())
 
         if fromUI:
             return gr.Dropdown(choices=vae_list), gr.Dropdown(choices=te_list)
