@@ -130,6 +130,8 @@ def add_paste_fields(tabname, init_img, fields, override_settings_component=None
 def create_buttons(tabs_list):
     buttons = {}
     for tab in tabs_list:
+        if tab == 'inpaint':    # backcompat
+            continue
         buttons[tab] = gr.Button(f"Send to {tab}", elem_id=f"{tab}_tab")
     return buttons
 
@@ -149,6 +151,9 @@ def register_paste_params_button(binding: ParamBinding):
 
 def connect_paste_params_buttons():
     for binding in registered_param_bindings:
+        if binding.tabname == 'inpaint':    # backcompat
+            continue
+
         destination_image_component = paste_fields[binding.tabname]["init_img"]
         fields = paste_fields[binding.tabname]["fields"]
         override_settings_component = binding.override_settings_component or paste_fields[binding.tabname]["override_settings_component"]
@@ -386,12 +391,6 @@ Steps: 20, Sampler: Euler a, CFG scale: 7, Seed: 965400086, Size: 512x512, Model
 
     if "VAE Decoder" not in res:
         res["VAE Decoder"] = "Full"
-
-    if "FP8 weight" not in res:
-        res["FP8 weight"] = "Disable"
-
-    if "Cache FP16 weight for LoRA" not in res and res["FP8 weight"] != "Disable":
-        res["Cache FP16 weight for LoRA"] = False
 
     prompt_attention = prompt_parser.parse_prompt_attention(prompt)
     prompt_attention += prompt_parser.parse_prompt_attention(negative_prompt)
