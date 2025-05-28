@@ -245,7 +245,7 @@ class ControlNetUiGroup(object):
 
         with gr.Group(visible=not self.is_img2img) as self.image_upload_panel:
             with gr.Tabs(visible=True):
-                with gr.Tab(label="Single Image") as self.upload_tab:
+                with gr.Tab(label="Single image") as self.upload_tab:
                     with gr.Row(elem_classes=["cnet-image-row"], equal_height=True):
                         with gr.Group(elem_classes=["cnet-input-image-group"]):
                             self.image = ForgeCanvas(
@@ -275,13 +275,6 @@ class ControlNetUiGroup(object):
                                 if self.photopea:
                                     self.photopea.render_child_trigger()
                                 self.openpose_editor.render_edit()
-                                preview_check_elem_id = f"{elem_id_tabname}_{tabname}_controlnet_preprocessor_preview_checkbox"
-                                preview_close_button_js = f"document.querySelector('#{preview_check_elem_id} input[type=\\'checkbox\\']').click();"
-                                gr.HTML(
-                                    value=f"""<a title="Close Preview" onclick="{preview_close_button_js}">Close</a>""",
-                                    visible=True,
-                                    elem_classes=["cnet-close-preview"],
-                                )
 
                         with gr.Group(
                                 visible=False, elem_classes=["cnet-mask-image-group"]
@@ -298,21 +291,21 @@ class ControlNetUiGroup(object):
                                 numpy=True
                             )
 
-                with gr.Tab(label="Batch Folder") as self.batch_tab:
+                with gr.Tab(label="Batch folder") as self.batch_tab:
                     with gr.Row():
                         self.batch_image_dir = gr.Textbox(
-                            label="Input Directory",
+                            label="Input directory",
                             placeholder="Input directory path to the control images.",
                             elem_id=f"{elem_id_tabname}_{tabname}_batch_image_dir",
                         )
                         self.batch_mask_dir = gr.Textbox(
-                            label="Mask Directory",
+                            label="Mask directory",
                             placeholder="Mask directory path to the control images.",
                             elem_id=f"{elem_id_tabname}_{tabname}_batch_mask_dir",
                             visible=False,
                         )
 
-                with gr.Tab(label="Batch Upload") as self.merge_tab:
+                with gr.Tab(label="Multiple images") as self.merge_tab:
                     with gr.Row():
                         with gr.Column():
                             self.batch_input_gallery = gr.Gallery(
@@ -394,7 +387,7 @@ class ControlNetUiGroup(object):
                 label="Allow preview",
                 value=False,
                 elem_classes=["cnet-allow-preview"],
-                elem_id=preview_check_elem_id,
+                elem_id=f"{elem_id_tabname}_{tabname}_controlnet_preprocessor_preview_checkbox",
                 visible=not self.is_img2img,
             )
             self.mask_upload = gr.Checkbox(
