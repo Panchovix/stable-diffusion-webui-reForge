@@ -5,6 +5,7 @@ import time
 import random
 import string
 import cv2
+from PIL import Image
 from typing import Optional
 
 from backend import memory_management
@@ -109,6 +110,34 @@ def numpy_to_pytorch(x):
     y = np.ascontiguousarray(y.copy())
     y = torch.from_numpy(y).to(torch.float32)
     return y
+
+
+@torch.no_grad()
+@torch.inference_mode()
+def pil_image_to_torch_bgr(img: Image.Image) -> torch.Tensor:
+    img = np.array(img.convert("RGB"))
+    img = img[:, :, ::-1]  # flip RGB to BGR
+    img = np.transpose(img, (2, 0, 1))  # HWC to CHW
+    img = np.ascontiguousarray(img) / 255  # Rescale to [0, 1]
+    return torch.from_numpy(img)
+
+
+@torch.no_grad()
+@torch.inference_mode()
+def torch_bgr_to_pil_image(tensor: torch.Tensor) -> Image.Image:
+    if tensor.ndim == 4:
+        # If we're given a tensor with a batch dimension, squeeze it out
+        # (but only if it's a batch of size 1).
+        if tensor.shape[0] != 1:
+            raise ValueError(f"{tensor.shape} does not describe a BCHW tensor")
+        tensor = tensor.squeeze(0)
+    assert tensor.ndim == 3, f"{tensor.shape} does not describe a CHW tensor"
+    # TODO: is `tensor.float().cpu()...numpy()` the most efficient idiom?
+    arr = tensor.float().cpu().clamp_(0, 1).numpy()  # clamp
+    arr = 255.0 * np.moveaxis(arr, 0, 2)  # CHW to HWC, rescale
+    arr = arr.round().astype(np.uint8)
+    arr = arr[:, :, ::-1]  # flip BGR to RGB
+    return Image.fromarray(arr, "RGB")
 
 
 def write_images_to_mp4(frame_list: list, filename=None, fps=6):
