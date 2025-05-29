@@ -154,6 +154,7 @@ def img2img_function(id_task: str, request: gr.Request, mode: int, prompt: str, 
     override_settings = create_override_settings_dict(override_settings_texts)
 
     is_batch = mode == 2
+    used_inpaint_model = False
 
     height, width = int(height), int(width)
 
@@ -165,23 +166,35 @@ def img2img_function(id_task: str, request: gr.Request, mode: int, prompt: str, 
             case 'img2img':
                 image = init_img_bg
                 mask = None
-            case 'img2img sketch':
+            case 'sketch':
                 image = Image.alpha_composite(init_img_bg, init_img_fg)
                 mask = None
             case 'inpaint':
                 image = init_img_bg
                 mask = init_img_fg.getchannel('A').convert('L')
                 mask = Image.merge('RGBA', (mask, mask, mask, Image.new('L', mask.size, 255)))
-            case 'inpaint sketch':
+            case 'inpaint+':
                 image = Image.alpha_composite(init_img_bg, init_img_fg)
                 mask = init_img_fg.getchannel('A').convert('L')
                 short_side = min(mask.size)
                 dilation_size = int(0.015 * short_side) * 2 + 1
                 mask = mask.filter(ImageFilter.MaxFilter(dilation_size))
                 mask = Image.merge('RGBA', (mask, mask, mask, Image.new('L', mask.size, 255)))
+            case 'lama (no save)':
+                image = init_img_bg
+                mask = init_img_fg
+                image = shared.process_lama(image, mask)
+                used_inpaint_model = True
+            case 'MAT (no save)':
+                image = init_img_bg
+                mask = init_img_fg
+                image = shared.process_MAT(image, mask)
+                used_inpaint_model = True
+
             case _:
                 image = init_img_bg
                 mask = None
+
     elif mode == 1:  # inpaint upload mask
         image = init_img_inpaint
         mask = init_mask_inpaint
@@ -246,6 +259,11 @@ def img2img_function(id_task: str, request: gr.Request, mode: int, prompt: str, 
 
             if processed is None:
                 processed = Processed(p, [], p.seed, "")
+
+        elif used_inpaint_model:
+            processed = Processed(p, [], 0, "")
+            processed.images = [image]
+
         else:
             processed = modules.scripts.scripts_img2img.run(p, *args)
             if processed is None:

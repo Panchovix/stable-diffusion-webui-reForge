@@ -1,11 +1,14 @@
 import os
 import sys
 
+import torch
 import gradio as gr
 
 from modules import shared_cmd_options, shared_gradio_themes, options, shared_items
 from modules.paths_internal import models_path, script_path, data_path, extensions_dir, extensions_builtin_dir  # noqa: F401
-from modules import util
+from modules import devices, util, modelloader
+from modules_forge.utils import torch_bgr_to_pil_image, pil_image_to_torch_bgr
+
 from typing import TYPE_CHECKING
 from backend import memory_management
 
@@ -39,6 +42,70 @@ prompt_styles: 'styles.StyleDatabase' = None
 interrogator: 'interrogate.InterrogateModels' = None
 
 face_restorers = []
+
+lama_model = None
+def process_lama(image, mask):
+    global lama_model
+    # https://github.com/advimman/lama; github/Sanster for the model download; github.com/light-and-ray for some implementation
+    if lama_model is None:
+        lama_path = os.path.join(models_path, 'big-lama.pt')
+        if not os.path.exists(lama_path):
+            lama_path = modelloader.load_file_from_url(
+                'https://github.com/Sanster/models/releases/download/add_big_lama/big-lama.pt',
+                model_dir=models_path,
+            )
+
+        try:
+            lama_model = modelloader.load_spandrel_model(lama_path, device=devices.device)
+        except:
+            print ("Inpaint (lama) error: could not find model 'big-lama.pt'")
+    else:
+        lama_model.to(devices.device, dtype=torch.float32)
+
+    with torch.no_grad():
+        tensor_image = pil_image_to_torch_bgr(image).unsqueeze(0)  # add batch dimension
+        tensor_image = tensor_image.to(device=devices.device, dtype=torch.float32)
+
+        tensor_mask = pil_image_to_torch_bgr(mask.convert('1', dither=False)).unsqueeze(0)[:, 0:1, :, :]
+        tensor_mask = tensor_mask.to(device=devices.device, dtype=torch.float32)
+
+        image = torch_bgr_to_pil_image(lama_model(tensor_image, mask=tensor_mask))
+
+    lama_model.to('cpu')
+    return image
+
+
+MAT_model = None
+def process_MAT(image, mask):
+    global MAT_model
+    # https://github.com/fenglinglwb/MAT; Acly for this version of the model; github.com/light-and-ray for some implementation
+    if MAT_model is None:
+        MAT_path = os.path.join(models_path, 'MAT_Places512_G_fp16.safetensors')
+        if not os.path.exists(MAT_path):
+            MAT_path = modelloader.load_file_from_url(
+                'https://huggingface.co/Acly/MAT/resolve/main/MAT_Places512_G_fp16.safetensors',
+                model_dir=models_path,
+            )
+
+        try:
+            MAT_model = modelloader.load_spandrel_model(MAT_path, device=devices.device)
+        except:
+            print ("Inpaint fill (MAT) error: could not find model 'MAT_Places512_G_fp16.safetensors'")
+    else:
+        MAT_model.to(devices.device, dtype=torch.float32)
+
+    with torch.no_grad():
+        tensor_image = pil_image_to_torch_bgr(image).unsqueeze(0)  # add batch dimension
+        tensor_image = tensor_image.to(device=devices.device, dtype=torch.float32)
+
+        tensor_mask = pil_image_to_torch_bgr(mask.convert('1', dither=False)).unsqueeze(0)[:, 0:1, :, :]
+        tensor_mask = tensor_mask.to(device=devices.device, dtype=torch.float32)
+
+        image = torch_bgr_to_pil_image(MAT_model(tensor_image, mask=tensor_mask))
+
+    MAT_model.to('cpu')
+    return image
+
 
 options_templates: dict = None
 opts: options.Options = None

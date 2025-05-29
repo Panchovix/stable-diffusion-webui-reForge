@@ -16,7 +16,7 @@ from skimage import exposure
 from typing import Any
 
 import modules.sd_hijack
-from modules import devices, prompt_parser, masking, sd_samplers, infotext_utils, extra_networks, sd_vae_approx, scripts, sd_samplers_common, errors, rng, profiling, modelloader
+from modules import devices, prompt_parser, masking, sd_samplers, infotext_utils, extra_networks, sd_vae_approx, scripts, sd_samplers_common, errors, rng, profiling
 from modules.rng import slerp, get_noise_source_type  # noqa: F401
 from modules.sd_samplers_common import images_tensor_to_samples, decode_first_stage, approximation_indexes
 from modules.shared import opts, cmd_opts, state
@@ -28,8 +28,6 @@ import modules.images as images
 import modules.styles
 import modules.sd_models as sd_models
 import modules.sd_vae as sd_vae
-from modules.upscaler_utils import torch_bgr_to_pil_image, pil_image_to_torch_bgr
-from modules.paths_internal import models_path
 
 from einops import repeat
 from blendmodes.blend import blendLayers, BlendType
@@ -1086,21 +1084,6 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
                     image.info["parameters"] = text
                 output_images.append(image)
 
-                if mask_for_overlay is not None:
-                    if opts.return_mask or opts.save_mask:
-                        image_mask = mask_for_overlay.convert('RGB')
-                        if save_samples and opts.save_mask:
-                            images.save_image(image_mask, p.outpath_samples, "", p.seeds[i], p.prompts[i], opts.samples_format, info=infotext(i), p=p, suffix="-mask")
-                        if opts.return_mask:
-                            output_images.append(image_mask)
-
-                    if opts.return_mask_composite or opts.save_mask_composite:
-                        image_mask_composite = Image.composite(original_denoised_image.convert('RGBA').convert('RGBa'), Image.new('RGBa', image.size), images.resize_image(2, mask_for_overlay, image.width, image.height).convert('L')).convert('RGBA')
-                        if save_samples and opts.save_mask_composite:
-                            images.save_image(image_mask_composite, p.outpath_samples, "", p.seeds[i], p.prompts[i], opts.samples_format, info=infotext(i), p=p, suffix="-mask-composite")
-                        if opts.return_mask_composite:
-                            output_images.append(image_mask_composite)
-
             del x_samples_ddim
 
             devices.torch_gc()
@@ -1742,12 +1725,6 @@ class StableDiffusionProcessingImg2Img(StableDiffusionProcessing):
             self.color_corrections = []
         imgs = []
         for img in self.init_images:
-
-            # Save init image
-            if opts.save_init_img:
-                self.init_img_hash = hashlib.md5(img.tobytes()).hexdigest()
-                images.save_image(img, path=opts.outdir_init_images, basename=None, forced_filename=self.init_img_hash, save_to_dirs=False, existing_info=img.info)
-
             image = images.flatten(img, opts.img2img_background_color)
 
             if crop_region is None and self.resize_mode != 3:
@@ -1768,64 +1745,13 @@ class StableDiffusionProcessingImg2Img(StableDiffusionProcessing):
 
             if image_mask is not None:
                 if self.inpainting_fill != 1:
-                    if self.inpainting_fill == 4:
-                        # https://github.com/fenglinglwb/MAT; Acly for this version of the model; github.com/light-and-ray for some implementation
-                        if not hasattr(shared, 'MAT_model') or shared.MAT_model is None:
-                            MAT_path = os.path.join(models_path, 'MAT_Places512_G_fp16.safetensors')
-                            if not os.path.exists(MAT_path):
-                                MAT_path = modelloader.load_file_from_url(
-                                    'https://huggingface.co/Acly/MAT/resolve/main/MAT_Places512_G_fp16.safetensors',
-                                    model_dir=models_path,
-                                )
-
-                            try:
-                                shared.MAT_model = modelloader.load_spandrel_model(MAT_path, device=devices.device)
-                            except:
-                                print ("Inpaint fill (MAT) error: could not find model 'MAT_Places512_G_fp16.safetensors'")
-                        else:
-                            shared.MAT_model.to(devices.device, dtype=torch.float32)
-
-                        with torch.no_grad():
-                            tensor_image = pil_image_to_torch_bgr(image).unsqueeze(0)  # add batch dimension
-                            tensor_image = tensor_image.to(device=devices.device, dtype=torch.float32)
-
-                            tensor_mask = pil_image_to_torch_bgr(latent_mask.convert('1', dither=False)).unsqueeze(0)[:, 0:1, :, :]
-                            tensor_mask = tensor_mask.to(device=devices.device, dtype=torch.float32)
-
-                            image = torch_bgr_to_pil_image(shared.MAT_model(tensor_image, mask=tensor_mask))
-
-                        shared.MAT_model.to('cpu')
+                    if self.inpainting_fill == 5:
+                        image = shared.process_MAT(image, latent_mask)
                         self.extra_generation_params["Masked content"] = 'MAT'
 
-                    elif self.inpainting_fill == 5:
-                        # https://github.com/advimman/lama; github/Sanster for the model download; github.com/light-and-ray for some implementation
-                        if not hasattr(shared, 'lama_model') or shared.lama_model is None:
-                            lama_path = os.path.join(models_path, 'big-lama.pt')
-                            if not os.path.exists(lama_path):
-                                lama_path = modelloader.load_file_from_url(
-                                    'https://github.com/Sanster/models/releases/download/add_big_lama/big-lama.pt',
-                                    model_dir=models_path,
-                                )
-
-                            try:
-                                shared.lama_model = modelloader.load_spandrel_model(lama_path, device=devices.device)
-                            except:
-                                print ("Inpaint fill (lama) error: could not find model 'big-lama.pt'")
-                        else:
-                            shared.lama_model.to(devices.device, dtype=torch.float32)
-
-                        with torch.no_grad():
-                            tensor_image = pil_image_to_torch_bgr(image).unsqueeze(0)  # add batch dimension
-                            tensor_image = tensor_image.to(device=devices.device, dtype=torch.float32)
-
-                            tensor_mask = pil_image_to_torch_bgr(latent_mask.convert('1', dither=False)).unsqueeze(0)[:, 0:1, :, :]
-                            tensor_mask = tensor_mask.to(device=devices.device, dtype=torch.float32)
-
-                            image = torch_bgr_to_pil_image(shared.lama_model(tensor_image, mask=tensor_mask))
-
-                        shared.lama_model.to('cpu')
+                    elif self.inpainting_fill == 4:
+                        image = shared.process_lama(image, latent_mask)
                         self.extra_generation_params["Masked content"] = 'lama'
-
                    
                     image = masking.fill(image, latent_mask)
 

@@ -498,7 +498,7 @@ def create_ui():
 
                             with gr.TabItem('img2img', id='img2img', elem_id="img2img_img2img_tab") as tab_img2img:
                                 init_img = ForgeCanvas(elem_id="img2img_image", height=512, scribble_color=opts.img2img_inpaint_sketch_default_brush_color)
-                                i2i_method = gr.Radio(choices=['img2img', 'img2img sketch', 'inpaint', 'inpaint sketch'], value='img2img', show_label=False)
+                                i2i_method = gr.Radio(choices=['img2img', 'sketch', 'inpaint', 'inpaint+', 'lama (no save)', 'MAT (no save)'], value='img2img', show_label=False)
 
                             with gr.TabItem('Inpaint upload', id='inpaint_upload', elem_id="img2img_inpaint_upload_tab") as tab_inpaint_upload:
                                 init_img_inpaint = gr.Image(label="Image for img2img", show_label=False, source="upload", interactive=True, type="pil", height=360, elem_id="img_inpaint_base")
@@ -610,7 +610,7 @@ def create_ui():
 
                         with FormRow():
                             inpainting_mask_invert = gr.Dropdown(label='Mask mode', choices=['Inpaint masked', 'Inpaint not masked'], value='Inpaint masked', type="index", elem_id="img2img_mask_mode")
-                            inpainting_fill = gr.Dropdown(label='Masked content', choices=['fill', 'original', 'latent noise', 'latent nothing', 'MAT', 'lama'], value='original', type="index", elem_id="img2img_inpainting_fill")
+                            inpainting_fill = gr.Dropdown(label='Masked content', choices=['fill', 'original', 'latent noise', 'latent nothing', 'lama', 'MAT'], value='original', type="index", elem_id="img2img_inpainting_fill")
                             inpaint_full_res = gr.Dropdown(label="Inpaint area", choices=["Whole picture", "Only masked"], type="index", value="Whole picture", elem_id="img2img_inpaint_full_res")
 
                     if category not in {"accordions"}:
