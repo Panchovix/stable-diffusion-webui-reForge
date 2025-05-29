@@ -12,3 +12,4 @@ a backup of my local (experimental, opinionated) changes to Forge2 webUI
 * ResAdapter support: download models to `models/other_modules`, load via 'Additional modules' selector (as VAE, text encoder), LoRA as usual (https://huggingface.co/jiaxiangc/res-adapter)
 * long CLIP
 * distilled T5 models for Flux by LifuWang (see https://huggingface.co/LifuWang/DistillT5)
+* lama and MAT inpainting models usable in img2img, both as processing options and as infill options
