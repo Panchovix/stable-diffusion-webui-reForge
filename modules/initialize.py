@@ -3,6 +3,7 @@ import logging
 import sys
 import warnings
 import os
+from modules.paths_internal import models_path
 
 from modules.timer import startup_timer
 
@@ -66,6 +67,10 @@ def initialize():
     from modules import face_bopb2l_model
     face_bopb2l_model.setup_model()
     startup_timer.record("setup ms-bopb2l")
+
+    from modules import face_restoreformer_model
+    face_restoreformer_model.setup_model(os.path.join(models_path, 'RestoreFormer'))
+    startup_timer.record("setup restoreformer")
 
     initialize_rest(reload_script_modules=False)
 

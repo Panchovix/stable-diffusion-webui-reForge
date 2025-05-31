@@ -212,8 +212,8 @@ class StableDiffusionProcessing:
 
     is_api: bool = field(default=False, init=False)
 
-    latents_after_sampling = []
-    pixels_after_sampling = []
+    # latents_after_sampling = []     # what is this?
+    # pixels_after_sampling = []     # what is this?
 
     def clear_prompt_cache(self):
         self.cached_c = [None, None, None]
@@ -248,8 +248,8 @@ class StableDiffusionProcessing:
         self.cached_c = StableDiffusionProcessing.cached_c
 
         self.extra_result_images = []
-        self.latents_after_sampling = []
-        self.pixels_after_sampling = []
+        # self.latents_after_sampling = []
+        # self.pixels_after_sampling = []
         self.modified_noise = None
 
     def fill_fields_from_opts(self):
@@ -510,7 +510,8 @@ class StableDiffusionProcessing:
 
     def save_samples(self) -> bool:
         """Returns whether generated images need to be written to disk"""
-        return opts.samples_save and not self.do_not_save_samples and (opts.save_incomplete_images or not state.interrupted and not state.skipped)
+        return opts.samples_save and not self.do_not_save_samples and not state.interrupted and not state.skipped
+        # return opts.samples_save and not self.do_not_save_samples and (opts.save_incomplete_images or not state.interrupted and not state.skipped)
 
 
 class Processed:
@@ -976,8 +977,8 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
 
             samples_ddim = p.sample(conditioning=p.c, unconditional_conditioning=p.uc, seeds=p.seeds, subseeds=p.subseeds, subseed_strength=p.subseed_strength, prompts=p.prompts)
 
-            for x_sample in samples_ddim:
-                p.latents_after_sampling.append(x_sample)
+            # for x_sample in samples_ddim:
+                # p.latents_after_sampling.append(x_sample)
 
             if sigmas_backup is not None:
                 p.sd_model.forge_objects.unet.model.predictor.set_sigmas(sigmas_backup)
@@ -1026,12 +1027,11 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
                 x_sample = 255. * np.moveaxis(x_sample.cpu().numpy(), 0, 2)
                 x_sample = x_sample.astype(np.uint8)
 
-                if opts.face_restoration_model != "None":
-                    if save_samples and opts.save_images_before_face_restoration:
-                        images.save_image(Image.fromarray(x_sample), p.outpath_samples, "", p.seeds[i], p.prompts[i], opts.samples_format, info=infotext(i), p=p, suffix="-before-face-restoration")
+                if save_samples and opts.save_images_before_postprocess:
+                    images.save_image(Image.fromarray(x_sample), p.outpath_samples, "", p.seeds[i], p.prompts[i], opts.samples_format, info=infotext(i), p=p, suffix="-before-postprocess")
 
+                if opts.face_restoration_model != "None" and opts.face_restoration_before_scripts:
                     devices.torch_gc()
-
                     x_sample = modules.face_restoration.restore_faces(x_sample)
                     devices.torch_gc()
 
@@ -1041,6 +1041,12 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
                     pp = scripts.PostprocessImageArgs(image, i + p.iteration * p.batch_size)
                     p.scripts.postprocess_image(p, pp)
                     image = pp.image
+
+                if opts.face_restoration_model != "None" and not opts.face_restoration_before_scripts:
+                    devices.torch_gc()
+                    image = Image.fromarray(modules.face_restoration.restore_faces(np.array(image)))
+                    devices.torch_gc()
+
 
                 mask_for_overlay = getattr(p, "mask_for_overlay", None)
 
@@ -1057,9 +1063,6 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
                     mask_for_overlay, overlay_image = ppmo.mask_for_overlay, ppmo.overlay_image
 
                 if p.color_corrections is not None and i < len(p.color_corrections):
-                    if save_samples and opts.save_images_before_color_correction:
-                        image_without_cc, _ = apply_overlay(image, p.paste_to, overlay_image)
-                        images.save_image(image_without_cc, p.outpath_samples, "", p.seeds[i], p.prompts[i], opts.samples_format, info=infotext(i), p=p, suffix="-before-color-correction")
                     image = apply_color_correction(p.color_corrections[i], image)
 
                 # If the intention is to show the output from the model
@@ -1068,7 +1071,7 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
                 # and use it in the composite step.
                 image, original_denoised_image = apply_overlay(image, p.paste_to, overlay_image)
 
-                p.pixels_after_sampling.append(image)
+                # p.pixels_after_sampling.append(image)
 
                 if p.scripts is not None:
                     pp = scripts.PostprocessImageArgs(image, i + p.iteration * p.batch_size)

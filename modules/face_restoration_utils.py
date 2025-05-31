@@ -51,9 +51,85 @@ def create_face_helper(device) -> FaceRestoreHelper:
         crop_ratio=(1, 1),
         det_model='retinaface_resnet50',
         save_ext='png',
+        # pad_blur=True,
         use_parse=True,
         device=device,
     )
+
+from facexlib.utils.misc import img2tensor
+# from torchvision.transforms.functional import normalize
+
+# patched to blend back better, by github.com/sixcu (pr 32 facexlib)
+@torch.no_grad()
+def patched_paste_faces_to_input_image(self, upsample_img=None):
+    h, w, _ = self.input_img.shape
+    h_up, w_up = int(h * self.upscale_factor), int(w * self.upscale_factor)
+
+    if upsample_img is None:
+        # simply resize the background
+        upsample_img = cv2.resize(self.input_img, (w_up, h_up), interpolation=cv2.INTER_LANCZOS4)
+    else:
+        upsample_img = cv2.resize(upsample_img, (w_up, h_up), interpolation=cv2.INTER_LANCZOS4)
+
+    assert len(self.restored_faces) == len(
+        self.inverse_affine_matrices), ('length of restored_faces and affine_matrices are different.')
+    for restored_face, inverse_affine in zip(self.restored_faces, self.inverse_affine_matrices):
+        # Add an offset to inverse affine matrix, for more precise back alignment
+        if self.upscale_factor > 1:
+            extra_offset = 0.5 * self.upscale_factor
+        else:
+            extra_offset = 0
+        inverse_affine[:, 2] += extra_offset
+        inv_restored = cv2.warpAffine(restored_face, inverse_affine, (w_up, h_up))
+
+        mask = np.ones(self.face_size, dtype=np.float32)
+        if self.use_parse:
+            # inference
+            face_input = cv2.resize(restored_face, (512, 512), interpolation=cv2.INTER_LINEAR)
+            face_input = img2tensor(face_input.astype('float32') / 255., bgr2rgb=True, float32=True)
+            # normalize(face_input, (0.5, 0.5, 0.5), (0.5, 0.5, 0.5), inplace=True)
+            face_input = torch.unsqueeze(face_input, 0).to(self.device)
+            with torch.no_grad():
+                out = self.face_parse(face_input)[0]
+            out = out.argmax(dim=1).squeeze().cpu().numpy()
+
+            mask = np.zeros(out.shape)
+            MASK_COLORMAP = [0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 255, 0, 0, 0]
+            for idx, color in enumerate(MASK_COLORMAP):
+                mask[out == idx] = color
+            mask = mask / 255.
+            mask = cv2.resize(mask, restored_face.shape[:2], interpolation=cv2.INTER_NEAREST)
+
+        inv_mask = cv2.warpAffine(mask, inverse_affine, (w_up, h_up), flags=3)
+        # remove the black borders
+        inv_mask_erosion = cv2.erode(
+            inv_mask, np.ones((int(2 * self.upscale_factor), int(2 * self.upscale_factor)), np.uint8))
+        pasted_face = inv_mask_erosion[:, :, None] * inv_restored
+        total_face_area = np.sum(inv_mask_erosion)  # // 3
+        # compute the fusion edge based on the area of face
+        w_edge = int(total_face_area**0.5) // 20
+        erosion_radius = w_edge * 2
+        inv_mask_center = cv2.erode(inv_mask_erosion, np.ones((erosion_radius, erosion_radius), np.uint8))
+        blur_size = w_edge * 2
+
+        inv_soft_mask = cv2.GaussianBlur(inv_mask_center, (blur_size + 1, blur_size + 1), 0)
+        if len(upsample_img.shape) == 2:  # upsample_img is gray image
+            upsample_img = upsample_img[:, :, None]
+        inv_soft_mask = inv_soft_mask[:, :, None]
+
+        if len(upsample_img.shape) == 3 and upsample_img.shape[2] == 4:  # alpha channel
+            alpha = upsample_img[:, :, 3:]
+            upsample_img = inv_soft_mask * pasted_face + (1 - inv_soft_mask) * upsample_img[:, :, 0:3]
+            upsample_img = np.concatenate((upsample_img, alpha), axis=2)
+        else:
+            upsample_img = inv_soft_mask * pasted_face + (1 - inv_soft_mask) * upsample_img
+
+    if np.max(upsample_img) > 256:  # 16-bit image
+        upsample_img = upsample_img.astype(np.uint16)
+    else:
+        upsample_img = upsample_img.astype(np.uint8)
+
+    return upsample_img
 
 
 def restore_with_face_helper(
@@ -92,10 +168,11 @@ def restore_with_face_helper(
             restored_face = rgb_tensor_to_bgr_image(cropped_face_t, min_max=(-1, 1))
             restored_face = (restored_face * 255.0).astype('uint8')
             face_helper.add_restored_face(restored_face)
-
+            
         logger.debug("Merging restored faces into image")
         face_helper.get_inverse_affine(None)
-        img = face_helper.paste_faces_to_input_image()
+        # img = face_helper.paste_faces_to_input_image()
+        img = patched_paste_faces_to_input_image(face_helper)
         img = img[:, :, ::-1]
         if original_resolution != img.shape[0:2]:
             img = cv2.resize(

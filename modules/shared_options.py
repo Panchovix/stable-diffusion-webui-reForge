@@ -47,9 +47,8 @@ options_templates.update(options_section(('saving-images', "Saving images/grids"
     "grid_text_inactive_color": OptionInfo("#999999", "Inactive text color for image grids", ui_components.FormColorPicker, {}),
     "grid_background_color": OptionInfo("#ffffff", "Background color for image grids", ui_components.FormColorPicker, {}),
 
-    "save_images_before_face_restoration": OptionInfo(False, "Save a copy of image before doing face restoration."),
+    "save_images_before_postprocess": OptionInfo(False, "Save a copy of image before running post-processing - face restoration, scripts, colour correction."),
     "save_images_before_highres_fix": OptionInfo(False, "Save a copy of image before applying highres fix."),
-    "save_images_before_color_correction": OptionInfo(False, "Save a copy of image before applying color correction to img2img results"),
     "jpeg_quality": OptionInfo(80, "Quality for saved jpeg and avif images", gr.Slider, {"minimum": 1, "maximum": 100, "step": 1}),
     "webp_lossless": OptionInfo(False, "Use lossless compression for webp images"),
     "export_for_4chan": OptionInfo(True, "Save copy of large images as JPG").info("if the file size is above the limit, or either width or height are above the limit"),
@@ -63,7 +62,7 @@ options_templates.update(options_section(('saving-images', "Saving images/grids"
     "temp_dir":  OptionInfo("", "Directory for temporary images; leave empty for default"),
     "clean_temp_dir_at_start": OptionInfo(False, "Cleanup non-default temporary directory when starting webui"),
 
-    "save_incomplete_images": OptionInfo(False, "Save incomplete images").info("save images that has been interrupted in mid-generation; even if not saved, they will still show up in webui output."),
+    # "save_incomplete_images": OptionInfo(False, "Save incomplete images").info("save images that has been interrupted in mid-generation; even if not saved, they will still show up in webui output."),
 
     "notification_audio": OptionInfo(True, "Play notification sound after image generation").info("notification.mp3 should be present in the root directory").needs_reload_ui(),
     "notification_volume": OptionInfo(100, "Notification sound volume", gr.Slider, {"minimum": 0, "maximum": 100, "step": 1}).info("in %"),
@@ -103,6 +102,7 @@ options_templates.update(options_section(('upscaling', "Upscaling", "postprocess
 
 options_templates.update(options_section(('face-restoration', "Face restoration", "postprocessing"), {
     "face_restoration_model": OptionInfo("None", "Face restoration model", gr.Dropdown, lambda: {"choices": ["None"] + [x.name() for x in shared.face_restorers], "filterable": False}),
+    "face_restoration_before_scripts": OptionInfo(True, "Apply face restoration before running postprocess scripts. Disabled = apply after scripts."),
     "code_former_weight": OptionInfo(0.5, "CodeFormer weight", gr.Slider, {"minimum": 0, "maximum": 1, "step": 0.01}).info("0 = maximum effect; 1 = minimum effect"),
 }))
 

@@ -7,6 +7,7 @@ import tqdm
 from PIL import Image
 
 from modules import devices, images, shared, torch_utils
+from modules_forge.utils import pil_image_to_torch_bgr, torch_bgr_to_pil_image
 
 logger = logging.getLogger(__name__)
 
