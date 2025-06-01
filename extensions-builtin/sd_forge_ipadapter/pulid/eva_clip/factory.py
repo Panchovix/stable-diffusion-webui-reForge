@@ -14,7 +14,6 @@ from .model import CLIP, CustomCLIP, convert_weights_to_lp, convert_to_custom_te
 from .openai import load_openai_model
 from .pretrained import is_pretrained_cfg, get_pretrained_cfg, download_pretrained, list_pretrained_tags_by_model
 from .transform import image_transform
-from .tokenizer import HFTokenizer, tokenize
 from .utils import resize_clip_pos_embed, resize_evaclip_pos_embed, resize_visual_pos_embed, resize_eva_pos_embed
 
 
@@ -55,25 +54,11 @@ def list_models():
     return list(_MODEL_CONFIGS.keys())
 
 
-def add_model_config(path):
-    """ add model config path or file and update registry """
-    if not isinstance(path, Path):
-        path = Path(path)
-    _MODEL_CONFIG_PATHS.append(path)
-    _rescan_model_configs()
-
-
 def get_model_config(model_name):
     if model_name in _MODEL_CONFIGS:
         return deepcopy(_MODEL_CONFIGS[model_name])
     else:
         return None
-
-
-def get_tokenizer(model_name):
-    config = get_model_config(model_name)
-    tokenizer = HFTokenizer(config['text_cfg']['hf_tokenizer_name']) if 'hf_tokenizer_name' in config['text_cfg'] else tokenize
-    return tokenizer
 
 
 # loading openai CLIP weights when is_openai=True for training
