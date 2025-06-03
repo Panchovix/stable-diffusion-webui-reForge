@@ -3,8 +3,8 @@ import gradio as gr
 import json
 from typing import List, Dict, Any, Tuple
 
-from annotator.openpose import decode_json_as_poses, draw_poses
-from annotator.openpose.animalpose import draw_animalposes
+from openpose.util import decode_json_as_poses, draw_poses
+from openpose.animalpose import draw_animalposes
 from lib_controlnet.controlnet_ui.modal import ModalInterface
 from modules import shared
 from lib_controlnet.logging import logger
@@ -52,7 +52,7 @@ class OpenposeEditor(object):
             # immediately navigate. Most of controlnet units do not need
             # openpose editor active. Only navigate when the user first click
             # 'Edit'. The navigation logic is in `openpose_editor.js`.
-            f'<iframe src="about:blank"></iframe>',
+            '<iframe src="about:blank"></iframe>',
             open_button_text="Edit",
             open_button_classes=["cnet-edit-pose"],
             open_button_extra_attrs=f'title="Send pose to {OpenposeEditor.editor_url} for edit."',
