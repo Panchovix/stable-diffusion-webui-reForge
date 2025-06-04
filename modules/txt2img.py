@@ -77,6 +77,8 @@ def txt2img_upscale_function(id_task: str, request: gr.Request, gallery, gallery
     p.n_iter = 1
     # txt2img_upscale attribute that signifies this is called by txt2img_upscale
     p.txt2img_upscale = True
+    p.is_hr_pass = True # needed for controlnet - needs test
+    p.firstpass_steps = args[26]
 
     image_info = gallery[gallery_index]
     p.firstpass_image = infotext_utils.image_from_url_text(image_info)
@@ -94,9 +96,9 @@ def txt2img_upscale_function(id_task: str, request: gr.Request, gallery, gallery
     p.override_settings['samples_save'] = False
     p.override_settings['multiple_tqdm'] = False
 
-    start_denoise = p.denoising_strength
-    final_denoise = 0.5 * p.denoising_strength
-    start_steps = p.hr_second_pass_steps
+    # start_denoise = p.denoising_strength
+    # final_denoise = 0.5 * p.denoising_strength
+    # start_steps = p.hr_second_pass_steps
     for iteration in range(iterations):
         with closing(p):
             if iteration == iterations-1:
@@ -112,8 +114,8 @@ def txt2img_upscale_function(id_task: str, request: gr.Request, gallery, gallery
             p.width = p.firstpass_image.size[0]
             p.height = p.firstpass_image.size[1]
             nextIter = (iteration + 1) / (iterations - 1)
-            p.denoising_strength = final_denoise * nextIter + start_denoise * (1.0 - nextIter)
-            p.hr_second_pass_steps = int(0.5 + start_steps * (p.denoising_strength / start_denoise))
+            # p.denoising_strength = final_denoise * nextIter + start_denoise * (1.0 - nextIter)
+            # p.hr_second_pass_steps = int(0.5 + start_steps * (p.denoising_strength / start_denoise))
             # print ("QUICKBUTTON: ", p.width, p.height, p.denoising_strength, p.hr_second_pass_steps)
 
         shared.total_tqdm.clear()
