@@ -290,12 +290,24 @@ class ControlNetForForgeOfficial(scripts.Script):
                                           params: ControlNetCachedParameters,
                                           *args, **kwargs):
 
-        h, w, hr_y, hr_x = self.get_target_dimensions(p)
-
         has_high_res_fix = (
                 isinstance(p, StableDiffusionProcessingTxt2Img)
                 and getattr(p, 'enable_hr', False)
         )
+        is_hr_pass = getattr(p, 'is_hr_pass', False)
+        hr_option = HiResFixOption.from_value(unit.hr_option)
+
+        # early exit if unit doesn't apply to this pass
+        # if first pass - must always process
+        # if high res pass - this will only be called after quickbutton
+        if is_hr_pass and not hr_option.high_res_enabled:
+            params.model = None
+            params.preprocessor = None
+            return
+
+        # preprocessing probably should be in process_unit_before_every_sampling
+
+        h, w, hr_y, hr_x = self.get_target_dimensions(p)
 
         if unit.use_preview_as_input and unit.generated_image is not None:
             # this caching is single input only, and requires preview to have been generated
@@ -334,7 +346,7 @@ class ControlNetForForgeOfficial(scripts.Script):
             if cacheAvailable:
                 image = unit.image if unit.image is not None else input_image
                 hash_sha256 = hashlib.sha256()
-                simpleHash = str(unit.image[:, :, :3]) + str(unit.module) + str(unit.processor_res) + str(unit.threshold_a) + str(unit.threshold_b)
+                simpleHash = str(image[:, :, :3]) + str(unit.module) + str(unit.processor_res) + str(unit.threshold_a) + str(unit.threshold_b)
                 hash_sha256.update(simpleHash.encode('utf-8'))
                 preprocessorHash = hash_sha256.hexdigest()
 
@@ -366,11 +378,6 @@ class ControlNetForForgeOfficial(scripts.Script):
             if input_mask is not None:
                 control_masks.append(input_mask)
 
-
-        if has_high_res_fix:
-            hr_option = HiResFixOption.from_value(unit.hr_option)
-        else:
-            hr_option = HiResFixOption.BOTH
 
         alignment_indices = [i % len(preprocessor_outputs) for i in range(p.batch_size * p.n_iter)] #batch_count * batch_size = number of input images
         # alignment_indices = [i % len(preprocessor_outputs) for i in range(p.batch_size)] #batch_size = number of inputs, batch_count = repeats (without tensor split in process_unit_before_every_sampling)
@@ -456,22 +463,13 @@ class ControlNetForForgeOfficial(scripts.Script):
                                            *args, **kwargs):
 
         is_hr_pass = getattr(p, 'is_hr_pass', False)
+        hr_option = HiResFixOption.from_value(unit.hr_option)
 
-        has_high_res_fix = (
-                isinstance(p, StableDiffusionProcessingTxt2Img)
-                and getattr(p, 'enable_hr', False)
-        )
-
-        if has_high_res_fix:
-            hr_option = HiResFixOption.from_value(unit.hr_option)
-        else:
-            hr_option = HiResFixOption.BOTH
-
-        if has_high_res_fix and is_hr_pass and (not hr_option.high_res_enabled):
+        if is_hr_pass and not hr_option.high_res_enabled:
             logger.info("ControlNet Skipped High-res pass.")
             return
 
-        if has_high_res_fix and (not is_hr_pass) and (not hr_option.low_res_enabled):
+        if not is_hr_pass and not hr_option.low_res_enabled:
             logger.info("ControlNet Skipped Low-res pass.")
             return
 
@@ -566,8 +564,10 @@ class ControlNetForForgeOfficial(scripts.Script):
                                           params: ControlNetCachedParameters,
                                           *args, **kwargs):
 
-        params.preprocessor.process_after_every_sampling(p, params, *args, **kwargs)
-        params.model.process_after_every_sampling(p, params, *args, **kwargs)
+        if params.preprocessor is not None:
+            params.preprocessor.process_after_every_sampling(p, params, *args, **kwargs)
+        if params.model is not None:
+            params.model.process_after_every_sampling(p, params, *args, **kwargs)
         return
 
     @torch.no_grad()
