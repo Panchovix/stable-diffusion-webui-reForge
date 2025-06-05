@@ -202,18 +202,18 @@ class PreprocessorForPuLID(Preprocessor):
         self.name = name
 
         self.slider_resolution = PreprocessorParameter(
-            label='Tiles (n * n) (limited by source(s))', minimum=1, maximum=16, value=1, step=1, visible=True)
+            label='Fidelity (lower = likeness closer to source)', minimum=0, maximum=32, value=1, step=1, visible=True)
         self.slider_1 = PreprocessorParameter(label='Noise', minimum=0.0, maximum=1.0, value=0.23, step=0.01, visible=True)
         self.slider_2 = PreprocessorParameter(label='Sharpening', minimum=0.0, maximum=1.0, value=0.0, step=0.01, visible=True)
         self.tags = ['PuLID']
         self.model_filename_filters = ['PuLID']
-        self.sorting_priority = 20
         self.model = None
+        self.sorting_priority = 20
 
-        if 'fidelity' in name:
-            self.method = 'fidelity'
-        elif 'style' in name:
-            self.method = 'style'
+        if self.name == 'PuLID (ortho)':
+            self.method = 'ortho'
+        elif self.name == 'PuLID (ortho_v2)':
+            self.method = 'ortho_v2'
         else:
             self.method = 'default'
 
@@ -223,7 +223,7 @@ class PreprocessorForPuLID(Preprocessor):
             image=input_image,
             noise=slider_1,
             sharpening=slider_2,
-            tiles=resolution,
+            fidelity=resolution,
             method=self.method,
             pulid=True,
         )
@@ -231,8 +231,8 @@ class PreprocessorForPuLID(Preprocessor):
         return cond
 
 add_supported_preprocessor(PreprocessorForPuLID('PuLID'))
-add_supported_preprocessor(PreprocessorForPuLID('PuLID (fidelity)'))
-add_supported_preprocessor(PreprocessorForPuLID('PuLID (style)'))
+add_supported_preprocessor(PreprocessorForPuLID('PuLID (ortho)'))
+add_supported_preprocessor(PreprocessorForPuLID('PuLID (ortho_v2)'))
 
 
 class IPAdapterPatcher(ControlModelPatcher):
@@ -275,20 +275,21 @@ class IPAdapterPatcher(ControlModelPatcher):
             if isinstance(cond, list):  # should always be True
                 images = []
                 for c in cond:
-                    tile_count = c['tiles']
                     image = c['image']
 
-                    r = min(image.shape[0] // 128, image.shape[1] // 128)
-                    r = min(r, tile_count)
-                    if tile_count > 1 and r >= 2:   #interleaved split into r*r images
-                        for i in range(r):
-                            for j in range(r):
-                                part = image[i::r, j::r]
-                                images.append(numpy_to_pytorch(part))
-                    else:
-                        images.append(numpy_to_pytorch(image))
+                    # r = min(image.shape[0] // 336, image.shape[1] // 336)
+                    # r = min(r, 2)
+                    # if r >= 2:   #interleaved split into r*r images
+                        # for i in range(r):
+                            # for j in range(r):
+                                # part = image[i::r, j::r]
+                                # images.append(numpy_to_pytorch(part))
+                    # else:
+                        # images.append(numpy_to_pytorch(image))
 
-                random.shuffle(images)
+                    images.append(numpy_to_pytorch(image))
+
+                # random.shuffle(images)
 
             global cached_insightfaceA
             if cached_insightfaceA is None:
@@ -321,8 +322,9 @@ class IPAdapterPatcher(ControlModelPatcher):
                 self.start_percent,
                 self.end_percent,
                 cond[0]['sharpening'],
-                cond[0]['method'],  #'default', 'fidelity', 'style'
+                cond[0]['method'],  #'default', 'ortho' (fidelity), 'ortho_v2' (style)
                 noise=cond[0]['noise'],
+                fidelity=cond[0]['fidelity'],
                 attn_mask=mask.squeeze(1) if mask is not None else None,
             )[0]
 
@@ -340,7 +342,7 @@ class IPAdapterPatcher(ControlModelPatcher):
                         tile_type = 'Tiled'
 
                     if tile_count > 1:
-                        r = min(image.shape[0] // 128, image.shape[1] // 128)
+                        r = min(image.shape[0] // 224, image.shape[1] // 224)
                         r = min(r, tile_count)
                         if tile_type == 'Interleaved' and r >= 2:   #interleaved split into r*r images
                             for i in range(r):
@@ -374,16 +376,6 @@ class IPAdapterPatcher(ControlModelPatcher):
                 pcond['images'] = images
                 del pcond['tiles']
                 del pcond['image']
-
-            # else:
-                # global cached_insightfaceA
-                # if cached_insightfaceA is None:
-                    # cached_insightfaceA = InsightFaceLoader().load_insight_face(name="antelopev2")[0]
-
-                # print (cond.shape, cond)
-
-                # pcond = { 'insightface': cached_insightfaceA, 'images': cond, 'instant_id': True, }
-
 
             unet = IPAdapterApply().apply_ipadapter(
                 ipadapter=self.ip_adapter,
