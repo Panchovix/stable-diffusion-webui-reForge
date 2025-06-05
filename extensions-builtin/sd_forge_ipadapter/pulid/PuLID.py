@@ -86,16 +86,16 @@ def tensor_to_size(source, dest_size):
     return source
 
 def set_model_patch_replace(model, patch_kwargs, key):
-    to = model.model_options["transformer_options"]#.copy()
+    to = model.model_options["transformer_options"].copy()
     if "patches_replace" not in to:
         to["patches_replace"] = {}
-    # else:
-        # to["patches_replace"] = to["patches_replace"].copy()
+    else:
+        to["patches_replace"] = to["patches_replace"].copy()
 
     if "attn2" not in to["patches_replace"]:
         to["patches_replace"]["attn2"] = {}
-    # else:
-        # to["patches_replace"]["attn2"] = to["patches_replace"]["attn2"].copy()
+    else:
+        to["patches_replace"]["attn2"] = to["patches_replace"]["attn2"].copy()
     
     if key not in to["patches_replace"]["attn2"]:
         to["patches_replace"]["attn2"][key] = Attn2Replace(pulid_attention, **patch_kwargs)
@@ -198,8 +198,15 @@ def to_gray(img):
     return x
 
 
+import hashlib
+pulid_cache_limit = 11 # mem cost is 256K * pulid_cache_limit (for fp32)
+pulid_cache_id = 0
+pulid_preprocess_cache = [(0, 0, None)] * pulid_cache_limit
+
 class ApplyPulid:
-    def apply_pulid(self, model, pulid, eva_clip, face_analysis, image, weight, start_at, end_at, sharpening=0.0, method=None, noise=0.0, attn_mask=None):
+
+    def apply_pulid(self, model, pulid, eva_clip, face_analysis, image, weight, start_at, end_at, sharpening=0.0, method=None, noise=0.0, fidelity=8, attn_mask=None):
+        global pulid_cache_limit, pulid_cache_id, pulid_preprocess_cache
         work_model = model.clone()
         
         device = memory_management.get_torch_device()
@@ -207,9 +214,11 @@ class ApplyPulid:
 
         eva_clip.to(device, dtype=dtype)
 
-        if len(pulid["image_proj"].keys()) == 172:
+        pulid_model_id = len(pulid["image_proj"].keys())
+
+        if pulid_model_id == 172:
             pulid_model = PulidModelV1_1(pulid).to(device, dtype=dtype)
-        elif len(pulid["image_proj"].keys()) == 110:
+        elif pulid_model_id == 110:
             pulid_model = PulidModel(pulid).to(device, dtype=dtype)
 
         if attn_mask is not None:
@@ -219,18 +228,16 @@ class ApplyPulid:
                 attn_mask = attn_mask.unsqueeze(0)
             attn_mask = attn_mask.to(device, dtype=dtype)
 
-        if method == "fidelity":
-            num_zero = 8
-            ortho = False
-            ortho_v2 = True
-        elif method == "style":
-            num_zero = 16
+        if method == "ortho":
             ortho = True
             ortho_v2 = False
+        elif method == "ortho_v2":
+            ortho = False
+            ortho_v2 = True
         else:
-            num_zero = 0
             ortho = False
             ortho_v2 = False
+        num_zero = fidelity
         
         face_helper = FaceRestoreHelper(
             upscale_factor=1,
@@ -249,64 +256,90 @@ class ApplyPulid:
         uncond = []
 
         for i in range(len(image)):
-            face_img = self.prep_image(image[i], sharpening)
-            # get insightface embeddings
-            iface_embeds = None
-            for size in [(size, size) for size in range(640, 128, -64)]:
-                face_analysis.det_model.input_size = size
-                face = face_analysis.get(face_img[0])
-                if face:
-                    face = sorted(face, key=lambda x: (x.bbox[2] - x.bbox[0]) * (x.bbox[3] - x.bbox[1]))[-1]
-                    iface_embeds = torch.from_numpy(face.embedding).unsqueeze(0).to(device, dtype=dtype)
+            hash_sha256 = hashlib.sha256()
+            this_hash = str(image[i]) + str(sharpening)
+            hash_sha256.update(this_hash.encode('utf-8'))
+            preprocessorHash = str(hash_sha256.hexdigest())
+
+            used_cache = False
+            for pph in pulid_preprocess_cache:
+                if pph[0] == preprocessorHash and pph[1] == pulid_model_id:
+                    c = pph[2]
+                    print ("PuLID: used cache")
+                    used_cache = True
                     break
-            else:
-                # No face detected, skip this image
-                print('Warning: No face detected in image', i)
-                continue
+            if not used_cache:
+                face_img = self.prep_image(image[i], sharpening)
 
-            # get eva_clip embeddings
-            face_helper.clean_all()
-            face_helper.read_image(face_img[0])
-            face_helper.get_face_landmarks_5(only_center_face=True)
-            face_helper.align_warp_face()
+                face_helper.clean_all()
+                face_helper.read_image(face_img[0])
+                face_helper.get_face_landmarks_5(only_keep_largest=True)#only_center_face=True)
+                face_helper.align_warp_face()
 
-            if len(face_helper.cropped_faces) == 0:
-                # No face detected, skip this image
-                continue
-            
-            face = face_helper.cropped_faces[0]
-            face = NPToTensor(face).unsqueeze(0).permute(0,3,1,2).to(device)
-            parsing_out = face_helper.face_parse(T.functional.normalize(face, [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]))[0]
-            parsing_out = parsing_out.argmax(dim=1, keepdim=True)
-            bg = sum(parsing_out == i for i in bg_label).bool()
-            white_image = torch.ones_like(face)
-            face_features_image = torch.where(bg, white_image, to_gray(face))
-            # apparently MPS only supports NEAREST interpolation?
-            face_features_image = T.functional.resize(face_features_image, eva_clip.image_size, T.InterpolationMode.BICUBIC if 'cuda' in device.type else T.InterpolationMode.NEAREST).to(device, dtype=dtype)
-            face_features_image = T.functional.normalize(face_features_image, eva_clip.image_mean, eva_clip.image_std)
-            
-            id_cond_vit, id_vit_hidden = eva_clip(face_features_image, return_all_features=False, return_hidden=True, shuffle=False)
-            id_cond_vit = id_cond_vit.to(device, dtype=dtype)
-            for idx in range(len(id_vit_hidden)):
-                id_vit_hidden[idx] = id_vit_hidden[idx].to(device, dtype=dtype)
+                if len(face_helper.cropped_faces) == 0:
+                    continue
+                
+                face = face_helper.cropped_faces[0]
 
-            id_cond_vit = torch.div(id_cond_vit, torch.norm(id_cond_vit, 2, 1, True))
+                # get insightface embeddings
+                iface_embeds = None
+                for size in [(size, size) for size in range(640, 128, -64)]:
+                    face_analysis.det_model.input_size = size
+                    iface = face_analysis.get(face)
+                    if iface:
+                        iface = sorted(iface, key=lambda x: (x.bbox[2] - x.bbox[0]) * (x.bbox[3] - x.bbox[1]))[-1]
+                        iface_embeds = torch.from_numpy(iface.embedding).unsqueeze(0).to(device, dtype=dtype)
+                        break
 
-            # combine embeddings
-            id_cond = torch.cat([iface_embeds, id_cond_vit], dim=-1)
+                if iface_embeds == None:
+                    continue
+
+                # get eva_clip embeddings
+                face = NPToTensor(face).unsqueeze(0).permute(0,3,1,2).to(device)
+                parsing_out = face_helper.face_parse(T.functional.normalize(face, [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]))[0]
+                parsing_out = parsing_out.argmax(dim=1, keepdim=True)
+                bg = sum(parsing_out == i for i in bg_label).bool()
+                white_image = torch.ones_like(face)
+                face_features_image = torch.where(bg, white_image, to_gray(face))
+                # apparently MPS only supports NEAREST interpolation?
+                face_features_image = T.functional.resize(face_features_image, eva_clip.image_size, T.InterpolationMode.BICUBIC if 'cuda' in device.type else T.InterpolationMode.NEAREST).to(device, dtype=dtype)
+                face_features_image = T.functional.normalize(face_features_image, eva_clip.image_mean, eva_clip.image_std)
+                
+                id_cond_vit, id_vit_hidden = eva_clip(face_features_image, return_all_features=False, return_hidden=True, shuffle=False)
+                id_cond_vit = id_cond_vit.to(device, dtype=dtype)
+                id_cond_vit = torch.div(id_cond_vit, torch.norm(id_cond_vit, 2, 1, True))
+                for idx in range(len(id_vit_hidden)):
+                    id_vit_hidden[idx] = id_vit_hidden[idx].to(device, dtype=dtype)
+
+                # combine embeddings
+                id_cond = torch.cat([iface_embeds, id_cond_vit], dim=-1)
+
+                c = pulid_model.get_image_embeds(id_cond, id_vit_hidden)
+
+                pulid_preprocess_cache[pulid_cache_id] = (preprocessorHash, pulid_model_id, c)  # move c to cpu?, maybe 256K per cached item
+                print (f"PuLID: stored result in cache {pulid_cache_id+1}/{pulid_cache_limit}")
+                pulid_cache_id += 1
+                if pulid_cache_id >= pulid_cache_limit:
+                    pulid_cache_id = 0
+
+            cond_shape = (1, 1280)
+            hidden_shape = (1, 577, 1024) # list of 5
+
             if noise == 0:
-                id_uncond = torch.zeros_like(id_cond)
+                id_uncond = torch.zeros(cond_shape, device=device, dtype=dtype)
             else:
-                id_uncond = torch.rand_like(id_cond) * noise
+                id_uncond = torch.randn(cond_shape, device=device, dtype=dtype) * noise
             id_vit_hidden_uncond = []
-            for idx in range(len(id_vit_hidden)):
+            for idx in range(5):
                 if noise == 0:
-                    id_vit_hidden_uncond.append(torch.zeros_like(id_vit_hidden[idx]))
+                    id_vit_hidden_uncond.append(torch.zeros(hidden_shape, device=device, dtype=dtype))
                 else:
-                    id_vit_hidden_uncond.append(torch.rand_like(id_vit_hidden[idx]) * noise)
-            
-            cond.append(pulid_model.get_image_embeds(id_cond, id_vit_hidden))
-            uncond.append(pulid_model.get_image_embeds(id_uncond, id_vit_hidden_uncond))
+                    id_vit_hidden_uncond.append(torch.randn(hidden_shape, device=device, dtype=dtype) * noise)
+
+            uc = pulid_model.get_image_embeds(id_uncond, id_vit_hidden_uncond) #always calc this, as based on noise, but shape is known
+
+            cond.append(c)
+            uncond.append(uc)
 
         eva_clip.to('cpu')
 
@@ -326,7 +359,7 @@ class ApplyPulid:
             if noise == 0:
                 zero_tensor = torch.zeros((cond.size(0), num_zero, cond.size(-1)), dtype=dtype, device=device)
             else:
-                zero_tensor = torch.rand((cond.size(0), num_zero, cond.size(-1)), dtype=dtype, device=device) * noise
+                zero_tensor = torch.randn((cond.size(0), num_zero, cond.size(-1)), dtype=dtype, device=device) * noise
             cond = torch.cat([cond, zero_tensor], dim=1)
             uncond = torch.cat([uncond, zero_tensor], dim=1)
 
