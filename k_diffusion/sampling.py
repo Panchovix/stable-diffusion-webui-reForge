@@ -7,6 +7,7 @@ from torchdiffeq import odeint
 import torchsde
 from tqdm.auto import trange, tqdm
 from k_diffusion import deis
+from backend.modules.k_prediction import PredictionFlux, PredictionDiscreteFlow
 
 from . import utils
 
@@ -54,9 +55,22 @@ def get_ancestral_step(sigma_from, sigma_to, eta=1.):
     of noise to add (sigma_up) when doing an ancestral sampling step."""
     if not eta:
         return sigma_to, 0.
+
     sigma_up = min(sigma_to, eta * (sigma_to ** 2 * (sigma_from ** 2 - sigma_to ** 2) / sigma_from ** 2) ** 0.5)
     sigma_down = (sigma_to ** 2 - sigma_up ** 2) ** 0.5
     return sigma_down, sigma_up
+
+
+def get_ancestral_step_flow(sigma_from, sigma_to, eta=1.):
+    if not eta:
+        return sigma_to, 0.
+
+    downstep_ratio = 1 + (sigma_to/sigma_from - 1) * eta
+    sigma_down = sigma_to * downstep_ratio
+    alpha_ip1 = 1 - sigma_to
+    alpha_down = 1 - sigma_down
+    sigma_up = (sigma_to**2 - sigma_down**2*alpha_ip1**2/alpha_down**2)**0.5
+    return sigma_down, sigma_up, (alpha_ip1 / alpha_down)
 
 
 def default_noise_sampler(x):
@@ -142,17 +156,33 @@ def sample_euler_ancestral(model, x, sigmas, extra_args=None, callback=None, dis
     extra_args = {} if extra_args is None else extra_args
     noise_sampler = default_noise_sampler(x) if noise_sampler is None else noise_sampler
     s_in = x.new_ones([x.shape[0]])
+
+    if isinstance(model.inner_model.predictor, PredictionFlux) or isinstance(model.inner_model.predictor, PredictionDiscreteFlow):
+        use_flow_method = True
+    else:
+        use_flow_method = False
+
     for i in trange(len(sigmas) - 1, disable=disable):
         denoised = model(x, sigmas[i] * s_in, **extra_args)
-        sigma_down, sigma_up = get_ancestral_step(sigmas[i], sigmas[i + 1], eta=eta)
+
         if callback is not None:
             callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
-        d = to_d(x, sigmas[i], denoised)
-        # Euler method
-        dt = sigma_down - sigmas[i]
-        x = x + d * dt
-        if sigmas[i + 1] > 0:
-            x = x + noise_sampler(sigmas[i], sigmas[i + 1]) * s_noise * sigma_up
+
+        if use_flow_method:
+            sigma_down, sigma_up, alpha = get_ancestral_step_flow(sigmas[i], sigmas[i + 1], eta=eta)
+            sigma_down_i_ratio = sigma_down / sigmas[i]
+            x = sigma_down_i_ratio * x + (1 - sigma_down_i_ratio) * denoised
+        else:
+            sigma_down, sigma_up = get_ancestral_step(sigmas[i], sigmas[i + 1], eta=eta)
+            alpha = 1.0
+
+            d = to_d(x, sigmas[i], denoised)
+            dt = sigma_down - sigmas[i]
+            x = x + d * dt
+
+        if eta > 0 and sigmas[i + 1] > 0:
+            x = alpha * x + noise_sampler(sigmas[i], sigmas[i + 1]) * s_noise * sigma_up
+ 
     return x
 
 
@@ -222,12 +252,25 @@ def sample_dpm_2_ancestral(model, x, sigmas, extra_args=None, callback=None, dis
     extra_args = {} if extra_args is None else extra_args
     noise_sampler = default_noise_sampler(x) if noise_sampler is None else noise_sampler
     s_in = x.new_ones([x.shape[0]])
+
+    if isinstance(model.inner_model.predictor, PredictionFlux) or isinstance(model.inner_model.predictor, PredictionDiscreteFlow):
+        use_flow_method = True
+    else:
+        use_flow_method = False
+
     for i in trange(len(sigmas) - 1, disable=disable):
         denoised = model(x, sigmas[i] * s_in, **extra_args)
-        sigma_down, sigma_up = get_ancestral_step(sigmas[i], sigmas[i + 1], eta=eta)
+        if use_flow_method:
+            sigma_down, sigma_up, alpha = get_ancestral_step_flow(sigmas[i], sigmas[i + 1], eta=eta)
+        else:
+            sigma_down, sigma_up = get_ancestral_step(sigmas[i], sigmas[i + 1], eta=eta)
+            alpha = 1.0
+
         if callback is not None:
             callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
+
         d = to_d(x, sigmas[i], denoised)
+
         if sigma_down == 0:
             # Euler method
             dt = sigma_down - sigmas[i]
@@ -241,7 +284,8 @@ def sample_dpm_2_ancestral(model, x, sigmas, extra_args=None, callback=None, dis
             denoised_2 = model(x_2, sigma_mid * s_in, **extra_args)
             d_2 = to_d(x_2, sigma_mid, denoised_2)
             x = x + d_2 * dt_2
-            x = x + noise_sampler(sigmas[i], sigmas[i + 1]) * s_noise * sigma_up
+            x = alpha * x + noise_sampler(sigmas[i], sigmas[i + 1]) * s_noise * sigma_up
+
     return x
 
 
@@ -515,11 +559,23 @@ def sample_dpmpp_2s_ancestral(model, x, sigmas, extra_args=None, callback=None, 
     sigma_fn = lambda t: t.neg().exp()
     t_fn = lambda sigma: sigma.log().neg()
 
+    if isinstance(model.inner_model.predictor, PredictionFlux) or isinstance(model.inner_model.predictor, PredictionDiscreteFlow):
+        use_flow_method = True
+    else:
+        use_flow_method = False
+
     for i in trange(len(sigmas) - 1, disable=disable):
         denoised = model(x, sigmas[i] * s_in, **extra_args)
-        sigma_down, sigma_up = get_ancestral_step(sigmas[i], sigmas[i + 1], eta=eta)
+
+        if use_flow_method:
+            sigma_down, sigma_up, alpha = get_ancestral_step_flow(sigmas[i], sigmas[i + 1], eta=eta)
+        else:
+            sigma_down, sigma_up = get_ancestral_step(sigmas[i], sigmas[i + 1], eta=eta)
+            alpha = 1.0
+
         if callback is not None:
             callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
+
         if sigma_down == 0:
             # Euler method
             d = to_d(x, sigmas[i], denoised)
@@ -534,9 +590,9 @@ def sample_dpmpp_2s_ancestral(model, x, sigmas, extra_args=None, callback=None, 
             x_2 = (sigma_fn(s) / sigma_fn(t)) * x - (-h * r).expm1() * denoised
             denoised_2 = model(x_2, sigma_fn(s) * s_in, **extra_args)
             x = (sigma_fn(t_next) / sigma_fn(t)) * x - (-h).expm1() * denoised_2
-        # Noise addition
+
         if sigmas[i + 1] > 0:
-            x = x + noise_sampler(sigmas[i], sigmas[i + 1]) * s_noise * sigma_up
+            x = alpha * x + noise_sampler(sigmas[i], sigmas[i + 1]) * s_noise * sigma_up
     return x
 
 
@@ -549,6 +605,11 @@ def sample_dpmpp_sde(model, x, sigmas, extra_args=None, callback=None, disable=N
     s_in = x.new_ones([x.shape[0]])
     sigma_fn = lambda t: t.neg().exp()
     t_fn = lambda sigma: sigma.log().neg()
+
+    if isinstance(model.inner_model.predictor, PredictionFlux) or isinstance(model.inner_model.predictor, PredictionDiscreteFlow):
+        use_flow_method = True
+    else:
+        use_flow_method = False
 
     for i in trange(len(sigmas) - 1, disable=disable):
         denoised = model(x, sigmas[i] * s_in, **extra_args)
@@ -567,18 +628,29 @@ def sample_dpmpp_sde(model, x, sigmas, extra_args=None, callback=None, disable=N
             fac = 1 / (2 * r)
 
             # Step 1
-            sd, su = get_ancestral_step(sigma_fn(t), sigma_fn(s), eta)
+            if use_flow_method:
+                sd, su, alpha = get_ancestral_step_flow(sigma_fn(t), sigma_fn(s), eta=eta)
+            else:
+                sd, su = get_ancestral_step(sigma_fn(t), sigma_fn(s), eta=eta)
+                alpha = 1.0
+
             s_ = t_fn(sd)
             x_2 = (sigma_fn(s_) / sigma_fn(t)) * x - (t - s_).expm1() * denoised
-            x_2 = x_2 + noise_sampler(sigma_fn(t), sigma_fn(s)) * s_noise * su
+            x_2 = alpha * x_2 + noise_sampler(sigma_fn(t), sigma_fn(s)) * s_noise * su
             denoised_2 = model(x_2, sigma_fn(s) * s_in, **extra_args)
 
             # Step 2
-            sd, su = get_ancestral_step(sigma_fn(t), sigma_fn(t_next), eta)
+            if use_flow_method:
+                sd, su, alpha = get_ancestral_step_flow(sigma_fn(t), sigma_fn(t_next), eta=eta)
+            else:
+                sd, su = get_ancestral_step(sigma_fn(t), sigma_fn(t_next), eta=eta)
+                alpha = 1.0
+
             t_next_ = t_fn(sd)
             denoised_d = (1 - fac) * denoised + fac * denoised_2
             x = (sigma_fn(t_next_) / sigma_fn(t)) * x - (t - t_next_).expm1() * denoised_d
-            x = x + noise_sampler(sigma_fn(t), sigma_fn(t_next)) * s_noise * su
+
+            x = alpha * x + noise_sampler(sigma_fn(t), sigma_fn(t_next)) * s_noise * su
     return x
 
 
@@ -736,8 +808,6 @@ def sample_heunpp2(model, x, sigmas, extra_args=None, callback=None, disable=Non
             w1 = 1 - w2
 
             d_prime = d * w1 + d_2 * w2
-
-
             x = x + d_prime * dt
 
         else:
