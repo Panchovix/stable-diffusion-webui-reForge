@@ -511,7 +511,6 @@ class StableDiffusionProcessing:
     def save_samples(self) -> bool:
         """Returns whether generated images need to be written to disk"""
         return opts.samples_save and not self.do_not_save_samples and not state.interrupted and not state.skipped
-        # return opts.samples_save and not self.do_not_save_samples and (opts.save_incomplete_images or not state.interrupted and not state.skipped)
 
 
 class Processed:

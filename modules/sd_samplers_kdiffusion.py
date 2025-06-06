@@ -152,11 +152,12 @@ class KDiffusionSampler(sd_samplers_common.Sampler):
         xi = self.model_wrap.predictor.noise_scaling(sigma_sched[0], noise, x, max_denoise=False)
 
         if opts.img2img_extra_noise > 0:
-            p.extra_generation_params["Extra noise"] = opts.img2img_extra_noise
+            extra_noise_factor = min(opts.img2img_extra_noise, p.denoising_strength * 0.5)
+            p.extra_generation_params["Extra noise"] = extra_noise_factor
             extra_noise_params = ExtraNoiseParams(noise, x, xi)
             extra_noise_callback(extra_noise_params)
             noise = extra_noise_params.noise
-            xi += noise * opts.img2img_extra_noise
+            xi += noise * extra_noise_factor
 
         extra_params_kwargs = self.initialize(p)
         parameters = inspect.signature(self.func).parameters
