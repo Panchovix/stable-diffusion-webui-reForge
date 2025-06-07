@@ -16,7 +16,7 @@ sys.modules['modules.generation_parameters_copypaste'] = sys.modules[__name__]  
 re_param_code = r'\s*(\w[\w \-/]+):\s*("(?:\\.|[^\\"])+"|[^,]*)(?:,|$)'
 re_param = re.compile(re_param_code)
 re_imagesize = re.compile(r"^(\d+)x(\d+)$")
-re_hypernet_hash = re.compile("\(([0-9a-f]+)\)$")
+re_hypernet_hash = re.compile(r"\(([0-9a-f]+)\)$")
 type_of_gr_update = type(gr.update())
 
 
