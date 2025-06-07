@@ -217,13 +217,16 @@ class ControlNetForForgeOfficial(scripts.Script):
                 image = HWC3(np.asarray(a1111_i2i_image))
                 using_a1111_data = True
             else:
+
+                unit_image = unit.image
                 src_image = None
                 src_mask = None
-                if isinstance(unit.image, dict):
-                    src_image = unit.image.get('image')
-                    src_mask = unit.image.get('mask')
+                if isinstance(unit_image, dict):
+                    src_image = unit_image.get("image")
+                    src_mask = unit_image.get("mask")
                 else:
-                    src_image = unit.image
+                    src_image = unit_image
+
 
                 if (
                     judge_image_type(src_image)
@@ -246,20 +249,16 @@ class ControlNetForForgeOfficial(scripts.Script):
                 mask_src = None
                 mask_alt = None
                 if isinstance(unit.mask_image, dict):
-                    mask_src = unit.mask_image.get('image')
-                    mask_alt = unit.mask_image.get('mask')
-                elif isinstance(unit.image, dict):
-                    mask_alt = unit.image.get('mask')
 
-                if (
-                    judge_image_type(mask_src)
-                    and (mask_src > 5).any()
-                ):
+                    mask_src = unit.mask_image.get("image")
+                    mask_alt = unit.mask_image.get("mask")
+                elif isinstance(unit.image, dict):
+                    mask_alt = unit.image.get("mask")
+
+                if judge_image_type(mask_src) and (mask_src > 5).any():
                     mask = mask_src
-                elif (
-                    judge_image_type(mask_alt)
-                    and (mask_alt > 5).any()
-                ):
+                elif judge_image_type(mask_alt) and (mask_alt > 5).any():
+
                     mask = mask_alt
                 else:
                     mask = None
