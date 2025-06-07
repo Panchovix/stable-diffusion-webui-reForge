@@ -1,5 +1,5 @@
 import os
-from typing import Dict, Optional, Tuple, List, Union
+from typing import Optional, Tuple
 
 import cv2
 import torch
@@ -7,7 +7,6 @@ import torch
 import modules.scripts as scripts
 from modules import shared, script_callbacks, masking, images
 from modules.ui_components import InputAccordion
-from modules.api.api import decode_base64_to_image
 import gradio as gr
 import time
 
@@ -81,7 +80,7 @@ class ControlNetForForgeOfficial(scripts.Script):
         elem_id_tabname = gen_type + "_controlnet"
         default_unit = ControlNetUnit(enabled=False, module="None", model="None")
         with gr.Group(elem_id=elem_id_tabname):
-            with gr.Accordion(f"ControlNet Integrated", open=False, elem_id="controlnet",
+            with gr.Accordion("ControlNet Integrated", open=False, elem_id="controlnet",
                               elem_classes=["controlnet"]):
                 photopea = (
                     Photopea()
@@ -217,10 +216,24 @@ class ControlNetForForgeOfficial(scripts.Script):
                 resize_mode = external_code.resize_mode_from_value(p.resize_mode)
                 image = HWC3(np.asarray(a1111_i2i_image))
                 using_a1111_data = True
-            elif (unit.image['image'] < 5).all() and (unit.image['mask'] > 5).any():
-                image = unit.image['mask']
             else:
-                image = unit.image['image']
+                src_image = None
+                src_mask = None
+                if isinstance(unit.image, dict):
+                    src_image = unit.image.get('image')
+                    src_mask = unit.image.get('mask')
+                else:
+                    src_image = unit.image
+
+                if (
+                    judge_image_type(src_image)
+                    and judge_image_type(src_mask)
+                    and (src_image < 5).all()
+                    and (src_mask > 5).any()
+                ):
+                    image = src_mask
+                else:
+                    image = src_image
 
             if not isinstance(image, np.ndarray):
                 raise ValueError("controlnet is enabled but no input image is given")
@@ -229,14 +242,27 @@ class ControlNetForForgeOfficial(scripts.Script):
 
             if using_a1111_data and a1111_i2i_mask is not None:
                 mask = HWC3(np.asarray(a1111_i2i_mask)) if a1111_i2i_mask is not None else None
-            elif unit.mask_image is not None and (unit.mask_image['image'] > 5).any():
-                mask = unit.mask_image['image']
-            elif unit.mask_image is not None and (unit.mask_image['mask'] > 5).any():
-                mask = unit.mask_image['mask']
-            elif unit.image is not None and (unit.image['mask'] > 5).any():
-                mask = unit.image['mask']
             else:
-                mask = None
+                mask_src = None
+                mask_alt = None
+                if isinstance(unit.mask_image, dict):
+                    mask_src = unit.mask_image.get('image')
+                    mask_alt = unit.mask_image.get('mask')
+                elif isinstance(unit.image, dict):
+                    mask_alt = unit.image.get('mask')
+
+                if (
+                    judge_image_type(mask_src)
+                    and (mask_src > 5).any()
+                ):
+                    mask = mask_src
+                elif (
+                    judge_image_type(mask_alt)
+                    and (mask_alt > 5).any()
+                ):
+                    mask = mask_alt
+                else:
+                    mask = None
 
             image = self.try_crop_image_with_a1111_mask(p, unit, image, resize_mode, preprocessor)
 
@@ -464,11 +490,11 @@ class ControlNetForForgeOfficial(scripts.Script):
             hr_option = HiResFixOption.BOTH
 
         if has_high_res_fix and is_hr_pass and (not hr_option.high_res_enabled):
-            logger.info(f"ControlNet Skipped High-res pass.")
+            logger.info("ControlNet Skipped High-res pass.")
             return
 
         if has_high_res_fix and (not is_hr_pass) and (not hr_option.low_res_enabled):
-            logger.info(f"ControlNet Skipped Low-res pass.")
+            logger.info("ControlNet Skipped Low-res pass.")
             return
 
         if is_hr_pass:
@@ -622,8 +648,16 @@ def on_ui_settings():
         {"minimum": 1, "maximum": 10, "step": 1}, section=section))
     shared.opts.add_option("control_net_model_cache_size", shared.OptionInfo(
         5, "Model cache size (requires restart)", gr.Slider, {"minimum": 1, "maximum": 10, "step": 1}, section=section))
-    shared.opts.add_option("control_net_ipadapter_cache_size", shared.OptionInfo(
-        5, "IPAdapter cache size (requires restart)", gr.Slider, {"minimum": 1, "maximum": 10, "step": 1}, section=section))    
+    shared.opts.add_option(
+        "control_net_ipadapter_cache_size",
+        shared.OptionInfo(
+            5,
+            "IPAdapter cache size (requires restart)",
+            gr.Slider,
+            {"minimum": 1, "maximum": 10, "step": 1},
+            section=section,
+        ),
+    )
     shared.opts.add_option("control_net_no_detectmap", shared.OptionInfo(
         False, "Do not append detectmap to output", gr.Checkbox, {"interactive": True}, section=section))
     shared.opts.add_option("control_net_detectmap_autosaving", shared.OptionInfo(
