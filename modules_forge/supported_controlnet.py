@@ -131,7 +131,11 @@ class ControlNetPatcher(ControlModelPatcher):
             missing, unexpected = w.load_state_dict(controlnet_data, strict=False)
         else:
             missing, unexpected = control_model.load_state_dict(controlnet_data, strict=False)
-        print(missing, unexpected)
+
+        if len(missing) > 0:
+            print("ControlNet missing keys:", missing)
+        if len(unexpected) > 0:
+            print("ControlNet unexpected keys:", unexpected)
 
         global_average_pooling = False
         filename = os.path.splitext(ckpt_path)[0]
