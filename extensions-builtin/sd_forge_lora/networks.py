@@ -4,7 +4,7 @@ import os
 import re
 import torch
 import network
-import functools
+# import functools
 
 from backend.args import dynamic_args
 from modules import shared, sd_models, errors, scripts
@@ -22,9 +22,9 @@ def load_lora_for_models(model, clip, lora, strength_model, strength_clip, filen
     lora_unet, lora_unmatch = load_lora(lora_unmatch, unet_keys)
     lora_clip, lora_unmatch = load_lora(lora_unmatch, clip_keys)
 
-    if len(lora_unmatch) > 12:
-        print(f'[LORA] LoRA version mismatch for {model_flag}: {filename}')
-        return model, clip
+    # if len(lora_unmatch) > 12:
+        # print(f'[LORA] LoRA version mismatch for {model_flag}: {filename}')
+        # return model, clip
 
     if len(lora_unmatch) > 0:
         print(f'[LORA] Loading {filename} for {model_flag} with unmatched keys {list(lora_unmatch.keys())}')
@@ -53,7 +53,7 @@ def load_lora_for_models(model, clip, lora, strength_model, strength_clip, filen
     return model, clip
 
 
-@functools.lru_cache(maxsize=5)
+# @functools.lru_cache(maxsize=5)
 def load_lora_state_dict(filename):
     return load_torch_file(filename, safe_load=True)
 
@@ -128,7 +128,7 @@ def load_networks(names, te_multipliers=None, unet_multipliers=None, dyn_dims=No
 
 
 def process_network_files(names: list[str] | None = None):
-    candidates = list(shared.walk_files(shared.cmd_opts.lora_dir, allowed_extensions=[".pt", ".ckpt", ".safetensors"]))
+    candidates = list(shared.walk_files(shared.cmd_opts.lora_dir, allowed_extensions=[".pt", ".ckpt", ".safetensors", ".sft"]))
     for filename in candidates:
         if os.path.isdir(filename):
             continue

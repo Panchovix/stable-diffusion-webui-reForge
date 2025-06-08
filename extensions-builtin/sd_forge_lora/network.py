@@ -19,7 +19,10 @@ class NetworkOnDisk:
         self.name = name
         self.filename = filename
         self.metadata = {}
-        self.is_safetensors = os.path.splitext(filename)[1].lower() == ".safetensors"
+
+        extension = os.path.splitext(filename)[1].lower()
+        self.is_safetensors = (extension == ".safetensors" or extension == ".sft")
+
 
         def read_metadata():
             metadata = sd_models.read_metadata_from_safetensors(filename)
