@@ -170,10 +170,10 @@ def configure_sigint_handler():
 
 
 def configure_opts_onchange():
-    from modules import shared, ui_tempdir
+    from modules import shared, shared_gradio_themes, ui_tempdir
 
     shared.opts.onchange("temp_dir", ui_tempdir.on_tmpdir_changed)
-    shared.opts.onchange("gradio_theme", shared.reload_gradio_theme)
+    shared.opts.onchange("gradio_theme", shared_gradio_themes.reload_gradio_theme)
     startup_timer.record("opts onchange")
 
 

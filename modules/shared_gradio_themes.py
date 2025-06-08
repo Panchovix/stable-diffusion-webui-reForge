@@ -33,7 +33,6 @@ gradio_hf_hub_themes = [
     "reilnuud/polite",
     "remilia/Ghostly",
     "rottenlittlecreature/Moon_Goblin",
-    "step-3-profit/Midnight-Deep",
     "Taithrah/Minimal",
     "ysharma/huggingface",
     "ysharma/steampunk",

@@ -4,7 +4,7 @@ import sys
 import torch
 import gradio as gr
 
-from modules import shared_cmd_options, shared_gradio_themes, options, shared_items
+from modules import shared_cmd_options, options, shared_items
 from modules.paths_internal import models_path, script_path, data_path, extensions_dir, extensions_builtin_dir  # noqa: F401
 from modules import devices, util, modelloader
 from modules_forge.utils import torch_bgr_to_pil_image, pil_image_to_torch_bgr
@@ -29,7 +29,8 @@ device: str = None
 
 weight_load_location: str = None
 
-xformers_available = memory_management.xformers_enabled()
+xformers_available = (memory_management.xformers_enabled(), memory_management.XFORMERS_VERSION)
+torch_version = getattr(torch, '__long_version__',torch.__version__)
 
 hypernetworks = {}
 
@@ -149,8 +150,6 @@ listfiles = util.listfiles
 html_path = util.html_path
 html = util.html
 walk_files = util.walk_files
-
-reload_gradio_theme = shared_gradio_themes.reload_gradio_theme
 
 list_checkpoint_tiles = shared_items.list_checkpoint_tiles
 refresh_checkpoints = shared_items.refresh_checkpoints

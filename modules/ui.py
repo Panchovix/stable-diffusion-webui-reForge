@@ -812,7 +812,7 @@ def create_ui():
     for _interface, label, _ifid in interfaces:
         shared.tab_names.append(label)
 
-    with gr.Blocks(theme=shared.gradio_theme, analytics_enabled=False, title="Stable Diffusion Forge", head=canvas_head) as demo:
+    with gr.Blocks(theme=shared.gradio_theme, analytics_enabled=False, title="ersatzForge", head=canvas_head) as demo:
         quicksettings_row = settings.add_quicksettings()
 
         parameters_copypaste.connect_paste_params_buttons()
@@ -867,25 +867,19 @@ def create_ui():
 
 
 def versions_html():
-    import torch
-    import launch
-
     python_version = ".".join([str(x) for x in sys.version_info[0:3]])
-    commit = launch.commit_hash()
-    tag = launch.git_tag()
 
-    if shared.xformers_available:
-        import xformers
-        xformers_version = xformers.__version__
+    if shared.xformers_available[0] == True:
+        xformers_version = shared.xformers_available[1]
     else:
         xformers_version = "N/A"
 
     return f"""
-version: <a href="https://github.com/lllyasviel/stable-diffusion-webui-forge/commit/{commit}">{tag}</a>
+version: <a href="https://github.com/DenOfEquity/ersatzForge">ersatzForge</a>
 &#x2000;•&#x2000;
 python: <span title="{sys.version}">{python_version}</span>
 &#x2000;•&#x2000;
-torch: {getattr(torch, '__long_version__',torch.__version__)}
+torch: {shared.torch_version}
 &#x2000;•&#x2000;
 xformers: {xformers_version}
 &#x2000;•&#x2000;
