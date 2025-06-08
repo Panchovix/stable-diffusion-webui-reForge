@@ -1,7 +1,7 @@
 from modules import modelloader
 from modules.shared import opts
 from modules.upscaler import Upscaler, UpscalerData
-from modules.upscaler_utils import upscale_with_model
+from modules.upscaler_utils import upscale_2
 from modules_forge.utils import prepare_free_memory
 
 # this module for various Spandrel supported upscalers, that don't need their own special loader
@@ -27,11 +27,13 @@ class UpscalerGeneric(Upscaler):
             print(f"Unable to load upscaler model {selected_model}: {e}")
             return img
         model.to(self.device)
-        return upscale_with_model(
-            model,
+        return upscale_2(
             img,
+            model,
             tile_size=opts.ESRGAN_tile,
             tile_overlap=opts.ESRGAN_tile_overlap,
+            scale=model.scale,
+            desc="Tiled upscale",
         )
 
     def load_model(self, path: str):

@@ -3,7 +3,7 @@ import os
 from modules import modelloader, errors
 from modules.shared import opts
 from modules.upscaler import Upscaler, UpscalerData
-from modules.upscaler_utils import upscale_with_model
+from modules.upscaler_utils import upscale_2
 from modules_forge.utils import prepare_free_memory
 
 
@@ -67,11 +67,13 @@ class UpscalerDAT(Upscaler):
             info.local_data_path,
             device=self.device,
         )
-        return upscale_with_model(
-            model_descriptor,
+        return upscale_2(
             img,
+            model_descriptor,
             tile_size=opts.DAT_tile,
             tile_overlap=opts.DAT_tile_overlap,
+            scale=model_descriptor.scale,
+            desc="Tiled upscale",
         )
 
     def load_model(self, path):

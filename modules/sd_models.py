@@ -60,7 +60,8 @@ class CheckpointInfo:
         abspath = os.path.abspath(filename)
         abs_ckpt_dir = os.path.abspath(shared.cmd_opts.ckpt_dir) if shared.cmd_opts.ckpt_dir is not None else None
 
-        self.is_safetensors = os.path.splitext(filename)[1].lower() == ".safetensors"
+        extension = os.path.splitext(filename)[1].lower()
+        self.is_safetensors = (extension == ".safetensors" or extension == ".sft")
 
         if abs_ckpt_dir and abspath.startswith(abs_ckpt_dir):
             name = abspath.replace(abs_ckpt_dir, '')
@@ -158,7 +159,7 @@ def list_models():
     checkpoints_list.clear()
     checkpoint_aliases.clear()
 
-    model_list = modelloader.load_models(model_path=model_path, model_url=None, command_path=shared.cmd_opts.ckpt_dir, ext_filter=[".ckpt", ".safetensors", ".gguf"], download_name=None, ext_blacklist=[".vae.ckpt", ".vae.safetensors"])
+    model_list = modelloader.load_models(model_path=model_path, model_url=None, command_path=shared.cmd_opts.ckpt_dir, ext_filter=[".ckpt", ".safetensors", ".sft", ".gguf"], download_name=None, ext_blacklist=[".vae.ckpt", ".vae.safetensors", ".vae.sft", ".vae.gguf"])
 
     for filename in model_list:
         checkpoint_info = CheckpointInfo(filename)

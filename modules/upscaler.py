@@ -40,36 +40,22 @@ class Upscaler:
         if self.model_path and create_dirs:
             os.makedirs(self.model_path, exist_ok=True)
 
-        try:
-            import cv2  # noqa: F401
-            self.can_tile = True
-        except Exception:
-            pass
-
     def do_upscale(self, img: Image, selected_model: str):
         return img
 
     def upscale(self, img: Image, scale, selected_model: str = None):
+        if shared.state.interrupted:
+            return img
+
         self.scale = scale
         dest_w = int((img.width * scale) // 8 * 8)
         dest_h = int((img.height * scale) // 8 * 8)
 
-        for i in range(3):
-            if img.width >= dest_w and img.height >= dest_h and (i > 0 or scale != 1):
-                break
-
-            if shared.state.interrupted:
-                break
-
-            shape = (img.width, img.height)
-
+        if img.width < dest_w or img.height < dest_h:
             img = self.do_upscale(img, selected_model)
 
-            if shape == (img.width, img.height):
-                break
-
-        if img.width != dest_w or img.height != dest_h:
-            img = img.resize((int(dest_w), int(dest_h)), resample=LANCZOS)
+            if img.width != dest_w or img.height != dest_h:
+                img = img.resize((dest_w, dest_h), resample=LANCZOS)
 
         return img
 
@@ -77,7 +63,7 @@ class Upscaler:
         pass
 
     def find_models(self) -> list:
-        return modelloader.load_models(model_path=self.model_path, model_url=self.model_url, ext_filter=[".pt", ".pth", ".safetensors"])
+        return modelloader.load_models(model_path=self.model_path, model_url=self.model_url, ext_filter=[".pt", ".pth", ".safetensors", ".sft"])
 
 
 class UpscalerData:
