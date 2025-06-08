@@ -74,7 +74,7 @@ def refresh_ckpt():
 def refresh_vaete():
     global module_list, module_vae_list, module_te_list
     
-    file_extensions = ['ckpt', 'pt', 'bin', 'safetensors', 'gguf']
+    file_extensions = ['ckpt', 'pt', 'bin', 'safetensors', 'sft', 'gguf']
 
     module_list.clear()
     module_vae_list.clear()
