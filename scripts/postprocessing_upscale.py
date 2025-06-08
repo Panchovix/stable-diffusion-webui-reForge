@@ -94,9 +94,10 @@ class ScriptPostprocessingUpscale(scripts_postprocessing.ScriptPostprocessing):
         else:
             image = upscaler.scaler.upscale(image, upscale_by, upscaler.data_path)
 
-        upscale_cache[cache_key] = image
-        if len(upscale_cache) > shared.opts.upscaling_max_images_in_cache:
-            upscale_cache.pop(next(iter(upscale_cache), None), None)
+        if not (shared.state.interrupted or shared.state.skipped):
+            upscale_cache[cache_key] = image
+            if len(upscale_cache) > shared.opts.upscaling_max_images_in_cache:
+                upscale_cache.pop(next(iter(upscale_cache), None), None)
 
         if upscale_mode == 1 and upscale_crop:
             cropped = Image.new("RGB", (upscale_to_width, upscale_to_height))
