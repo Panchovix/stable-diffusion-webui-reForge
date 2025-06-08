@@ -22,7 +22,7 @@ def read_arbitrary_config(directory):
 def load_torch_file(ckpt, safe_load=False, device=None):
     if device is None:
         device = torch.device("cpu")
-    if ckpt.lower().endswith(".safetensors"):
+    if ckpt.lower().endswith(".safetensors") or ckpt.lower().endswith(".sft"):
         sd = safetensors.torch.load_file(ckpt, device=device.type)
     elif ckpt.lower().endswith(".gguf"):
         reader = gguf.GGUFReader(ckpt)
@@ -30,10 +30,10 @@ def load_torch_file(ckpt, safe_load=False, device=None):
         for tensor in reader.tensors:
             sd[str(tensor.name)] = ParameterGGUF(tensor)
     else:
-        if safe_load:
-            if not 'weights_only' in torch.load.__code__.co_varnames:
-                print("Warning torch.load doesn't support weights_only on this pytorch version, loading unsafely.")
-                safe_load = False
+        # if safe_load:
+            # if 'weights_only' not in torch.load.__code__.co_varnames:
+                # print("Warning torch.load doesn't support weights_only on this pytorch version, loading unsafely.")
+                # safe_load = False
         if safe_load:
             pl_sd = torch.load(ckpt, map_location=device, weights_only=True)
         else:
@@ -161,9 +161,8 @@ def get_state_dict_after_quant(model, prefix=''):
 
 
 def beautiful_print_gguf_state_dict_statics(state_dict):
-    from gguf.constants import GGMLQuantizationType
     type_counts = {}
-    for k, v in state_dict.items():
+    for _k, v in state_dict.items():
         gguf_cls = getattr(v, 'gguf_cls', None)
         if gguf_cls is not None:
             type_name = gguf_cls.__name__
