@@ -4,7 +4,7 @@ from typing import Optional
 
 import torch
 import ldm_patched.modules.model_management
-from .base import WeightAdapterBase
+from .base import WeightAdapterBase, weight_decompose
 
 class AbbaAdapter(WeightAdapterBase):
     """
@@ -47,8 +47,8 @@ class AbbaAdapter(WeightAdapterBase):
             up2 = lora[up2_name]
 
             # Store the weights and the alpha value
-            # The structure is (up1, down1, up2, down2, alpha)
-            packaged_weights = (up1, down1, up2, down2, alpha)
+            # The structure is (up1, down1, up2, down2, alpha, dora_scale)
+            packaged_weights = (up1, down1, up2, down2, alpha, dora_scale)
 
             # Mark all associated keys as loaded
             current_loaded_keys = {down1_name, up1_name, down2_name, up2_name}
@@ -76,7 +76,7 @@ class AbbaAdapter(WeightAdapterBase):
             return weight
 
         # Unpack the stored weights and alpha
-        up1_w, down1_w, up2_w, down2_w, alpha = self.weights
+        up1_w, down1_w, up2_w, down2_w, alpha, dora_scale = self.weights
 
         # Cast tensors to the appropriate device and dtype for calculation
         device = weight.device
@@ -112,11 +112,21 @@ class AbbaAdapter(WeightAdapterBase):
             # Reshape the final difference to match the original weight's shape
             lora_diff = lora_diff.reshape(weight.shape)
 
-            # Apply strength and scale, then add to the original weight
-            final_diff = function((strength * scale) * lora_diff).to(weight.dtype)
-            weight += final_diff
-
+            if dora_scale is not None:
+                weight = weight_decompose(
+                    dora_scale,
+                    weight,
+                    lora_diff,
+                    scale,
+                    strength,
+                    intermediate_dtype,
+                    function,
+                )
+            else:
+                # Apply strength and scale, then add to the original weight
+                final_diff = function((strength * scale) * lora_diff).to(weight.dtype)
+                weight += final_diff
         except Exception as e:
-            logging.error(f"ERROR applying ABBA weights for key '{key}': {e}")
+            logging.error("ERROR {} {} {}".format(self.name, key, e))
             
         return weight
