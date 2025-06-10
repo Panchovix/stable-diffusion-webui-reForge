@@ -1,8 +1,7 @@
 import torch
 import gradio as gr
 
-from modules import scripts
-from modules.script_callbacks import on_cfg_denoiser, remove_current_script_callbacks
+from modules import scripts, shared
 from modules.ui_components import InputAccordion
 
 
@@ -32,9 +31,8 @@ def patch_freeu_v2(unet_patcher, b1, b2, s1, s2):
     on_cpu_devices = {}
 
     def output_block_patch(h, hsp, transformer_options):
-        process = FreeUForForge.doFreeU
-
-        if process:
+        thisStep = shared.state.sampling_step / (shared.state.sampling_steps - 1)
+        if thisStep >= FreeUForForge.freeu_start and thisStep <= FreeUForForge.freeu_end:
             scale = scale_dict.get(h.shape[1], None)
             if scale is not None:
                 hidden_mean = h.mean(1).unsqueeze(1)
@@ -63,10 +61,8 @@ def patch_freeu_v2(unet_patcher, b1, b2, s1, s2):
 
 
 class FreeUForForge(scripts.Script):
-    sorting_priority = 12  # It will be the 12th item on UI.
-    
-    doFreeU = True
-    
+    sorting_priority = 12
+
     presets_builtin = [
         #   name, b1, b2, s1, s2, start step, end step
         ('Forge default', 1.01, 1.02, 0.99, 0.95, 0.0, 1.0),
@@ -128,17 +124,7 @@ class FreeUForForge(scripts.Script):
 
         return freeu_enabled, freeu_b1, freeu_b2, freeu_s1, freeu_s2, freeu_start, freeu_end
 
-    def denoiser_callback(self, params):
-        thisStep = params.sampling_step / (params.total_sampling_steps - 1)
-        
-        if thisStep >= FreeUForForge.freeu_start and thisStep <= FreeUForForge.freeu_end:
-            FreeUForForge.doFreeU = True
-        else:
-            FreeUForForge.doFreeU = False
-
     def process_before_every_sampling(self, p, *script_args, **kwargs):
-        # If you use highres fix, this will be called twice.
-
         freeu_enabled, freeu_b1, freeu_b2, freeu_s1, freeu_s2, freeu_start, freeu_end = script_args
 
         if freeu_enabled:
@@ -163,8 +149,6 @@ class FreeUForForge(scripts.Script):
         freeu_enabled, freeu_b1, freeu_b2, freeu_s1, freeu_s2, freeu_start, freeu_end = script_args
 
         if freeu_enabled:
-            on_cfg_denoiser(self.denoiser_callback)
-
             p.extra_generation_params.update(dict(
                 freeu_enabled   = freeu_enabled,
                 freeu_b1        = freeu_b1,
@@ -175,8 +159,4 @@ class FreeUForForge(scripts.Script):
                 freeu_end       = freeu_end,
             ))
 
-        return
-
-    def postprocess(self, params, processed, *args):
-        remove_current_script_callbacks()
         return
