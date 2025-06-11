@@ -69,6 +69,10 @@ function randomId() {
     return "task(" + Math.random().toString(36).slice(2, 7) + Math.random().toString(36).slice(2, 7) + Math.random().toString(36).slice(2, 7) + ")";
 }
 
+var livePreview = document.createElement('div');
+livePreview.className = 'livePreview';
+livePreview.appendChild(document.createElement('p'));	// dummy element, will be replaced by img
+
 // starts sending progress requests to "/internal/progress" uri, creating progressbar above progressbarContainer element and
 // preview inside gallery element. Cleans up all created stuff when the task is over and calls atEnd.
 // calls onProgress every time there is a progress update
@@ -84,7 +88,7 @@ function requestProgress(id_task, progressbarContainer, gallery, atEnd, onProgre
             wakeLock = await navigator.wakeLock.request('screen');
         } catch (err) {
             console.error('Wake Lock is not supported.');
-			wakeLock = false;
+            wakeLock = false;
         }
     };
 
@@ -106,8 +110,6 @@ function requestProgress(id_task, progressbarContainer, gallery, atEnd, onProgre
 
     divProgress.appendChild(divInner);
     parentProgressbar.insertBefore(divProgress, progressbarContainer);
-
-    var livePreview = null;
 
     var removeProgressBar = function() {
         releaseWakeLock();
@@ -185,16 +187,8 @@ function requestProgress(id_task, progressbarContainer, gallery, atEnd, onProgre
             if (res.live_preview && gallery) {
                 var img = new Image();
                 img.onload = function() {
-                    if (!livePreview) {
-                        livePreview = document.createElement('div');
-                        livePreview.className = 'livePreview';
-                        gallery.insertBefore(livePreview, gallery.firstElementChild);
-                    }
-
-                    livePreview.appendChild(img);
-                    if (livePreview.childElementCount > 2) {
-                        livePreview.removeChild(livePreview.firstElementChild);
-                    }
+                    livePreview.replaceChild(img, livePreview.lastElementChild)
+                    gallery.insertBefore(livePreview, gallery.firstElementChild);
                 };
                 img.src = res.live_preview;
             }

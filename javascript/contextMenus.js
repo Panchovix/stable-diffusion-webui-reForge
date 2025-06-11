@@ -180,4 +180,4 @@ var regen_img2img = null;
 })();
 
 
-onAfterUiUpdate(addContextMenuEventListener);
+onUiLoaded(addContextMenuEventListener);

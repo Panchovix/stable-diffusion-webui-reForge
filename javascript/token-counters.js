@@ -15,19 +15,10 @@ function setupTokenCounting(id, id_counter, id_button) {
     prompt.parentElement.style.position = "relative";
 
     var func = onEdit(id, textarea, 800, function() {
-        if (counter.classList.contains("token-counter-visible")) {
-            button?.click();
-        }
+        button?.click();
     });
     promptTokenCountUpdateFunctions[id] = func;
     promptTokenCountUpdateFunctions[id_button] = func;
-}
-
-function toggleTokenCountingVisibility(id, id_counter, id_button) {
-    var counter = gradioApp().getElementById(id_counter);
-
-    counter.style.display = opts.disable_token_counters ? "none" : "block";
-    counter.classList.toggle("token-counter-visible", !opts.disable_token_counters);
 }
 
 function runCodeForTokenCounters(fun) {
@@ -40,11 +31,5 @@ function runCodeForTokenCounters(fun) {
 onUiLoaded(function() {
     if (!opts.disable_token_counters) {
 		runCodeForTokenCounters(setupTokenCounting);
-	}
-});
-
-onOptionsChanged(function() {
-    if (!opts.disable_token_counters) {
-		runCodeForTokenCounters(toggleTokenCountingVisibility);
 	}
 });

@@ -1,23 +1,18 @@
 // A full size 'lightbox' preview modal shown when left clicking on gallery previews
 function closeModal() {
-    gradioApp().getElementById("lightboxModal").style.display = "none";
+    lightBoxModal.style.display = "none";
 }
 
 function showModal(event) {
     const source = event.target || event.srcElement;
-    const modalImage = gradioApp().getElementById("modalImage");
-    const modalToggleLivePreviewBtn = gradioApp().getElementById("modal_toggle_live_preview");
-    modalToggleLivePreviewBtn.innerHTML = opts.js_live_preview_in_modal_lightbox ? "&#x1F5C7;" : "&#x1F5C6;";
-    const lb = gradioApp().getElementById("lightboxModal");
-    modalImage.src = source.src;
-    if (modalImage.style.display === 'none') {
-        lb.style.setProperty('background-image', 'url(' + source.src + ')');
-    }
-    lb.style.display = "flex";
-    lb.focus();
+    lightBoxToggle.innerHTML = opts.js_live_preview_in_modal_lightbox ? "&#x1F5C7;" : "&#x1F5C6;";
 
-    const tabTxt2Img = gradioApp().getElementById("tab_txt2img");
-    const tabImg2Img = gradioApp().getElementById("tab_img2img");
+    lightBoxImage.src = source.src;
+    if (lightBoxImage.style.display === 'none') {
+        lightBoxModal.style.setProperty('background-image', 'url(' + source.src + ')');
+    }
+    lightBoxModal.style.display = "flex";
+    lightBoxModal.focus();
 
     event.stopPropagation();
 }
@@ -27,18 +22,16 @@ function negmod(n, m) {
 }
 
 function updateOnBackgroundChange() {
-    const modalImage = gradioApp().getElementById("modalImage");
-    if (modalImage && modalImage.offsetParent) {
+    if (lightBoxImage && lightBoxImage.offsetParent) {
         let currentButton = selected_gallery_button();
         let preview = gradioApp().querySelectorAll('.livePreview > img');
         if (opts.js_live_preview_in_modal_lightbox && preview.length > 0) {
             // show preview image if available
-            modalImage.src = preview[preview.length - 1].src;
-        } else if (currentButton?.children?.length > 0 && modalImage.src != currentButton.children[0].src) {
-            modalImage.src = currentButton.children[0].src;
-            if (modalImage.style.display === 'none') {
-                const modal = gradioApp().getElementById("lightboxModal");
-                modal.style.setProperty('background-image', `url(${modalImage.src})`);
+            lightBoxImage.src = preview[preview.length - 1].src;
+        } else if (currentButton?.children?.length > 0 && lightBoxImage.src != currentButton.children[0].src) {
+            lightBoxImage.src = currentButton.children[0].src;
+            if (lightBoxImage.style.display === 'none') {
+                lightBoxModal.style.setProperty('background-image', `url(${lightBoxImage.src})`);
             }
         }
     }
@@ -53,14 +46,12 @@ function modalImageSwitch(offset) {
         if (result != -1) {
             var nextButton = galleryButtons[negmod((result + offset), galleryButtons.length)];
             nextButton.click();
-            const modalImage = gradioApp().getElementById("modalImage");
-            const modal = gradioApp().getElementById("lightboxModal");
-            modalImage.src = nextButton.children[0].src;
-            if (modalImage.style.display === 'none') {
-                modal.style.setProperty('background-image', `url(${modalImage.src})`);
+            lightBoxImage.src = nextButton.children[0].src;
+            if (lightBoxImage.style.display === 'none') {
+                lightBoxModal.style.setProperty('background-image', `url(${lightBoxImage.src})`);
             }
             setTimeout(function() {
-                modal.focus();
+                lightBoxModal.focus();
             }, 10);
         }
     }
@@ -87,6 +78,17 @@ function modalKeyHandler(event) {
     case "Escape":
         closeModal();
         break;
+    case "u":
+	    if (get_uiCurrentTab().innerText == 'Txt2img') {
+            gradioApp().getElementById('txt2img_upscale').click();
+        }
+        break;
+    case "z":
+        modalZoomToggle();
+        break;
+    case "t":
+        modalTileImageToggle();
+        break;
     }
 }
 
@@ -110,46 +112,58 @@ function setupImageForLightbox(e) {
     e.addEventListener('click', function(evt) {
         if (!opts.js_modal_lightbox || evt.button != 0) return;
 
-        modalZoomSet(gradioApp().getElementById('modalImage'), opts.js_modal_lightbox_initially_zoomed);
+        modalZoomSet(opts.js_modal_lightbox_initially_zoomed);
         evt.preventDefault();
         showModal(evt);
     }, true);
 
 }
 
-function modalZoomSet(modalImage, enable) {
-    if (modalImage) modalImage.classList.toggle('modalImageFullscreen', !!enable);
+function modalZoomSet(enable) {
+    lightBoxImage.classList.toggle('modalImageFullscreen', !!enable);
 }
 
 function modalZoomToggle(event) {
-    var modalImage = gradioApp().getElementById("modalImage");
-    modalZoomSet(modalImage, !modalImage.classList.contains('modalImageFullscreen'));
+    modalZoomSet(!lightBoxImage.classList.contains('modalImageFullscreen'));
     event.stopPropagation();
 }
 
 function modalLivePreviewToggle(event) {
-    const modalToggleLivePreview = gradioApp().getElementById("modal_toggle_live_preview");
     opts.js_live_preview_in_modal_lightbox = !opts.js_live_preview_in_modal_lightbox;
-    modalToggleLivePreview.innerHTML = opts.js_live_preview_in_modal_lightbox ? "&#x1F5C7;" : "&#x1F5C6;";
+    lightBoxToggle.innerHTML = opts.js_live_preview_in_modal_lightbox ? "&#x1F5C7;" : "&#x1F5C6;";
     event.stopPropagation();
 }
 
 function modalTileImageToggle(event) {
-    const modalImage = gradioApp().getElementById("modalImage");
-    const modal = gradioApp().getElementById("lightboxModal");
-    const isTiling = modalImage.style.display === 'none';
+    const isTiling = lightBoxImage.style.display === 'none';
     if (isTiling) {
-        modalImage.style.display = 'block';
-        modal.style.setProperty('background-image', 'none');
+        lightBoxImage.style.display = 'block';
+        lightBoxModal.style.setProperty('background-image', 'none');
     } else {
-        modalImage.style.display = 'none';
-        modal.style.setProperty('background-image', `url(${modalImage.src})`);
+        lightBoxImage.style.display = 'none';
+        lightBoxModal.style.setProperty('background-image', `url(${lightBoxImage.src})`);
     }
 
     event.stopPropagation();
 }
 
-onAfterUiUpdate(function() {
+// how to get this out of onUiUpdate into something sensible?
+// run after generation returns?
+// limit to currently active tab?
+
+/*
+function setupgallery() {
+	alert("sg");
+    var fullImg_preview = gradioApp().querySelectorAll('.gradio-gallery > button > button > img, .gradio-gallery > .livePreview');
+    if (fullImg_preview != null) {
+        fullImg_preview.forEach(setupImageForLightbox);
+    }
+    updateOnBackgroundChange();
+	
+}
+*/
+
+onUiUpdate(function() {
     var fullImg_preview = gradioApp().querySelectorAll('.gradio-gallery > button > button > img, .gradio-gallery > .livePreview');
     if (fullImg_preview != null) {
         fullImg_preview.forEach(setupImageForLightbox);
@@ -157,18 +171,20 @@ onAfterUiUpdate(function() {
     updateOnBackgroundChange();
 });
 
+let lightBoxModal = undefined;
+let lightBoxImage = undefined;
+let lightBoxToggle = undefined;
+
 document.addEventListener("DOMContentLoaded", function() {
-    //const modalFragment = document.createDocumentFragment();
-    const modal = document.createElement('div');
-    modal.onclick = closeModal;
-    modal.id = "lightboxModal";
-    modal.tabIndex = 0;
-    modal.addEventListener('keydown', modalKeyHandler, true);
+    lightBoxModal = document.createElement('div');
+    lightBoxModal.onclick = closeModal;
+    lightBoxModal.id = "lightboxModal";
+    lightBoxModal.tabIndex = 0;
+    lightBoxModal.addEventListener('keydown', modalKeyHandler, true);
 
     const modalControls = document.createElement('div');
     modalControls.className = 'modalControls gradio-container';
-    modal.append(modalControls);
-
+    lightBoxModal.append(modalControls);
 
     const modalZoom = document.createElement('span');
     modalZoom.className = 'modalZoom cursor';
@@ -177,7 +193,6 @@ document.addEventListener("DOMContentLoaded", function() {
     modalZoom.title = "Toggle zoomed view";
     modalControls.appendChild(modalZoom);
 
-
     const modalTileImage = document.createElement('span');
     modalTileImage.className = 'modalTileImage cursor';
     modalTileImage.innerHTML = '&#8862;';
@@ -185,13 +200,13 @@ document.addEventListener("DOMContentLoaded", function() {
     modalTileImage.title = "Preview tiling";
     modalControls.appendChild(modalTileImage);
 
-    const modalToggleLivePreview = document.createElement('span');
-    modalToggleLivePreview.className = 'modalToggleLivePreview cursor';
-    modalToggleLivePreview.id = "modal_toggle_live_preview";
-    modalToggleLivePreview.innerHTML = "&#x1F5C6;";
-    modalToggleLivePreview.onclick = modalLivePreviewToggle;
-    modalToggleLivePreview.title = "Toggle live preview";
-    modalControls.appendChild(modalToggleLivePreview);
+    lightBoxToggle = document.createElement('span');
+    lightBoxToggle.className = 'modalToggleLivePreview cursor';
+    lightBoxToggle.id = "modal_toggle_live_preview";
+    lightBoxToggle.innerHTML = "&#x1F5C6;";
+    lightBoxToggle.onclick = modalLivePreviewToggle;
+    lightBoxToggle.title = "Toggle live preview";
+    modalControls.appendChild(lightBoxToggle);
 
     const modalClose = document.createElement('span');
     modalClose.className = 'modalClose cursor';
@@ -200,27 +215,27 @@ document.addEventListener("DOMContentLoaded", function() {
     modalClose.title = "Close image viewer";
     modalControls.appendChild(modalClose);
 
-    const modalImage = document.createElement('img');
-    modalImage.id = 'modalImage';
-    modalImage.onclick = closeModal;
-    modalImage.tabIndex = 0;
-    modal.appendChild(modalImage);
+    lightBoxImage = document.createElement('img');
+    lightBoxImage.id = 'modalImage';
+    lightBoxImage.onclick = closeModal;
+    lightBoxImage.tabIndex = 0;
+    lightBoxModal.appendChild(lightBoxImage);
 
     const modalPrev = document.createElement('a');
     modalPrev.className = 'modalPrev';
     modalPrev.innerHTML = '&#10094;';
     modalPrev.tabIndex = 0;
     modalPrev.addEventListener('click', modalPrevImage, true);
-    modal.appendChild(modalPrev);
+    lightBoxModal.appendChild(modalPrev);
 
     const modalNext = document.createElement('a');
     modalNext.className = 'modalNext';
     modalNext.innerHTML = '&#10095;';
     modalNext.tabIndex = 0;
     modalNext.addEventListener('click', modalNextImage, true);
+    lightBoxModal.appendChild(modalNext);
 
-    modal.appendChild(modalNext);
-
-    gradioApp().appendChild(modal);
+    // document.body.appendChild(modal);
+    gradioApp().appendChild(lightBoxModal);
 
 });

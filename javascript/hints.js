@@ -1,13 +1,10 @@
 // mouseover tooltips for various UI elements
+// mostly useless
 
 var titles = {
     "Sampling steps": "How many times to improve the generated image iteratively; higher values take longer; very low values can produce bad results",
     "Sampling method": "Which algorithm to use to produce the image",
     "GFPGAN": "Restore low quality faces using GFPGAN neural network",
-    "Euler a": "Euler Ancestral - very creative, each can get a completely different picture depending on step count, setting steps higher than 30-40 does not help",
-    "DDIM": "Denoising Diffusion Implicit Models - best at inpainting",
-    "UniPC": "Unified Predictor-Corrector Framework for Fast Sampling of Diffusion Models",
-    "DPM adaptive": "Ignores step count - uses a number of steps determined by the CFG and resolution",
 
     "\u{1F4D0}": "Auto detect size from img2img",
     "Batch count": "How many batches of images to create (has no impact on generation performance or VRAM usage)",
@@ -28,18 +25,6 @@ var titles = {
     "Inpaint a part of image": "Draw a mask over an image, and the script will regenerate the masked area with content according to prompt",
     "SD upscale": "Upscale image normally, split result into tiles, improve each tile using img2img, merge whole image back",
 
-    "Just resize": "Resize image to target resolution. Unless height and width match, you will get incorrect aspect ratio.",
-    "Crop and resize": "Resize the image so that entirety of target resolution is filled with the image. Crop parts that stick out.",
-    "Resize and fill": "Resize the image so that entirety of image is inside target resolution. Fill empty space with image's colors.",
-
-    "Mask blur": "How much to blur the mask before processing, in pixels.",
-    "Masked content": "What to put inside the masked area before processing it with Stable Diffusion.",
-    "fill": "fill it with colors of the image",
-    "original": "keep whatever was there originally",
-    "latent noise": "fill it with latent space noise",
-    "latent nothing": "fill it with latent space zeroes",
-    "Inpaint at full resolution": "Upscale masked region to target resolution, do inpainting, downscale back and paste into original image",
-
     "Denoising strength": "Determines how little respect the algorithm should have for image's content. At 0, nothing will change, and at 1 you'll get an unrelated image. With values below 1.0, processing will take less steps than the Sampling Steps slider specifies.",
 
     "Skip": "Stop processing current image and continue processing.",
@@ -56,13 +41,7 @@ var titles = {
     "Prompt S/R": "Separate a list of words with commas, and the first word will be used as a keyword: script will search for this word in the prompt, and replace it with others",
     "Prompt order": "Separate a list of words with commas, and the script will make a variation of prompt with those words for their every possible order",
 
-    "Tiling": "Produce an image that can be tiled.",
     "Tile overlap": "For SD upscale, how much overlap in pixels should there be between tiles. Tiles overlap so that when they are merged back into one picture, there is no clearly visible seam.",
-
-    "Variation seed": "Seed of a different picture to be mixed into the generation.",
-    "Variation strength": "How strong of a variation to produce. At 0, there will be no effect. At 1, you will get the complete picture with variation seed (except for ancestral samplers, where you will just get something).",
-    "Resize seed from height": "Make an attempt to produce a picture similar to what would have been produced with same seed at specified resolution",
-    "Resize seed from width": "Make an attempt to produce a picture similar to what would have been produced with same seed at specified resolution",
 
     "Interrogate": "Reconstruct prompt from existing image and put it into the prompt field.",
 
@@ -85,29 +64,8 @@ var titles = {
 
     "Eta noise seed delta": "If this values is non-zero, it will be added to seed and used to initialize RNG for noises when using samplers with Eta. You can use this to produce even more variation of images, or you can use this to match images of other software if you know what you are doing.",
 
-    "Filename word regex": "This regular expression will be used extract words from filename, and they will be joined using the option below into label text used for training. Leave empty to keep filename text as it is.",
-    "Filename join string": "This string will be used to join split words into a single line if the option above is enabled.",
-
     "Quicksettings list": "List of setting names, separated by commas, for settings that should go to the quick access bar at the top, rather than the usual setting tab. See modules/shared.py for setting names. Requires restarting to apply.",
 
-    "Weighted sum": "Result = A * (1 - M) + B * M",
-    "Add difference": "Result = A + (B - C) * M",
-    "No interpolation": "Result = A",
-
-    "Initialization text": "If the number of tokens is more than the number of vectors, some may be skipped.\nLeave the textbox empty to start with zeroed out vectors",
-    "Learning rate": "How fast should training go. Low values will take longer to train, high values may fail to converge (not generate accurate results) and/or may break the embedding (This has happened if you see Loss: nan in the training info textbox. If this happens, you need to manually restore your embedding from an older not-broken backup).\n\nYou can set a single numeric value, or multiple learning rates using the syntax:\n\n   rate_1:max_steps_1, rate_2:max_steps_2, ...\n\nEG:   0.005:100, 1e-3:1000, 1e-5\n\nWill train with rate of 0.005 for first 100 steps, then 1e-3 until 1000 steps, then 1e-5 for all remaining steps.",
-
-    "Clip skip": "Early stopping parameter for CLIP model; 1 is stop at last layer as usual, 2 is stop at penultimate layer, etc.",
-
-    "Approx NN": "Cheap neural network approximation. Very fast compared to VAE, but produces pictures with 4 times smaller horizontal/vertical resolution and lower quality.",
-    "Approx cheap": "Very cheap approximation. Very fast compared to VAE, but produces pictures with 8 times smaller horizontal/vertical resolution and extremely low quality.",
-
-    "Hires. fix": "Use a two step process to partially create an image at smaller resolution, upscale, and then improve details in it without changing composition",
-    "Hires steps": "Number of sampling steps for upscaled picture. If 0, uses same as for original.",
-    "Upscale by": "Adjusts the size of the image by multiplying the original width and height by the selected value. Ignored if either Resize width to or Resize height to are non-zero.",
-    "Resize width to": "Resizes image to this width. If 0, width is inferred from either of two nearby sliders.",
-    "Resize height to": "Resizes image to this height. If 0, height is inferred from either of two nearby sliders.",
-    "Discard weights with matching name": "Regular expression; if weights's name matches it, the weights is not written to the resulting checkpoint. Use ^model_ema to discard EMA weights.",
     "Extra networks tab order": "Comma-separated list of tab names; tabs listed here will appear in the extra networks UI first and in order listed.",
     "Negative Guidance minimum sigma": "Skip negative prompt for steps where image is already mostly denoised; the higher this value, the more skips there will be; provides increased performance in exchange for minor quality reduction."
 };
@@ -155,6 +113,7 @@ function processTooltipCheckNodes() {
     tooltipCheckNodes.clear();
 }
 
+/*
 onUiUpdate(function(mutationRecords) {
     for (const record of mutationRecords) {
         if (record.type === "childList" && record.target.classList.contains("options")) {
@@ -184,12 +143,12 @@ onUiUpdate(function(mutationRecords) {
             }
         }
     }
-    if (tooltipCheckNodes.size) {
-        clearTimeout(tooltipCheckTimer);
-        tooltipCheckTimer = setTimeout(processTooltipCheckNodes, 1000);
-    }
+    // if (tooltipCheckNodes.size) {
+        // clearTimeout(tooltipCheckTimer);
+        // tooltipCheckTimer = setTimeout(processTooltipCheckNodes, 1000);
+    // }
 });
-
+*/
 onUiLoaded(function() {
     for (var comp of window.gradio_config.components) {
         if (comp.props.webui_tooltip && comp.props.elem_id) {

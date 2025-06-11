@@ -265,41 +265,14 @@ function setupResolutionPasting(tabname) {
     }
 }
 
+var opts = {};
+// onAfterUiUpdate(function() {
 onUiLoaded(function() {
     showRestoreProgressButton('txt2img', localGet("txt2img_task_id"));
     showRestoreProgressButton('img2img', localGet("img2img_task_id"));
     setupResolutionPasting('txt2img');
     setupResolutionPasting('img2img');
-});
-
-
-function modelmerger() {
-    var id = randomId();
-    requestProgress(id, gradioApp().getElementById('modelmerger_results_panel'), null, function() {});
-
-    var res = create_submit_args(arguments);
-    res[0] = id;
-    return res;
-}
-
-
-function ask_for_style_name(_, prompt_text, negative_prompt_text) {
-    var name_ = prompt('Style name:');
-    return [name_, prompt_text, negative_prompt_text];
-}
-
-function confirm_clear_prompt(prompt, negative_prompt) {
-    if (confirm("Delete prompt?")) {
-        prompt = "";
-        negative_prompt = "";
-    }
-
-    return [prompt, negative_prompt];
-}
-
-
-var opts = {};
-onAfterUiUpdate(function() {
+// });
     if (Object.keys(opts).length != 0) return;
 
     var json_elem = gradioApp().getElementById('settings_json');
@@ -332,6 +305,34 @@ onAfterUiUpdate(function() {
 
     json_elem.parentElement.style.display = "none";
 });
+
+
+function modelmerger() {
+    var id = randomId();
+    requestProgress(id, gradioApp().getElementById('modelmerger_results_panel'), null, function() {});
+
+    var res = create_submit_args(arguments);
+    res[0] = id;
+    return res;
+}
+
+
+function ask_for_style_name(_, prompt_text, negative_prompt_text) {
+    var name_ = prompt('Style name:');
+    return [name_, prompt_text, negative_prompt_text];
+}
+
+function confirm_clear_prompt(prompt, negative_prompt) {
+    if (confirm("Delete prompt?")) {
+        prompt = "";
+        negative_prompt = "";
+    }
+
+    return [prompt, negative_prompt];
+}
+
+
+
 
 
 let txt2img_textarea, img2img_textarea = undefined;
