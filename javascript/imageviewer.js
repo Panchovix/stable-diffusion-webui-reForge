@@ -21,22 +21,6 @@ function negmod(n, m) {
     return ((n % m) + m) % m;
 }
 
-function updateOnBackgroundChange() {
-    if (lightBoxImage && lightBoxImage.offsetParent) {
-        let currentButton = selected_gallery_button();
-        let preview = gradioApp().querySelectorAll('.livePreview > img');
-        if (opts.js_live_preview_in_modal_lightbox && preview.length > 0) {
-            // show preview image if available
-            lightBoxImage.src = preview[preview.length - 1].src;
-        } else if (currentButton?.children?.length > 0 && lightBoxImage.src != currentButton.children[0].src) {
-            lightBoxImage.src = currentButton.children[0].src;
-            if (lightBoxImage.style.display === 'none') {
-                lightBoxModal.style.setProperty('background-image', `url(${lightBoxImage.src})`);
-            }
-        }
-    }
-}
-
 function modalImageSwitch(offset) {
     var galleryButtons = all_gallery_buttons();
 
@@ -147,29 +131,20 @@ function modalTileImageToggle(event) {
     event.stopPropagation();
 }
 
-// how to get this out of onUiUpdate into something sensible?
-// run after generation returns?
-// limit to currently active tab?
-
-/*
-function setupgallery() {
-	alert("sg");
-    var fullImg_preview = gradioApp().querySelectorAll('.gradio-gallery > button > button > img, .gradio-gallery > .livePreview');
+function setup_gallery_lightbox() {
+    var fullImg_preview = gradioApp().querySelectorAll('.gradio-gallery > button > button > img');
     if (fullImg_preview != null) {
         fullImg_preview.forEach(setupImageForLightbox);
     }
-    updateOnBackgroundChange();
-	
+	// and update lightbox to new image(s)
+    let currentButton = selected_gallery_button();
+	if (currentButton?.children?.length > 0) {
+		lightBoxImage.src = currentButton.children[0].src;
+		if (lightBoxImage.style.display === 'none') {
+			lightBoxModal.style.setProperty('background-image', `url(${lightBoxImage.src})`);
+		}
+	}
 }
-*/
-
-onUiUpdate(function() {
-    var fullImg_preview = gradioApp().querySelectorAll('.gradio-gallery > button > button > img, .gradio-gallery > .livePreview');
-    if (fullImg_preview != null) {
-        fullImg_preview.forEach(setupImageForLightbox);
-    }
-    updateOnBackgroundChange();
-});
 
 let lightBoxModal = undefined;
 let lightBoxImage = undefined;

@@ -71,7 +71,17 @@ function randomId() {
 
 var livePreview = document.createElement('div');
 livePreview.className = 'livePreview';
+livePreview.style.cursor = 'pointer';
+livePreview.style.userSelect = 'none';
+livePreview.addEventListener('click', function(evt) {
+    if (!opts.js_modal_lightbox || evt.button != 0) return;
+
+    modalZoomSet(opts.js_modal_lightbox_initially_zoomed);
+    evt.preventDefault();
+    showModal(evt);
+}, true);
 livePreview.appendChild(document.createElement('p'));	// dummy element, will be replaced by img
+
 
 // starts sending progress requests to "/internal/progress" uri, creating progressbar above progressbarContainer element and
 // preview inside gallery element. Cleans up all created stuff when the task is over and calls atEnd.
@@ -117,7 +127,9 @@ function requestProgress(id_task, progressbarContainer, gallery, atEnd, onProgre
 
         setTitle("");
         parentProgressbar.removeChild(divProgress);
+
         if (gallery && livePreview) gallery.removeChild(livePreview);
+
         atEnd();
 
         divProgress = null;
@@ -191,6 +203,21 @@ function requestProgress(id_task, progressbarContainer, gallery, atEnd, onProgre
                     gallery.insertBefore(livePreview, gallery.firstElementChild);
                 };
                 img.src = res.live_preview;
+				if (opts.js_live_preview_in_modal_lightbox) {
+				    lightBoxImage.src = img.src;
+					if (lightBoxImage.style.display === 'none') {
+						lightBoxModal.style.setProperty('background-image', `url(${lightBoxImage.src})`);
+					}
+                }
+				else {
+					let currentButton = selected_gallery_button();
+					if (currentButton?.children?.length > 0) {
+						lightBoxImage.src = currentButton.children[0].src;
+					}
+					if (lightBoxImage.style.display === 'none') {
+						lightBoxModal.style.setProperty('background-image', `url(${lightBoxImage.src})`);
+					}
+				}
             }
 
             setTimeout(() => {

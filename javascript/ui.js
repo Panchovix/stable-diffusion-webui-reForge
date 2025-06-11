@@ -145,22 +145,13 @@ function showSubmitInterruptingPlaceholder(tabname) {
     setSubmitButtonsVisibility(tabname, false, true, true);
 }
 
-function showRestoreProgressButton(tabname, show) {
-    var button = gradioApp().getElementById(tabname + "_restore_progress");
-    if (!button) return;
-    button.style.setProperty('display', show ? 'flex' : 'none', 'important');
-}
-
 function submit() {
     showSubmitButtons('txt2img', false);
 
     var id = randomId();
-    localSet("txt2img_task_id", id);
 
     requestProgress(id, gradioApp().getElementById('txt2img_gallery_container'), gradioApp().getElementById('txt2img_gallery'), function() {
         showSubmitButtons('txt2img', true);
-        localRemove("txt2img_task_id");
-        showRestoreProgressButton('txt2img', false);
     });
 
     var res = create_submit_args(arguments);
@@ -182,12 +173,9 @@ function submit_img2img() {
     showSubmitButtons('img2img', false);
 
     var id = randomId();
-    localSet("img2img_task_id", id);
 
     requestProgress(id, gradioApp().getElementById('img2img_gallery_container'), gradioApp().getElementById('img2img_gallery'), function() {
         showSubmitButtons('img2img', true);
-        localRemove("img2img_task_id");
-        showRestoreProgressButton('img2img', false);
     });
 
     var res = create_submit_args(arguments);
@@ -213,34 +201,6 @@ function submit_extras() {
     return res;
 }
 
-function restoreProgressTxt2img() {
-    showRestoreProgressButton("txt2img", false);
-    var id = localGet("txt2img_task_id");
-
-    if (id) {
-        showSubmitInterruptingPlaceholder('txt2img');
-        requestProgress(id, gradioApp().getElementById('txt2img_gallery_container'), gradioApp().getElementById('txt2img_gallery'), function() {
-            showSubmitButtons('txt2img', true);
-        }, null, 0);
-    }
-
-    return id;
-}
-
-function restoreProgressImg2img() {
-    showRestoreProgressButton("img2img", false);
-
-    var id = localGet("img2img_task_id");
-
-    if (id) {
-        showSubmitInterruptingPlaceholder('img2img');
-        requestProgress(id, gradioApp().getElementById('img2img_gallery_container'), gradioApp().getElementById('img2img_gallery'), function() {
-            showSubmitButtons('img2img', true);
-        }, null, 0);
-    }
-
-    return id;
-}
 
 
 /**
@@ -268,8 +228,6 @@ function setupResolutionPasting(tabname) {
 var opts = {};
 // onAfterUiUpdate(function() {
 onUiLoaded(function() {
-    showRestoreProgressButton('txt2img', localGet("txt2img_task_id"));
-    showRestoreProgressButton('img2img', localGet("img2img_task_id"));
     setupResolutionPasting('txt2img');
     setupResolutionPasting('img2img');
 // });
