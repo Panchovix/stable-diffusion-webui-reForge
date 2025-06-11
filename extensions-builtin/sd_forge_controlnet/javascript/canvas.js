@@ -1,6 +1,6 @@
-(function () {
+/*(function () {
     var hasApplied = false;
-    onUiUpdate(function () {
+    onUiLoaded(function () {
         if (!hasApplied) {
             if (typeof window.applyZoomAndPanIntegration === "function") {
                 hasApplied = true;
@@ -15,3 +15,4 @@
         }
     });
 })();
+*/

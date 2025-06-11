@@ -5,9 +5,11 @@
  * Append control type to tab name.
  * Disable resize mode selection when A1111 img2img input is used.
  */
+ 
+ // having this in onUiUpdate is insane
 (function () {
     const cnetAllAccordions = new Set();
-    onUiUpdate(() => {
+    onUiLoaded(() => {
         const ImgChangeType = {
             NO_CHANGE: 0,
             REMOVE: 1,
@@ -98,9 +100,7 @@
                 this.attachAccordionStateObserver();
             }
 
-            /**
-             * Sync the states of enabledCheckbox and enabledAccordionCheckbox.
-             */
+            // Sync the states of enabledCheckbox and enabledAccordionCheckbox.
             sync_enabled_checkbox() {
                 this.enabledCheckbox.addEventListener("change", () => {
                     if (this.enabledAccordionCheckbox.checked != this.enabledCheckbox.checked) {
@@ -113,9 +113,7 @@
                     }
                 });
             }
-            /**
-             * Get the span that has text "Unit {X}".
-             */
+            // Get the span that has text "Unit {X}".
             getUnitHeaderTextElement() {
                 return this.tab.querySelector(
                     `button > span:nth-child(1)`
@@ -170,9 +168,7 @@
                 }
             }
 
-            /**
-             * Add the active control type to tab displayed text.
-             */
+            // Add the active control type to tab displayed text.
             updateActiveControlType() {
                 const unitHeader = this.getUnitHeaderTextElement();
                 if (!unitHeader) return;
@@ -255,10 +251,7 @@
                     img.remove();
                 }
             }
-            /**
-             * When the accordion is folded, display a thumbnail of input image
-             * and mask on the accordion header.
-             */
+            // When the accordion is folded, display a thumbnail of input image and mask on the accordion header.
             updateInputImageThumbnail() {
                 if (!opts.controlnet_input_thumbnail) return;
                 if (this.tabOpen) {
@@ -320,10 +313,7 @@
                 });
             }
 
-            /**
-             * Observe send PNG info buttons in A1111, as they can also directly
-             * set states of ControlNetUnit.
-             */
+            // Observe send PNG info buttons in A1111, as they can also directly set states of ControlNetUnit.
             attachA1111SendInfoObserver() {
                 const pasteButtons = gradioApp().querySelectorAll('#paste');
                 const pngButtons = gradioApp().querySelectorAll(
@@ -347,9 +337,7 @@
                 }
             }
 
-            /**
-             * Observer that triggers when the ControlNetUnit's accordion(tab) closes.
-             */
+            // Observer that triggers when the ControlNetUnit's accordion(tab) closes.
             attachAccordionStateObserver() {
                 new MutationObserver((mutationsList) => {
                     for(const mutation of mutationsList) {

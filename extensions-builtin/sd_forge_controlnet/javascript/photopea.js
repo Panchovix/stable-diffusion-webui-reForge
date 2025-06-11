@@ -431,5 +431,5 @@
     });
   }
 
-  onUiUpdate(loadPhotopea);
+  onUiLoaded(loadPhotopea);
 })();
