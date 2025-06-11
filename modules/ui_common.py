@@ -67,6 +67,11 @@ def create_output_panel(tabname, outdir, toprow=None):
             with gr.Group(elem_id=f"{tabname}_gallery_container"):
                 res.gallery = gr.Gallery(label='Output', show_label=False, elem_id=f"{tabname}_gallery", columns=4, preview=True, height=shared.opts.gallery_height or None, interactive=False, type="pil", object_fit="contain")
 
+                def select_gallery_0():
+                    return gr.update(selected_index=0)
+
+                res.gallery.change(fn=select_gallery_0, inputs=None, outputs=[res.gallery]).then(fn=lambda: None, _js='setup_gallery_lightbox')
+
             with gr.Row(elem_id=f"image_buttons_{tabname}", elem_classes="image-buttons"):
                 open_folder_button = ToolButton(folder_symbol, elem_id=f'{tabname}_open_folder', visible=not shared.cmd_opts.hide_ui_dir_config, tooltip="Open images output directory.")
 

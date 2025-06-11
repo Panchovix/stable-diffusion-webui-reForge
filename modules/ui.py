@@ -73,7 +73,6 @@ apply_style_symbol = '\U0001f4cb'  # 📋
 clear_prompt_symbol = '\U0001f5d1\ufe0f'  # 🗑️
 extra_networks_symbol = '\U0001F3B4'  # 🎴
 switch_values_symbol = '\U000021C5' # ⇅
-restore_progress_symbol = '\U0001F300' # 🌀
 detect_image_size_symbol = '\U0001F4D0'  # 📐
 
 
@@ -289,7 +288,7 @@ def create_ui():
                                     hr_cfg = gr.Slider(minimum=1.0, maximum=30.0, step=0.1, label="HiRes CFG scale", value=7.0, elem_id="txt2img_hr_cfg")
 
                                 with FormRow(elem_id="txt2img_hires_fix_row3", variant="compact") as hr_checkpoint_container:
-                                    hr_checkpoint_name = gr.Dropdown(label='HiRes checkpoint', elem_id="hr_checkpoint", choices=["Use same checkpoint"] + modules.sd_models.checkpoint_tiles(use_short=True), value="Use same checkpoint", scale=2)
+                                    hr_checkpoint_name = gr.Dropdown(label='HiRes checkpoint', elem_id="hr_checkpoint", choices=["Use same checkpoint"] + modules.sd_models.checkpoint_tiles(), value="Use same checkpoint", scale=2)
 
                                     hr_checkpoint_refresh = ToolButton(value=refresh_symbol)
 
@@ -306,7 +305,7 @@ def create_ui():
 
                                     def refresh_model_and_modules():
                                         modules_list = get_additional_modules()
-                                        return gr.update(choices=["Use same checkpoint"] + modules.sd_models.checkpoint_tiles(use_short=True)), gr.update(choices=modules_list)
+                                        return gr.update(choices=["Use same checkpoint"] + modules.sd_models.checkpoint_tiles()), gr.update(choices=modules_list)
 
                                     hr_additional_modules = gr.Dropdown(label='HiRes additional modules', elem_id="hr_vae_te", choices=modules_list, value=["Use same choices"], multiselect=True, scale=3)
 
@@ -413,19 +412,6 @@ def create_ui():
                 outputs=txt2img_outputs,
                 show_progress='hidden',
             ).then(fn=select_gallery_image, js="selected_gallery_index", inputs=[dummy_component], outputs=[output_panel.gallery])
-
-            toprow.restore_progress_button.click(
-                fn=progress.restore_progress,
-                _js="restoreProgressTxt2img",
-                inputs=[dummy_component],
-                outputs=[
-                    output_panel.gallery,
-                    output_panel.generation_info,
-                    output_panel.infotext,
-                    output_panel.html_log,
-                ],
-                show_progress='hidden',
-            )
 
             txt2img_paste_fields = [
                 PasteField(toprow.prompt, "Prompt", api="prompt"),
@@ -694,19 +680,6 @@ def create_ui():
                 show_progress='hidden',
             )
 
-            toprow.restore_progress_button.click(
-                fn=progress.restore_progress,
-                _js="restoreProgressImg2img",
-                inputs=[dummy_component],
-                outputs=[
-                    output_panel.gallery,
-                    output_panel.generation_info,
-                    output_panel.infotext,
-                    output_panel.html_log,
-                ],
-                show_progress='hidden',
-            )
-
             toprow.button_interrogate.click(
                 fn=lambda *args: process_interrogate(interrogate, *args),
                 **interrogate_args,
@@ -840,9 +813,6 @@ def create_ui():
             return gr.update(visible=evt.value not in no_quick_setting)
 
         tabs.select(tab_changed, outputs=[quicksettings_row], show_progress='hidden', queue=False)
-
-        if os.path.exists(os.path.join(script_path, "notification.mp3")) and shared.opts.notification_audio:
-            gr.Audio(interactive=False, value=os.path.join(script_path, "notification.mp3"), elem_id="audio_notification", visible=False)
 
         footer = shared.html("footer.html")
         footer = footer.format(versions=versions_html(), api_docs="/docs" if shared.cmd_opts.api else "https://github.com/AUTOMATIC1111/stable-diffusion-webui/wiki/API")

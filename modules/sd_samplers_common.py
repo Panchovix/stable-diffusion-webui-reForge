@@ -167,46 +167,55 @@ def apply_refiner(cfg_denoiser, x):
     completed_ratio = cfg_denoiser.step / cfg_denoiser.total_steps
     refiner_switch_at = cfg_denoiser.p.refiner_switch_at
     refiner_checkpoint_info = cfg_denoiser.p.refiner_checkpoint_info
-    
+    refiner_cfg = cfg_denoiser.p.refiner_cfg
+
     if refiner_switch_at is not None and completed_ratio < refiner_switch_at:
         return False
-    
+
     if refiner_checkpoint_info is None or shared.sd_model.sd_checkpoint_info == refiner_checkpoint_info:
         return False
-    
+
+    if refiner_cfg is not None and refiner_cfg != 0:
+        cfg_denoiser.p.sampler.sampler_extra_args['cond_scale'] = refiner_cfg
+        cfg_denoiser.p.extra_generation_params['Refiner CFG'] = refiner_cfg
+
     if getattr(cfg_denoiser.p, "enable_hr", False):
         is_second_pass = cfg_denoiser.p.is_hr_pass
-    
+
         if opts.hires_fix_refiner_pass == "first pass" and is_second_pass:
             return False
-    
+
         if opts.hires_fix_refiner_pass == "second pass" and not is_second_pass:
             return False
-    
+
         if opts.hires_fix_refiner_pass != "second pass":
             cfg_denoiser.p.extra_generation_params['Hires refiner'] = opts.hires_fix_refiner_pass
-    
-    cfg_denoiser.p.extra_generation_params['Refiner'] = refiner_checkpoint_info.short_title
+
+    cfg_denoiser.p.extra_generation_params['Refiner'] = refiner_checkpoint_info.name
     cfg_denoiser.p.extra_generation_params['Refiner switch at'] = refiner_switch_at
-    
+
     sampling_cleanup(sd_models.model_data.get_sd_model().forge_objects.unet)
-    
+
     with sd_models.SkipWritingToConfig():
-        fp_checkpoint = getattr(shared.opts, 'sd_model_checkpoint')
-        checkpoint_changed = main_entry.checkpoint_change(refiner_checkpoint_info.short_title, save=False, refresh=False)
+        fp_checkpoint = shared.opts.sd_model_checkpoint
+        checkpoint_changed = main_entry.checkpoint_change(refiner_checkpoint_info.name, save=False, refresh=False)
         if checkpoint_changed:
             try:
                 main_entry.refresh_model_loading_parameters()
                 sd_models.forge_model_reload()
             finally:
                 main_entry.checkpoint_change(fp_checkpoint, save=False, refresh=True)
-    
+
     if not cfg_denoiser.p.disable_extra_networks:
         extra_networks.activate(cfg_denoiser.p, cfg_denoiser.p.extra_network_data)
-    
+
+    if cfg_denoiser.p.scripts is not None:
+        cfg_denoiser.p.scripts.process_before_every_sampling(cfg_denoiser.p, x=x)
+
+
     cfg_denoiser.p.setup_conds()
     cfg_denoiser.update_inner_model()
-    
+
     sampling_prepare(sd_models.model_data.get_sd_model().forge_objects.unet, x=x)
     return True
 
@@ -341,10 +350,6 @@ class Sampler:
         return extra_params_kwargs
 
     def create_noise_sampler(self, x, sigmas, p):
-        """For DPM++ SDE: manually create noise sampler to enable deterministic results across different batch sizes"""
-        if shared.opts.no_dpmpp_sde_batch_determinism:
-            return None
-
         from k_diffusion.sampling import BrownianTreeNoiseSampler
         sigma_min, sigma_max = sigmas[sigmas > 0].min(), sigmas.max()
         current_iter_seeds = p.all_seeds[p.iteration * p.batch_size:(p.iteration + 1) * p.batch_size]

@@ -151,7 +151,8 @@ def setup_model():
     os.makedirs(model_path, exist_ok=True)
 
 
-def checkpoint_tiles(use_short=False):
+def checkpoint_tiles():
+    use_short = shared.opts.sd_checkpoint_dropdown_use_short
     return [x.short_title if use_short else x.name for x in checkpoints_list.values()]
 
 

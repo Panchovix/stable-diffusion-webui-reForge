@@ -151,7 +151,7 @@ html_path = util.html_path
 html = util.html
 walk_files = util.walk_files
 
-list_checkpoint_tiles = shared_items.list_checkpoint_tiles
+# list_checkpoint_tiles = shared_items.list_checkpoint_tiles #sd_models.checkpoint_tiles
 refresh_checkpoints = shared_items.refresh_checkpoints
 list_samplers = shared_items.list_samplers
 reload_hypernetworks = shared_items.reload_hypernetworks

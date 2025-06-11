@@ -24,7 +24,6 @@ class Toprow:
     paste = None
     clear_prompt_button = None
     apply_styles = None
-    restore_progress_button = None
 
     if not shared.opts.disable_token_counters:
         token_counter = None
@@ -91,7 +90,8 @@ class Toprow:
 
     def create_tools_row(self):
         with gr.Row(elem_id=f"{self.id_part}_tools"):
-            from modules.ui import paste_symbol, clear_prompt_symbol, restore_progress_symbol
+            paste_symbol = '\u2199\ufe0f'  # ↙
+            clear_prompt_symbol = '\U0001f5d1\ufe0f'  # 🗑️
 
             self.paste = ToolButton(value=paste_symbol, elem_id="paste", tooltip="Read generation parameters from prompt or last generation if prompt is empty into user interface.")
             self.clear_prompt_button = ToolButton(value=clear_prompt_symbol, elem_id=f"{self.id_part}_clear_prompt", tooltip="Clear prompt")
@@ -101,12 +101,10 @@ class Toprow:
                 self.button_interrogate = ToolButton('📎', tooltip='Interrogate CLIP - use CLIP neural network to create a text describing the image, and put it into the prompt field', elem_id="interrogate")
                 self.button_deepbooru = ToolButton('📦', tooltip='Interrogate DeepBooru - use DeepBooru neural network to create a text describing the image, and put it into the prompt field', elem_id="deepbooru")
 
-            self.restore_progress_button = ToolButton(value=restore_progress_symbol, elem_id=f"{self.id_part}_restore_progress", visible=False, tooltip="Restore progress")
-
             if not shared.opts.disable_token_counters:
-                self.token_counter = gr.HTML(value="<span>0/75</span>", elem_id=f"{self.id_part}_token_counter", elem_classes=["token-counter"], visible=False)
+                self.token_counter = gr.HTML(value="<span>0/75</span>", elem_id=f"{self.id_part}_token_counter", elem_classes=["token-counter"])
                 self.token_button = gr.Button(visible=False, elem_id=f"{self.id_part}_token_button")
-                self.negative_token_counter = gr.HTML(value="<span>0/75</span>", elem_id=f"{self.id_part}_negative_token_counter", elem_classes=["token-counter"], visible=False)
+                self.negative_token_counter = gr.HTML(value="<span>0/75</span>", elem_id=f"{self.id_part}_negative_token_counter", elem_classes=["token-counter"])
                 self.negative_token_button = gr.Button(visible=False, elem_id=f"{self.id_part}_negative_token_button")
 
             self.clear_prompt_button.click(

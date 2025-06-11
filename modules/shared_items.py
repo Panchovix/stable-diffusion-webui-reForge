@@ -24,9 +24,9 @@ def refresh_vae_list():
     modules.sd_vae.vae_dict = forge_modules.main_entry.module_vae_list
 
 
-def list_checkpoint_tiles(use_short=False):
-    import modules.sd_models
-    return modules.sd_models.checkpoint_tiles(use_short)
+# def list_checkpoint_tiles(use_short=False):
+    # import modules.sd_models
+    # return modules.sd_models.checkpoint_tiles(use_short)
 
 
 def refresh_checkpoints():
