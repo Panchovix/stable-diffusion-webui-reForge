@@ -3,7 +3,7 @@ import torch
 import gradio as gr
 
 from gradio.context import Context
-from modules import shared_items, shared, ui_common, sd_models, processing, infotext_utils, paths, ui_loadsave
+from modules import shared, ui_common, sd_models, processing, infotext_utils, paths, ui_loadsave
 from backend import memory_management, stream
 from backend.args import dynamic_args
 from modules.shared import cmd_opts
@@ -66,8 +66,8 @@ def find_files_with_extensions(base_path, extensions):
 
 
 def refresh_ckpt():
-    shared_items.refresh_checkpoints()
-    ckpt_list = shared_items.list_checkpoint_tiles(shared.opts.sd_checkpoint_dropdown_use_short)
+    sd_models.list_models()
+    ckpt_list = sd_models.checkpoint_tiles()
     return ckpt_list
     
     
