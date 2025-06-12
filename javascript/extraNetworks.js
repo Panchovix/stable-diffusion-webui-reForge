@@ -155,9 +155,8 @@ function setupExtraNetworksForTab(tabname) {
     registerPrompt(tabname, tabname + "_neg_prompt");
 }
 
-function extraNetworksMovePromptToTab(tabname, id, showPrompt, showNegativePrompt) {
-    if (!gradioApp().querySelector('.toprow-compact-tools')) return; // only applicable for compact prompt layout
 
+function extraNetworksMovePromptToTab(tabname, id, showPrompt, showNegativePrompt) {
     var promptContainer = gradioApp().getElementById(tabname + '_prompt_container');
     var prompt = gradioApp().getElementById(tabname + '_prompt_row');
     var negPrompt = gradioApp().getElementById(tabname + '_neg_prompt_row');
