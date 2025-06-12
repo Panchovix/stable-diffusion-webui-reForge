@@ -395,11 +395,10 @@ def create_ui():
                 show_progress='hidden',
             )
 
-            toprow.prompt.submit(**txt2img_args)
-            toprow.submit.click(**txt2img_args)
+            toprow.prompt.submit(**txt2img_args).success(fn=ui_common.select_gallery_0, js="selected_gallery_index", inputs=[dummy_component_number], outputs=[output_panel.gallery]).success(fn=lambda: None, js='setup_gallery_lightbox')
+            toprow.submit.click(**txt2img_args).success(fn=ui_common.select_gallery_0, js="selected_gallery_index", inputs=[dummy_component_number], outputs=[output_panel.gallery]).success(fn=lambda: None, js='setup_gallery_lightbox')
 
             def select_gallery_image(index):
-                index = int(index)
                 if getattr(shared.opts, 'hires_button_gallery_insert', False):
                     index += 1
                 return gr.update(selected_index=index)
@@ -411,7 +410,7 @@ def create_ui():
                 inputs=txt2img_upscale_inputs,
                 outputs=txt2img_outputs,
                 show_progress='hidden',
-            ).then(fn=select_gallery_image, js="selected_gallery_index", inputs=[dummy_component], outputs=[output_panel.gallery])
+            ).success(fn=select_gallery_image, js="selected_gallery_index", inputs=[dummy_component_number], outputs=[output_panel.gallery])
 
             txt2img_paste_fields = [
                 PasteField(toprow.prompt, "Prompt", api="prompt"),
