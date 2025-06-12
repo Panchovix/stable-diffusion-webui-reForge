@@ -8,7 +8,8 @@ function set_theme(theme) {
 }
 
 function all_gallery_buttons() {
-    var allGalleryButtons = gradioApp().querySelectorAll('[style="display: block;"].tabitem div[id$=_gallery].gradio-gallery .thumbnails > .thumbnail-item.thumbnail-small');
+    var allGalleryButtons = get_uiCurrentTabContent().querySelectorAll('div[id$=_gallery].gradio-gallery .thumbnails > .thumbnail-item.thumbnail-small');
+    // var allGalleryButtons = gradioApp().querySelectorAll('[style="display: block;"].tabitem div[id$=_gallery].gradio-gallery .thumbnails > .thumbnail-item.thumbnail-small');
     var visibleGalleryButtons = [];
     allGalleryButtons.forEach(function(elem) {
         if (elem.parentElement.offsetParent) {
@@ -226,11 +227,10 @@ function setupResolutionPasting(tabname) {
 }
 
 var opts = {};
-// onAfterUiUpdate(function() {
 onUiLoaded(function() {
     setupResolutionPasting('txt2img');
     setupResolutionPasting('img2img');
-// });
+
     if (Object.keys(opts).length != 0) return;
 
     var json_elem = gradioApp().getElementById('settings_json');
