@@ -7,9 +7,6 @@ from backend import memory_management
 from modules.shared import opts
 
 
-PromptChunkFix = namedtuple('PromptChunkFix', ['offset', 'embedding'])
-
-
 class PromptChunk:
     def __init__(self):
         self.tokens = []
@@ -79,11 +76,12 @@ class T5TextProcessingEngine:
             nonlocal token_count
             nonlocal chunk
 
-            chunk.tokens = chunk.tokens + [self.id_end]
-            chunk.multipliers = chunk.multipliers + [1.0]
             if self.end_with_pad:
                 chunk.tokens = chunk.tokens + [self.id_pad]
                 chunk.multipliers = chunk.multipliers + [1.0]
+
+            chunk.tokens = chunk.tokens + [self.id_end]
+            chunk.multipliers = chunk.multipliers + [1.0]
             current_chunk_length = len(chunk.tokens)
 
             token_count += current_chunk_length
