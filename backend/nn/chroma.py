@@ -10,159 +10,9 @@ from einops import rearrange, repeat
 from backend.attention import attention_function
 from backend.utils import fp16_fix, tensor2parameter
 
+from .flux import attention, rope, timestep_embedding
+from .flux import EmbedND, MLPEmbedder, RMSNorm, QKNorm, SelfAttention
 
-def attention(q, k, v, pe):
-    q, k = apply_rope(q, k, pe)
-    x = attention_function(q, k, v, q.shape[1], skip_reshape=True)
-    return x
-
-
-def rope(pos, dim, theta):
-    if pos.device.type == "mps" or pos.device.type == "xpu":
-        scale = torch.arange(0, dim, 2, dtype=torch.float32, device=pos.device) / dim
-    else:
-        scale = torch.arange(0, dim, 2, dtype=torch.float64, device=pos.device) / dim
-    omega = 1.0 / (theta ** scale)
-
-    # out = torch.einsum("...n,d->...nd", pos, omega)
-    out = pos.unsqueeze(-1) * omega.unsqueeze(0)
-
-    cos_out = torch.cos(out)
-    sin_out = torch.sin(out)
-    out = torch.stack([cos_out, -sin_out, sin_out, cos_out], dim=-1)
-    del cos_out, sin_out
-
-    # out = rearrange(out, "b n d (i j) -> b n d i j", i=2, j=2)
-    b, n, d, _ = out.shape
-    out = out.view(b, n, d, 2, 2)
-
-    return out.to(torch.float32)
-
-
-def apply_rope(xq, xk, freqs_cis):
-    xq_ = xq.to(torch.float32).reshape(*xq.shape[:-1], -1, 1, 2)
-    xk_ = xk.to(torch.float32).reshape(*xk.shape[:-1], -1, 1, 2)
-    xq_out = freqs_cis[..., 0] * xq_[..., 0] + freqs_cis[..., 1] * xq_[..., 1]
-    xk_out = freqs_cis[..., 0] * xk_[..., 0] + freqs_cis[..., 1] * xk_[..., 1]
-    del xq_, xk_
-    return xq_out.reshape(*xq.shape).type_as(xq), xk_out.reshape(*xk.shape).type_as(xk)
-
-
-def timestep_embedding(t, dim, max_period=10000, time_factor=1000.0):
-    t = time_factor * t
-    half = dim // 2
-
-    # TODO: Once A trainer for flux get popular, make timestep_embedding consistent to that trainer
-
-    # Do not block CUDA steam, but having about 1e-4 differences with Flux official codes:
-    freqs = torch.exp(-math.log(max_period) * torch.arange(start=0, end=half, dtype=torch.float32, device=t.device) / half)
-
-    # Block CUDA steam, but consistent with official codes:
-    # freqs = torch.exp(-math.log(max_period) * torch.arange(start=0, end=half, dtype=torch.float32) / half).to(t.device)
-
-    args = t[:, None].to(torch.float32) * freqs[None]
-    del freqs
-    embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
-    del args
-    if dim % 2:
-        embedding = torch.cat([embedding, torch.zeros_like(embedding[:, :1])], dim=-1)
-    if torch.is_floating_point(t):
-        embedding = embedding.to(t)
-    return embedding
-
-
-class EmbedND(nn.Module):
-    def __init__(self, dim, theta, axes_dim):
-        super().__init__()
-        self.dim = dim
-        self.theta = theta
-        self.axes_dim = axes_dim
-
-    def forward(self, ids):
-        n_axes = ids.shape[-1]
-        emb = torch.cat(
-            [rope(ids[..., i], self.axes_dim[i], self.theta) for i in range(n_axes)],
-            dim=-3,
-        )
-        del ids, n_axes
-        return emb.unsqueeze(1)
-
-
-class MLPEmbedder(nn.Module):
-    def __init__(self, in_dim, hidden_dim):
-        super().__init__()
-        self.in_layer = nn.Linear(in_dim, hidden_dim, bias=True)
-        self.silu = nn.SiLU()
-        self.out_layer = nn.Linear(hidden_dim, hidden_dim, bias=True)
-
-    def forward(self, x):
-        x = self.silu(self.in_layer(x))
-        return self.out_layer(x)
-
-
-if hasattr(torch, 'rms_norm'):
-    functional_rms_norm = torch.rms_norm
-else:
-    def functional_rms_norm(x, normalized_shape, weight, eps):
-        if x.dtype in [torch.bfloat16, torch.float32]:
-            n = torch.rsqrt(torch.mean(x ** 2, dim=-1, keepdim=True) + eps) * weight
-        else:
-            n = torch.rsqrt(torch.mean(x.to(torch.float32) ** 2, dim=-1, keepdim=True) + eps).to(x.dtype) * weight
-        return x * n
-
-
-class RMSNorm(nn.Module):
-    def __init__(self, dim):
-        super().__init__()
-        self.weight = None  # to trigger module_profile
-        self.scale = nn.Parameter(torch.ones(dim))
-        self.eps = 1e-6
-        self.normalized_shape = [dim]
-
-    def forward(self, x):
-        if self.scale.dtype != x.dtype:
-            self.scale = tensor2parameter(self.scale.to(dtype=x.dtype))
-        return functional_rms_norm(x, self.normalized_shape, self.scale, self.eps)
-
-
-class QKNorm(nn.Module):
-    def __init__(self, dim):
-        super().__init__()
-        self.query_norm = RMSNorm(dim)
-        self.key_norm = RMSNorm(dim)
-
-    def forward(self, q, k, v):
-        del v
-        q = self.query_norm(q)
-        k = self.key_norm(k)
-        return q.to(k), k.to(q)
-
-
-class SelfAttention(nn.Module):
-    def __init__(self, dim, num_heads=8, qkv_bias=False):
-        super().__init__()
-        self.num_heads = num_heads
-        head_dim = dim // num_heads
-        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
-        self.norm = QKNorm(head_dim)
-        self.proj = nn.Linear(dim, dim)
-
-    def forward(self, x, pe):
-        qkv = self.qkv(x)
-
-        # q, k, v = rearrange(qkv, "B L (K H D) -> K B H L D", K=3, H=self.num_heads)
-        B, L, _ = qkv.shape
-        qkv = qkv.view(B, L, 3, self.num_heads, -1)
-        q, k, v = qkv.permute(2, 0, 3, 1, 4)
-        del qkv
-
-        q, k = self.norm(q, k, v)
-
-        x = attention(q, k, v, pe=pe)
-        del q, k, v
-
-        x = self.proj(x)
-        return x
 
 class Approximator(nn.Module):
     def __init__(self, in_dim: int, out_dim: int, hidden_dim: int, n_layers = 4):
@@ -188,17 +38,6 @@ class ModulationOut:
     scale: torch.Tensor
     gate: torch.Tensor
 
-class Modulation(nn.Module):
-    def __init__(self, dim, double):
-        super().__init__()
-        self.is_double = double
-        self.multiplier = 6 if double else 3
-        self.lin = nn.Linear(dim, self.multiplier * dim, bias=True)
-
-    def forward(self, vec):
-        out = self.lin(nn.functional.silu(vec))[:, None, :].chunk(self.multiplier, dim=-1)
-        return out
-
 
 class DoubleStreamBlock(nn.Module):
     def __init__(self, hidden_size, num_heads, mlp_ratio, qkv_bias=False):
@@ -206,7 +45,6 @@ class DoubleStreamBlock(nn.Module):
         mlp_hidden_dim = int(hidden_size * mlp_ratio)
         self.num_heads = num_heads
         self.hidden_size = hidden_size
-        self.img_mod = Modulation(hidden_size, double=True)
         self.img_norm1 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         self.img_attn = SelfAttention(dim=hidden_size, num_heads=num_heads, qkv_bias=qkv_bias)
         self.img_norm2 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
@@ -215,7 +53,6 @@ class DoubleStreamBlock(nn.Module):
             nn.GELU(approximate="tanh"),
             nn.Linear(mlp_hidden_dim, hidden_size, bias=True),
         )
-        self.txt_mod = Modulation(hidden_size, double=True)
         self.txt_norm1 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         self.txt_attn = SelfAttention(dim=hidden_size, num_heads=num_heads, qkv_bias=qkv_bias)
         self.txt_norm2 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
@@ -268,7 +105,6 @@ class SingleStreamBlock(nn.Module):
         self.hidden_size = hidden_size
         self.pre_norm = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         self.mlp_act = nn.GELU(approximate="tanh")
-        self.modulation = Modulation(hidden_size, double=False)
 
     def forward(self, x, mod, pe):
         x_mod = (1 + mod.scale) * self.pre_norm(x) + mod.shift
@@ -296,7 +132,6 @@ class LastLayer(nn.Module):
         super().__init__()
         self.norm_final = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         self.linear = nn.Linear(hidden_size, patch_size * patch_size * out_channels, bias=True)
-        self.adaLN_modulation = nn.Sequential(nn.SiLU(), nn.Linear(hidden_size, 2 * hidden_size, bias=True))
 
     def forward(self, x, mod):
         shift, scale = mod
@@ -311,10 +146,6 @@ class IntegratedChromaTransformer2DModel(nn.Module):
     def __init__(self, in_channels: int, vec_in_dim: int, context_in_dim: int, hidden_size: int, mlp_ratio: float, num_heads: int, depth: int, depth_single_blocks: int, axes_dim: list[int], theta: int, qkv_bias: bool, guidance_embed):
         super().__init__()
         
-        guidance_out_dim = 3072
-        guidance_hidden_dim = 5120
-        guidance_n_layers = 5
-
         self.in_channels = in_channels * 4
         self.out_channels = self.in_channels
 
@@ -330,7 +161,7 @@ class IntegratedChromaTransformer2DModel(nn.Module):
 
         self.pe_embedder = EmbedND(dim=pe_dim, theta=theta, axes_dim=axes_dim)
         self.img_in = nn.Linear(self.in_channels, self.hidden_size, bias=True)
-        self.distilled_guidance_layer = Approximator(64, guidance_out_dim, guidance_hidden_dim, guidance_n_layers)
+        self.distilled_guidance_layer = Approximator(64, 3072, 5120, 5)
         self.txt_in = nn.Linear(context_in_dim, self.hidden_size)
 
         self.double_blocks = nn.ModuleList(
