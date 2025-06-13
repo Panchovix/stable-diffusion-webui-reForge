@@ -100,8 +100,6 @@ def create_output_panel(tabname, outdir, toprow=None):
             )
 
             if tabname != "extras":
-                download_files = gr.File(None, file_count="multiple", interactive=False, show_label=False, visible=False, elem_id=f'download_files_{tabname}')
-
                 with gr.Group():
                     res.infotext = gr.HTML(elem_id=f'html_info_{tabname}', elem_classes="infotext")
                     res.html_log = gr.HTML(elem_id=f'html_log_{tabname}', elem_classes="html-log")
