@@ -99,7 +99,7 @@ class Options:
 
                 # Get the info related to the setting being changed
                 info = self.data_labels.get(key, None)
-                if info.do_not_save:
+                if info is None or info.do_not_save:
                     return
 
                 # Restrict component arguments
