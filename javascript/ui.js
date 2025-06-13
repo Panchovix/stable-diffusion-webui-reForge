@@ -191,7 +191,7 @@ function submit_extras() {
 
     var id = randomId();
 
-    requestProgress(id, gradioApp().getElementById('extras_gallery_container'), gradioApp().getElementById('extras_gallery'), function() {
+    requestProgress(id, gradioApp().getElementById('extras_gallery_container'), null, function() {
         showSubmitButtons('extras', true);
     });
 
