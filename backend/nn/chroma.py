@@ -71,13 +71,13 @@ class DoubleStreamBlock(nn.Module):
         H = self.num_heads
         D = img_qkv.shape[-1] // (3 * H)
         img_q, img_k, img_v = img_qkv.view(B, L, 3, H, D).permute(2, 0, 3, 1, 4)
-        img_q, img_k = self.img_attn.norm(img_q, img_k, img_v)
+        img_q, img_k = self.img_attn.norm(img_q, img_k)
         txt_modulated = self.txt_norm1(txt)
         txt_modulated = (1 + txt_mod1.scale) * txt_modulated + txt_mod1.shift
         txt_qkv = self.txt_attn.qkv(txt_modulated)
         B, L, _ = txt_qkv.shape
         txt_q, txt_k, txt_v = txt_qkv.view(B, L, 3, H, D).permute(2, 0, 3, 1, 4)
-        txt_q, txt_k = self.txt_attn.norm(txt_q, txt_k, txt_v)
+        txt_q, txt_k = self.txt_attn.norm(txt_q, txt_k)
         q = torch.cat((txt_q, img_q), dim=2)
         k = torch.cat((txt_k, img_k), dim=2)
         v = torch.cat((txt_v, img_v), dim=2)
@@ -116,7 +116,7 @@ class SingleStreamBlock(nn.Module):
         q, k, v = qkv.permute(2, 0, 3, 1, 4)
         del qkv
 
-        q, k = self.norm(q, k, v)
+        q, k = self.norm(q, k)
         attn = attention(q, k, v, pe=pe)
         del q, k, v, pe
         output = self.linear2(torch.cat((attn, self.mlp_act(mlp)), dim=2))

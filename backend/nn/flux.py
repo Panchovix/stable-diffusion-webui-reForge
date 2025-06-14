@@ -19,10 +19,7 @@ def attention(q, k, v, pe):
 
 
 def rope(pos, dim, theta):
-    if pos.device.type == "mps" or pos.device.type == "xpu":
-        scale = torch.arange(0, dim, 2, dtype=torch.float32, device=pos.device) / dim
-    else:
-        scale = torch.arange(0, dim, 2, dtype=torch.float64, device=pos.device) / dim
+    scale = torch.arange(0, dim, 2, dtype=torch.float32, device=pos.device) / dim
     omega = 1.0 / (theta ** scale)
 
     # out = torch.einsum("...n,d->...nd", pos, omega)
@@ -31,7 +28,7 @@ def rope(pos, dim, theta):
     cos_out = torch.cos(out)
     sin_out = torch.sin(out)
     out = torch.stack([cos_out, -sin_out, sin_out, cos_out], dim=-1)
-    del cos_out, sin_out
+    del omega, cos_out, sin_out
 
     # out = rearrange(out, "b n d (i j) -> b n d i j", i=2, j=2)
     b, n, d, _ = out.shape
@@ -132,8 +129,7 @@ class QKNorm(nn.Module):
         self.query_norm = RMSNorm(dim)
         self.key_norm = RMSNorm(dim)
 
-    def forward(self, q, k, v):
-        del v
+    def forward(self, q, k):
         q = self.query_norm(q)
         k = self.key_norm(k)
         return q.to(k), k.to(q)
@@ -157,7 +153,7 @@ class SelfAttention(nn.Module):
         q, k, v = qkv.permute(2, 0, 3, 1, 4)
         del qkv
 
-        q, k = self.norm(q, k, v)
+        q, k = self.norm(q, k)
 
         x = attention(q, k, v, pe=pe)
         del q, k, v
@@ -219,7 +215,7 @@ class DoubleStreamBlock(nn.Module):
         img_q, img_k, img_v = img_qkv.view(B, L, 3, H, D).permute(2, 0, 3, 1, 4)
         del img_qkv
 
-        img_q, img_k = self.img_attn.norm(img_q, img_k, img_v)
+        img_q, img_k = self.img_attn.norm(img_q, img_k)
 
         txt_mod1_shift, txt_mod1_scale, txt_mod1_gate, txt_mod2_shift, txt_mod2_scale, txt_mod2_gate = self.txt_mod(vec)
         del vec
@@ -235,7 +231,7 @@ class DoubleStreamBlock(nn.Module):
         txt_q, txt_k, txt_v = txt_qkv.view(B, L, 3, H, D).permute(2, 0, 3, 1, 4)
         del txt_qkv
 
-        txt_q, txt_k = self.txt_attn.norm(txt_q, txt_k, txt_v)
+        txt_q, txt_k = self.txt_attn.norm(txt_q, txt_k)
 
         q = torch.cat((txt_q, img_q), dim=2)
         del txt_q, img_q
@@ -293,7 +289,7 @@ class SingleStreamBlock(nn.Module):
         q, k, v = qkv.permute(2, 0, 3, 1, 4)
         del qkv
 
-        q, k = self.norm(q, k, v)
+        q, k = self.norm(q, k)
         attn = attention(q, k, v, pe=pe)
         del q, k, v, pe
         output = self.linear2(torch.cat((attn, self.mlp_act(mlp)), dim=2))
