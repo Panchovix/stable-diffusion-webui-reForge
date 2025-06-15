@@ -115,22 +115,6 @@ def load_upscalers():
     )
 
 
-def load_upscalersX():
-    modules_dir = os.path.join(shared.script_path, "modules")
-    for file in os.listdir(modules_dir):
-        if file.startswith("upscaler_") and file.endswith("_model.py"):
-            full_model = f"modules.{file[:-3]}"
-            try:
-                importlib.import_module(full_model)
-            except Exception:
-                pass
-
-    data = []
-
-    upscalers_dir = shared.cmd_opts.upscalers_dir
-    for model in shared.walk_files(upscalers_dir, allowed_extensions=[".pt", ".pth", ".safetensors"]):
-        scaler = GenericUpscaler()
-
 # None: not loaded, False: failed to load, True: loaded
 _spandrel_extra_init_state = None
 

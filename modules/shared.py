@@ -27,8 +27,6 @@ demo: gr.Blocks = None
 
 device: str = None
 
-weight_load_location: str = None
-
 xformers_available = (memory_management.xformers_enabled(), memory_management.XFORMERS_VERSION)
 torch_version = getattr(torch, '__long_version__',torch.__version__)
 
@@ -130,8 +128,6 @@ latent_upscale_modes = {
 }
 
 sd_upscalers = []
-
-clip_model = None
 
 progress_print_out = sys.stdout
 

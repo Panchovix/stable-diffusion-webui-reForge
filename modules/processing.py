@@ -793,6 +793,7 @@ need_global_unload = False
 def manage_model_and_prompt_cache(p: StableDiffusionProcessing):
     global need_global_unload
 
+    p.sd_model = None # will be re-set by loader
     p.sd_model, just_reloaded = forge_model_reload()
 
     if need_global_unload and not just_reloaded:
@@ -837,6 +838,8 @@ def process_images(p: StableDiffusionProcessing) -> Processed:
         # restore original options
         if p.override_settings_restore_afterwards:
             set_config(stored_opts, save_config=False)
+        p.sd_model = None
+        gc.collect()
 
     return res
 
@@ -916,7 +919,6 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
                 # hiresfix quickbutton may not need reload of firstpass model
                 sd_models.forge_model_reload()  # model can be changed for example by refiner, hiresfix
 
-            # is this necessary per iteration (batch count)?
             p.sd_model.forge_objects = p.sd_model.forge_objects_original.shallow_copy()
             
             gc.collect()

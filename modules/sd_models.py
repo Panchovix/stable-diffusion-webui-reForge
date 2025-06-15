@@ -28,14 +28,6 @@ checkpoint_alisases = checkpoint_aliases  # for compatibility with old name
 checkpoints_loaded = collections.OrderedDict()
 
 
-class ModelType(enum.Enum):
-    SD1 = 1
-    SD2 = 2
-    SDXL = 3
-    SSD = 4
-    SD3 = 5
-
-
 def replace_key(d, key, new_key, value):
     keys = list(d.keys())
 
@@ -136,15 +128,6 @@ class CheckpointInfo:
         return str(dict(filename=self.filename, hash=self.hash))
 
 
-# try:
-#     # this silences the annoying "Some weights of the model checkpoint were not used when initializing..." message at start.
-#     from transformers import logging, CLIPModel  # noqa: F401
-#
-#     logging.set_verbosity_error()
-# except Exception:
-#     pass
-
-
 def setup_model():
     """called once at startup to do various one-time tasks related to SD models"""
 
@@ -199,21 +182,6 @@ def get_closet_checkpoint_match(search_string):
     return None
 
 
-def model_hash(filename):
-    """old hash that only looks at a small part of the file and is prone to collisions"""
-
-    try:
-        with open(filename, "rb") as file:
-            import hashlib
-            m = hashlib.sha256()
-
-            file.seek(0x100000)
-            m.update(file.read(0x10000))
-            return m.hexdigest()[0:8]
-    except FileNotFoundError:
-        return 'NOFILE'
-
-
 def select_checkpoint():
     """Raises `FileNotFoundError` if no checkpoints are found."""
     model_checkpoint = shared.opts.sd_model_checkpoint
@@ -231,6 +199,21 @@ def select_checkpoint():
         print(f"Checkpoint {model_checkpoint} not found; loading fallback {checkpoint_info.title}", file=sys.stderr)
 
     return checkpoint_info
+
+
+def model_hash(filename):
+    """old hash that only looks at a small part of the file and is prone to collisions"""
+
+    try:
+        with open(filename, "rb") as file:
+            import hashlib
+            m = hashlib.sha256()
+
+            file.seek(0x100000)
+            m.update(file.read(0x10000))
+            return m.hexdigest()[0:8]
+    except FileNotFoundError:
+        return 'NOFILE'
 
 
 def transform_checkpoint_dict_key(k, replacements):
@@ -271,24 +254,6 @@ def read_metadata_from_safetensors(filename):
 
 def read_state_dict(checkpoint_file, print_global_state=False, map_location=None):
     pass
-
-
-def get_checkpoint_state_dict(checkpoint_info: CheckpointInfo, timer):
-    sd_model_hash = checkpoint_info.calculate_shorthash()
-    timer.record("calculate hash")
-
-    if checkpoint_info in checkpoints_loaded:
-        # use checkpoint cache
-        print(f"Loading weights [{sd_model_hash}] from cache")
-        # move to end as latest
-        checkpoints_loaded.move_to_end(checkpoint_info)
-        return checkpoints_loaded[checkpoint_info]
-
-    print(f"Loading weights [{sd_model_hash}] from {checkpoint_info.filename}")
-    res = load_torch_file(checkpoint_info.filename)
-    timer.record("load weights from disk")
-
-    return res
 
 
 def SkipWritingToConfig():
@@ -457,7 +422,9 @@ def forge_model_reload():
     timer = Timer()
 
     if model_data.sd_model:
+        shared.sd_model = None
         model_data.sd_model = None
+
         memory_management.unload_all_models()
         memory_management.soft_empty_cache()
         gc.collect()
@@ -477,21 +444,21 @@ def forge_model_reload():
     dynamic_args['forge_unet_storage_dtype'] = model_data.forge_loading_parameters.get('unet_storage_dtype', None)
     dynamic_args['embedding_dir'] = cmd_opts.embeddings_dir
     dynamic_args['emphasis_name'] = opts.emphasis
-    sd_model = forge_loader(state_dict, additional_state_dicts=additional_state_dicts)
+    model_data.sd_model = forge_loader(state_dict, additional_state_dicts=additional_state_dicts)
     timer.record("forge model load")
 
-    sd_model.extra_generation_params = {}
-    sd_model.comments = []
-    sd_model.sd_checkpoint_info = checkpoint_info
-    sd_model.filename = checkpoint_info.filename
-    sd_model.sd_model_hash = checkpoint_info.calculate_shorthash()
+    model_data.sd_model.extra_generation_params = {}
+    model_data.sd_model.comments = []
+    model_data.sd_model.sd_checkpoint_info = checkpoint_info
+    model_data.sd_model.filename = checkpoint_info.filename
+    model_data.sd_model.sd_model_hash = checkpoint_info.calculate_shorthash()
     timer.record("calculate hash")
 
     shared.opts.data["sd_checkpoint_hash"] = checkpoint_info.sha256
 
-    model_data.set_sd_model(sd_model)
+    # model_data.set_sd_model(sd_model)
 
-    script_callbacks.model_loaded_callback(sd_model)
+    script_callbacks.model_loaded_callback(model_data.sd_model)
 
     timer.record("scripts callbacks")
 
@@ -499,4 +466,4 @@ def forge_model_reload():
 
     model_data.forge_hash = current_hash
 
-    return sd_model, True
+    return model_data.sd_model, True
