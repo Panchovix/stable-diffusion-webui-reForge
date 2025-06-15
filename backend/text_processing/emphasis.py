@@ -1,5 +1,7 @@
 import torch
 
+last_extra_generation_params = {}
+
 
 class Emphasis:
     name: str = "Base"

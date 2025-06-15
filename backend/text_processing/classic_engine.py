@@ -10,7 +10,6 @@ from modules.shared import opts
 
 
 PromptChunkFix = namedtuple('PromptChunkFix', ['offset', 'embedding'])
-last_extra_generation_params = {}
 
 
 class PromptChunk:
@@ -276,8 +275,6 @@ class ClassicTextProcessingEngine:
             z = self.process_tokens(tokens, multipliers)
             zs.append(z)
 
-        global last_extra_generation_params
-
         # if used_embeddings:
             # names = []
 
@@ -291,7 +288,7 @@ class ClassicTextProcessingEngine:
                 # last_extra_generation_params["TI"] = ", ".join(names)
 
         if any(x for x in texts if "(" in x or "[" in x) and self.emphasis.name != "Original":
-            last_extra_generation_params["Emphasis"] = self.emphasis.name
+            emphasis.last_extra_generation_params["Emphasis"] = self.emphasis.name
 
         if self.return_pooled:
             return torch.hstack(zs), zs[0].pooled

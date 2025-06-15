@@ -144,6 +144,9 @@ class T5TextProcessingEngine:
 
             zs.extend(line_z_values)
 
+        if any(x for x in texts if "(" in x or "[" in x) and self.emphasis.name != "Original":
+            emphasis.last_extra_generation_params["Emphasis"] = self.emphasis.name
+
         return torch.stack(zs)
 
     def process_tokens(self, batch_tokens, batch_multipliers):
