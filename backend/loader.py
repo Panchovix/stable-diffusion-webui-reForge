@@ -204,7 +204,7 @@ def load_huggingface_component(guess, component_name, lib_name, cls_name, repo_p
                 with using_forge_operations(**to_args, manual_cast_enabled=need_manual_cast):
                     model = model_loader(unet_config).to(**to_args)
 
-            load_state_dict(model, state_dict)
+            load_state_dict(model, state_dict, ignore_errors=['scaled_fp8'])
 
             if hasattr(model, '_internal_dict'):
                 model._internal_dict = unet_config
