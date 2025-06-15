@@ -309,6 +309,9 @@ def state_dict_parameters(sd):
 
 
 def state_dict_dtype(state_dict):
+    if 'scaled_fp8' in state_dict:
+        return state_dict['scaled_fp8'].dtype
+
     for k, v in state_dict.items():
         if hasattr(v, 'gguf_cls'):
             return 'gguf'
@@ -316,8 +319,6 @@ def state_dict_dtype(state_dict):
             return 'nf4'
         if 'bitsandbytes__fp4' in k:
             return 'fp4'
-        if 'scale_weight' in k:
-            return torch.float8_e4m3fn
 
     dtype_counts = {}
 
