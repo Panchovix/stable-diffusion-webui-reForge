@@ -471,16 +471,16 @@ class StableDiffusionProcessing:
 
             cache[1] = function(shared.sd_model, required_prompts, steps, hires_steps, shared.opts.use_old_scheduling)
 
-            import backend.text_processing.classic_engine
+            import backend.text_processing.emphasis
 
-            last_extra_generation_params = backend.text_processing.classic_engine.last_extra_generation_params.copy()
+            last_extra_generation_params = backend.text_processing.emphasis.last_extra_generation_params.copy()
 
             shared.sd_model.extra_generation_params.update(last_extra_generation_params)
 
             if len(cache) > 2:
                 cache[2] = last_extra_generation_params
 
-            backend.text_processing.classic_engine.last_extra_generation_params = {}
+            backend.text_processing.emphasis.last_extra_generation_params = {}
 
         cache[0] = cached_params
         return cache[1]
