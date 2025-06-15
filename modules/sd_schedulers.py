@@ -90,10 +90,6 @@ def ddim_scheduler(n, sigma_min, sigma_max, inner_model, device):
 def beta_scheduler(n, sigma_min, sigma_max, inner_model, device):
     # From "Beta Sampling is All You Need" [arXiv:2407.12173] (Lee et. al, 2024) """
     
-    """
-    Beta scheduler, based on "Beta Sampling is All You Need" [arXiv:2407.12173] (Lee et. al, 2024)
-    Correctly uses inner_model.inner_model.model.get_sigmas and total_timesteps for compatibility with SDXL.
-    """
     alpha = shared.opts.beta_dist_alpha
     beta = shared.opts.beta_dist_beta
     timesteps = 1 - np.linspace(0, 1, n)
@@ -101,6 +97,7 @@ def beta_scheduler(n, sigma_min, sigma_max, inner_model, device):
     sigmas = [sigma_min + (x * (sigma_max-sigma_min)) for x in timesteps]
     sigmas += [0.0]
 
+#   uses inner_model.inner_model.model.get_sigmas and total_timesteps for compatibility with FlowMatching
     # alpha = shared.opts.beta_dist_alpha
     # beta = shared.opts.beta_dist_beta
 
@@ -115,7 +112,7 @@ def beta_scheduler(n, sigma_min, sigma_max, inner_model, device):
             # sigs += [float(inner_model.sigmas[int(t)])]
         # last_t = t
     # sigs += [0.0]
-    
+
     return torch.FloatTensor(sigmas).to(device)
 
 
@@ -125,6 +122,7 @@ def turbo_scheduler(n, sigma_min, sigma_max, inner_model, device):
     sigmas = unet.model.predictor.sigma(timesteps)
     sigmas = torch.cat([sigmas, sigmas.new_zeros([1])])
     return sigmas.to(device)
+
 
 def get_align_your_steps_sigmas_GITS(n, sigma_min, sigma_max, device):
     def loglinear_interp(t_steps, num_steps):
@@ -151,6 +149,7 @@ def get_align_your_steps_sigmas_GITS(n, sigma_min, sigma_max, device):
         sigmas.append(0.0)
 
     return torch.FloatTensor(sigmas).to(device)
+
 
 def ays_11_sigmas(n, sigma_min, sigma_max, device='cpu'):
     # https://research.nvidia.com/labs/toronto-ai/AlignYourSteps/howto.html
@@ -179,6 +178,7 @@ def ays_11_sigmas(n, sigma_min, sigma_max, device='cpu'):
 
     return torch.FloatTensor(sigmas).to(device)
 
+
 def ays_32_sigmas(n, sigma_min, sigma_max, device='cpu'):
     def loglinear_interp(t_steps, num_steps):
         """
@@ -201,6 +201,33 @@ def ays_32_sigmas(n, sigma_min, sigma_max, device='cpu'):
     return torch.FloatTensor(sigmas).to(device)
 
 
+def sigmoid_offset_sigmas(n, sigma_min, sigma_max, inner_model, device):
+    square_k = shared.opts.sigmoid_square_k
+    base_c = shared.opts.sigmoid_base_c
+    total_timesteps = len(inner_model.sigmas)-1
+    ts = np.linspace(0, 1, n, endpoint=False)
+    shift = 2.0 * (base_c - 0.5)
+    def sigmoid(x):
+        x = (8.0 * x - 4.0) + (shift * 4.0)
+        if square_k * x > 700:
+            return 1.0
+        if square_k * x < -700:
+            return 0.0
+        return 1.0 / (1.0 + np.exp(-square_k * x))
+    transformed_ts = 1.0 - np.array([sigmoid(t) for t in ts])
+
+    # range fix
+    maximum = transformed_ts.max()
+    transformed_ts /= maximum
+
+    mapped_ts = np.rint(transformed_ts * total_timesteps).astype(int)
+    sigs = []
+    for t in mapped_ts:
+        sigs.append(float(inner_model.sigmas[t]))
+    sigs.append(0.0)
+    return torch.FloatTensor(sigs).to(device)
+
+
 schedulers = [
     Scheduler('automatic', 'Automatic', None),
     Scheduler('uniform', 'Uniform', uniform, need_inner_model=True),
@@ -217,6 +244,7 @@ schedulers = [
     Scheduler('align_your_steps_GITS', 'Align Your Steps GITS', get_align_your_steps_sigmas_GITS),
     Scheduler('align_your_steps_11', 'Align Your Steps 11', ays_11_sigmas),
     Scheduler('align_your_steps_32', 'Align Your Steps 32', ays_32_sigmas),
+    Scheduler('sigmoid_offset', 'Sigmoid Offset', sigmoid_offset_sigmas, need_inner_model=True),
 ]
 
 schedulers_map = {**{x.name: x for x in schedulers}, **{x.label: x for x in schedulers}}

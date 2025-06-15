@@ -131,6 +131,10 @@ class KDiffusionSampler(sd_samplers_common.Sampler):
                 p.extra_generation_params["Beta schedule alpha"] = opts.beta_dist_alpha
                 p.extra_generation_params["Beta schedule beta"] = opts.beta_dist_beta
 
+            if scheduler.label == 'Sigmoid Offset':
+                p.extra_generation_params["Sigmoid Offset schedule base c"] = opts.sigmoid_base_c
+                p.extra_generation_params["Sigmoid Offset schedule square k"] = opts.sigmoid_square_k
+      
             sigmas = scheduler.function(n=steps, **sigmas_kwargs, device=devices.cpu)
 
         if discard_next_to_last_sigma:
