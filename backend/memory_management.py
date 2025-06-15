@@ -316,6 +316,8 @@ def state_dict_dtype(state_dict):
             return 'nf4'
         if 'bitsandbytes__fp4' in k:
             return 'fp4'
+        if 'scale_weight' in k:
+            return torch.float8_e4m3fn
 
     dtype_counts = {}
 
@@ -560,11 +562,13 @@ def unload_model_clones(model):
 
 
 def free_memory(memory_required, device, keep_loaded=[], free_all=False):
-    # this check fully unloads any 'abandoned' models
+    # this check fully unloads any 'abandoned' models - seems to happen with JointTextEncoder on model change
+    # but not with KModel or IntegratedAutoencoderKL
     for i in range(len(current_loaded_models) - 1, -1, -1):
-        # print (current_loaded_models[i].model.model.__class__.__name__, sys.getrefcount(current_loaded_models[i].model))
-        if sys.getrefcount(current_loaded_models[i].model) <= 2:
-            current_loaded_models.pop(i).model_unload(avoid_model_moving=True)
+        if sys.getrefcount(current_loaded_models[i].model) <= 2: # one reference is the list, another is the check
+            current_loaded_models[i].model = None
+            current_loaded_models[i].real_model = None
+            current_loaded_models.pop(i)
 
     if free_all:
         memory_required = 1e30
@@ -587,10 +591,9 @@ def free_memory(memory_required, device, keep_loaded=[], free_all=False):
         shift_model = current_loaded_models[i]
         if shift_model.device == device:
             if shift_model not in keep_loaded:
-                m = current_loaded_models.pop(i)
-                print(f"Unload model {m.model.model.__class__.__name__} ", end="")
-                m.model_unload()
-                del m
+                print(f"Unload model {current_loaded_models[i].model.model.__class__.__name__} ", end="")
+                current_loaded_models.pop(i).model_unload()
+
                 unloaded_model = True
 
     if unloaded_model:
@@ -621,7 +624,8 @@ def load_models_gpu(models, memory_required=0, hard_memory_preservation=0):
 
     execution_start_time = time.perf_counter()
     memory_to_free = max(minimum_inference_memory(), memory_required) + hard_memory_preservation
-    memory_for_inference = minimum_inference_memory() + hard_memory_preservation
+    # memory_for_inference = minimum_inference_memory() + hard_memory_preservation
+    memory_for_inference = (memory_required if memory_required > 0 else minimum_inference_memory()) + hard_memory_preservation
 
     models_to_load = []
     models_already_loaded = []
@@ -629,8 +633,6 @@ def load_models_gpu(models, memory_required=0, hard_memory_preservation=0):
         loaded_model = LoadedModel(x)
 
         if loaded_model in current_loaded_models:
-            index = current_loaded_models.index(loaded_model)
-            current_loaded_models.insert(0, current_loaded_models.pop(index))
             models_already_loaded.append(loaded_model)
         else:
             models_to_load.append(loaded_model)
@@ -687,7 +689,7 @@ def load_models_gpu(models, memory_required=0, hard_memory_preservation=0):
             model_gpu_memory_when_using_cpu_swap = 0
 
         loaded_model.model_load(model_gpu_memory_when_using_cpu_swap)
-        current_loaded_models.insert(0, loaded_model)
+        current_loaded_models.append(loaded_model)
 
     moving_time = time.perf_counter() - execution_start_time
     print(f'Moving model(s) has taken {moving_time:.2f} seconds')
