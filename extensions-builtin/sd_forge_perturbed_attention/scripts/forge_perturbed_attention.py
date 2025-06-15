@@ -62,13 +62,7 @@ class PerturbedAttentionGuidanceForForge(scripts.Script):
                 model, cond_denoised, cond, sigma, x, options = \
                     args["model"], args["cond_denoised"], args["cond"], args["sigma"], args["input"], args["model_options"].copy()
 
-                pag_options = set_model_options_patch_replace(options, attn_proc, "attn1", "middle", 0)
-
-                # clear SAG patch from this copy of the model_options, if exists, as otherwise PAG has no effect
-                # SAG attn and recording has already been done before this, post_cfg, phase
-                sag_block = ("middle", 0, 0)
-                if pag_options['transformer_options']['patches_replace']['attn1'].get(sag_block, None) is not None:
-                    del pag_options['transformer_options']['patches_replace']['attn1'][sag_block]
+                pag_options = set_model_options_patch_replace(options, attn_proc, "attn1", "middle", 0, 0)
                
                 degraded, _ = calc_cond_uncond_batch(model, cond, None, x, sigma, pag_options)
 
