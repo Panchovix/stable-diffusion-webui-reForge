@@ -8,6 +8,10 @@ function dimensionChange(width_input, height_input) {
     if (!inImg2img) {
         return;
     }
+    method = gradioApp().querySelector('#img2img_inpaint_full_res > div > div > div > div > input').value;
+    if (method != 'Whole picture') {
+        return;
+    }
 
     let targetWidth = width_input.value * 1.0;
     let targetHeight = height_input.value * 1.0;
@@ -15,6 +19,7 @@ function dimensionChange(width_input, height_input) {
     var targetElement = null;
 
     var tabIndex = get_tab_index('mode_img2img');
+
     if (tabIndex == 0) { // img2img
         if (!e_img2img) {
             if (opts.forge_canvas_plain) {
