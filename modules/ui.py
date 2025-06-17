@@ -59,9 +59,6 @@ if cmd_opts.ngrok is not None:
         )
 
 
-sample_img2img = "assets/stable-samples/img2img/sketch-mountains-input.jpg"
-sample_img2img = sample_img2img if os.path.exists(sample_img2img) else None
-
 # Using constants for these since the variation selector isn't visible.
 # Important that they exactly match script.js for tooltip to work.
 random_symbol = '\U0001f3b2\ufe0f'  # 🎲️
@@ -203,6 +200,7 @@ def create_override_settings_dropdown(tabname, row):
         fn=lambda x: gr.Dropdown.update(visible=bool(x)),
         inputs=[dropdown],
         outputs=[dropdown],
+        show_progress=False,
     )
 
     return dropdown
