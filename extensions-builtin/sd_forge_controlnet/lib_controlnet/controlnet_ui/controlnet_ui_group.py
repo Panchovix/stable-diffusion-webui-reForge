@@ -38,42 +38,10 @@ class A1111Context:
     img2img_w_slider = None
     img2img_h_slider = None
 
-    img2img_img2img_tab = None
-    img2img_img2img_sketch_tab = None
-    img2img_batch_tab = None
-    img2img_inpaint_tab = None
-    img2img_inpaint_sketch_tab = None
-    img2img_inpaint_upload_tab = None
-
-    img2img_inpaint_area = None
-    txt2img_enable_hr = None
-
-    @property
-    def img2img_inpaint_tabs(self):
-        return (
-            self.img2img_inpaint_tab,
-            self.img2img_inpaint_sketch_tab,
-            self.img2img_inpaint_upload_tab,
-        )
-
-    @property
-    def img2img_non_inpaint_tabs(self):
-        return (
-            self.img2img_img2img_tab,
-            self.img2img_img2img_sketch_tab,
-            self.img2img_batch_tab,
-        )
-
     @property
     def ui_initialized(self) -> bool:
         optional_components = {
             # Optional components are only available after A1111 v1.7.0.
-            "img2img_img2img_tab": "img2img_img2img_tab",
-            "img2img_img2img_sketch_tab": "img2img_img2img_sketch_tab",
-            "img2img_batch_tab": "img2img_batch_tab",
-            "img2img_inpaint_tab": "img2img_inpaint_tab",
-            "img2img_inpaint_sketch_tab": "img2img_inpaint_sketch_tab",
-            "img2img_inpaint_upload_tab": "img2img_inpaint_upload_tab",
         }
         return all(
             c
@@ -91,14 +59,6 @@ class A1111Context:
             "txt2img_height": "txt2img_h_slider",
             "img2img_width": "img2img_w_slider",
             "img2img_height": "img2img_h_slider",
-            "img2img_img2img_tab": "img2img_img2img_tab",
-            "img2img_img2img_sketch_tab": "img2img_img2img_sketch_tab",
-            "img2img_batch_tab": "img2img_batch_tab",
-            "img2img_inpaint_tab": "img2img_inpaint_tab",
-            "img2img_inpaint_sketch_tab": "img2img_inpaint_sketch_tab",
-            "img2img_inpaint_upload_tab": "img2img_inpaint_upload_tab",
-            "img2img_inpaint_full_res": "img2img_inpaint_area",
-            "txt2img_hr-checkbox": "txt2img_enable_hr",
         }
         elem_id = getattr(component, "elem_id", None)
         # Do not set component if it has already been set.
@@ -1073,4 +1033,3 @@ class ControlNetUiGroup(object):
             return
 
         ControlNetUiGroup.a1111_context.set_component(component)
-        ControlNetUiGroup.try_register_all_callbacks()
