@@ -96,7 +96,11 @@ class ControlNetForForgeOfficial(scripts.Script):
         if shared.opts.data.get("control_net_sync_field_args", True):
             self.infotext_fields = infotext.infotext_fields
             self.paste_field_names = infotext.paste_field_names
-        return tuple(controls)
+
+        if is_img2img:
+            ControlNetUiGroup.try_register_all_callbacks()
+
+    return tuple(controls)
 
     def get_enabled_units(self, units):
         # Parse dict from API calls.
