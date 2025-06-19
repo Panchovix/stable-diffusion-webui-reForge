@@ -1,7 +1,7 @@
 import gradio as gr
 from modules import scripts, shared, ui_common, postprocessing, call_queue, ui_toprow
 import modules.infotext_utils as parameters_copypaste
-from modules.ui_components import ResizeHandleRow
+from modules.ui_components import ResizeHandleRow, ToolButton
 
 
 def create_ui():
@@ -22,6 +22,34 @@ def create_ui():
                     extras_batch_output_dir = gr.Textbox(label="Output directory", **shared.hide_dirs, placeholder="Leave blank to save images to the default path.", elem_id="extras_batch_output_dir")
                     show_extras_results = gr.Checkbox(label='Show result images', value=True, elem_id="extras_show_extras_results")
 
+                with gr.TabItem('Video', id='video', elem_id='extras_video') as tab_video:
+                    gr.Markdown("## combine frames to video")
+                    with gr.Row():
+                        input_frames  = gr.Textbox(label="Input frames", placeholder="A directory of images on the same machine where the server is running.", max_lines=1)
+                        clear_combine = ToolButton('\U0001f5d1\ufe0f')
+                    with gr.Row():
+                        output_video  = gr.Textbox(label="Output video filename", placeholder="Blank: default name", max_lines=1)
+                        output_fps    = gr.Number(label="Output fps", value=0, minimum=0, scale=0)
+                        interpolate   = gr.Number(label="Interpolation", value=1, minimum=1, step=1, scale=0)
+                    gr.Markdown("### if *Input video file* is provided, it will be used for **audio** and, if *Output fps* is zero, for **fps**.")
+                    gr.Markdown("## split video to frames")
+                    with gr.Row():
+                        input_video   = gr.Textbox(label="Input video file", placeholder="A video on the same machine where the server is running.", max_lines=1)
+                    with gr.Row():
+                        output_frames = gr.Textbox(label="Output directory", placeholder="Blank: directory of input.", max_lines=1)
+                        clear_split   = ToolButton('\U0001f5d1\ufe0f')
+                    gr.Markdown("---")
+                    gr.Markdown("### further post-processing is ignored - switch to 'Batch from Directory'")
+
+                    def clearI():
+                        return "", ""
+                    def clearO():
+                        return "", 0, "", 1
+
+                    clear_split.click(fn=clearI, inputs=None, outputs=[input_video, output_frames], show_progress=False)
+                    clear_combine.click(fn=clearO, inputs=None, outputs=[input_frames, output_fps, output_video, interpolate], show_progress=False)
+
+
             script_inputs = scripts.scripts_postproc.setup_ui()
 
         with gr.Column():
@@ -34,6 +62,7 @@ def create_ui():
     tab_single.select(fn=lambda: 0, inputs=None, outputs=[tab_index])
     tab_batch.select(fn=lambda: 1, inputs=None, outputs=[tab_index])
     tab_batch_dir.select(fn=lambda: 2, inputs=None, outputs=[tab_index])
+    tab_video.select(fn=lambda: 3, inputs=None, outputs=[tab_index])
 
     submit_click_inputs = [
         dummy_component,
@@ -43,6 +72,12 @@ def create_ui():
         extras_batch_input_dir,
         extras_batch_output_dir,
         show_extras_results,
+        input_video,
+        output_frames,
+        input_frames,
+        output_fps,
+        output_video,
+        interpolate,
         *script_inputs
     ]
 

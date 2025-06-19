@@ -1,12 +1,109 @@
 import os
+import subprocess
+import datetime
 
 from PIL import Image
+import cv2
 
 from modules import shared, images, devices, scripts, scripts_postprocessing, ui_common, infotext_utils
 from modules.shared import opts
 
 
-def run_postprocessing(extras_mode, image, image_folder, input_dir, output_dir, show_extras_results, *args, save_output: bool = True):
+# video split / combine from sd-webui-video-extras-tab extension by light-and-ray
+try:
+    from imageio_ffmpeg import get_ffmpeg_exe
+    FFMPEG = get_ffmpeg_exe()
+except Exception as e:
+    FFMPEG = 'ffmpeg'
+
+
+def separate_video_into_frames(video_path, frames_path):
+    ffmpeg_cmd = [
+        FFMPEG,
+        '-loglevel', 'quiet',
+        '-i', video_path,
+        '-y',
+        os.path.join(frames_path, '%05d.png'),
+    ]
+
+    rc = subprocess.run(ffmpeg_cmd).returncode
+    if rc != 0:
+        raise Exception(f'ffmpeg exited with code {rc}. See console for details')
+
+    return
+
+
+def getVideoFrames(video_path, frames_path):
+    separate_video_into_frames(video_path, frames_path)
+    return
+
+
+def getVideoFPS(video_path):
+    name = os.path.splitext(video_path)
+    ext = name[1].lower()
+
+    if ext == '.webp' or ext == '.apng' or ext == '.png':
+        #from gif2gif extension
+        with Image.open(video_path) as im:
+            try:
+                fps = round (1000 / im.info["duration"], 3)
+            except:
+                fps = 'unknown'
+    else:
+        video = cv2.VideoCapture(video_path)
+        fps = round(video.get(cv2.CAP_PROP_FPS), 3)
+        video.release()
+
+    return fps
+        
+def save_video(frames_dir, fps, original, output_path, interpolate):
+    if original != '':  # order of parameters is fussy
+        ffmpeg_cmd = [
+            FFMPEG,
+            '-loglevel', 'quiet',
+            '-framerate', str(fps),
+            '-i', os.path.join(frames_dir, '%5d.png'),
+            '-r', str(fps*interpolate),
+            '-i', original,
+            '-map', '0:v:0',
+            '-map', '1:a:0?',
+            '-c:v', 'libx264',
+            '-c:a', 'copy',
+            '-vf', f'fps={fps * interpolate}',
+            '-profile:v', 'high444',
+            '-pix_fmt', 'yuv444p',
+            '-shortest',
+            '-y',
+            output_path
+        ]
+        ffmpeg_cmd[19:19] = ['-filter:v', 'mblend'] if interpolate > 1 else []
+    else:
+        ffmpeg_cmd = [
+            FFMPEG,
+            '-loglevel', 'quiet',
+            '-framerate', str(fps),
+            '-i', os.path.join(frames_dir, '%5d.png'),
+            '-r', str(fps * interpolate),
+            '-map', '0:v:0',
+            '-c:v', 'libx264',
+            '-vf', f'fps={fps * interpolate}',
+            '-profile:v', 'high444',
+            '-pix_fmt', 'yuv444p',
+            '-shortest',
+            '-y',
+            output_path
+        ]
+        ffmpeg_cmd[13:13] = ['-filter:v', 'mblend'] if interpolate > 1 else []
+
+    # print(' '.join(f"'{str(v)}'" if ' ' in str(v) else str(v) for v in ffmpeg_cmd))
+    rc = subprocess.run(ffmpeg_cmd).returncode
+    if rc != 0:
+        raise Exception(f'ffmpeg exited with code {rc}. See console for details')
+
+
+def run_postprocessing(extras_mode, image, image_folder, input_dir, output_dir, show_extras_results, \
+                        input_video, output_frames, input_frames, output_fps, output_video, interpolate, \
+                        *args, save_output: bool = True):
     devices.torch_gc()
 
     shared.state.begin(job="extras")
@@ -37,7 +134,60 @@ def run_postprocessing(extras_mode, image, image_folder, input_dir, output_dir, 
             assert image, 'image not selected'
             yield image, None
 
-    if extras_mode == 2 and output_dir != '':
+    if extras_mode == 3:
+        output_text = ''
+        input_fps = 'unknown'
+
+        if input_video != '':
+            if input_video[0] == '\"':
+                input_video = input_video[1:-1]
+
+            input_fps = getVideoFPS(input_video)
+
+        if input_video != '' and input_frames == '':
+            name = os.path.splitext(input_video)
+            ext = name[1].lower()
+
+            if output_frames == '':
+                output_frames = name[0] + '_frames'
+
+            # Create the frames folder if it doesn't exist
+            os.makedirs(output_frames, exist_ok=True)
+                
+            if ext == '.webp' or ext == '.apng' or ext == '.png':
+                #from gif2gif extension
+                with Image.open(input_video) as im:
+                    frame_count = 0
+                    try:
+                        while True:
+                            frame = im.copy()
+                            frame.save(os.path.join(output_frames, f'{frame_count:05}.png'))
+                            frame_count += 1
+                            im.seek(frame_count)
+                    except EOFError:
+                        pass
+                output_text += f'{frame_count} '
+            else:
+                getVideoFrames(input_video, output_frames)
+
+            output_text += f'frames (fps: {input_fps}) saved to {output_frames}\n'
+
+        if input_frames != '':
+            if output_video == '':
+                timestamp = int(datetime.datetime.now().timestamp())
+                output_video = os.path.join(input_frames, f'output_{timestamp}.mp4')
+            if output_fps == 0:
+                if input_fps != 'unknown':
+                    output_fps = input_fps
+                else:
+                    output_fps = 25
+
+            save_video(input_frames, output_fps, input_video, output_video, interpolate)
+            output_text += f'video saved to {output_video}'
+            
+        return '', ui_common.plaintext_to_html(output_text), ''
+
+    elif extras_mode == 2 and output_dir != '':
         outpath = output_dir
     else:
         outpath = opts.outdir_samples or opts.outdir_extras_samples
