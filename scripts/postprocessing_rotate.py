@@ -5,8 +5,8 @@ from modules import scripts_postprocessing
 from modules.ui_components import InputAccordion
 
 
-class ScriptPostprocessingUpscale(scripts_postprocessing.ScriptPostprocessing):
-    name = "Upscale"
+class ScriptPostprocessingRotate(scripts_postprocessing.ScriptPostprocessing):
+    name = "Rotate"
     order = 500     # should run first - before any upscale, face restore
 
     def ui(self):
