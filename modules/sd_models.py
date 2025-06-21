@@ -414,7 +414,7 @@ def apply_token_merging(sd_model, token_merging_ratio):
 def forge_model_reload():
     current_hash = str(model_data.forge_loading_parameters)
 
-    if model_data.forge_hash == current_hash:
+    if model_data.forge_hash == current_hash and model_data.sd_model is not None:
         return model_data.sd_model, False
 
     print('Loading Model: ' + str(model_data.forge_loading_parameters))
