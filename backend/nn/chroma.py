@@ -7,8 +7,7 @@ import torch
 
 from torch import nn
 from einops import rearrange, repeat
-from backend.attention import attention_function
-from backend.utils import fp16_fix, tensor2parameter
+from backend.utils import fp16_fix
 
 from .flux import attention, rope, timestep_embedding
 from .flux import EmbedND, MLPEmbedder, RMSNorm, QKNorm, SelfAttention
