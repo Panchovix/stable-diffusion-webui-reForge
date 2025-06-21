@@ -477,19 +477,20 @@ def replace_state_dict(sd, asd, guess):
                         sd[new_k] = v
 
 
-    if 'encoder.block.0.layer.0.SelfAttention.k.weight' in asd:
-        keys_to_delete = [k for k in sd if k.startswith(f"{text_encoder_key_prefix}t5xxl.")]
-        for k in keys_to_delete:
-            del sd[k]
-        for k, v in asd.items():
-            sd[f"{text_encoder_key_prefix}t5xxl.transformer.{k}"] = v
-
-    if 'encoder.encoder.block.0.layer.0.SelfAttention.k.weight' in asd:
-        keys_to_delete = [k for k in sd if k.startswith(f"{text_encoder_key_prefix}t5xxl.")]
-        for k in keys_to_delete:
-            del sd[k]
-        for k, v in asd.items():
-            sd[f"{text_encoder_key_prefix}t5xxl.transformer.{k.replace('encoder.', '', 1)}"] = v
+    if model_type == 'flux':
+        if 'encoder.block.0.layer.0.SelfAttention.k.weight' in asd:
+            keys_to_delete = [k for k in sd if k.startswith(f"{text_encoder_key_prefix}t5xxl.")]
+            for k in keys_to_delete:
+                del sd[k]
+            for k, v in asd.items():
+                sd[f"{text_encoder_key_prefix}t5xxl.transformer.{k}"] = v
+    
+        if 'encoder.encoder.block.0.layer.0.SelfAttention.k.weight' in asd:
+            keys_to_delete = [k for k in sd if k.startswith(f"{text_encoder_key_prefix}t5xxl.")]
+            for k in keys_to_delete:
+                del sd[k]
+            for k, v in asd.items():
+                sd[f"{text_encoder_key_prefix}t5xxl.transformer.{k.replace('encoder.', '', 1)}"] = v
 
 
     # ResAdapter (bytedance) unet patch (sd1.5 or sdxl)
