@@ -96,21 +96,21 @@ def get_deis_coeff_list(t_steps, max_order, N=10000, deis_mode='tab'):
 
         C = []
         for i, (t_cur, t_next) in enumerate(zip(t_steps[:-1], t_steps[1:])):
-            order = min(i, max_order)
-            if order == 0:
+            order = min(i+1, max_order)
+            if order == 1:
                 C.append([])
             else:
                 prev_t = t_steps[[i - k for k in range(order+1)]]
-                if order == 1:
+                if order == 2:
                     coeff_cur = ((t_next - prev_t[1])**2 - (t_cur - prev_t[1])**2) / (2 * (t_cur - prev_t[1]))
                     coeff_prev1 = (t_next - t_cur)**2 / (2 * (prev_t[1] - t_cur))
                     coeff_temp = [coeff_cur, coeff_prev1]
-                elif order == 2:
+                elif order == 3:
                     coeff_cur = get_def_intergral_2(prev_t[1], prev_t[2], t_cur, t_next, t_cur)
                     coeff_prev1 = get_def_intergral_2(t_cur, prev_t[2], t_cur, t_next, prev_t[1])
                     coeff_prev2 = get_def_intergral_2(t_cur, prev_t[1], t_cur, t_next, prev_t[2])
                     coeff_temp = [coeff_cur, coeff_prev1, coeff_prev2]
-                elif order == 3:
+                elif order == 4:
                     coeff_cur = get_def_intergral_3(prev_t[1], prev_t[2], prev_t[3], t_cur, t_next, t_cur)
                     coeff_prev1 = get_def_intergral_3(t_cur, prev_t[2], prev_t[3], t_cur, t_next, prev_t[1])
                     coeff_prev2 = get_def_intergral_3(t_cur, prev_t[1], prev_t[3], t_cur, t_next, prev_t[2])

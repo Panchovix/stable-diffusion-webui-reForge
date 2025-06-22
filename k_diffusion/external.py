@@ -113,8 +113,8 @@ class DiscreteSchedule(nn.Module):
         return t.view(sigma.shape)
 
     def t_to_sigma(self, t):
-        t = t.float()
-        low_idx, high_idx, w = t.floor().long(), t.ceil().long(), t.frac()
+        t = t.to(torch.float32)
+        low_idx, high_idx, w = t.floor().to(torch.int64), t.ceil().to(torch.int64), t.frac()
         log_sigma = (1 - w) * self.log_sigmas[low_idx] + w * self.log_sigmas[high_idx]
         return log_sigma.exp()
 
