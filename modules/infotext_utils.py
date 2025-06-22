@@ -377,11 +377,11 @@ Steps: 20, Sampler: Euler a, CFG scale: 7, Seed: 965400086, Size: 512x512, Model
     if "Schedule type" not in res:
         res["Schedule type"] = "Automatic"
 
-    if "Schedule max sigma" not in res:
-        res["Schedule max sigma"] = 0
+    if "Sigma max" not in res:
+        res["Sigma max"] = 0
 
-    if "Schedule min sigma" not in res:
-        res["Schedule min sigma"] = 0
+    if "Sigma min" not in res:
+        res["Sigma min"] = 0
 
     if "Schedule rho" not in res:
         res["Schedule rho"] = 0
@@ -465,7 +465,6 @@ Steps: 20, Sampler: Euler a, CFG scale: 7, Seed: 965400086, Size: 512x512, Model
 
 infotext_to_setting_name_mapping = [
     ('VAE/TE', 'forge_additional_modules'),
-    ('Old Karras sigmas', 'use_old_karras_scheduler_sigmas'),
 ]
 """Mapping of infotext labels to setting names. Only left for backwards compatibility - use OptionInfo(..., infotext='...') instead.
 Example content:

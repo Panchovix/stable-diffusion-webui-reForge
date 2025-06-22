@@ -202,7 +202,7 @@ options_templates.update(options_section(('compatibility', "Compatibility", "sd"
     "forge_try_reproduce": OptionInfo('None', "Try to reproduce the results from external software", gr.Radio, lambda: {"choices": ['None', 'Diffusers', 'ComfyUI', 'WebUI 1.5', 'InvokeAI', 'EasyDiffusion', 'DrawThings']}),
     "auto_backcompat": OptionInfo(True, "Automatic backward compatibility").info("automatically enable options for backwards compatibility when importing generation parameters from infotext that has program version."),
     "use_old_emphasis_implementation": OptionInfo(False, "Use old emphasis implementation. Can be useful to reproduce old seeds."),
-    "use_old_karras_scheduler_sigmas": OptionInfo(False, "Use old karras scheduler sigmas (0.1 to 10)."),
+    "use_old_karras_scheduler_sigmas": OptionInfo(False, "Use old karras scheduler sigmas (0.1 to 10).", infotext='Old Karras sigmas'),
     "hires_fix_use_firstpass_conds": OptionInfo(False, "For hires fix, calculate conds of second pass using extra networks of first pass."),
     "use_old_scheduling": OptionInfo(False, "Use old prompt editing timelines.", infotext="Old prompt editing timelines").info("For [red:green:N]; old: If N < 1, it's a fraction of steps (and hires fix uses range from 0 to 1), if N >= 1, it's an absolute number of steps; new: If N has a decimal point in it, it's a fraction of steps (and hires fix uses range from 1 to 2), othewrwise it's an absolute number of steps"),
     "use_downcasted_alpha_bar": OptionInfo(False, "Downcast model alphas_cumprod to fp16 before sampling. For reproducing old seeds.", infotext="Downcast alphas_cumprod"),
@@ -333,22 +333,29 @@ options_templates.update(options_section(('sampler-params', "Sampler parameters"
     's_tmin':  OptionInfo(0.0, "sigma tmin",  gr.Slider, {"minimum": 0.0, "maximum": 10.0, "step": 0.01}, infotext='Sigma tmin').info('enable stochasticity; start value of the sigma range; only applies to Euler, Heun, and DPM2'),
     's_tmax':  OptionInfo(0.0, "sigma tmax",  gr.Slider, {"minimum": 0.0, "maximum": 999.0, "step": 0.01}, infotext='Sigma tmax').info("0 = inf; end value of the sigma range; only applies to Euler, Heun, and DPM2"),
     's_noise': OptionInfo(1.0, "sigma noise", gr.Slider, {"minimum": 0.0, "maximum": 1.1, "step": 0.001}, infotext='Sigma noise').info('amount of additional noise to counteract loss of detail during sampling'),
-    'sigma_min': OptionInfo(0.0, "sigma min", gr.Slider, {"minimum": 0.0, "maximum": 2.0, "step": 0.001}, infotext='Schedule min sigma').info("0 = default (~0.03); minimum noise strength for k-diffusion noise scheduler"),
-    'sigma_max': OptionInfo(0.0, "sigma max", gr.Slider, {"minimum": 0.0, "maximum": 60.0, "step": 0.001}, infotext='Schedule max sigma').info("0 = default (~14.6); maximum noise strength for k-diffusion noise scheduler"),
+    'sigma_min': OptionInfo(0.0, "sigma min", gr.Slider, {"minimum": 0.0, "maximum": 2.0, "step": 0.001}, infotext='Sigma min').info("0 = default (~0.03); minimum noise strength for k-diffusion noise scheduler"),
+    'sigma_max': OptionInfo(0.0, "sigma max", gr.Slider, {"minimum": 0.0, "maximum": 60.0, "step": 0.001}, infotext='Sigma max').info("0 = default (~14.6); maximum noise strength for k-diffusion noise scheduler"),
     'rho':  OptionInfo(0.0, "rho", gr.Number, infotext='Schedule rho').info("0 = default (7 for karras, 1 for polyexponential); higher values result in a steeper noise schedule (decreases faster)"),
     'eta_noise_seed_delta': OptionInfo(0, "Eta noise seed delta", gr.Number, {"precision": 0}, infotext='ENSD').info("ENSD; does not improve anything, just produces different results for ancestral samplers - only useful for reproducing images"),
     'always_discard_next_to_last_sigma': OptionInfo(False, "Always discard next-to-last sigma", infotext='Discard penultimate sigma').link("PR", "https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/6044"),
     'sgm_noise_multiplier': OptionInfo(False, "SGM noise multiplier", infotext='SGM noise multiplier').link("PR", "https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/12818").info("Match initial noise to official SDXL implementation - only useful for reproducing images"),
+
+    'deis_mode': OptionInfo("tab", "DEIS variant", gr.Radio, {"choices": ["tab", "rhoab"]}, infotext='DEIS variant'),
+    'deis_order': OptionInfo(3, "DEIS order", gr.Slider, {"minimum": 2, "maximum": 4, "step": 1}, infotext='DEIS order').info("must be < sampling steps"),
+
+    'dpmpp_2m_sde_mode': OptionInfo("midpoint", "DPM++ 2M SDE variant", gr.Radio, {"choices": ["heun", "midpoint"]}, infotext="2M SDE variant"),
+
     'uni_pc_variant': OptionInfo("bh1", "UniPC variant", gr.Radio, {"choices": ["bh1", "bh2", "vary_coeff"]}, infotext='UniPC variant'),
     'uni_pc_skip_type': OptionInfo("time_uniform", "UniPC skip type", gr.Radio, {"choices": ["time_uniform", "time_quadratic", "logSNR"]}, infotext='UniPC skip type'),
-    'uni_pc_order': OptionInfo(3, "UniPC order", gr.Slider, {"minimum": 1, "maximum": 50, "step": 1}, infotext='UniPC order').info("must be < sampling steps"),
+    'uni_pc_order': OptionInfo(3, "UniPC order", gr.Slider, {"minimum": 1, "maximum": 5, "step": 1}, infotext='UniPC order').info("must be < sampling steps"),
     'uni_pc_lower_order_final': OptionInfo(True, "UniPC lower order final", infotext='UniPC lower order final'),
+
     'sd_noise_schedule': OptionInfo("Default", "Noise schedule for sampling", gr.Radio, {"choices": ["Default", "Zero Terminal SNR"]}, infotext="Noise Schedule").info("for use with zero terminal SNR trained models"),
     'skip_early_cond': OptionInfo(0.0, "Ignore negative prompt during early sampling", gr.Slider, {"minimum": 0.0, "maximum": 1.0, "step": 0.01}, infotext="Skip Early CFG").info("disables CFG on a proportion of steps at the beginning of generation; 0=skip none; 1=skip all; can both improve sample diversity/quality and speed up sampling"),
-    'beta_dist_alpha': OptionInfo(0.6, "Beta scheduler - alpha", gr.Slider, {"minimum": 0.01, "maximum": 1.0, "step": 0.01}, infotext='Beta scheduler alpha').info('Default = 0.6; the alpha parameter of the beta distribution used in Beta sampling'),
-    'beta_dist_beta': OptionInfo(0.6, "Beta scheduler - beta", gr.Slider, {"minimum": 0.01, "maximum": 1.0, "step": 0.01}, infotext='Beta scheduler beta').info('Default = 0.6; the beta parameter of the beta distribution used in Beta sampling'),
-    'sigmoid_base_c': OptionInfo(0.5, "Sigmoid offset scheduler - base c", gr.Slider, {"minimum": -50.0, "maximum": 50.0, "step": 0.01}, infotext='Sigmoid offset scheduler - base c').info('Default = 0.5; the base c parameter of the Sigmoid offset scheduler sampling'),
-    'sigmoid_square_k': OptionInfo(1.0, "Sigmoid offset scheduler - square k", gr.Slider, {"minimum": 0.01, "maximum": 10.0, "step": 0.01}, infotext='Sigmoid offset scheduler - square k').info('Default = 1.0; the square k parameter of the Sigmoid offset scheduler sampling'),
+    'beta_dist_alpha': OptionInfo(0.6, "Beta scheduler - alpha", gr.Slider, {"minimum": 0.01, "maximum": 1.0, "step": 0.01}, infotext='Beta alpha').info('Default = 0.6; the alpha parameter of the beta distribution used in Beta sampling'),
+    'beta_dist_beta': OptionInfo(0.6, "Beta scheduler - beta", gr.Slider, {"minimum": 0.01, "maximum": 1.0, "step": 0.01}, infotext='Beta beta').info('Default = 0.6; the beta parameter of the beta distribution used in Beta sampling'),
+    'sigmoid_base_c': OptionInfo(0.5, "Sigmoid offset scheduler - base c", gr.Slider, {"minimum": -50.0, "maximum": 50.0, "step": 0.01}, infotext='base c').info('Default = 0.5; the base c parameter of the Sigmoid offset scheduler sampling'),
+    'sigmoid_square_k': OptionInfo(1.0, "Sigmoid offset scheduler - square k", gr.Slider, {"minimum": 0.01, "maximum": 10.0, "step": 0.01}, infotext='square k').info('Default = 1.0; the square k parameter of the Sigmoid offset scheduler sampling'),
 }))
 
 options_templates.update(options_section(('postprocessing', "Postprocessing", "postprocessing"), {

@@ -114,11 +114,11 @@ class KDiffusionSampler(sd_samplers_common.Sampler):
 
             if opts.sigma_min != 0 and opts.sigma_min != m_sigma_min:
                 sigmas_kwargs['sigma_min'] = opts.sigma_min
-                p.extra_generation_params["Schedule min sigma"] = opts.sigma_min
+                p.extra_generation_params["Sigma min"] = opts.sigma_min
 
             if opts.sigma_max != 0 and opts.sigma_max != m_sigma_max:
                 sigmas_kwargs['sigma_max'] = opts.sigma_max
-                p.extra_generation_params["Schedule max sigma"] = opts.sigma_max
+                p.extra_generation_params["Sigma max"] = opts.sigma_max
 
             if scheduler.default_rho != -1 and opts.rho != 0 and opts.rho != scheduler.default_rho:
                 sigmas_kwargs['rho'] = opts.rho
@@ -128,12 +128,12 @@ class KDiffusionSampler(sd_samplers_common.Sampler):
                 sigmas_kwargs['inner_model'] = self.model_wrap
 
             if scheduler.label == 'Beta':
-                p.extra_generation_params["Beta schedule alpha"] = opts.beta_dist_alpha
-                p.extra_generation_params["Beta schedule beta"] = opts.beta_dist_beta
+                p.extra_generation_params["Beta alpha"] = opts.beta_dist_alpha
+                p.extra_generation_params["Beta beta"] = opts.beta_dist_beta
 
             if scheduler.label == 'Sigmoid Offset':
-                p.extra_generation_params["Sigmoid Offset schedule base c"] = opts.sigmoid_base_c
-                p.extra_generation_params["Sigmoid Offset schedule square k"] = opts.sigmoid_square_k
+                p.extra_generation_params["base c"] = opts.sigmoid_base_c
+                p.extra_generation_params["square k"] = opts.sigmoid_square_k
       
             sigmas = scheduler.function(n=steps, **sigmas_kwargs, device=devices.cpu)
 

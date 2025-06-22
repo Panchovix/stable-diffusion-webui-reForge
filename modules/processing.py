@@ -732,6 +732,17 @@ def create_infotext(p, all_prompts, all_seeds, all_subseeds, comments=None, iter
         "CFG scale": p.cfg_scale
     }
 
+    if p.sampler_name == 'DEIS':
+        generation_params['DEIS variant'] = shared.opts.deis_mode
+        generation_params['DEIS order'] = shared.opts.deis_order
+    elif p.sampler_name == 'DPM++ 2M SDE':
+        generation_params['2M SDE variant'] = shared.opts.dpmpp_2m_sde_mode
+    elif p.sampler_name == 'UniPC':
+        generation_params['UniPC variant'] = shared.opts.uni_pc_variant
+        generation_params['UniPC order'] = shared.opts.uni_pc_order
+        generation_params['UniPC skip type'] = shared.opts.uni_pc_skip_type
+        generation_params['UniPC lower order final'] = shared.opts.uni_pc_lower_order_final
+
     # if hires fix was used, p.firstpass_use_distilled_cfg_scale is appropriately set, otherwise it doesn't exist
     firstpass_use_distilled_cfg_scale = getattr(p,'firstpass_use_distilled_cfg_scale', p.sd_model.use_distilled_cfg_scale)
     if firstpass_use_distilled_cfg_scale:
