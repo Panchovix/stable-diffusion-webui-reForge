@@ -1089,11 +1089,12 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
                     p.scripts.postprocess_image_after_composite(p, pp)
                     image = pp.image
 
-                if save_samples:
-                    images.save_image(image, p.outpath_samples, "", p.seeds[i], p.prompts[i], opts.samples_format, info=infotext(i), p=p)
-
                 text = infotext(i)
                 infotexts.append(text)
+
+                if save_samples:
+                    images.save_image(image, p.outpath_samples, "", p.seeds[i], p.prompts[i], opts.samples_format, info=text, p=p)
+
                 if opts.enable_pnginfo:
                     image.info["parameters"] = text
                 output_images.append(image)
