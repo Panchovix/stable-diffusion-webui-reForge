@@ -203,7 +203,7 @@ class DoubleStreamBlock(nn.Module):
         img_mod1_shift, img_mod1_scale, img_mod1_gate, img_mod2_shift, img_mod2_scale, img_mod2_gate = self.img_mod(vec)
 
         img_modulated = self.img_norm1(img)
-        img_modulated = (1 + img_mod1_scale) * img_modulated + img_mod1_shift
+        img_modulated = torch.addcmul(img_mod1_shift, (1 + img_mod1_scale), img_modulated)
         del img_mod1_shift, img_mod1_scale
         img_qkv = self.img_attn.qkv(img_modulated)
         del img_modulated
@@ -221,7 +221,7 @@ class DoubleStreamBlock(nn.Module):
         del vec
 
         txt_modulated = self.txt_norm1(txt)
-        txt_modulated = (1 + txt_mod1_scale) * txt_modulated + txt_mod1_shift
+        txt_modulated = torch.addcmul(txt_mod1_shift, (1 + txt_mod1_scale), txt_modulated)
         del txt_mod1_shift, txt_mod1_scale
         txt_qkv = self.txt_attn.qkv(txt_modulated)
         del txt_modulated
@@ -245,14 +245,14 @@ class DoubleStreamBlock(nn.Module):
         txt_attn, img_attn = attn[:, :txt.shape[1]], attn[:, txt.shape[1]:]
         del attn
 
-        img = img + img_mod1_gate * self.img_attn.proj(img_attn)
+        img.addcmul_(img_mod1_gate, self.img_attn.proj(img_attn))
         del img_attn, img_mod1_gate
-        img = img + img_mod2_gate * self.img_mlp((1 + img_mod2_scale) * self.img_norm2(img) + img_mod2_shift)
+        img = img + img_mod2_gate * self.img_mlp(torch.addcmul(img_mod2_shift, (1 + img_mod2_scale), self.img_norm2(img)))
         del img_mod2_gate, img_mod2_scale, img_mod2_shift
 
-        txt = txt + txt_mod1_gate * self.txt_attn.proj(txt_attn)
+        txt.addcmul_(txt_mod1_gate, self.txt_attn.proj(txt_attn))
         del txt_attn, txt_mod1_gate
-        txt = txt + txt_mod2_gate * self.txt_mlp((1 + txt_mod2_scale) * self.txt_norm2(txt) + txt_mod2_shift)
+        txt = txt + txt_mod2_gate * self.txt_mlp(torch.addcmul(txt_mod2_shift, (1 + txt_mod2_scale), self.txt_norm2(txt)))
         del txt_mod2_gate, txt_mod2_scale, txt_mod2_shift
 
         txt = fp16_fix(txt)
@@ -279,7 +279,7 @@ class SingleStreamBlock(nn.Module):
     def forward(self, x, vec, pe):
         mod_shift, mod_scale, mod_gate = self.modulation(vec)
         del vec
-        x_mod = (1 + mod_scale) * self.pre_norm(x) + mod_shift
+        x_mod = torch.addcmul(mod_shift, (1 + mod_scale), self.pre_norm(x))
         del mod_shift, mod_scale
         qkv, mlp = torch.split(self.linear1(x_mod), [3 * self.hidden_size, self.mlp_hidden_dim], dim=-1)
         del x_mod
@@ -295,7 +295,7 @@ class SingleStreamBlock(nn.Module):
         output = self.linear2(torch.cat((attn, self.mlp_act(mlp)), dim=2))
         del attn, mlp
 
-        x = x + mod_gate * output
+        x.addcmul_(mod_gate, output)    # x += mod_gate * output
         del mod_gate, output
 
         x = fp16_fix(x)
@@ -313,7 +313,7 @@ class LastLayer(nn.Module):
     def forward(self, x, vec):
         shift, scale = self.adaLN_modulation(vec).chunk(2, dim=1)
         del vec
-        x = (1 + scale[:, None, :]) * self.norm_final(x) + shift[:, None, :]
+        x = torch.addcmul(shift[:, None, :], (1 + scale[:, None, :]), self.norm_final(x))
         del scale, shift
         x = self.linear(x)
         return x

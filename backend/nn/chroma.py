@@ -64,7 +64,7 @@ class DoubleStreamBlock(nn.Module):
     def forward(self, img, txt, mod, pe):
         (img_mod1, img_mod2), (txt_mod1, txt_mod2) = mod
         img_modulated = self.img_norm1(img)
-        img_modulated = (1 + img_mod1.scale) * img_modulated + img_mod1.shift
+        img_modulated = torch.addcmul(img_mod1.shift, (1 + img_mod1.scale), img_modulated)
         img_qkv = self.img_attn.qkv(img_modulated)
         B, L, _ = img_qkv.shape
         H = self.num_heads
@@ -72,7 +72,7 @@ class DoubleStreamBlock(nn.Module):
         img_q, img_k, img_v = img_qkv.view(B, L, 3, H, D).permute(2, 0, 3, 1, 4)
         img_q, img_k = self.img_attn.norm(img_q, img_k)
         txt_modulated = self.txt_norm1(txt)
-        txt_modulated = (1 + txt_mod1.scale) * txt_modulated + txt_mod1.shift
+        txt_modulated = torch.addcmul(txt_mod1.shift, (1 + txt_mod1.scale), txt_modulated)
         txt_qkv = self.txt_attn.qkv(txt_modulated)
         B, L, _ = txt_qkv.shape
         txt_q, txt_k, txt_v = txt_qkv.view(B, L, 3, H, D).permute(2, 0, 3, 1, 4)
@@ -80,12 +80,18 @@ class DoubleStreamBlock(nn.Module):
         q = torch.cat((txt_q, img_q), dim=2)
         k = torch.cat((txt_k, img_k), dim=2)
         v = torch.cat((txt_v, img_v), dim=2)
+        del txt_q, img_q
+        del txt_k, img_k
+        del txt_v, img_v
+
         attn = attention(q, k, v, pe=pe)
         txt_attn, img_attn = attn[:, :txt.shape[1]], attn[:, txt.shape[1]:]
-        img = img + img_mod1.gate * self.img_attn.proj(img_attn)
-        img = img + img_mod2.gate * self.img_mlp((1 + img_mod2.scale) * self.img_norm2(img) + img_mod2.shift)
-        txt = txt + txt_mod1.gate * self.txt_attn.proj(txt_attn)
-        txt = txt + txt_mod2.gate * self.txt_mlp((1 + txt_mod2.scale) * self.txt_norm2(txt) + txt_mod2.shift)
+        img.addcmul_(img_mod1.gate, self.img_attn.proj(img_attn))
+        img = img + img_mod2.gate * self.img_mlp(torch.addcmul(img_mod2.shift, (1 + img_mod2.scale), self.img_norm2(img)))
+        del img_mod1, img_mod2
+        txt.addcmul_(txt_mod1.gate, self.txt_attn.proj(txt_attn))
+        txt = txt + txt_mod2.gate * self.txt_mlp(torch.addcmul(txt_mod2.shift, (1 + txt_mod2.scale), self.txt_norm2(txt)))
+        del txt_mod1, txt_mod2
         txt = fp16_fix(txt)
         return img, txt
 
@@ -121,7 +127,9 @@ class SingleStreamBlock(nn.Module):
         output = self.linear2(torch.cat((attn, self.mlp_act(mlp)), dim=2))
         del attn, mlp
 
-        x = x + mod.gate * output
+        x.addcmul_(mod.gate, output)
+        del mod, output
+
         x = fp16_fix(x)
         return x
 
@@ -136,7 +144,7 @@ class LastLayer(nn.Module):
         shift, scale = mod
         shift = shift.squeeze(1)
         scale = scale.squeeze(1)
-        x = (1 + scale[:, None, :]) * self.norm_final(x) + shift[:, None, :]
+        x = torch.addcmul(shift[:, None, :], (1 + scale[:, None, :]), self.norm_final(x))
         x = self.linear(x)
         return x
 
