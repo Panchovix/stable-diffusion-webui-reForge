@@ -110,7 +110,7 @@ class AbstractPrediction(torch.nn.Module):
 
 
 class Prediction(AbstractPrediction):
-    def __init__(self, sigma_data=1.0, prediction_type='eps', beta_schedule='linear', linear_start=0.00085,
+    def __init__(self, sigma_data=1.0, prediction_type='epsilon', beta_schedule='linear', linear_start=0.00085,
                  linear_end=0.012, timesteps=1000):
         super().__init__(sigma_data=sigma_data, prediction_type=prediction_type)
         self.register_schedule(given_betas=None, beta_schedule=beta_schedule, timesteps=timesteps,
@@ -175,7 +175,7 @@ class PredictionEDM(Prediction):
 
 
 class PredictionContinuousEDM(AbstractPrediction):
-    def __init__(self, sigma_data=1.0, prediction_type='eps', sigma_min=0.002, sigma_max=120.0):
+    def __init__(self, sigma_data=1.0, prediction_type='epsilon', sigma_min=0.002, sigma_max=120.0):
         super().__init__(sigma_data=sigma_data, prediction_type=prediction_type)
         self.set_parameters(sigma_min, sigma_max, sigma_data)
 
@@ -220,7 +220,7 @@ class PredictionContinuousV(PredictionContinuousEDM):
 
 
 class PredictionFlow(AbstractPrediction):
-    def __init__(self, sigma_data=1.0, prediction_type='eps', shift=1.0, multiplier=1000, timesteps=1000):
+    def __init__(self, sigma_data=1.0, prediction_type='epsilon', shift=1.0, multiplier=1000, timesteps=1000):
         super().__init__(sigma_data=sigma_data, prediction_type=prediction_type)
         self.shift = shift
         self.multiplier = multiplier
@@ -321,9 +321,40 @@ class PredictionFlux(AbstractPrediction):
         return 1.0 - percent
 
 
+class PredictionCosmosRFlow(PredictionContinuousEDM):
+    def timestep(self, sigma):
+        return sigma / (sigma + 1)
+
+    def sigma(self, timestep):
+        sigma_max = self.sigma_max
+        if timestep >= (sigma_max / (sigma_max + 1)):
+            return sigma_max
+
+        return timestep / (1 - timestep)
+
+    def calculate_input(self, sigma, noise):
+        s = (sigma / (sigma + 1))
+        s = s.view(s.shape[:1] + (1,) * (noise.ndim - 1))
+        return noise * (1.0 - s)
+
+    def calculate_denoised(self, sigma, model_output, model_input):
+        s = (sigma / (sigma + 1))
+        s = s.view(s.shape[:1] + (1,) * (model_output.ndim - 1))
+        return model_input * (1.0 - s) - model_output * s
+
+    def noise_scaling(self, sigma, noise, latent_image, max_denoise=False):
+        s = sigma.view(sigma.shape[:1] + (1,) * (noise.ndim - 1))
+        noise = noise * s
+        noise += latent_image
+        return noise
+
+    def inverse_noise_scaling(self, sigma, latent):
+        return latent
+
+
 def k_prediction_from_diffusers_scheduler(scheduler):
     if hasattr(scheduler.config, 'prediction_type') and scheduler.config.prediction_type in ["epsilon", "v_prediction"]:
-        if scheduler.config.beta_schedule == "scaled_linear":
+        if scheduler.config.beta_schedule == "scaled_linear" or scheduler.config.beta_schedule == "linear":
             return Prediction(sigma_data=1.0, prediction_type=scheduler.config.prediction_type, beta_schedule='linear',
                               linear_start=scheduler.config.beta_start, linear_end=scheduler.config.beta_end,
                               timesteps=scheduler.config.num_train_timesteps)
