@@ -520,16 +520,13 @@ class AutoencoderKLWan(nn.Module, ConfigMixin):
         x_recon = self.decode(z)
         return x_recon, mu, log_var
 
-    def encode(self, x):
+    def encode(self, x, regulation=None):
         self.clear_cache()
-        ## cache
 
-        print (x.shape)    # ??
-        x = x.unsqueeze(2) # ??
-
+        x = x.unsqueeze(2)
         t = x.shape[2]
+
         iter_ = 1 + (t - 1) // 4
-        ## 对encode输入的x，按时间拆分为1、4、4、4....
         for i in range(iter_):
             self._enc_conv_idx = [0]
             if i == 0:
@@ -545,7 +542,7 @@ class AutoencoderKLWan(nn.Module, ConfigMixin):
                 out = torch.cat([out, out_], 2)
         mu, log_var = self.conv1(out).chunk(2, dim=1)
         self.clear_cache()
-        return mu.squeeze(2) # ??
+        return mu.squeeze(2)
 
     def decode(self, z):
         self.clear_cache()
