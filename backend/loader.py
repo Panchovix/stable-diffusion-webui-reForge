@@ -14,6 +14,7 @@ from backend.utils import read_arbitrary_config, load_torch_file, beautiful_prin
 from backend.state_dict import try_filter_state_dict, load_state_dict
 from backend.operations import using_forge_operations
 from backend.nn.vae import IntegratedAutoencoderKL
+from backend.nn.vae_wan import AutoencoderKLWan
 from backend.nn.clip import IntegratedCLIP
 from backend.nn.unet import IntegratedUNet2DConditionModel
 
@@ -23,9 +24,10 @@ from backend.diffusion_engine.sdxl import StableDiffusionXL, StableDiffusionXLRe
 from backend.diffusion_engine.sd35 import StableDiffusion3
 from backend.diffusion_engine.flux import Flux
 from backend.diffusion_engine.chroma import Chroma
+from backend.diffusion_engine.cosmos import Cosmos
 
 
-possible_models = [StableDiffusion, StableDiffusion2, StableDiffusionXLRefiner, StableDiffusionXL, StableDiffusion3, Chroma, Flux]
+possible_models = [StableDiffusion, StableDiffusion2, StableDiffusionXLRefiner, StableDiffusionXL, StableDiffusion3, Chroma, Flux, Cosmos]
 
 
 logging.getLogger("diffusers").setLevel(logging.ERROR)
@@ -48,6 +50,7 @@ def load_huggingface_component(guess, component_name, lib_name, cls_name, repo_p
             comp = cls.from_pretrained(os.path.join(repo_path, component_name))
             comp._eventual_warn_about_too_long_sequence = lambda *args, **kwargs: None
             return comp
+
         if cls_name in ['AutoencoderKL']:
             assert isinstance(state_dict, dict) and len(state_dict) > 16, 'You do not have VAE state dict!'
 
@@ -60,6 +63,20 @@ def load_huggingface_component(guess, component_name, lib_name, cls_name, repo_p
                 state_dict = huggingface_guess.diffusers_convert.convert_vae_state_dict(state_dict)
             load_state_dict(model, state_dict, ignore_start='loss.')
             return model
+        if cls_name in ['AutoencoderKLWan']:
+            assert isinstance(state_dict, dict) and len(state_dict) > 16, 'You do not have VAE state dict!'
+
+            config = AutoencoderKLWan.load_config(config_path)
+
+            with using_forge_operations(device=memory_management.cpu, dtype=memory_management.vae_dtype()):
+                model = AutoencoderKLWan.from_config(config)
+
+            # if 'decoder.up_blocks.0.resnets.0.norm1.weight' in state_dict.keys(): #diffusers format
+                # state_dict = huggingface_guess.diffusers_convert.convert_vae_state_dict(state_dict)
+            load_state_dict(model, state_dict)#, ignore_start='loss.')
+            return model
+
+
         if component_name.startswith('text_encoder') and cls_name in ['CLIPTextModel', 'CLIPTextModelWithProjection']:
             assert isinstance(state_dict, dict) and len(state_dict) > 16, 'You do not have CLIP state dict!'
 
@@ -150,11 +167,11 @@ def load_huggingface_component(guess, component_name, lib_name, cls_name, repo_p
                     with using_forge_operations(device=memory_management.cpu, dtype=storage_dtype, manual_cast_enabled=True):
                         model = IntegratedT5(config)
 
-            load_state_dict(model, state_dict, log_name=cls_name, ignore_errors=['transformer.encoder.embed_tokens.weight', 'logit_scale'])
+            load_state_dict(model, state_dict, log_name=cls_name, ignore_errors=['transformer.encoder.embed_tokens.weight', 'logit_scale'], ignore_end='scaled_fp8')
 
             return model
 
-        if cls_name in ['UNet2DConditionModel', 'FluxTransformer2DModel', 'SD3Transformer2DModel', 'ChromaTransformer2DModel']:
+        if cls_name in ['UNet2DConditionModel', 'FluxTransformer2DModel', 'SD3Transformer2DModel', 'ChromaTransformer2DModel', 'CosmosTransformer3DModel']:
             assert isinstance(state_dict, dict) and len(state_dict) > 16, 'You do not have model state dict!'
 
             model_loader = None
@@ -169,6 +186,9 @@ def load_huggingface_component(guess, component_name, lib_name, cls_name, repo_p
             elif cls_name == 'SD3Transformer2DModel':
                 from backend.nn.mmditx import MMDiTX
                 model_loader = lambda c: MMDiTX(**c)
+            elif cls_name == 'CosmosTransformer3DModel':
+                from backend.nn.cosmos_predict2 import MiniTrainDIT
+                model_loader = lambda c: MiniTrainDIT(**c)
 
             unet_config = guess.unet_config.copy()
             state_dict_parameters = memory_management.state_dict_parameters(state_dict)
@@ -204,7 +224,7 @@ def load_huggingface_component(guess, component_name, lib_name, cls_name, repo_p
                 with using_forge_operations(**to_args, manual_cast_enabled=need_manual_cast):
                     model = model_loader(unet_config).to(**to_args)
 
-            load_state_dict(model, state_dict, ignore_errors=['scaled_fp8'])
+            load_state_dict(model, state_dict, ignore_errors=['scaled_fp8'], ignore_end='_extra_state')
 
             if hasattr(model, '_internal_dict'):
                 model._internal_dict = unet_config
@@ -255,7 +275,7 @@ def replace_state_dict(sd, asd, guess):
         asd.clear()
         asd = asd_new
 
-    if "decoder.conv_in.weight" in asd:
+    if "decoder.conv_in.weight" in asd: #flux vae, sd3 vae
         keys_to_delete = [k for k in sd if k.startswith(vae_key_prefix)]
         for k in keys_to_delete:
             del sd[k]
@@ -267,6 +287,7 @@ def replace_state_dict(sd, asd, guess):
     flux_test_key = "model.diffusion_model.double_blocks.0.img_attn.norm.key_norm.scale"
     sd3_test_key = "model.diffusion_model.final_layer.adaLN_modulation.1.bias"
     legacy_test_key = "model.diffusion_model.input_blocks.4.1.transformer_blocks.0.attn2.to_k.weight"
+    cosmos_test_key = "model.diffusion_model.net.blocks.0.adaln_modulation_cross_attn.1.weight"
 
     model_type = "-"
     if legacy_test_key in sd:
@@ -283,6 +304,8 @@ def replace_state_dict(sd, asd, guess):
         model_type = "flux"
     elif sd3_test_key in sd:
         model_type = "sd3"
+    elif cosmos_test_key in sd:
+        model_type = "csms"
 
     ##  prefixes used by various model types for CLIP-L
     prefix_L = {
@@ -293,6 +316,7 @@ def replace_state_dict(sd, asd, guess):
         "sdxl": "conditioner.embedders.0.transformer.",
         "flux": "text_encoders.clip_l.transformer.",
         "sd3" : "text_encoders.clip_l.transformer.",
+        "csms": None,
     }
     ##  prefixes used by various model types for CLIP-G
     prefix_G = {
@@ -303,6 +327,7 @@ def replace_state_dict(sd, asd, guess):
         "sdxl": "conditioner.embedders.1.model.transformer.",
         "flux": None,
         "sd3" : "text_encoders.clip_g.transformer.",
+        "csms": None,
     }
     ##  prefixes used by various model types for CLIP-H
     prefix_H = {
@@ -313,6 +338,7 @@ def replace_state_dict(sd, asd, guess):
         "sdxl": None,
         "flux": None,
         "sd3" : None,
+        "csms": None,
     }
 
 
@@ -476,21 +502,29 @@ def replace_state_dict(sd, asd, guess):
                         new_k = k.replace(old_prefix, new_prefix)
                         sd[new_k] = v
 
-
-    if model_type == 'flux':
+    # T5
+    if model_type == 'csms' or model_type == 'flux' or model_type == 'sd3':
         if 'encoder.block.0.layer.0.SelfAttention.k.weight' in asd:
             keys_to_delete = [k for k in sd if k.startswith(f"{text_encoder_key_prefix}t5xxl.")]
             for k in keys_to_delete:
                 del sd[k]
             for k, v in asd.items():
                 sd[f"{text_encoder_key_prefix}t5xxl.transformer.{k}"] = v
-    
+
         if 'encoder.encoder.block.0.layer.0.SelfAttention.k.weight' in asd:
             keys_to_delete = [k for k in sd if k.startswith(f"{text_encoder_key_prefix}t5xxl.")]
             for k in keys_to_delete:
                 del sd[k]
             for k, v in asd.items():
                 sd[f"{text_encoder_key_prefix}t5xxl.transformer.{k.replace('encoder.', '', 1)}"] = v
+
+
+    if "decoder.conv1.bias" in asd and model_type == 'csms':    # Wan VAE, used by Cosmos predict2
+        keys_to_delete = [k for k in sd if k.startswith(vae_key_prefix)]
+        for k in keys_to_delete:
+            del sd[k]
+        for k, v in asd.items():
+            sd[vae_key_prefix + k] = v
 
 
     # ResAdapter (bytedance) unet patch (sd1.5 or sdxl)
