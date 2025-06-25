@@ -731,6 +731,38 @@ class Chroma(FluxSchnell):
         return result
 
 
-models = [Stable_Zero123, SD15_instructpix2pix, SD15, SD20, SD21UnclipL, SD21UnclipH, SDXL_instructpix2pix, SDXLRefiner, SDXL, SSD1B, KOALA_700M, KOALA_1B, Segmind_Vega, SD_X4Upscaler, Stable_Cascade_C, Stable_Cascade_B, SV3D_u, SV3D_p, SD3, StableAudio, AuraFlow, HunyuanDiT, HunyuanDiT1, Flux, FluxSchnell, Chroma]
+class CosmosT2IPredict2(BASE):
+    huggingface_repo = 'Cosmos'
+    unet_config = {
+        "image_model": "cosmos_predict2",
+        "in_channels": 16,
+    }
 
-models += [SVD_img2vid]
+    sampling_settings = {
+        "sigma_data": 1.0,
+        "sigma_max": 80.0,
+        "sigma_min": 0.002,
+    }
+
+    unet_extra_config = {}
+    latent_format = latent.Wan21
+
+    memory_usage_factor = 1.6
+
+    supported_inference_dtypes = [torch.bfloat16, torch.float16, torch.float32]
+
+    unet_target = 'transformer'
+    vae_key_prefix = ["vae."]
+    text_encoder_key_prefix = ["text_encoders."]
+
+    def clip_target(self, state_dict={}):
+        result = {}
+        pref = self.text_encoder_key_prefix[0]
+
+        if "{}t5xxl.transformer.encoder.final_layer_norm.weight".format(pref) in state_dict:
+            result['t5xxl'] = 'text_encoder'
+
+        return result
+
+
+models = [SD15_instructpix2pix, SD15, SD20, SD21UnclipL, SD21UnclipH, SDXL_instructpix2pix, SDXLRefiner, SDXL, SSD1B, Flux, FluxSchnell, Chroma, CosmosT2IPredict2]
