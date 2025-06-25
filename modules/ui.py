@@ -509,7 +509,7 @@ def create_ui():
 
                             tab_img2img.select       (fn=lambda: 0, show_progress=False, inputs=None, outputs=img2img_selected_tab)
                             tab_inpaint_upload.select(fn=lambda: 1, show_progress=False, inputs=None, outputs=img2img_selected_tab)
-                            tab_batch_upload.select  (fn=lambda: 2, show_progress=False, inputs=None, outputs=img2img_selected_tab)
+                            tab_batch.select         (fn=lambda: 2, show_progress=False, inputs=None, outputs=img2img_selected_tab)
 
                         resize_mode = gr.Radio(label="Resize mode", elem_id="resize_mode", choices=["Just resize", "Crop and resize", "Resize and fill", "Just resize (latent upscale)"], type="index", value="Just resize")
 
