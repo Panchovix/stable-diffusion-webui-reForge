@@ -112,8 +112,10 @@ def decoder_model():
         model_name = "taef1_decoder.pth"
     elif shared.sd_model.is_sdxl:
         model_name = "taesdxl_decoder.pth"
-    else:
+    elif shared.sd_model.is_sd1 or shared.sd_model.is_sd2:
         model_name = "taesd_decoder.pth"
+    else:
+        return None # preview can fall back to cheap approximation
 
     loaded_model = sd_vae_taesd_models.get(model_name)
 
@@ -139,8 +141,10 @@ def encoder_model():
         model_name = "taef1_encoder.pth"
     elif shared.sd_model.is_sdxl:
         model_name = "taesdxl_encoder.pth"
-    else:
+    elif shared.sd_model.is_sd1 or shared.sd_model.is_sd2:
         model_name = "taesd_encoder.pth"
+    else:
+        raise FileNotFoundError('no TAESD encoder model for this architecture')
 
     loaded_model = sd_vae_taesd_models.get(model_name)
 
