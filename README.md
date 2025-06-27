@@ -14,4 +14,5 @@ a backup of my local (experimental, opinionated) changes to Forge2 webUI
 * distilled T5 models for Flux by LifuWang (see https://huggingface.co/LifuWang/DistillT5)
 * lama and MAT inpainting models usable in img2img, both as processing options and as infill options
 * PuLID (sdxl) (based on https://github.com/cubiq/PuLID_ComfyUI/)
+* nVidia Cosmos predict2 t2i (only tested 2B model)
 
