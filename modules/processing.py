@@ -958,7 +958,10 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
             if p.scripts is not None:
                 p.scripts.process_batch(p, batch_number=n, prompts=p.prompts, seeds=p.seeds, subseeds=p.subseeds)
 
-            p.setup_conds()
+            if getattr(p, 'txt2img_upscale', False):
+                pass # conds will be done later - doing it now uses the firstpass model which could be incorrect
+            else:
+                p.setup_conds()
 
             p.extra_generation_params.update(p.sd_model.extra_generation_params)
 
