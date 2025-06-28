@@ -641,7 +641,7 @@ def sample_dpmpp_2m(model, x, sigmas, extra_args=None, callback=None, disable=No
     old_denoised = None
 
     for i in trange(len(sigmas) - 1, disable=disable):
-        denoised = model(x, sigmas[i] * s_in, **extra_args)
+        denoised = model(x, sigmas[i] * s_in, **extra_args)[:, :, 0:x.shape[2], :]
         if callback is not None:
             callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
         t, t_next = t_fn(sigmas[i]), t_fn(sigmas[i + 1])
@@ -672,7 +672,7 @@ def sample_dpmpp_2m_sde(model, x, sigmas, extra_args=None, callback=None, disabl
     h_last = None
 
     for i in trange(len(sigmas) - 1, disable=disable):
-        denoised = model(x, sigmas[i] * s_in, **extra_args)
+        denoised = model(x, sigmas[i] * s_in, **extra_args)[:, :, 0:x.shape[2], :]
         if callback is not None:
             callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
         if sigmas[i + 1] == 0:
@@ -715,7 +715,7 @@ def sample_dpmpp_3m_sde(model, x, sigmas, extra_args=None, callback=None, disabl
     h_1, h_2 = None, None
 
     for i in trange(len(sigmas) - 1, disable=disable):
-        denoised = model(x, sigmas[i] * s_in, **extra_args)
+        denoised = model(x, sigmas[i] * s_in, **extra_args)[:, :, 0:x.shape[2], :]
         if callback is not None:
             callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
         if sigmas[i + 1] == 0:
@@ -826,7 +826,8 @@ def sample_ipndm(model, x, sigmas, extra_args=None, callback=None, disable=None,
         if callback is not None:
             callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
 
-        d_cur = (x_cur - denoised) / t_cur
+        # d_cur = (x_cur - denoised) / t_cur
+        d_cur = to_d(x_cur, t_cur, denoised)
 
         order = min(max_order, i+1)
         if order == 1:      # First Euler step.
@@ -867,7 +868,8 @@ def sample_ipndm_v(model, x, sigmas, extra_args=None, callback=None, disable=Non
         if callback is not None:
             callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
 
-        d_cur = (x_cur - denoised) / t_cur
+        # d_cur = (x_cur - denoised) / t_cur
+        d_cur = to_d(x_cur, t_cur, denoised)
 
         order = min(max_order, i+1)
         if order == 1:      # First Euler step.
@@ -936,7 +938,8 @@ def sample_deis(model, x, sigmas, extra_args=None, callback=None, disable=None):
         if callback is not None:
             callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
 
-        d_cur = (x_cur - denoised) / t_cur
+        # d_cur = (x_cur - denoised[:, :, 0:x_cur.shape[2], :]) / t_cur
+        d_cur = to_d(x_cur, t_cur, denoised)
 
         order = min(max_order, i+1)
         if t_next <= 0:
