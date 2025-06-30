@@ -142,7 +142,6 @@ class ForgeSpace:
         if self.installed:
             remove_dir(self.hf_path)
             print('Uninstall finished. You can also manually delete some diffusers models in "/models/diffusers", but those diffusers models may be reused by other spaces or extensions.')
-            return self.refresh_gradio()
         else:
             os.makedirs(self.hf_path, exist_ok=True)
 
@@ -166,7 +165,7 @@ class ForgeSpace:
 
             print(f'Install finished: {self.title}')
 
-            return self.refresh_gradio()
+        return self.refresh_gradio()
 
     def run(self):
         if self.is_running:
