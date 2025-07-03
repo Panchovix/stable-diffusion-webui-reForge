@@ -64,6 +64,6 @@ args = parser.parse_known_args()[0]
 
 # Some dynamic args that may be changed by webui rather than cmd flags.
 dynamic_args = dict(
-    embedding_dir='./embeddings',
+    embedding_dir='./models/embeddings',
     emphasis_name='original'
 )
