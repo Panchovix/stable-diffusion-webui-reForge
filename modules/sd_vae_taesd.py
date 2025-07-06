@@ -126,7 +126,7 @@ def decoder_model():
         if os.path.exists(model_path):
             loaded_model = TAESDDecoder(model_path)
             loaded_model.eval()
-            loaded_model.to(devices.device, devices.dtype)
+            loaded_model.to(devices.device, devices.dtype_vae)
             sd_vae_taesd_models[model_name] = loaded_model
         else:
             raise FileNotFoundError('TAESD model not found')
@@ -155,7 +155,7 @@ def encoder_model():
         if os.path.exists(model_path):
             loaded_model = TAESDEncoder(model_path)
             loaded_model.eval()
-            loaded_model.to(devices.device, devices.dtype)
+            loaded_model.to(devices.device, devices.dtype_vae)
             sd_vae_taesd_models[model_name] = loaded_model
         else:
             raise FileNotFoundError('TAESD model not found')
