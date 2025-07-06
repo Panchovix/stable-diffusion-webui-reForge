@@ -180,7 +180,7 @@ class UiCheckpointMerger:
 # add checkbox to specify checkbox is vpred (add vpred key)
 # similar possible for cos? etc
 
-            with gr.Accordion(open=False, label='Convert SD1 embedding to SDXL'):
+            with gr.Accordion(open=False, label="nArn0's embedding converter: SD1 to SDXL"):
                 with gr.Row():
                     embeds_dir = gr.Textbox(label='Directory to convert', value='')
                     embeds_one = gr.Textbox(label='Single file to convert (if no Directory set)', value='')
