@@ -1,7 +1,7 @@
 import os
 import gradio as gr
 
-from modules import sd_models, sd_vae, errors, extras, call_queue
+from modules import sd_models, errors, extras, call_queue
 from modules.ui_components import FormRow
 from modules.ui_common import ToolButton, refresh_symbol
 from modules_forge.main_entry import module_list, module_vae_list, module_te_list, refresh_models
@@ -12,6 +12,7 @@ def update_interp_description(value, choices):
         "None"                      : (1, "Allows for format conversion and VAE baking."),
         "Weighted sum"              : (2, "Requires two models: A and B. The result is calculated as A * (1 - M) + B * M"),
         "Add difference"            : (3, "Requires three models: A, B and C. The result is calculated as A + (B - C) * M"),
+        "SmoothBlend"               : (2, "Requires two models: A and B. The result is blended from 100% A for first input block to (multiplier)% B for last output block. For SD1/2/XL."),
         "Extract Unet"              : (1, "Takes one model (A) as input. Only output name option is relevant."),
         "Extract VAE"               : (1, "Takes one model (A) as input. Only output name option is relevant."),
         "Extract Text encoder(s)"   : (1, "Takes one model (A) as input. Only output name option is relevant."),
@@ -176,14 +177,14 @@ class UiCheckpointMerger:
                     btn_save_unet_forge.click(save_unet, inputs=textbox_file_name_forge, outputs=result_html)
                     btn_save_ckpt_forge.click(save_checkpoint, inputs=textbox_file_name_forge, outputs=result_html)
 
-# add checkbox to specifiy checkbox is vpred (add vpred key)
+# add checkbox to specify checkbox is vpred (add vpred key)
 # similar possible for cos? etc
 
             with gr.Accordion(open=False, label='Convert SD1 embedding to SDXL'):
                 with gr.Row():
                     embeds_dir = gr.Textbox(label='Directory to convert', value='')
                     embeds_one = gr.Textbox(label='Single file to convert (if no Directory set)', value='')
-                    output_dir = gr.Textbox(label='Save results to directory', value='.\embeddings')
+                    output_dir = gr.Textbox(label='Save results to directory', value='.\models\embeddings')
                     convert = gr.Button('Convert', variant='primary', scale=0)
                 with gr.Row():
                     message = gr.Markdown("")
@@ -194,7 +195,7 @@ class UiCheckpointMerger:
             with gr.Row(equal_height=False):
                 with gr.Column(variant='compact'):
                     with FormRow():
-                        self.interp_method = gr.Dropdown(choices=["None", "Extract Unet", "Extract VAE", "Extract Text encoder(s)", "Weighted sum", "Add difference"], value="None", label="Interpolation method / Function", elem_id="modelmerger_interp_method", info="Allows for format conversion and VAE baking.")
+                        self.interp_method = gr.Dropdown(choices=["None", "Extract Unet", "Extract VAE", "Extract Text encoder(s)", "Weighted sum", "Add difference", "SmoothBlend"], value="None", label="Interpolation method / Function", elem_id="modelmerger_interp_method", info="Allows for format conversion and VAE baking.")
                         self.custom_name = gr.Textbox(label="Custom output name", info="Optional", max_lines=1, elem_id="modelmerger_custom_name")
 
                     with FormRow(elem_id="modelmerger_models"):

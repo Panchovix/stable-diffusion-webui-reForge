@@ -4,6 +4,7 @@ import re
 import json
 
 import torch
+import numpy
 
 from modules import shared, images, sd_models, errors, paths
 from modules.ui_common import plaintext_to_html
@@ -14,7 +15,6 @@ from backend.loader import replace_state_dict
 from backend.utils import load_torch_file
 
 import huggingface_guess
-
 
 def run_pnginfo(image):
     if image is None:
@@ -102,6 +102,12 @@ def run_modelmerger(id_task, model_names, interp_method, multiplier, save_u, sav
 
         return f"{Ma}({a}) + {Mb}({b})"
 
+    def filename_in_out():
+        a = primary_model_info.model_name
+        b = secondary_model_info.model_name
+
+        return f"{a}-{b}({multiplier})"
+
     def filename_add_difference():
         a = primary_model_info.model_name
         b = secondary_model_info.model_name
@@ -123,6 +129,7 @@ def run_modelmerger(id_task, model_names, interp_method, multiplier, save_u, sav
         "None": (filename_nothing, None, None),
         "Weighted sum": (filename_weighted_sum, None, weighted_sum),
         "Add difference": (filename_add_difference, get_difference, add_difference),
+        "SmoothBlend": (filename_in_out, None, weighted_sum),
         "Extract Unet": (filename_unet, None, None),
         "Extract VAE": (filename_vae, None, None),
         "Extract Text encoder(s)" : (filename_te, None, None),
@@ -279,40 +286,79 @@ def run_modelmerger(id_task, model_names, interp_method, multiplier, save_u, sav
 
     if theta_1:
         shared.state.textinfo = 'Merging A and B'
-        for key in theta_0.keys():
-            if 'model' in key and key in theta_1:
 
-                if key in checkpoint_dict_skip_on_merge:
-                    continue
+        if interp_method == "SmoothBlend":
+            total_key_count = 24.0 if 'model.diffusion_model.output_blocks.11.0.emb_layers.1.bias' in theta_0.keys() else 19.0
 
-                a = theta_0[key]
-                b = theta_1.pop(key)
+            for key in theta_0.keys():
+                if 'model' in key and key in theta_1:
 
-                # this enables merging an inpainting model (A) with another one (B);
-                # where normal model would have 4 channels, for latent space, inpainting model would
-                # have another 4 channels for unmasked picture's latent space, plus one channel for mask, for a total of 9
-                if a.shape != b.shape and a.shape[0:1] + a.shape[2:] == b.shape[0:1] + b.shape[2:]:
-                    if a.shape[1] == 4 and b.shape[1] == 9:
-                        raise RuntimeError("When merging inpainting model with a normal one, A must be the inpainting model.")
-                    if a.shape[1] == 4 and b.shape[1] == 8:
-                        raise RuntimeError("When merging instruct-pix2pix model with a normal one, A must be the instruct-pix2pix model.")
+                    if key in checkpoint_dict_skip_on_merge:
+                        continue
 
-                    if a.shape[1] == 8 and b.shape[1] == 4:#If we have an Instruct-Pix2Pix model...
-                        theta_0[key][:, 0:4, :, :] = theta_func2(a[:, 0:4, :, :], b, multiplier)#Merge only the vectors the models have in common.  Otherwise we get an error due to dimension mismatch.
-                        result_is_instruct_pix2pix_model = True
+                    a = theta_0[key]
+                    b = theta_1.pop(key)
+
+#input 0-11, middle 0 output 0-11 : 12 + 1 + 12 = 25 (0->24) for sd1.5
+#input 0-8, middle 0 output 0-8 : 9 + 1 + 9 = 19 (0->18) for sdxl?
+
+                    if 'input_blocks' in key:
+                        key_count = 0
+                    elif 'middle_block' in key:
+                        key_count = 12 if total_key_count == 24.0 else 9
+                    elif 'output_blocks' in key:
+                        key_count = 13 if total_key_count == 24.0 else 10
+                    elif '.out.' in key:
+                        keycount = total_key_count
                     else:
-                        assert a.shape[1] == 9 and b.shape[1] == 4, f"Bad dimensions for merged layer {key}: A={a.shape}, B={b.shape}"
-                        theta_0[key][:, 0:4, :, :] = theta_func2(a[:, 0:4, :, :], b, multiplier)
-                        result_is_inpainting_model = True
-                else:
-                    theta_0[key] = theta_func2(a, b, multiplier)
+                        continue
+
+                    if not 'middle_block' in key:
+                        for i in range(11, -1, -1):
+                            if f'_blocks.{i}.' in key:
+                                key_count += i
+                                break
+
+                    muli = float(key_count) / total_key_count
+                    # muli *= multiplier
+                    muli = min(multiplier, muli)
+                    theta_0[key] = theta_func2(a, b, muli)
+
+        else:
+            for key in theta_0.keys():
+                if 'model' in key and key in theta_1:
+
+                    if key in checkpoint_dict_skip_on_merge:
+                        continue
+
+                    a = theta_0[key]
+                    b = theta_1.pop(key)
+
+                    # this enables merging an inpainting model (A) with another one (B);
+                    # where normal model would have 4 channels, for latent space, inpainting model would
+                    # have another 4 channels for unmasked picture's latent space, plus one channel for mask, for a total of 9
+                    if a.shape != b.shape and a.shape[0:1] + a.shape[2:] == b.shape[0:1] + b.shape[2:]:
+                        if a.shape[1] == 4 and b.shape[1] == 9:
+                            raise RuntimeError("When merging inpainting model with a normal one, A must be the inpainting model.")
+                        if a.shape[1] == 4 and b.shape[1] == 8:
+                            raise RuntimeError("When merging instruct-pix2pix model with a normal one, A must be the instruct-pix2pix model.")
+
+                        if a.shape[1] == 8 and b.shape[1] == 4:#If we have an Instruct-Pix2Pix model...
+                            theta_0[key][:, 0:4, :, :] = theta_func2(a[:, 0:4, :, :], b, multiplier)#Merge only the vectors the models have in common.  Otherwise we get an error due to dimension mismatch.
+                            result_is_instruct_pix2pix_model = True
+                        else:
+                            assert a.shape[1] == 9 and b.shape[1] == 4, f"Bad dimensions for merged layer {key}: A={a.shape}, B={b.shape}"
+                            theta_0[key][:, 0:4, :, :] = theta_func2(a[:, 0:4, :, :], b, multiplier)
+                            result_is_inpainting_model = True
+                    else:
+                        theta_0[key] = theta_func2(a, b, multiplier)
 
         del theta_1
         shared.state.nextjob()
     else:
         shared.state.textinfo = 'Copying A'
 
-    if save_u != "None (remove)":
+    if save_u != "None (remove)" and ("" != bake_in_vae or [] != bake_in_te):
         guess = huggingface_guess.guess(theta_0)
     else:
         guess = None
@@ -362,7 +408,7 @@ def run_modelmerger(id_task, model_names, interp_method, multiplier, save_u, sav
         if save != "None" and save != "No change":
             match save:
                 case 0:
-                    regex = re.compile("model.diffusion_model.")    #   untested if this hits inpaint, pix2pix keys
+                    regex = re.compile("model.diffusion_model.|double_block.|single_block.")    #   untested if this hits inpaint, pix2pix keys
                 case 1:
                     regex = re.compile(r'\b(first_stage_model|vae)\.\b')
                 case 2:
@@ -384,6 +430,7 @@ def run_modelmerger(id_task, model_names, interp_method, multiplier, save_u, sav
                     for key in theta_0.keys():
                         if re.search(regex, key):
                             theta_0[key] = to_fp8e5m2(theta_0[key])
+
                 case "None (remove)":
                     for key in theta_0.keys():
                         if re.search(regex, key):
