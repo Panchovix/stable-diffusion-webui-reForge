@@ -64,7 +64,7 @@ def model():
         loaded_model = VAEApprox(latent_channels=shared.sd_model.forge_objects.vae.latent_channels)
         loaded_model.load_state_dict(torch.load(model_path, map_location='cpu' if devices.device.type != 'cuda' else None))
         loaded_model.eval()
-        loaded_model.to(devices.device, devices.dtype)
+        loaded_model.to(devices.device, devices.dtype_vae)
         sd_vae_approx_models[model_name] = loaded_model
 
     return loaded_model

@@ -51,13 +51,13 @@ def samples_to_images_tensor(sample, approximation=None, model=None):
         if m is None:
             x_sample = sd_vae_approx.cheap_approximation(sample)
         else:
-            x_sample = m(sample.to(devices.device, devices.dtype)).detach()
+            x_sample = m(sample.to(devices.device, devices.dtype_vae)).detach()
     elif approximation == 3:
         m = sd_vae_taesd.decoder_model()
         if m is None:
             x_sample = sd_vae_approx.cheap_approximation(sample)
         else:
-            x_sample = m(sample.to(devices.device, devices.dtype)).detach()
+            x_sample = m(sample.to(devices.device, devices.dtype_vae)).detach()
             x_sample = x_sample * 2 - 1
     else:
         if model is None:
@@ -99,7 +99,7 @@ def images_tensor_to_samples(image, approximation=None, model=None):
         approximation = approximation_indexes.get(opts.sd_vae_encode_method, 0)
 
     if approximation == 3:
-        image = image.to(devices.device, devices.dtype)
+        image = image.to(devices.device, devices.dtype_vae)
         x_latent = sd_vae_taesd.encoder_model()(image)
     else:
         if model is None:
