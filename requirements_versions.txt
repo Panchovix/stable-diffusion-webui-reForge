@@ -1,14 +1,14 @@
 setuptools==69.5.1  # temp fix for compatibility with some old packages
 GitPython==3.1.32
 pillow==10.4.0
-accelerate==0.21.0
+accelerate==0.31.0
 blendmodes==2024.1.1
 clean-fid==0.1.35
 diskcache==5.6.3
 einops==0.8.0
 facexlib==0.3.0
-fastapi==0.94.0
-gradio==3.41.2
+fastapi==0.104.1
+gradio==4.40.0 # 4.41.0 Breaks UI elements. Investigating.
 httpcore==0.15
 inflection==0.5.1
 jsonmerge==1.9.2
@@ -33,10 +33,10 @@ torchsde==0.2.6
 transformers==4.48.1
 httpx==0.24.1
 pillow-avif-plugin==1.4.6 
-albumentations==1.4.3
-https://github.com/Panchovix/pydantic-fixreforge/releases/download/main_v1/pydantic-1.10.15-py3-none-any.whl
-diffusers==0.32.2
+diffusers==0.31.0
+gradio_rangeslider==0.0.6
+gradio_imageslider==0.0.20
+loadimg==0.1.2
+pydantic==2.8.2
 cachetools==5.5.1
-colorama==0.4.6
-huggingface_hub==0.25.0
-timm==1.0.14
+huggingface-hub==0.26.2
