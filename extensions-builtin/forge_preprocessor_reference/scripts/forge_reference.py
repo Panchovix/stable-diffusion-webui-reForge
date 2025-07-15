@@ -180,9 +180,9 @@ class PreprocessorReference(Preprocessor):
                 if k_r.shape[0] != k_c.shape[0]:   # batched cond+uncond, also consider batch_size
                     # assuming k_r is double size, uncond then cond
                     m = k_c.shape[0]
-                    o_c = sdp(q_c, zero_cat(k_c, k_r[:m], dim=1), zero_cat(v_c, v_r[:m], dim=1), transformer_options)
+                    o_c = sdp(q_c, zero_cat(k_c, k_r[m:], dim=1), zero_cat(v_c, v_r[m:], dim=1), transformer_options)
                     o_uc_strong = sdp(q_uc, k_uc, v_uc, transformer_options)
-                    o_uc_weak = sdp(q_uc, zero_cat(k_uc, k_r[m:], dim=1), zero_cat(v_uc, v_r[m:], dim=1), transformer_options)
+                    o_uc_weak = sdp(q_uc, zero_cat(k_uc, k_r[:m], dim=1), zero_cat(v_uc, v_r[:m], dim=1), transformer_options)
                     o_uc = o_uc_weak + (o_uc_strong - o_uc_weak) * style_fidelity
                 else:
                     o_c = sdp(q_c, zero_cat(k_c, k_r, dim=1), zero_cat(v_c, v_r, dim=1), transformer_options)
