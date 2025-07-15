@@ -118,10 +118,18 @@ class PreprocessorReference(Preprocessor):
                 h_c = h[cond_indices]
                 h_uc = h[uncond_indices]
 
-                o_c = adain(h_c, r_std, r_mean)
-                o_uc_strong = h_uc
-                o_uc_weak = adain(h_uc, r_std, r_mean)
-                o_uc = o_uc_weak + (o_uc_strong - o_uc_weak) * style_fidelity
+                if h_c.shape[0] != r_std.shape[0]:   # batched cond+uncond, also consider batch_size
+                    # assuming r_std and r_mean are double size; uncond then cond
+                    m = h_c.shape[0]
+                    o_c = adain(h_c, r_std[m:], r_mean[m:])
+                    o_uc_strong = h_uc
+                    o_uc_weak = adain(h_uc, r_std[:m], r_mean[:m])
+                    o_uc = o_uc_weak + (o_uc_strong - o_uc_weak) * style_fidelity
+                else:
+                    o_c = adain(h_c, r_std, r_mean)
+                    o_uc_strong = h_uc
+                    o_uc_weak = adain(h_uc, r_std, r_mean)
+                    o_uc = o_uc_weak + (o_uc_strong - o_uc_weak) * style_fidelity
 
                 recon = []
                 for cx in cond_or_uncond:
@@ -169,12 +177,12 @@ class PreprocessorReference(Preprocessor):
 
                 k_r, v_r = self.recorded_attn1[location]
                 
-                if k_r.shape[0] != k_c.shape[0]:   # batched cond+uncond, also account for batch_size
-                    # assuming k_r is double size
-                    h = k_c.shape[0]
-                    o_c = sdp(q_c, zero_cat(k_c, k_r[:h], dim=1), zero_cat(v_c, v_r[:h], dim=1), transformer_options)
+                if k_r.shape[0] != k_c.shape[0]:   # batched cond+uncond, also consider batch_size
+                    # assuming k_r is double size, uncond then cond
+                    m = k_c.shape[0]
+                    o_c = sdp(q_c, zero_cat(k_c, k_r[:m], dim=1), zero_cat(v_c, v_r[:m], dim=1), transformer_options)
                     o_uc_strong = sdp(q_uc, k_uc, v_uc, transformer_options)
-                    o_uc_weak = sdp(q_uc, zero_cat(k_uc, k_r[h:], dim=1), zero_cat(v_uc, v_r[h:], dim=1), transformer_options)
+                    o_uc_weak = sdp(q_uc, zero_cat(k_uc, k_r[m:], dim=1), zero_cat(v_uc, v_r[m:], dim=1), transformer_options)
                     o_uc = o_uc_weak + (o_uc_strong - o_uc_weak) * style_fidelity
                 else:
                     o_c = sdp(q_c, zero_cat(k_c, k_r, dim=1), zero_cat(v_c, v_r, dim=1), transformer_options)
