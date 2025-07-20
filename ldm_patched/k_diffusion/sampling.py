@@ -1066,7 +1066,13 @@ def sample_dpmpp_sde(model, x, sigmas, extra_args=None, callback=None, disable=N
     noise_sampler = BrownianTreeNoiseSampler(x, sigma_min, sigma_max, seed=seed, cpu=True) if noise_sampler is None else noise_sampler
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
-    model_sampling = model.inner_model.model_patcher.get_model_object('model_sampling')
+    if hasattr(model.inner_model, 'model_patcher'):
+        model_sampling = model.inner_model.model_patcher.get_model_object('model_sampling')
+    elif hasattr(model, 'forge_objects') and hasattr(model.forge_objects, 'unet'):
+        model_sampling = model.forge_objects.unet.get_model_object('model_sampling')
+    else:
+        import ldm_patched.modules.model_sampling
+        model_sampling = ldm_patched.modules.model_sampling.ModelSamplingDiscrete()
     sigma_fn = partial(half_log_snr_to_sigma, model_sampling=model_sampling)
     lambda_fn = partial(sigma_to_half_log_snr, model_sampling=model_sampling)
     sigmas = offset_first_sigma_for_snr(sigmas, model_sampling)
@@ -1154,7 +1160,13 @@ def sample_dpmpp_2m_sde(model, x, sigmas, extra_args=None, callback=None, disabl
     noise_sampler = BrownianTreeNoiseSampler(x, sigma_min, sigma_max, seed=seed, cpu=True) if noise_sampler is None else noise_sampler
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
-    model_sampling = model.inner_model.model_patcher.get_model_object('model_sampling')
+    if hasattr(model.inner_model, 'model_patcher'):
+        model_sampling = model.inner_model.model_patcher.get_model_object('model_sampling')
+    elif hasattr(model, 'forge_objects') and hasattr(model.forge_objects, 'unet'):
+        model_sampling = model.forge_objects.unet.get_model_object('model_sampling')
+    else:
+        import ldm_patched.modules.model_sampling
+        model_sampling = ldm_patched.modules.model_sampling.ModelSamplingDiscrete()
     lambda_fn = partial(sigma_to_half_log_snr, model_sampling=model_sampling)
     sigmas = offset_first_sigma_for_snr(sigmas, model_sampling)
 
@@ -1206,7 +1218,13 @@ def sample_dpmpp_3m_sde(model, x, sigmas, extra_args=None, callback=None, disabl
     noise_sampler = BrownianTreeNoiseSampler(x, sigma_min, sigma_max, seed=seed, cpu=True) if noise_sampler is None else noise_sampler
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
-    model_sampling = model.inner_model.model_patcher.get_model_object('model_sampling')
+    if hasattr(model.inner_model, 'model_patcher'):
+        model_sampling = model.inner_model.model_patcher.get_model_object('model_sampling')
+    elif hasattr(model, 'forge_objects') and hasattr(model.forge_objects, 'unet'):
+        model_sampling = model.forge_objects.unet.get_model_object('model_sampling')
+    else:
+        import ldm_patched.modules.model_sampling
+        model_sampling = ldm_patched.modules.model_sampling.ModelSamplingDiscrete()
     lambda_fn = partial(sigma_to_half_log_snr, model_sampling=model_sampling)
     sigmas = offset_first_sigma_for_snr(sigmas, model_sampling)
 
@@ -3214,7 +3232,13 @@ def sample_er_sde(model, x, sigmas, extra_args=None, callback=None, disable=None
     num_integration_points = 200.0
     point_indice = torch.arange(0, num_integration_points, dtype=torch.float32, device=x.device)
 
-    model_sampling = model.inner_model.model_patcher.get_model_object("model_sampling")
+    if hasattr(model.inner_model, 'model_patcher'):
+        model_sampling = model.inner_model.model_patcher.get_model_object('model_sampling')
+    elif hasattr(model, 'forge_objects') and hasattr(model.forge_objects, 'unet'):
+        model_sampling = model.forge_objects.unet.get_model_object('model_sampling')
+    else:
+        import ldm_patched.modules.model_sampling
+        model_sampling = ldm_patched.modules.model_sampling.ModelSamplingDiscrete()
     sigmas = offset_first_sigma_for_snr(sigmas, model_sampling)
     half_log_snrs = sigma_to_half_log_snr(sigmas, model_sampling)
     er_lambdas = half_log_snrs.neg().exp()  # er_lambda_t = sigma_t / alpha_t
@@ -3274,7 +3298,13 @@ def sample_seeds_2(model, x, sigmas, extra_args=None, callback=None, disable=Non
 
     inject_noise = eta > 0 and s_noise > 0
 
-    model_sampling = model.inner_model.model_patcher.get_model_object('model_sampling')
+    if hasattr(model.inner_model, 'model_patcher'):
+        model_sampling = model.inner_model.model_patcher.get_model_object('model_sampling')
+    elif hasattr(model, 'forge_objects') and hasattr(model.forge_objects, 'unet'):
+        model_sampling = model.forge_objects.unet.get_model_object('model_sampling')
+    else:
+        import ldm_patched.modules.model_sampling
+        model_sampling = ldm_patched.modules.model_sampling.ModelSamplingDiscrete()
     sigma_fn = partial(half_log_snr_to_sigma, model_sampling=model_sampling)
     lambda_fn = partial(sigma_to_half_log_snr, model_sampling=model_sampling)
     sigmas = offset_first_sigma_for_snr(sigmas, model_sampling)
@@ -3330,7 +3360,13 @@ def sample_seeds_3(model, x, sigmas, extra_args=None, callback=None, disable=Non
 
     inject_noise = eta > 0 and s_noise > 0
 
-    model_sampling = model.inner_model.model_patcher.get_model_object('model_sampling')
+    if hasattr(model.inner_model, 'model_patcher'):
+        model_sampling = model.inner_model.model_patcher.get_model_object('model_sampling')
+    elif hasattr(model, 'forge_objects') and hasattr(model.forge_objects, 'unet'):
+        model_sampling = model.forge_objects.unet.get_model_object('model_sampling')
+    else:
+        import ldm_patched.modules.model_sampling
+        model_sampling = ldm_patched.modules.model_sampling.ModelSamplingDiscrete()
     sigma_fn = partial(half_log_snr_to_sigma, model_sampling=model_sampling)
     lambda_fn = partial(sigma_to_half_log_snr, model_sampling=model_sampling)
     sigmas = offset_first_sigma_for_snr(sigmas, model_sampling)
@@ -3390,7 +3426,13 @@ def sample_sa_solver(model, x, sigmas, extra_args=None, callback=None, disable=F
     noise_sampler = default_noise_sampler(x, seed=seed) if noise_sampler is None else noise_sampler
     s_in = x.new_ones([x.shape[0]])
 
-    model_sampling = model.inner_model.model_patcher.get_model_object("model_sampling")
+    if hasattr(model.inner_model, 'model_patcher'):
+        model_sampling = model.inner_model.model_patcher.get_model_object('model_sampling')
+    elif hasattr(model, 'forge_objects') and hasattr(model.forge_objects, 'unet'):
+        model_sampling = model.forge_objects.unet.get_model_object('model_sampling')
+    else:
+        import ldm_patched.modules.model_sampling
+        model_sampling = ldm_patched.modules.model_sampling.ModelSamplingDiscrete()
     sigmas = offset_first_sigma_for_snr(sigmas, model_sampling)
     lambdas = sigma_to_half_log_snr(sigmas, model_sampling=model_sampling)
 
