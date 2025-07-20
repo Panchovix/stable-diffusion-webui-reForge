@@ -18,6 +18,10 @@ class LCM(model_sampling.EPS):
 class X0(model_sampling.EPS):
     def calculate_denoised(self, sigma, model_output, model_input):
         return model_output
+    
+class Lotus(X0):
+    def calculate_input(self, sigma, noise):
+        return noise
 
 class ModelSamplingDiscreteDistilled(model_sampling.ModelSamplingDiscrete):
     original_timesteps = 50
@@ -79,6 +83,8 @@ class ModelSamplingDiscrete:
             sampling_base = ModelSamplingDiscreteDistilled
         elif sampling == "x0":
             sampling_type = X0
+        elif sampling == "lotus":
+            sampling_type = Lotus
 
         class ModelSamplingAdvanced(sampling_base, sampling_type):
             pass

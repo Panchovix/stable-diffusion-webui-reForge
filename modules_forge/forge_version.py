@@ -1,1 +1,1 @@
-version = '1.7.5-gradio4-v1.10.1RC'
+version = '2.0.0gradio4-v1.10.1RC'

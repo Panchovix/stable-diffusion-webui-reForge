@@ -72,6 +72,7 @@ fpunet_group.add_argument("--fp32-unet", action="store_true", help="Run the diff
 fpunet_group.add_argument("--fp64-unet", action="store_true", help="Run the diffusion model in fp64.")
 fpunet_group.add_argument("--unet-in-fp8-e4m3fn", action="store_true", help="Store unet weights in fp8_e4m3fn.")
 fpunet_group.add_argument("--unet-in-fp8-e5m2", action="store_true", help="Store unet weights in fp8_e5m2.")
+fpunet_group.add_argument("--fp8_e8m0fnu-unet", action="store_true", help="Store unet weights in fp8_e8m0fnu.")
 
 fpvae_group = parser.add_mutually_exclusive_group()
 fpvae_group.add_argument("--vae-in-fp16", action="store_true", help="Run the VAE in fp16, might cause black images.")
@@ -84,6 +85,7 @@ fpte_group.add_argument("--clip-in-fp8-e4m3fn", action="store_true", help="Store
 fpte_group.add_argument("--clip-in-fp8-e5m2", action="store_true", help="Store text encoder weights in fp8 (e5m2 variant).")
 fpte_group.add_argument("--clip-in-fp16", action="store_true", help="Store text encoder weights in fp16.")
 fpte_group.add_argument("--clip-in-fp32", action="store_true", help="Store text encoder weights in fp32.")
+fpte_group.add_argument("--bf16-text-enc", action="store_true", help="Store text encoder weights in bf16.")
 
 parser.add_argument("--disable-ipex-hijack", action="store_true")
 
@@ -99,6 +101,9 @@ parser.add_argument("--torch-compile-shape-padding", action='store_true', help="
 parser.add_argument("--torch-compile-cudagraphs", action='store_true', help="Enable CUDA graphs")
 parser.add_argument("--torch-compile-trace", action='store_true', help="Enable tracing")
 parser.add_argument("--torch-compile-graph-diagram", action='store_true', help="Enable graph diagram")
+
+
+parser.add_argument("--supports-fp8-compute", action="store_true", help="ComfyUI will act like if the device supports fp8 compute.")
 
 class LatentPreviewMethod(enum.Enum):
     NoPreviews = "none"
@@ -139,6 +144,9 @@ vram_group.add_argument("--always-cpu", action="store_true", help="To use the CP
 
 parser.add_argument("--reserve-vram", type=float, default=None, help="Set the amount of vram in GB you want to reserve for use by your OS/other software. By default some amount is reverved depending on your OS.")
 
+
+parser.add_argument("--async-offload", action="store_true", help="Use async weight offloading.")
+
 parser.add_argument("--default-hashing-function", type=str, choices=['md5', 'sha1', 'sha256', 'sha512'], default='sha256', help="Allows you to choose the hash function to use for duplicate filename / contents comparison. Default is sha256.")
 
 parser.add_argument("--always-offload-from-vram", action="store_true", help="Force reForge to agressively offload to regular ram instead of keeping models in vram when it can.")
@@ -147,8 +155,12 @@ parser.add_argument("--pytorch-deterministic", action="store_true", help="Make p
 class PerformanceFeature(enum.Enum):
     Fp16Accumulation = "fp16_accumulation"
     Fp8MatrixMultiplication = "fp8_matrix_mult"
+    CublasOps = "cublas_ops"
 
-parser.add_argument("--fast", nargs="*", type=PerformanceFeature, help="Enable some untested and potentially quality deteriorating optimizations. --fast with no arguments enables everything. You can pass a list specific optimizations if you only want to enable specific ones. Current valid optimizations: fp16_accumulation fp8_matrix_mult")
+parser.add_argument("--fast", nargs="*", type=PerformanceFeature, help="Enable some untested and potentially quality deteriorating optimizations. --fast with no arguments enables everything. You can pass a list specific optimizations if you only want to enable specific ones. Current valid optimizations: fp16_accumulation fp8_matrix_mult cublas_ops")
+
+parser.add_argument("--mmap-torch-files", action="store_true", help="Use mmap when loading ckpt/pt files.")
+parser.add_argument("--disable-mmap", action="store_true", help="Don't use mmap when loading safetensors.")
 
 cm_group = parser.add_mutually_exclusive_group()
 cm_group.add_argument("--cuda-malloc", action="store_true", help="Enable cudaMallocAsync")

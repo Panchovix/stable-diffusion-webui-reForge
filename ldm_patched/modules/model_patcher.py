@@ -16,23 +16,25 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 from __future__ import annotations
-from typing import Optional, Callable
-import torch
+
+import collections
 import copy
 import inspect
 import logging
-import uuid
-import collections
 import math
+import uuid
+from typing import Callable, Optional
 
-import ldm_patched.modules.utils
+import torch
+
 import ldm_patched.float
-import ldm_patched.modules.model_management
-import ldm_patched.modules.lora
 import ldm_patched.hooks
+import ldm_patched.modules.lora
+import ldm_patched.modules.model_management
 import ldm_patched.modules.patcher_extension
-from ldm_patched.modules.patcher_extension import CallbacksMP, WrappersMP, PatcherInjection
+import ldm_patched.modules.utils
 from ldm_patched.modules.types import UnetWrapperFunction
+from ldm_patched.modules.patcher_extension import CallbacksMP, PatcherInjection, WrappersMP
 
 extra_weight_calculators = {}
 
@@ -376,6 +378,9 @@ class ModelPatcher:
 
     def set_model_sampler_pre_cfg_function(self, pre_cfg_function, disable_cfg1_optimization=False):
         self.model_options = set_model_options_pre_cfg_function(self.model_options, pre_cfg_function, disable_cfg1_optimization)
+
+    def set_model_sampler_calc_cond_batch_function(self, sampler_calc_cond_batch_function):
+        self.model_options["sampler_calc_cond_batch_function"] = sampler_calc_cond_batch_function
 
     def set_model_unet_function_wrapper(self, unet_wrapper_function: UnetWrapperFunction):
         self.model_options["model_function_wrapper"] = unet_wrapper_function

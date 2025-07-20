@@ -73,6 +73,11 @@ def no_clip():
         CLIPTokenizer.from_pretrained = backup_CLIPTokenizer
     return
 
+def model_detection_error_hint(path, state_dict):
+    filename = os.path.basename(path)
+    if 'lora' in filename.lower():
+        return "\nHINT: This seems to be a Lora file and Lora files should be put in the lora folder and loaded via <lora:loraname:lorastrength>..."
+    return ""
 
 def load_checkpoint_guess_config(ckpt, output_vae=True, output_clip=True, output_clipvision=False, embedding_directory=None, output_model=True, model_options={}, te_model_options={}):
     if isinstance(ckpt, str) and os.path.isfile(ckpt):
@@ -89,7 +94,9 @@ def load_checkpoint_guess_config(ckpt, output_vae=True, output_clip=True, output
 
     out = load_state_dict_guess_config(sd, output_vae, output_clip, output_clipvision, embedding_directory, output_model, model_options, te_model_options=te_model_options, metadata=metadata)
     if out is None:
-        raise RuntimeError(f"ERROR: Could not detect model type of: {ckpt_path}")
+        # Include helpful error hint
+        error_hint = model_detection_error_hint(ckpt_path, sd)
+        raise RuntimeError(f"ERROR: Could not detect model type of: {ckpt_path}{error_hint}")
     return out
 
 def load_state_dict_guess_config(sd, output_vae=True, output_clip=True, output_clipvision=False, embedding_directory=None, output_model=True, model_options={}, te_model_options={}, metadata=None):
@@ -230,7 +237,7 @@ def load_diffusion_model_state_dict(sd, model_options={}):
     model.load_model_weights(new_sd, "")
     left_over = sd.keys()
     if len(left_over) > 0:
-        logging.info("left over keys in unet: {}".format(left_over))
+        logging.info("left over keys in diffusion model: {}".format(left_over))
     
     # Return ForgeSD with just the UNet
     model_patcher = UnetPatcher(model, load_device=load_device, offload_device=offload_device)
@@ -241,8 +248,8 @@ def load_diffusion_model(unet_path, model_options={}):
     model_options["metadata"] = metadata
     model = load_diffusion_model_state_dict(sd, model_options=model_options)
     if model is None:
-        logging.error("ERROR UNSUPPORTED UNET {}".format(unet_path))
-        raise RuntimeError("ERROR: Could not detect model type of: {}".format(unet_path))
+        logging.error("ERROR UNSUPPORTED DIFFUSION MODEL {}".format(unet_path))
+        raise RuntimeError("ERROR: Could not detect model type of: {}\n{}".format(unet_path, model_detection_error_hint(unet_path, sd)))
     return model
 
 

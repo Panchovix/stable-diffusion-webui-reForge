@@ -1,11 +1,11 @@
-# Original code from Comfy, https://github.com/comfyanonymous/ComfyUI
-
-
-
-import ldm_patched.utils.path_utils
+#example file to be adapter later
 import ldm_patched.modules.sd
 import ldm_patched.modules.model_sampling
+import ldm_patched.modules.latent_formats
+#import nodes
 import torch
+#import node_helpers
+
 
 class LCM(ldm_patched.modules.model_sampling.EPS):
     def calculate_denoised(self, sigma, model_output, model_input):
@@ -20,16 +20,12 @@ class LCM(ldm_patched.modules.model_sampling.EPS):
         c_out = scaled_timestep / (scaled_timestep**2 + sigma_data**2) ** 0.5
 
         return c_out * x0 + c_skip * model_input
-    
-class X0(ldm_patched.modules.model_sampling.EPS):
-    def calculate_denoised(self, sigma, model_output, model_input):
-        return model_output
 
 class ModelSamplingDiscreteDistilled(ldm_patched.modules.model_sampling.ModelSamplingDiscrete):
     original_timesteps = 50
 
-    def __init__(self, model_config=None):
-        super().__init__(model_config)
+    def __init__(self, model_config=None, zsnr=None):
+        super().__init__(model_config, zsnr=zsnr)
 
         self.skip_steps = self.num_timesteps // self.original_timesteps
 
@@ -53,30 +49,11 @@ class ModelSamplingDiscreteDistilled(ldm_patched.modules.model_sampling.ModelSam
         return log_sigma.exp().to(timestep.device)
 
 
-def rescale_zero_terminal_snr_sigmas(sigmas):
-    alphas_cumprod = 1 / ((sigmas * sigmas) + 1)
-    alphas_bar_sqrt = alphas_cumprod.sqrt()
-
-    # Store old values.
-    alphas_bar_sqrt_0 = alphas_bar_sqrt[0].clone()
-    alphas_bar_sqrt_T = alphas_bar_sqrt[-1].clone()
-
-    # Shift so the last timestep is zero.
-    alphas_bar_sqrt -= (alphas_bar_sqrt_T)
-
-    # Scale so the first timestep is back to the old value.
-    alphas_bar_sqrt *= alphas_bar_sqrt_0 / (alphas_bar_sqrt_0 - alphas_bar_sqrt_T)
-
-    # Convert alphas_bar_sqrt to betas
-    alphas_bar = alphas_bar_sqrt**2  # Revert sqrt
-    alphas_bar[-1] = 4.8973451890853435e-08
-    return ((1 - alphas_bar) / alphas_bar) ** 0.5
-
 class ModelSamplingDiscrete:
     @classmethod
     def INPUT_TYPES(s):
         return {"required": { "model": ("MODEL",),
-                              "sampling": (["eps", "v_prediction", "lcm", "x0"],),
+                              "sampling": (["eps", "v_prediction", "lcm", "x0", "img_to_img"],),
                               "zsnr": ("BOOLEAN", {"default": False}),
                               }}
 
@@ -97,18 +74,18 @@ class ModelSamplingDiscrete:
             sampling_type = LCM
             sampling_base = ModelSamplingDiscreteDistilled
         elif sampling == "x0":
-            sampling_type = X0
+            sampling_type = ldm_patched.modules.model_sampling.X0
+        elif sampling == "img_to_img":
+            sampling_type = ldm_patched.modules.model_sampling.IMG_TO_IMG
 
         class ModelSamplingAdvanced(sampling_base, sampling_type):
             pass
 
-        model_sampling = ModelSamplingAdvanced(model.model.model_config)
-        if zsnr:
-            model_sampling.set_sigmas(rescale_zero_terminal_snr_sigmas(model_sampling.sigmas))
+        model_sampling = ModelSamplingAdvanced(model.model.model_config, zsnr=zsnr)
 
         m.add_object_patch("model_sampling", model_sampling)
         return (m, )
-    
+
 class ModelSamplingStableCascade:
     @classmethod
     def INPUT_TYPES(s):
@@ -135,11 +112,85 @@ class ModelSamplingStableCascade:
         m.add_object_patch("model_sampling", model_sampling)
         return (m, )
 
+class ModelSamplingSD3:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {"required": { "model": ("MODEL",),
+                              "shift": ("FLOAT", {"default": 3.0, "min": 0.0, "max": 100.0, "step":0.01}),
+                              }}
+
+    RETURN_TYPES = ("MODEL",)
+    FUNCTION = "patch"
+
+    CATEGORY = "advanced/model"
+
+    def patch(self, model, shift, multiplier=1000):
+        m = model.clone()
+
+        sampling_base = ldm_patched.modules.model_sampling.ModelSamplingDiscreteFlow
+        sampling_type = ldm_patched.modules.model_sampling.CONST
+
+        class ModelSamplingAdvanced(sampling_base, sampling_type):
+            pass
+
+        model_sampling = ModelSamplingAdvanced(model.model.model_config)
+        model_sampling.set_parameters(shift=shift, multiplier=multiplier)
+        m.add_object_patch("model_sampling", model_sampling)
+        return (m, )
+
+class ModelSamplingAuraFlow(ModelSamplingSD3):
+    @classmethod
+    def INPUT_TYPES(s):
+        return {"required": { "model": ("MODEL",),
+                              "shift": ("FLOAT", {"default": 1.73, "min": 0.0, "max": 100.0, "step":0.01}),
+                              }}
+
+    FUNCTION = "patch_aura"
+
+    def patch_aura(self, model, shift):
+        return self.patch(model, shift, multiplier=1.0)
+
+# class ModelSamplingFlux:
+#     @classmethod
+#     def INPUT_TYPES(s):
+#         return {"required": { "model": ("MODEL",),
+#                               "max_shift": ("FLOAT", {"default": 1.15, "min": 0.0, "max": 100.0, "step":0.01}),
+#                               "base_shift": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 100.0, "step":0.01}),
+#                               "width": ("INT", {"default": 1024, "min": 16, "max": nodes.MAX_RESOLUTION, "step": 8}),
+#                               "height": ("INT", {"default": 1024, "min": 16, "max": nodes.MAX_RESOLUTION, "step": 8}),
+#                               }}
+
+#     RETURN_TYPES = ("MODEL",)
+#     FUNCTION = "patch"
+
+#     CATEGORY = "advanced/model"
+
+#     def patch(self, model, max_shift, base_shift, width, height):
+#         m = model.clone()
+
+#         x1 = 256
+#         x2 = 4096
+#         mm = (max_shift - base_shift) / (x2 - x1)
+#         b = base_shift - mm * x1
+#         shift = (width * height / (8 * 8 * 2 * 2)) * mm + b
+
+#         sampling_base = ldm_patched.modules.model_sampling.ModelSamplingFlux
+#         sampling_type = ldm_patched.modules.model_sampling.CONST
+
+#         class ModelSamplingAdvanced(sampling_base, sampling_type):
+#             pass
+
+#         model_sampling = ModelSamplingAdvanced(model.model.model_config)
+#         model_sampling.set_parameters(shift=shift)
+#         m.add_object_patch("model_sampling", model_sampling)
+#         return (m, )
+
+
 class ModelSamplingContinuousEDM:
     @classmethod
     def INPUT_TYPES(s):
         return {"required": { "model": ("MODEL",),
-                              "sampling": (["v_prediction", "eps"],),
+                              "sampling": (["v_prediction", "edm", "edm_playground_v2.5", "eps"],),
                               "sigma_max": ("FLOAT", {"default": 120.0, "min": 0.0, "max": 1000.0, "step":0.001, "round": False}),
                               "sigma_min": ("FLOAT", {"default": 0.002, "min": 0.0, "max": 1000.0, "step":0.001, "round": False}),
                               }}
@@ -152,16 +203,56 @@ class ModelSamplingContinuousEDM:
     def patch(self, model, sampling, sigma_max, sigma_min):
         m = model.clone()
 
+        latent_format = None
+        sigma_data = 1.0
         if sampling == "eps":
             sampling_type = ldm_patched.modules.model_sampling.EPS
+        elif sampling == "edm":
+            sampling_type = ldm_patched.modules.model_sampling.EDM
+            sigma_data = 0.5
         elif sampling == "v_prediction":
             sampling_type = ldm_patched.modules.model_sampling.V_PREDICTION
+        elif sampling == "edm_playground_v2.5":
+            sampling_type = ldm_patched.modules.model_sampling.EDM
+            sigma_data = 0.5
+            latent_format = ldm_patched.modules.latent_formats.SDXL_Playground_2_5()
 
         class ModelSamplingAdvanced(ldm_patched.modules.model_sampling.ModelSamplingContinuousEDM, sampling_type):
             pass
 
         model_sampling = ModelSamplingAdvanced(model.model.model_config)
-        model_sampling.set_sigma_range(sigma_min, sigma_max)
+        model_sampling.set_parameters(sigma_min, sigma_max, sigma_data)
+        m.add_object_patch("model_sampling", model_sampling)
+        if latent_format is not None:
+            m.add_object_patch("latent_format", latent_format)
+        return (m, )
+
+class ModelSamplingContinuousV:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {"required": { "model": ("MODEL",),
+                              "sampling": (["v_prediction"],),
+                              "sigma_max": ("FLOAT", {"default": 500.0, "min": 0.0, "max": 1000.0, "step":0.001, "round": False}),
+                              "sigma_min": ("FLOAT", {"default": 0.03, "min": 0.0, "max": 1000.0, "step":0.001, "round": False}),
+                              }}
+
+    RETURN_TYPES = ("MODEL",)
+    FUNCTION = "patch"
+
+    CATEGORY = "advanced/model"
+
+    def patch(self, model, sampling, sigma_max, sigma_min):
+        m = model.clone()
+
+        sigma_data = 1.0
+        if sampling == "v_prediction":
+            sampling_type = ldm_patched.modules.model_sampling.V_PREDICTION
+
+        class ModelSamplingAdvanced(ldm_patched.modules.model_sampling.ModelSamplingContinuousV, sampling_type):
+            pass
+
+        model_sampling = ModelSamplingAdvanced(model.model.model_config)
+        model_sampling.set_parameters(sigma_min, sigma_max, sigma_data)
         m.add_object_patch("model_sampling", model_sampling)
         return (m, )
 
@@ -204,9 +295,32 @@ class RescaleCFG:
         m.set_model_sampler_cfg_function(rescale_cfg)
         return (m, )
 
+# class ModelComputeDtype:
+#     @classmethod
+#     def INPUT_TYPES(s):
+#         return {"required": { "model": ("MODEL",),
+#                               "dtype": (["default", "fp32", "fp16", "bf16"],),
+#                               }}
+
+#     RETURN_TYPES = ("MODEL",)
+#     FUNCTION = "patch"
+
+#     CATEGORY = "advanced/debug/model"
+
+#     def patch(self, model, dtype):
+#         m = model.clone()
+#         m.set_model_compute_dtype(node_helpers.string_to_torch_dtype(dtype))
+#         return (m, )
+
+
 NODE_CLASS_MAPPINGS = {
     "ModelSamplingDiscrete": ModelSamplingDiscrete,
     "ModelSamplingContinuousEDM": ModelSamplingContinuousEDM,
+    "ModelSamplingContinuousV": ModelSamplingContinuousV,
     "ModelSamplingStableCascade": ModelSamplingStableCascade,
+    "ModelSamplingSD3": ModelSamplingSD3,
+    "ModelSamplingAuraFlow": ModelSamplingAuraFlow,
+    # "ModelSamplingFlux": ModelSamplingFlux,
     "RescaleCFG": RescaleCFG,
+    # "ModelComputeDtype": ModelComputeDtype,
 }
