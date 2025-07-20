@@ -23,25 +23,14 @@ from einops import rearrange, repeat
 from einops.layers.torch import Rearrange
 from torch import nn
 
-from ldm_patched.ldm.modules.diffusionmodules.mmdit import RMSNorm
 from ldm_patched.ldm.modules.attention import optimized_attention
 
 
-def apply_rotary_pos_emb(
-    t: torch.Tensor,
-    freqs: torch.Tensor,
-) -> torch.Tensor:
-    t_ = t.reshape(*t.shape[:-1], 2, -1).movedim(-2, -1).unsqueeze(-2).float()
-    t_out = freqs[..., 0] * t_[..., 0] + freqs[..., 1] * t_[..., 1]
-    t_out = t_out.movedim(-1, -2).reshape(*t.shape).type_as(t)
-    return t_out
-
-
-def get_normalization(name: str, channels: int, weight_args={}):
+def get_normalization(name: str, channels: int, weight_args={}, operations=None):
     if name == "I":
         return nn.Identity()
     elif name == "R":
-        return RMSNorm(channels, elementwise_affine=True, eps=1e-6, **weight_args)
+        return operations.RMSNorm(channels, elementwise_affine=True, eps=1e-6, **weight_args)
     else:
         raise ValueError(f"Normalization {name} not found")
 
@@ -120,15 +109,15 @@ class Attention(nn.Module):
 
         self.to_q = nn.Sequential(
             operations.Linear(query_dim, inner_dim, bias=qkv_bias, **weight_args),
-            get_normalization(qkv_norm[0], norm_dim),
+            get_normalization(qkv_norm[0], norm_dim, weight_args=weight_args, operations=operations),
         )
         self.to_k = nn.Sequential(
             operations.Linear(context_dim, inner_dim, bias=qkv_bias, **weight_args),
-            get_normalization(qkv_norm[1], norm_dim),
+            get_normalization(qkv_norm[1], norm_dim, weight_args=weight_args, operations=operations),
         )
         self.to_v = nn.Sequential(
             operations.Linear(context_dim, inner_dim, bias=qkv_bias, **weight_args),
-            get_normalization(qkv_norm[2], norm_dim),
+            get_normalization(qkv_norm[2], norm_dim, weight_args=weight_args, operations=operations),
         )
 
         self.to_out = nn.Sequential(

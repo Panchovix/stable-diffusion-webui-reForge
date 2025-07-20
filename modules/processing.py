@@ -32,7 +32,7 @@ import modules.sd_models as sd_models
 import modules.sd_vae as sd_vae
 from ldm.data.util import AddMiDaS
 from ldm.models.diffusion.ddpm import LatentDepth2ImageDiffusion
-from ldm_patched.contrib.external_model_advanced import rescale_zero_terminal_snr_sigmas
+from ldm_patched.modules.model_sampling import rescale_zero_terminal_snr_sigmas
 
 from einops import repeat, rearrange
 from blendmodes.blend import blendLayers, BlendType
