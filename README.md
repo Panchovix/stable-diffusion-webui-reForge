@@ -12,7 +12,8 @@ See more: https://github.com/Panchovix/stable-diffusion-webui-reForge/discussion
 
 * main: Has all the possible upstream changes from A1111, new samplers/schedulers/sd options/etc and now, comfy backend updated to stream, so this deprecated the old forge backend.
 * dev: At this point (2025-07-20), it is the same as main branch.
-* dev2 and experimental: More than unstable branches, for now same as dev.
+* dev2 and experimental: More unstable than dev, for now same as dev.
+* experimental: same as dev2 but with gradio 4.
 * main-old: Branch with old forge backend. Kept as backup in any case, but it won't receive updates.
 
 # Installing Forge/reForge
