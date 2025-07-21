@@ -62,6 +62,13 @@ class LoRAAdapter(WeightAdapterBase):
         self.loaded_keys = loaded_keys
         self.weights = weights
 
+    def __getitem__(self, index):
+        """Compatibility for extensions expecting val[1][0] indexing"""
+        if index == 0:
+            return self.name
+        else:
+            raise IndexError(f"Index {index} not supported for LoRAAdapter compatibility")
+
     @classmethod
     def create_train(cls, weight, rank=1, alpha=1.0):
         out_dim = weight.shape[0]
