@@ -112,6 +112,7 @@ class Toprow:
                 _js="confirm_clear_prompt",
                 inputs=[self.prompt, self.negative_prompt],
                 outputs=[self.prompt, self.negative_prompt],
+                show_progress=False
             )
 
     def create_styles_ui(self):
