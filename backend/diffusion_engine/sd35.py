@@ -14,14 +14,6 @@ from backend.modules.k_prediction import PredictionDiscreteFlow
 from modules.shared import opts
 
 
-##  patch SD3 Class in huggingface_guess.model_list
-def SD3_clip_target(self, state_dict={}):
-        return {'clip_l': 'text_encoder', 'clip_g': 'text_encoder_2', 't5xxl': 'text_encoder_3'}
-
-model_list.SD3.unet_target = 'transformer'
-model_list.SD3.clip_target = SD3_clip_target
-##  end patch
-
 class StableDiffusion3(ForgeDiffusionEngine):
     matched_guesses = [model_list.SD3]
 
