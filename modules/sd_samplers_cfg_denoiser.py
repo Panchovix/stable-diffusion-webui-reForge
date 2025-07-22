@@ -187,6 +187,15 @@ class CFGDenoiser(torch.nn.Module):
         elif shared.opts.pad_cond_uncond and cond.shape[1] != uncond.shape[1]:
             cond, uncond = self.pad_cond_uncond(cond, uncond)
 
+        if self.p.scripts is not None:
+            self.p.scripts.process_before_every_sampling(
+                p=self.p,
+                x=self.init_latent,
+                noise=x,
+                c=cond,
+                uc=uncond,
+            )
+
         # Use forge_sample
         model = self.inner_model.inner_model.forge_objects.unet.model
         control = self.inner_model.inner_model.forge_objects.unet.controlnet_linked_list
