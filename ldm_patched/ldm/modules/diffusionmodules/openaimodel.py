@@ -365,12 +365,36 @@ class Timestep(nn.Module):
 
 def apply_control(h, control, name):
     if control is not None and name in control and len(control[name]) > 0:
-        ctrl = control[name].pop()
+        ctrl = control[name].pop() # Pop the control tensor from the list
         if ctrl is not None:
+            original_ctrl_shape = ctrl.shape # Store the original shape before any modification
             try:
-                h += ctrl
-            except:
-                logging.warning("warning control could not be applied {} {}".format(h.shape, ctrl.shape))
+                # Compare only height (H) and width (W)
+                if ctrl.shape[-2] != h.shape[-2] or ctrl.shape[-1] != h.shape[-1]:
+                    target_h, target_w = h.shape[-2], h.shape[-1]
+                    
+                    # Log shapes before and after resizing (useful for debugging)
+                    logging.debug(f"ControlNet apply_control: Resizing control for '{name}'. Original ctrl shape: {original_ctrl_shape}, Target h shape: {h.shape}")
+                    
+                    # Convert to .float() for interpolation, then convert back to the original h.dtype
+                    ctrl_resized = F.interpolate(
+                        ctrl.float(), 
+                        size=(target_h, target_w), 
+                        mode="bicubic", 
+                        align_corners=False
+                    )
+                    ctrl = ctrl_resized.to(h.dtype) # Re-assign to the ctrl variable
+                
+                h = h + ctrl
+
+            except Exception as e:
+                # If an error occurs, log detailed information
+                logging.warning(
+                    f"ControlNet apply_control: Could not apply control for '{name}'. "
+                    f"h.shape: {h.shape}, Original ctrl.shape: {original_ctrl_shape}. " # Now we can safely log the original shape
+                    f"Error: {e}", 
+                    exc_info=True # Include traceback information
+                )
     return h
 
 class UNetModel(nn.Module):
