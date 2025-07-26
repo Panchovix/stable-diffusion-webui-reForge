@@ -128,14 +128,14 @@ class CFGDenoiser(torch.nn.Module):
         if sd_samplers_common.apply_refiner(self, x):
             cond = self.sampler.sampler_extra_args['cond']
             uncond = self.sampler.sampler_extra_args['uncond']
-            if self.p.scripts is not None:
-                self.p.scripts.process_before_every_sampling(
-                    p=self.p,
-                    x=self.init_latent,
-                    noise=x,
-                    c=cond,
-                    uc=uncond,
-                )
+            # if self.p.scripts is not None:
+            #     self.p.scripts.process_before_every_sampling(
+            #         p=self.p,
+            #         x=self.init_latent,
+            #         noise=x,
+            #         c=cond,
+            #         uc=uncond,
+            #     )
 
         cond_composition, cond = prompt_parser.reconstruct_multicond_batch(cond, self.step)
         uncond = prompt_parser.reconstruct_cond_batch(uncond, self.step)
