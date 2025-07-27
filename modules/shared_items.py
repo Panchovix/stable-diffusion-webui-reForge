@@ -46,7 +46,7 @@ def refresh_vae_list():
 def sd_unet_items():
     import modules.sd_unet
 
-    return ["Automatic"] + [x.label for x in modules.sd_unet.unet_options if hasattr(x, 'label')] + ["None"]
+    return ["Automatic"] + [x.label for x in modules.sd_unet.unet_options] + ["None"]
 
 
 def refresh_unet_list():
