@@ -352,6 +352,7 @@ class GrowMask:
 
 
 
+# Original code and file from ComfyUI, https://github.com/comfyanonymous/ComfyUI
 NODE_CLASS_MAPPINGS = {
     "LatentCompositeMasked": LatentCompositeMasked,
     "ImageCompositeMasked": ImageCompositeMasked,

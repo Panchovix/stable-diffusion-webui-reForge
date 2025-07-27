@@ -171,6 +171,7 @@ class SaveAnimatedPNG:
 
         return { "ui": { "images": results, "animated": (True,)} }
 
+# Original code and file from ComfyUI, https://github.com/comfyanonymous/ComfyUI
 NODE_CLASS_MAPPINGS = {
     "ImageCrop": ImageCrop,
     "RepeatImageBatch": RepeatImageBatch,

@@ -51,6 +51,7 @@ class PerturbedAttentionGuidance:
 
         return (m,)
 
+# Original code and file from ComfyUI, https://github.com/comfyanonymous/ComfyUI
 NODE_CLASS_MAPPINGS = {
     "PerturbedAttentionGuidance": PerturbedAttentionGuidance,
 }

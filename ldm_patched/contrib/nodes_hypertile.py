@@ -79,6 +79,7 @@ class HyperTile:
         m.set_model_attn1_output_patch(hypertile_out)
         return (m, )
 
+# Original code and file from ComfyUI, https://github.com/comfyanonymous/ComfyUI
 NODE_CLASS_MAPPINGS = {
     "HyperTile": HyperTile,
 }
