@@ -1,7 +1,7 @@
 import gradio as gr
 
 from modules import scripts
-from ldm_patched.contrib.external_hypertile import HyperTile
+from ldm_patched.contrib.nodes_hypertile import HyperTile
 
 
 opHyperTile = HyperTile()

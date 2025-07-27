@@ -2,7 +2,7 @@
 
 
 
-import ldm_patched.contrib.external
+import ldm_patched.contrib.nodes
 import ldm_patched.utils.path_utils
 from ldm_patched.modules.args_parser import args
 
@@ -13,7 +13,7 @@ import numpy as np
 import json
 import os
 
-MAX_RESOLUTION = ldm_patched.contrib.external.MAX_RESOLUTION
+MAX_RESOLUTION = ldm_patched.contrib.nodes.MAX_RESOLUTION
 
 class ImageCrop:
     @classmethod
