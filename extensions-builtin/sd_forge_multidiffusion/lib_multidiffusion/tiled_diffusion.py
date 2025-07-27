@@ -12,7 +12,7 @@ from weakref import WeakSet
 import ldm_patched.modules.utils
 import ldm_patched.modules.model_patcher
 import ldm_patched.modules.model_management
-from ldm_patched.contrib.external import ImageScale
+from ldm_patched.contrib.nodes import ImageScale
 from ldm_patched.modules.model_base import BaseModel
 from ldm_patched.modules.model_patcher import ModelPatcher
 from ldm_patched.modules.controlnet import ControlNet, T2IAdapter

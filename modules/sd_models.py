@@ -1380,7 +1380,7 @@ def apply_token_merging(sd_model, token_merging_ratio):
 
     print(f'token_merging_ratio = {token_merging_ratio}')
 
-    from ldm_patched.contrib.external_tomesd import TomePatcher
+    from ldm_patched.contrib.nodes_tomesd import TomePatcher
 
     sd_model.forge_objects.unet = TomePatcher().patch(
         model=sd_model.forge_objects.unet,

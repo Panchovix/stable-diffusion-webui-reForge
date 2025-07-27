@@ -3,7 +3,7 @@
 
 
 import torch
-from ldm_patched.contrib.external import MAX_RESOLUTION
+from ldm_patched.contrib.nodes import MAX_RESOLUTION
 
 class CLIPTextEncodeSDXLRefiner:
     @classmethod

@@ -1,7 +1,7 @@
 import gradio as gr
 
 from modules import scripts
-from ldm_patched.contrib.external_model_downscale import PatchModelAddDownscale
+from ldm_patched.contrib.nodes_model_downscale import PatchModelAddDownscale
 
 
 opPatchModelAddDownscale = PatchModelAddDownscale()

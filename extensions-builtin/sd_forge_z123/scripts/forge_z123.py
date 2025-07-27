@@ -11,8 +11,8 @@ from modules import shared
 
 from modules_forge.forge_util import numpy_to_pytorch, pytorch_to_numpy
 from ldm_patched.modules.sd import load_checkpoint_guess_config
-from ldm_patched.contrib.external_stable3d import StableZero123_Conditioning
-from ldm_patched.contrib.external import KSampler, VAEDecode
+from ldm_patched.contrib.nodes_stable3d import StableZero123_Conditioning
+from ldm_patched.contrib.nodes import KSampler, VAEDecode
 
 
 opStableZero123_Conditioning = StableZero123_Conditioning()
