@@ -37,22 +37,34 @@ def refresh_vae_list():
     modules.sd_vae.refresh_vae_list()
 
 
-def cross_attention_optimizations():
-    import modules.sd_hijack
+# def cross_attention_optimizations():
+#     import modules.sd_hijack
 
-    return ["Automatic"] + [x.title() for x in modules.sd_hijack.optimizers] + ["None"]
+#     return ["Automatic"] + [x.title() for x in modules.sd_hijack.optimizers] + ["None"]
 
 
 def sd_unet_items():
     import modules.sd_unet
 
-    return ["Automatic"] + [x.label for x in modules.sd_unet.unet_options] + ["None"]
+    return ["Automatic"] + [x.label for x in modules.sd_unet.unet_options if hasattr(x, 'label')] + ["None"]
 
 
 def refresh_unet_list():
     import modules.sd_unet
 
     modules.sd_unet.list_unets()
+
+
+def sd_text_encoder_items():
+    import modules.sd_text_encoder
+
+    return ["Automatic"] + [x.label for x in modules.sd_text_encoder.text_encoder_options] + ["None"]
+
+
+def refresh_text_encoder_list():
+    import modules.sd_text_encoder
+
+    modules.sd_text_encoder.list_text_encoders()
 
 
 def list_checkpoint_tiles(use_short=False):

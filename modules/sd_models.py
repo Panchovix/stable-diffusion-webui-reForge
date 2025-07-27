@@ -1145,6 +1145,13 @@ def load_model(checkpoint_info=None, already_loaded_state_dict=None):
         script_callbacks.model_loaded_callback(sd_model)
         timer.record("scripts callbacks")
 
+        try:
+            from modules import sd_text_encoder
+            sd_text_encoder.apply_text_encoder()
+            timer.record("apply text encoder")
+        except Exception as e:
+            print(f"Warning: Error applying text encoder: {e}")
+
         with torch.no_grad():
             sd_model.cond_stage_model_empty_prompt = get_empty_cond(sd_model)
         timer.record("calculate empty prompt")
