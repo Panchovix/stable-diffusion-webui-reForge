@@ -46,6 +46,46 @@ def get_input_directory() -> str:
     global input_directory
     return input_directory
 
+def get_full_path_or_raise(folder_name: str, filename: str) -> str:
+    """
+    Get the full path of a file in a folder, has to be a file
+    """
+    full_path = get_full_path(folder_name, filename)
+    if full_path is None:
+        raise FileNotFoundError(f"Model in folder '{folder_name}' with filename '{filename}' not found.")
+    return full_path
+
+extension_mimetypes_cache = {
+    "webp" : "image",
+    "fbx" : "model",
+}
+
+def filter_files_content_types(files: list[str], content_types: List[Literal["image", "video", "audio", "model"]]) -> list[str]:
+    """
+    Example:
+        files = os.listdir(folder_paths.get_input_directory())
+        videos = filter_files_content_types(files, ["video"])
+
+    Note:
+        - 'model' in MIME context refers to 3D models, not files containing trained weights and parameters
+    """
+    global extension_mimetypes_cache
+    result = []
+    for file in files:
+        extension = file.split('.')[-1]
+        if extension not in extension_mimetypes_cache:
+            mime_type, _ = mimetypes.guess_type(file, strict=False)
+            if not mime_type:
+                continue
+            content_type = mime_type.split('/')[0]
+            extension_mimetypes_cache[extension] = content_type
+        else:
+            content_type = extension_mimetypes_cache[extension]
+
+        if content_type in content_types:
+            result.append(file)
+    return result
+
 
 #NOTE: used in http server so don't put folders that should not be accessed remotely
 def get_directory_by_type(type_name: str) -> str | None:
