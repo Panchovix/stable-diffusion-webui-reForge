@@ -158,9 +158,40 @@ class CheckpointTextEncoder(SdTextEncoder):
             self._load_clip_from_checkpoint()
             
     def deactivate(self):
-        """Deactivate this text encoder"""
-        # Could optionally unload from VRAM here
-        pass
+        """Deactivate this text encoder and free VRAM"""
+        if self.clip_model is not None:
+            print(f"Deactivating and unloading text encoder: {self.te_info.title}")
+            try:
+                # Unload from VRAM if it has a patcher
+                if hasattr(self.clip_model, 'patcher'):
+                    self.clip_model.patcher.unpatch_model()
+                    if hasattr(self.clip_model.patcher, 'model_unload'):
+                        self.clip_model.patcher.model_unload()
+                    elif hasattr(self.clip_model.patcher, 'to'):
+                        self.clip_model.patcher.to('cpu')
+                
+                # Move the model to CPU
+                if hasattr(self.clip_model, 'cond_stage_model'):
+                    if hasattr(self.clip_model.cond_stage_model, 'to'):
+                        self.clip_model.cond_stage_model.to('cpu')
+                    
+                    # Clear parameters to free memory
+                    for param in self.clip_model.cond_stage_model.parameters():
+                        if hasattr(param, 'data'):
+                            param.data = param.data.to('cpu')
+                
+                # Force cleanup
+                import gc
+                import torch
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    
+            except Exception as e:
+                print(f"Warning: Error during text encoder deactivation: {e}")
+            
+            # Clear the reference
+            self.clip_model = None
 
 def list_text_encoders():
     """Scan for available text encoder files and update the options list"""
@@ -246,10 +277,19 @@ def apply_text_encoder(option=None):
     if new_option == current_text_encoder_option:
         return
         
-    # Deactivate current text encoder
+    # Deactivate current text encoder and ensure proper cleanup
     if current_text_encoder is not None:
         print(f"Deactivating text encoder: {current_text_encoder.option.label}")
         current_text_encoder.deactivate()
+        # Clear the reference to help with garbage collection
+        current_text_encoder = None
+        
+        # Force garbage collection after deactivation
+        import gc
+        import torch
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         
     current_text_encoder_option = new_option
     

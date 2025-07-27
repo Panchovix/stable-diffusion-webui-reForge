@@ -29,36 +29,112 @@ from ldm_patched.modules.args_parser import args
 def maybe_override_text_encoder(forge_objects, checkpoint_info):
     try:
         from modules import sd_text_encoder, shared
+        import gc
+        import torch
 
         text_encoder_option = getattr(shared.opts, 'sd_text_encoder', 'Automatic')
         
-        if text_encoder_option in ['Automatic', 'None']:
+        # If CLIP is None (was skipped during loading), we must load a separate TE
+        if forge_objects.clip is None:
+            print("No checkpoint CLIP loaded - must use separate text encoder")
+            if text_encoder_option == 'None':
+                raise RuntimeError("Cannot use 'None' text encoder option when checkpoint CLIP was not loaded")
+            
+            # Force finding a text encoder to use
             if text_encoder_option == 'Automatic' and checkpoint_info:
                 model_name = checkpoint_info.model_name
                 matching_options = [x for x in sd_text_encoder.text_encoder_options if x.model_name == model_name]
                 if not matching_options:
-                    return forge_objects
-                    
-                selected_option = matching_options[0]
-            elif text_encoder_option == 'None':
-                return forge_objects
+                    # Fallback: use the first available text encoder if none match
+                    if sd_text_encoder.text_encoder_options:
+                        selected_option = sd_text_encoder.text_encoder_options[0]
+                        print(f"No matching TE found, using first available: {selected_option.label}")
+                    else:
+                        raise RuntimeError("No text encoders available and checkpoint CLIP was not loaded")
+                else:
+                    selected_option = matching_options[0]
             else:
-                return forge_objects
+                selected_option = next((x for x in sd_text_encoder.text_encoder_options if x.label == text_encoder_option), None)
+                if selected_option is None:
+                    raise RuntimeError(f"Text encoder '{text_encoder_option}' not found and checkpoint CLIP was not loaded")
         else:
-            selected_option = next((x for x in sd_text_encoder.text_encoder_options if x.label == text_encoder_option), None)
-            if selected_option is None:
-                print(f"Warning: Text encoder '{text_encoder_option}' not found, using checkpoint's built-in text encoder")
-                return forge_objects
+            # Normal case: checkpoint CLIP was loaded, decide whether to replace it
+            if text_encoder_option in ['Automatic', 'None']:
+                if text_encoder_option == 'Automatic' and checkpoint_info:
+                    model_name = checkpoint_info.model_name
+                    matching_options = [x for x in sd_text_encoder.text_encoder_options if x.model_name == model_name]
+                    if not matching_options:
+                        return forge_objects
+                        
+                    selected_option = matching_options[0]
+                elif text_encoder_option == 'None':
+                    return forge_objects
+                else:
+                    return forge_objects
+            else:
+                selected_option = next((x for x in sd_text_encoder.text_encoder_options if x.label == text_encoder_option), None)
+                if selected_option is None:
+                    print(f"Warning: Text encoder '{text_encoder_option}' not found, using checkpoint's built-in text encoder")
+                    return forge_objects
+        
+        # Store reference to original CLIP for cleanup
+        original_clip = forge_objects.clip
         
         # Load the separate text encoder
         print(f"Loading separate text encoder: {selected_option.label}")
         separate_te = selected_option.create_text_encoder()
+        separate_te.option = selected_option  # Add option reference
         separate_te._load_clip_from_checkpoint()  # Force load
         
         # Replace the CLIP in forge_objects
         if separate_te.clip_model is not None:
             print(f"Replacing text encoder with: {selected_option.label}")
             forge_objects.clip = separate_te.clip_model
+            # Mark that we've loaded a separate TE to avoid double-loading later
+            forge_objects._separate_te_loaded = True
+            
+            # Update the global text encoder state to match what we loaded
+            from modules import sd_text_encoder
+            sd_text_encoder.current_text_encoder_option = selected_option
+            sd_text_encoder.current_text_encoder = separate_te
+            print(f"Updated global TE state to: {selected_option.label}")
+            
+            # Properly unload the original CLIP model to free VRAM (only if it exists)
+            if original_clip is not None and original_clip != separate_te.clip_model:
+                print("Unloading original text encoder to free VRAM")
+                
+                # Unload model from VRAM if it has a patcher
+                if hasattr(original_clip, 'patcher'):
+                    try:
+                        # Move model to CPU/offload device
+                        original_clip.patcher.unpatch_model()
+                        if hasattr(original_clip.patcher, 'model_unload'):
+                            original_clip.patcher.model_unload()
+                        elif hasattr(original_clip.patcher, 'to'):
+                            original_clip.patcher.to('cpu')
+                    except Exception as e:
+                        print(f"Warning: Error during original CLIP patcher cleanup: {e}")
+                
+                # Clear the conditional stage model
+                if hasattr(original_clip, 'cond_stage_model'):
+                    try:
+                        if hasattr(original_clip.cond_stage_model, 'to'):
+                            original_clip.cond_stage_model.to('cpu')
+                        # Clear parameters to free memory
+                        for param in original_clip.cond_stage_model.parameters():
+                            if hasattr(param, 'data'):
+                                param.data = param.data.to('cpu')
+                                del param.data
+                    except Exception as e:
+                        print(f"Warning: Error during original CLIP model cleanup: {e}")
+                
+                # Clear references
+                del original_clip
+                
+                # Force garbage collection and CUDA cache cleanup
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
             
         return forge_objects
         
@@ -315,10 +391,33 @@ def load_model_for_a1111(timer, checkpoint_info=None, state_dict=None):
     
     timer.record("forge instantiate config")
     
+    # Check if we should skip loading the checkpoint's CLIP to save memory
+    should_skip_clip = False
+    try:
+        from modules import sd_text_encoder, shared
+        text_encoder_option = getattr(shared.opts, 'sd_text_encoder', 'Automatic')
+        
+        # If we're in Automatic mode and there's a matching separate TE, skip loading checkpoint CLIP
+        if text_encoder_option == 'Automatic' and checkpoint_info:
+            model_name = checkpoint_info.model_name
+            matching_options = [x for x in sd_text_encoder.text_encoder_options if x.model_name == model_name]
+            if matching_options:
+                should_skip_clip = True
+                print(f"Skipping checkpoint CLIP loading - will use separate TE: {matching_options[0].label}")
+        # If explicitly set to use a separate TE, also skip
+        elif text_encoder_option != 'None' and text_encoder_option != 'Automatic':
+            separate_option = next((x for x in sd_text_encoder.text_encoder_options if x.label == text_encoder_option), None)
+            if separate_option:
+                should_skip_clip = True
+                print(f"Skipping checkpoint CLIP loading - will use separate TE: {text_encoder_option}")
+    except Exception as e:
+        print(f"Warning: Error checking text encoder options: {e}")
+        should_skip_clip = False
+    
     forge_objects = load_checkpoint_guess_config(
         state_dict,
         output_vae=True,
-        output_clip=True,
+        output_clip=not should_skip_clip,  # Skip CLIP loading if we'll replace it anyway
         output_clipvision=True,
         embedding_directory=cmd_opts.embeddings_dir,
         output_model=True
@@ -330,6 +429,10 @@ def load_model_for_a1111(timer, checkpoint_info=None, state_dict=None):
     sd_model.forge_objects = forge_objects
     sd_model.forge_objects_original = forge_objects.shallow_copy()
     sd_model.forge_objects_after_applying_lora = forge_objects.shallow_copy()
+    
+    # Transfer the separate TE flag to the sd_model
+    if hasattr(forge_objects, '_separate_te_loaded'):
+        sd_model._separate_te_loaded = True
     if args.torch_compile:
         timer.record("start model compilation")
         if forge_objects.unet is not None:

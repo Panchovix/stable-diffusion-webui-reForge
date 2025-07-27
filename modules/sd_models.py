@@ -1173,7 +1173,11 @@ def load_model(checkpoint_info=None, already_loaded_state_dict=None):
 
         try:
             from modules import sd_text_encoder
-            sd_text_encoder.apply_text_encoder()
+            # Only apply text encoder if we haven't already loaded a separate one during model loading
+            if not hasattr(sd_model, '_separate_te_loaded'):
+                sd_text_encoder.apply_text_encoder()
+            else:
+                print("Skipping apply_text_encoder() - separate TE already loaded during model initialization")
             timer.record("apply text encoder")
         except Exception as e:
             print(f"Warning: Error applying text encoder: {e}")
