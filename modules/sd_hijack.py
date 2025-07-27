@@ -7,42 +7,42 @@ from modules.hypernetworks import hypernetwork
 from modules.shared import cmd_opts
 from modules import sd_hijack_clip, sd_hijack_open_clip, sd_hijack_unet, sd_hijack_xlmr, xlmr, xlmr_m18
 
-import ldm.modules.attention
-import ldm.modules.diffusionmodules.model
-import ldm.modules.diffusionmodules.openaimodel
-import ldm.models.diffusion.ddpm
-import ldm.models.diffusion.ddim
-import ldm.models.diffusion.plms
-import ldm.modules.encoders.modules
+# import ldm.modules.attention
+# import ldm.modules.diffusionmodules.model
+# import ldm.modules.diffusionmodules.openaimodel
+# import ldm.models.diffusion.ddpm
+# import ldm.models.diffusion.ddim
+# import ldm.models.diffusion.plms
+# import ldm.modules.encoders.modules
 
-import sgm.modules.attention
-import sgm.modules.diffusionmodules.model
-import sgm.modules.diffusionmodules.openaimodel
-import sgm.modules.encoders.modules
+# import sgm.modules.attention
+# import sgm.modules.diffusionmodules.model
+# import sgm.modules.diffusionmodules.openaimodel
+# import sgm.modules.encoders.modules
 
-attention_CrossAttention_forward = ldm.modules.attention.CrossAttention.forward
-diffusionmodules_model_nonlinearity = ldm.modules.diffusionmodules.model.nonlinearity
-diffusionmodules_model_AttnBlock_forward = ldm.modules.diffusionmodules.model.AttnBlock.forward
+# attention_CrossAttention_forward = ldm.modules.attention.CrossAttention.forward
+# diffusionmodules_model_nonlinearity = ldm.modules.diffusionmodules.model.nonlinearity
+# diffusionmodules_model_AttnBlock_forward = ldm.modules.diffusionmodules.model.AttnBlock.forward
 
 # new memory efficient cross attention blocks do not support hypernets and we already
 # have memory efficient cross attention anyway, so this disables SD2.0's memory efficient cross attention
-ldm.modules.attention.MemoryEfficientCrossAttention = ldm.modules.attention.CrossAttention
-ldm.modules.attention.BasicTransformerBlock.ATTENTION_MODES["softmax-xformers"] = ldm.modules.attention.CrossAttention
+# ldm.modules.attention.MemoryEfficientCrossAttention = ldm.modules.attention.CrossAttention
+# ldm.modules.attention.BasicTransformerBlock.ATTENTION_MODES["softmax-xformers"] = ldm.modules.attention.CrossAttention
 
-# silence new console spam from SD2
-ldm.modules.attention.print = shared.ldm_print
-ldm.modules.diffusionmodules.model.print = shared.ldm_print
-ldm.util.print = shared.ldm_print
-ldm.models.diffusion.ddpm.print = shared.ldm_print
+# # silence new console spam from SD2
+# ldm.modules.attention.print = shared.ldm_print
+# ldm.modules.diffusionmodules.model.print = shared.ldm_print
+# ldm.util.print = shared.ldm_print
+# ldm.models.diffusion.ddpm.print = shared.ldm_print
 
 # optimizers = []
 # current_optimizer: sd_hijack_optimizations.SdOptimization = None
 
-ldm_patched_forward = sd_unet.create_unet_forward(ldm.modules.diffusionmodules.openaimodel.UNetModel.forward)
-ldm_original_forward = patches.patch(__file__, ldm.modules.diffusionmodules.openaimodel.UNetModel, "forward", ldm_patched_forward)
+# ldm_patched_forward = sd_unet.create_unet_forward(ldm.modules.diffusionmodules.openaimodel.UNetModel.forward)
+# ldm_original_forward = patches.patch(__file__, ldm.modules.diffusionmodules.openaimodel.UNetModel, "forward", ldm_patched_forward)
 
-sgm_patched_forward = sd_unet.create_unet_forward(sgm.modules.diffusionmodules.openaimodel.UNetModel.forward)
-sgm_original_forward = patches.patch(__file__, sgm.modules.diffusionmodules.openaimodel.UNetModel, "forward", sgm_patched_forward)
+# sgm_patched_forward = sd_unet.create_unet_forward(sgm.modules.diffusionmodules.openaimodel.UNetModel.forward)
+# sgm_original_forward = patches.patch(__file__, sgm.modules.diffusionmodules.openaimodel.UNetModel, "forward", sgm_patched_forward)
 
 
 # def list_optimizers():
@@ -231,5 +231,5 @@ def register_buffer(self, name, attr):
     setattr(self, name, attr)
 
 
-ldm.models.diffusion.ddim.DDIMSampler.register_buffer = register_buffer
-ldm.models.diffusion.plms.PLMSSampler.register_buffer = register_buffer
+# ldm.models.diffusion.ddim.DDIMSampler.register_buffer = register_buffer
+# ldm.models.diffusion.plms.PLMSSampler.register_buffer = register_buffer

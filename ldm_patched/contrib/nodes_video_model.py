@@ -2,12 +2,12 @@
 
 
 
-import ldm_patched.contrib.external
+import ldm_patched.contrib.nodes
 import torch
 import ldm_patched.modules.utils
 import ldm_patched.modules.sd
 import ldm_patched.utils.path_utils
-import ldm_patched.contrib.external_model_merging
+import ldm_patched.contrib.nodes_model_merging
 
 
 class ImageOnlyCheckpointLoader:
@@ -32,8 +32,8 @@ class SVD_img2vid_Conditioning:
         return {"required": { "clip_vision": ("CLIP_VISION",),
                               "init_image": ("IMAGE",),
                               "vae": ("VAE",),
-                              "width": ("INT", {"default": 1024, "min": 16, "max": ldm_patched.contrib.external.MAX_RESOLUTION, "step": 8}),
-                              "height": ("INT", {"default": 576, "min": 16, "max": ldm_patched.contrib.external.MAX_RESOLUTION, "step": 8}),
+                              "width": ("INT", {"default": 1024, "min": 16, "max": ldm_patched.contrib.nodes.MAX_RESOLUTION, "step": 8}),
+                              "height": ("INT", {"default": 576, "min": 16, "max": ldm_patched.contrib.nodes.MAX_RESOLUTION, "step": 8}),
                               "video_frames": ("INT", {"default": 14, "min": 1, "max": 4096}),
                               "motion_bucket_id": ("INT", {"default": 127, "min": 1, "max": 1023}),
                               "fps": ("INT", {"default": 6, "min": 1, "max": 1024}),
@@ -83,7 +83,7 @@ class VideoLinearCFGGuidance:
         m.set_model_sampler_cfg_function(linear_cfg)
         return (m, )
 
-class ImageOnlyCheckpointSave(ldm_patched.contrib.external_model_merging.CheckpointSave):
+class ImageOnlyCheckpointSave(ldm_patched.contrib.nodes_model_merging.CheckpointSave):
     CATEGORY = "_for_testing"
 
     @classmethod
@@ -95,7 +95,7 @@ class ImageOnlyCheckpointSave(ldm_patched.contrib.external_model_merging.Checkpo
                 "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"},}
 
     def save(self, model, clip_vision, vae, filename_prefix, prompt=None, extra_pnginfo=None):
-        ldm_patched.contrib.external_model_merging.save_checkpoint(model, clip_vision=clip_vision, vae=vae, filename_prefix=filename_prefix, output_dir=self.output_dir, prompt=prompt, extra_pnginfo=extra_pnginfo)
+        ldm_patched.contrib.nodes_model_merging.save_checkpoint(model, clip_vision=clip_vision, vae=vae, filename_prefix=filename_prefix, output_dir=self.output_dir, prompt=prompt, extra_pnginfo=extra_pnginfo)
         return {}
 
 NODE_CLASS_MAPPINGS = {

@@ -986,7 +986,33 @@ def get_empty_cond(sd_model):
     if hasattr(sd_model, 'get_learned_conditioning'):
         d = sd_model.get_learned_conditioning([""])
     else:
-        d = sd_model.cond_stage_model([""])
+        # Handle different types of cond_stage_model
+        cond_stage_model = sd_model.cond_stage_model
+        
+        # Check if this is an SDXL model with SGM-based conditioner
+        if hasattr(cond_stage_model, 'embedders') and hasattr(cond_stage_model, '__call__'):
+            # This is an SGM GeneralConditioner - use SDXL conditioning format
+            try:
+                # Try the new ldm_patched approach first
+                d = sd_model.get_learned_conditioning([""])
+            except:
+                # Fallback to SGM format for compatibility
+                import torch
+                from modules import devices
+                
+                # Create SDXL conditioning input format that SGM expects
+                device_args = dict(device=devices.device, dtype=torch.float32)
+                sdxl_conds = {
+                    "txt": [""],
+                    "original_size_as_tuple": torch.tensor([1024, 1024], **device_args).repeat(1, 1),
+                    "crop_coords_top_left": torch.tensor([0, 0], **device_args).repeat(1, 1),
+                    "target_size_as_tuple": torch.tensor([1024, 1024], **device_args).repeat(1, 1),
+                    "aesthetic_score": torch.tensor([6.0], **device_args).repeat(1, 1),
+                }
+                d = cond_stage_model(sdxl_conds, force_zero_embeddings=['txt'])
+        else:
+            # Regular SD1.5/SD2.x model
+            d = cond_stage_model([""])
 
     if isinstance(d, dict):
         d = d['crossattn']
@@ -1354,7 +1380,7 @@ def apply_token_merging(sd_model, token_merging_ratio):
 
     print(f'token_merging_ratio = {token_merging_ratio}')
 
-    from ldm_patched.contrib.external_tomesd import TomePatcher
+    from ldm_patched.contrib.nodes_tomesd import TomePatcher
 
     sd_model.forge_objects.unet = TomePatcher().patch(
         model=sd_model.forge_objects.unet,

@@ -12,8 +12,8 @@ from modules import shared
 
 from modules_forge.forge_util import numpy_to_pytorch, pytorch_to_numpy, write_images_to_mp4
 from ldm_patched.modules.sd import load_checkpoint_guess_config
-from ldm_patched.contrib.external_video_model import VideoLinearCFGGuidance, SVD_img2vid_Conditioning
-from ldm_patched.contrib.external import KSampler, VAEDecode
+from ldm_patched.contrib.nodes_video_model import VideoLinearCFGGuidance, SVD_img2vid_Conditioning
+from ldm_patched.contrib.nodes import KSampler, VAEDecode
 
 
 opVideoLinearCFGGuidance = VideoLinearCFGGuidance()

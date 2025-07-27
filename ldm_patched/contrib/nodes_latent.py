@@ -3,7 +3,7 @@
 
 
 import ldm_patched.modules.utils
-import ldm_patched.contrib.external_post_processing
+import ldm_patched.contrib.nodes_post_processing
 import torch
 
 def reshape_latent_to(target_shape, latent):
@@ -242,7 +242,7 @@ class LatentOperationSharpen:
             normalized_latent = latent / luminance
             channels = latent.shape[1]
             kernel_size = sharpen_radius * 2 + 1
-            kernel = ldm_patched.contrib.external_post_processing.gaussian_kernel(kernel_size, sigma, device=luminance.device)
+            kernel = ldm_patched.contrib.nodes_post_processing.gaussian_kernel(kernel_size, sigma, device=luminance.device)
             center = kernel_size // 2
             kernel *= alpha * -10
             kernel[center, center] = kernel[center, center] - kernel.sum() + 1.0
