@@ -182,6 +182,7 @@ class PhotoMakerEncode:
         return ([[out, {"pooled_output": pooled}]], )
 
 
+# Original code and file from ComfyUI, https://github.com/comfyanonymous/ComfyUI
 NODE_CLASS_MAPPINGS = {
     "PhotoMakerLoader": PhotoMakerLoader,
     "PhotoMakerEncode": PhotoMakerEncode,

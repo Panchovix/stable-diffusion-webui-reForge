@@ -737,7 +737,7 @@ def resolve_areas_and_cond_masks_multidim(conditions, dims, device):
             conditions[i] = modified
 
 def resolve_areas_and_cond_masks(conditions, h, w, device):
-    logging.warning("WARNING: The comfy.samplers.resolve_areas_and_cond_masks function is deprecated please use the resolve_areas_and_cond_masks_multidim one instead.")
+    logging.warning("WARNING: The ldm_patched.modules.samplers.resolve_areas_and_cond_masks function is deprecated please use the resolve_areas_and_cond_masks_multidim one instead.")
     return resolve_areas_and_cond_masks_multidim(conditions, [h, w], device)
 
 def create_cond_with_same_area_if_none(conds, c):

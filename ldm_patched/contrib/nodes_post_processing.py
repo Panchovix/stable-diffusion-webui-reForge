@@ -274,6 +274,7 @@ class ImageScaleToTotalPixels:
         s = s.movedim(1,-1)
         return (s,)
 
+# Original code and file from ComfyUI, https://github.com/comfyanonymous/ComfyUI
 NODE_CLASS_MAPPINGS = {
     "ImageBlend": Blend,
     "ImageBlur": Blur,

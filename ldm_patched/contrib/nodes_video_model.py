@@ -98,6 +98,7 @@ class ImageOnlyCheckpointSave(ldm_patched.contrib.nodes_model_merging.Checkpoint
         ldm_patched.contrib.nodes_model_merging.save_checkpoint(model, clip_vision=clip_vision, vae=vae, filename_prefix=filename_prefix, output_dir=self.output_dir, prompt=prompt, extra_pnginfo=extra_pnginfo)
         return {}
 
+# Original code and file from ComfyUI, https://github.com/comfyanonymous/ComfyUI
 NODE_CLASS_MAPPINGS = {
     "ImageOnlyCheckpointLoader": ImageOnlyCheckpointLoader,
     "SVD_img2vid_Conditioning": SVD_img2vid_Conditioning,
