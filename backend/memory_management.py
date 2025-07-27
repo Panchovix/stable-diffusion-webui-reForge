@@ -173,6 +173,22 @@ else:
     except:
         XFORMERS_IS_AVAILABLE = False
 
+def set_fp16_accumulation_if_available():
+    if args.allow_fp16_accumulation:
+        try:
+            matmul = torch.backends.cuda.matmul
+            try:
+                current_state = matmul.allow_fp16_accumulation
+                print(f"FP16 accumulation flag found, current state: {current_state}")
+                matmul.allow_fp16_accumulation = True
+                print(f"FP16 accumulation set to: {matmul.allow_fp16_accumulation}")
+            except (AttributeError, AssertionError):
+                print("FP16 accumulation flag not available in this torch version")
+        except Exception as e:
+            print(f"Could not access CUDA matmul settings: {str(e)}")
+
+set_fp16_accumulation_if_available()
+
 
 def is_nvidia():
     global cpu_state
@@ -954,6 +970,15 @@ def cast_to_device(tensor, device, dtype, copy=False):
             return tensor.to(device, non_blocking=non_blocking).to(dtype, non_blocking=non_blocking)
     else:
         return tensor.to(device, dtype, copy=copy, non_blocking=non_blocking)
+    
+def sage_attention_enabled():
+    return args.use_sage_attention
+
+def sage_attention3_enabled():
+    return args.use_sage_attention3
+
+def flash_attention_enabled():
+    return args.use_flash_attention
 
 
 def xformers_enabled():

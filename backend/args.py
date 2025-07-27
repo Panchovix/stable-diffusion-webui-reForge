@@ -31,6 +31,11 @@ attn_group = parser.add_mutually_exclusive_group()
 attn_group.add_argument("--attention-split", action="store_true")
 attn_group.add_argument("--attention-quad", action="store_true")
 attn_group.add_argument("--attention-pytorch", action="store_true")
+attn_group.add_argument("--use-sage-attention", action="store_true", help="Use sage attention.")
+attn_group.add_argument("--use-sage-attention3", action="store_true", help="Use sage attention 3. Supported only on blackwell GPUs.")
+attn_group.add_argument("--use-flash-attention", action="store_true", help="Use FlashAttention.")
+
+parser.add_argument("--allow-fp16-accumulation", action="store_true", help="Enable FP16 accumulation in cuBLAS operations")
 
 upcast = parser.add_mutually_exclusive_group()
 upcast.add_argument("--force-upcast-attention", action="store_true")
