@@ -334,6 +334,7 @@ def load_diffusion_model(unet_path, model_options={}):
         raise RuntimeError("ERROR: Could not detect model type of: {}\n{}".format(unet_path, model_detection_error_hint(unet_path, sd)))
     return model
 
+#note: sd1.x broken atm
 
 @torch.no_grad()
 def load_model_for_a1111(timer, checkpoint_info=None, state_dict=None):
