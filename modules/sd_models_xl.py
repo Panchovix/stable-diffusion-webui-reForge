@@ -14,7 +14,47 @@ from modules_forge.forge_clip import move_clip_to_gpu
 def get_learned_conditioning(self: model_base.BaseModel, batch: prompt_parser.SdConditioning | list[str]):
     move_clip_to_gpu()
 
-    # Handle both ldm_patched models and legacy SGM models
+    # Check if this is actually an SDXL model - if not, don't override
+    if not (hasattr(self, 'is_sdxl') and self.is_sdxl):
+        # For non-SDXL models, fall back to the original method
+        if hasattr(model_base.BaseModel, '_original_get_learned_conditioning') and model_base.BaseModel._original_get_learned_conditioning is not None:
+            return model_base.BaseModel._original_get_learned_conditioning(self, batch)
+        else:
+            # If no original method, use the forge_objects directly or cond_stage_model
+            if hasattr(self, 'cond_stage_model') and hasattr(self.cond_stage_model, 'encode'):
+                # Standard approach - use the cond_stage_model.encode method
+                if isinstance(batch, str):
+                    batch = [batch]
+                elif not isinstance(batch, list):
+                    batch = list(batch)
+                return self.cond_stage_model.encode(batch)
+            elif hasattr(self, 'forge_objects') and hasattr(self.forge_objects, 'clip'):
+                clip_model = self.forge_objects.clip
+                
+                # Handle the text input properly for SD1.5
+                if isinstance(batch, str):
+                    texts = [batch]
+                elif isinstance(batch, list):
+                    texts = batch
+                else:
+                    texts = list(batch)
+                
+                # For SD1.5, tokenize each text individually
+                results = []
+                for text in texts:
+                    tokens = clip_model.tokenize(text)
+                    cond, pooled = clip_model.encode_from_tokens(tokens, return_pooled=True)
+                    results.append(cond)
+                
+                # Return as tensor if single item, or stack if multiple
+                if len(results) == 1:
+                    return results[0]
+                else:
+                    return torch.cat(results, dim=0)
+            else:
+                raise NotImplementedError("No valid conditioning method found for this model")
+
+    # Handle both ldm_patched models and legacy SGM models (SDXL only)
     if hasattr(self, 'conditioner') and hasattr(self.conditioner, 'embedders'):
         # Legacy SGM-based conditioner path
         for embedder in self.conditioner.embedders:
@@ -39,7 +79,7 @@ def get_learned_conditioning(self: model_base.BaseModel, batch: prompt_parser.Sd
         c = self.conditioner(sdxl_conds, force_zero_embeddings=['txt'] if force_zero_negative_prompt else [])
         return c
     else:
-        # ldm_patched model path - use the forge_objects directly
+        # ldm_patched model path - use the forge_objects directly (SDXL)
         if hasattr(self, 'forge_objects') and hasattr(self.forge_objects, 'clip'):
             # Use the ldm_patched CLIP implementation
             clip_model = self.forge_objects.clip
@@ -69,6 +109,17 @@ def get_learned_conditioning(self: model_base.BaseModel, batch: prompt_parser.Sd
 
 
 def apply_model(self: model_base.BaseModel, x, t, c_concat=None, c_crossattn=None, control=None, transformer_options={}, **kwargs):
+    # Check if this is actually an SDXL model - if not, use original method
+    if not (hasattr(self, 'is_sdxl') and self.is_sdxl):
+        # For non-SDXL models, call the original apply_model
+        if hasattr(model_base.BaseModel, '_original_apply_model'):
+            return model_base.BaseModel._original_apply_model(self, x, t, c_concat=c_concat, c_crossattn=c_crossattn, control=control, transformer_options=transformer_options, **kwargs)
+        else:
+            # Fallback to the ldm_patched original
+            orig_apply_model = model_base.BaseModel._apply_model
+            return orig_apply_model(self, x, t, c_concat=c_concat, c_crossattn=c_crossattn, control=control, transformer_options=transformer_options, **kwargs)
+    
+    # SDXL-specific logic
     # Convert conditioning format from ldm_patched to SGM format
     if c_crossattn is not None or c_concat is not None:
         cond = {}
@@ -92,6 +143,12 @@ def apply_model(self: model_base.BaseModel, x, t, c_concat=None, c_crossattn=Non
 def get_first_stage_encoding(self, x):  # SDXL's encode_first_stage does everything so get_first_stage_encoding is just there for compatibility
     return x
 
+
+# Save the original methods before overriding
+if not hasattr(model_base.BaseModel, '_original_get_learned_conditioning'):
+    model_base.BaseModel._original_get_learned_conditioning = getattr(model_base.BaseModel, 'get_learned_conditioning', None)
+if not hasattr(model_base.BaseModel, '_original_apply_model'):
+    model_base.BaseModel._original_apply_model = getattr(model_base.BaseModel, 'apply_model', None)
 
 model_base.BaseModel.get_learned_conditioning = get_learned_conditioning
 model_base.BaseModel.apply_model = apply_model
