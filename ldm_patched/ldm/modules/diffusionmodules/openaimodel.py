@@ -367,37 +367,10 @@ def apply_control(h, control, name):
     if control is not None and name in control and len(control[name]) > 0:
         ctrl = control[name].pop()
         if ctrl is not None:
-            original_ctrl_shape = ctrl.shape
-            
-            # First attempt: direct addition
             try:
-                h = h + ctrl
-            except Exception:
-                # Second attempt: resize and then add
-                try:
-                    if ctrl.shape[-2] != h.shape[-2] or ctrl.shape[-1] != h.shape[-1]:
-                        target_h, target_w = h.shape[-2], h.shape[-1]
-                        
-                        logging.debug(f"ControlNet apply_control: Resizing control for '{name}'. Original ctrl shape: {original_ctrl_shape}, Target h shape: {h.shape}")
-                        
-                        ctrl_resized = F.interpolate(
-                            ctrl.float(), 
-                            size=(target_h, target_w), 
-                            mode="bicubic", 
-                            align_corners=False
-                        )
-                        ctrl = ctrl_resized.to(h.dtype)
-                    
-                    h = h + ctrl
-                except Exception as e:
-                    # Final fallback: log warning and raise exception
-                    logging.warning(
-                        f"ControlNet apply_control: Could not apply control for '{name}'. "
-                        f"h.shape: {h.shape}, Original ctrl.shape: {original_ctrl_shape}. "
-                        f"Error: {e}", 
-                        exc_info=True
-                    )
-                    raise
+                h += ctrl
+            except:
+                logging.warning("warning control could not be applied {} {}".format(h.shape, ctrl.shape))
     return h
 
 class UNetModel(nn.Module):
