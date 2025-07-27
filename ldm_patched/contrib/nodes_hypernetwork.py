@@ -118,6 +118,7 @@ class HypernetworkLoader:
             model_hypernetwork.set_model_attn2_patch(patch)
         return (model_hypernetwork,)
 
+# Original code and file from ComfyUI, https://github.com/comfyanonymous/ComfyUI
 NODE_CLASS_MAPPINGS = {
     "HypernetworkLoader": HypernetworkLoader
 }

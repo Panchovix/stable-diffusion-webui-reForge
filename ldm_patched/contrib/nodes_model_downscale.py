@@ -48,6 +48,7 @@ class PatchModelAddDownscale:
         m.set_model_output_block_patch(output_block_patch)
         return (m, )
 
+# Original code and file from ComfyUI, https://github.com/comfyanonymous/ComfyUI
 NODE_CLASS_MAPPINGS = {
     "PatchModelAddDownscale": PatchModelAddDownscale,
 }

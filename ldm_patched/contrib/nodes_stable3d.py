@@ -98,6 +98,7 @@ class StableZero123_Conditioning_Batched:
         return (positive, negative, {"samples":latent, "batch_index": [0] * batch_size})
 
 
+# Original code and file from ComfyUI, https://github.com/comfyanonymous/ComfyUI
 NODE_CLASS_MAPPINGS = {
     "StableZero123_Conditioning": StableZero123_Conditioning,
     "StableZero123_Conditioning_Batched": StableZero123_Conditioning_Batched,

@@ -5,7 +5,7 @@ from ldm_patched.k_diffusion import sampling as k_diffusion_sampling
 import ldm_patched.utils.latent_visualization
 import torch
 import ldm_patched.modules.utils
-import node_helpers
+import ldm_patched.contrib.node_helpers
 
 
 class BasicScheduler:
@@ -536,7 +536,7 @@ class Guider_DualCFG(ldm_patched.modules.samplers.CFGGuider):
         self.cfg2 = cfg2
 
     def set_conds(self, positive, middle, negative):
-        middle = node_helpers.conditioning_set_values(middle, {"prompt_type": "negative"})
+        middle = ldm_patched.contrib.node_helpers.conditioning_set_values(middle, {"prompt_type": "negative"})
         self.inner_set_conds({"positive": positive, "middle": middle, "negative": negative})
 
     def predict_noise(self, x, timestep, model_options={}, seed=None):
@@ -689,6 +689,7 @@ class AddNoise:
         return (out,)
 
 
+# Original code and file from ComfyUI, https://github.com/comfyanonymous/ComfyUI
 NODE_CLASS_MAPPINGS = {
     "SamplerCustom": SamplerCustom,
     "BasicScheduler": BasicScheduler,

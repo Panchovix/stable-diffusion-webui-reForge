@@ -276,6 +276,7 @@ class VAESave:
         ldm_patched.modules.utils.save_torch_file(vae.get_sd(), output_checkpoint, metadata=metadata)
         return {}
 
+# Original code and file from ComfyUI, https://github.com/comfyanonymous/ComfyUI
 NODE_CLASS_MAPPINGS = {
     "ModelMergeSimple": ModelMergeSimple,
     "ModelMergeBlocks": ModelMergeBlocks,
