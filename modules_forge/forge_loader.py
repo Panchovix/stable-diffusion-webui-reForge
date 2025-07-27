@@ -26,6 +26,88 @@ from transformers import CLIPTextModel, CLIPTokenizer
 from ldm_patched.modules.args_parser import args
 
 
+def maybe_override_text_encoder(forge_objects, checkpoint_info):
+    try:
+        from modules import sd_text_encoder, shared
+
+        text_encoder_option = getattr(shared.opts, 'sd_text_encoder', 'Automatic')
+        
+        if text_encoder_option in ['Automatic', 'None']:
+            if text_encoder_option == 'Automatic' and checkpoint_info:
+                model_name = checkpoint_info.model_name
+                matching_options = [x for x in sd_text_encoder.text_encoder_options if x.model_name == model_name]
+                if not matching_options:
+                    return forge_objects
+                    
+                selected_option = matching_options[0]
+            elif text_encoder_option == 'None':
+                return forge_objects
+            else:
+                return forge_objects
+        else:
+            selected_option = next((x for x in sd_text_encoder.text_encoder_options if x.label == text_encoder_option), None)
+            if selected_option is None:
+                print(f"Warning: Text encoder '{text_encoder_option}' not found, using checkpoint's built-in text encoder")
+                return forge_objects
+        
+        # Load the separate text encoder
+        print(f"Loading separate text encoder: {selected_option.label}")
+        separate_te = selected_option.create_text_encoder()
+        separate_te._load_clip_from_checkpoint()  # Force load
+        
+        # Replace the CLIP in forge_objects
+        if separate_te.clip_model is not None:
+            print(f"Replacing text encoder with: {selected_option.label}")
+            forge_objects.clip = separate_te.clip_model
+            
+        return forge_objects
+        
+    except Exception as e:
+        print(f"Error loading separate text encoder: {e}")
+        return forge_objects  # Fall back to original
+
+
+def maybe_override_unet(forge_objects, checkpoint_info):
+    try:
+        from modules import sd_unet, shared
+
+        unet_option = getattr(shared.opts, 'sd_unet', 'Automatic')
+        
+        if unet_option in ['Automatic', 'None']:
+            if unet_option == 'Automatic' and checkpoint_info:
+                model_name = checkpoint_info.model_name
+                matching_options = [x for x in sd_unet.unet_options if hasattr(x, 'model_name') and x.model_name == model_name]
+                if not matching_options:
+                    return forge_objects
+                    
+                selected_option = matching_options[0]
+            elif unet_option == 'None':
+                return forge_objects
+            else:
+                return forge_objects
+        else:
+            selected_option = next((x for x in sd_unet.unet_options if hasattr(x, 'label') and x.label == unet_option), None)
+            if selected_option is None:
+                print(f"Warning: UNET '{unet_option}' not found, using checkpoint's built-in UNET")
+                return forge_objects
+        
+        # Load the separate UNET
+        print(f"Loading separate UNET: {selected_option.label}")
+        separate_unet = selected_option.create_unet()
+        separate_unet._load_unet_from_checkpoint()  # Force load
+        
+        # Replace the UNET in forge_objects
+        if separate_unet.unet_patcher is not None:
+            print(f"Replacing UNET with: {selected_option.label}")
+            forge_objects.unet = separate_unet.unet_patcher
+            
+        return forge_objects
+        
+    except Exception as e:
+        print(f"Error loading separate UNET: {e}")
+        return forge_objects  # Fall back to original
+
+
 class FakeObject:
     def __init__(self, *args, **kwargs):
         super().__init__()
@@ -283,6 +365,9 @@ def load_model_for_a1111(timer, checkpoint_info=None, state_dict=None):
         embedding_directory=cmd_opts.embeddings_dir,
         output_model=True
     )
+    
+    forge_objects = maybe_override_text_encoder(forge_objects, checkpoint_info)
+    forge_objects = maybe_override_unet(forge_objects, checkpoint_info)
     sd_model.first_stage_model = forge_objects.vae.first_stage_model
     sd_model.model.diffusion_model = forge_objects.unet.model.diffusion_model
     sd_model.forge_objects = forge_objects

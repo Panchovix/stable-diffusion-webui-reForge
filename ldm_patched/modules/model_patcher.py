@@ -678,7 +678,7 @@ class ModelPatcher:
                 for param in params:
                     self.patch_weight_to_device("{}.{}".format(n, param), device_to=device_to)
 
-                logging.debug("lowvram: loaded module regularly {} {}".format(n, m))
+                # logging.debug("lowvram: loaded module regularly {} {}".format(n, m))
                 m.ldm_patched_patched_weights = True
 
             for x in load_completely:

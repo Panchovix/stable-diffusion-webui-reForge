@@ -144,10 +144,10 @@ def initialize_rest(*, reload_script_modules=False):
     textual_inversion.textual_inversion.list_textual_inversion_templates()
     startup_timer.record("refresh textual inversion templates")
 
-    from modules import script_callbacks, sd_hijack_optimizations, sd_hijack
-    script_callbacks.on_list_optimizers(sd_hijack_optimizations.list_optimizers)
-    sd_hijack.list_optimizers()
-    startup_timer.record("scripts list_optimizers")
+    # from modules import script_callbacks, sd_hijack_optimizations, sd_hijack
+    # script_callbacks.on_list_optimizers(sd_hijack_optimizations.list_optimizers)
+    # sd_hijack.list_optimizers()
+    # startup_timer.record("scripts list_optimizers")
 
     from modules import sd_unet
     sd_unet.list_unets()

@@ -423,6 +423,18 @@ def list_unets_callback():
     return res
 
 
+def list_text_encoders_callback():
+    res = []
+
+    for c in ordered_callbacks('list_text_encoders'):
+        try:
+            c.callback(res)
+        except Exception:
+            report_exception(c, 'list_text_encoders')
+
+    return res
+
+
 def before_token_counter_callback(params: BeforeTokenCounterParams):
     for c in ordered_callbacks('before_token_counter'):
         try:
@@ -591,12 +603,12 @@ def on_before_ui(callback, *, name=None):
     add_callback(callback_map['callbacks_before_ui'], callback, name=name, category='before_ui')
 
 
-def on_list_optimizers(callback, *, name=None):
-    """register a function to be called when UI is making a list of cross attention optimization options.
-    The function will be called with one argument, a list, and shall add objects of type modules.sd_hijack_optimizations.SdOptimization
-    to it."""
+# def on_list_optimizers(callback, *, name=None):
+#     """register a function to be called when UI is making a list of cross attention optimization options.
+#     The function will be called with one argument, a list, and shall add objects of type modules.sd_hijack_optimizations.SdOptimization
+#     to it."""
 
-    add_callback(callback_map['callbacks_list_optimizers'], callback, name=name, category='list_optimizers')
+#     add_callback(callback_map['callbacks_list_optimizers'], callback, name=name, category='list_optimizers')
 
 
 def on_list_unets(callback, *, name=None):
