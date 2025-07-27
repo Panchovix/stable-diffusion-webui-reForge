@@ -1,7 +1,7 @@
 import gradio as gr
 
 from modules import scripts
-from ldm_patched.contrib.external_sag import SelfAttentionGuidance
+from ldm_patched.contrib.nodes_sag import SelfAttentionGuidance
 
 
 opSelfAttentionGuidance = SelfAttentionGuidance()

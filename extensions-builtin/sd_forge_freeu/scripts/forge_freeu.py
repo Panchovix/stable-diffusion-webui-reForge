@@ -7,7 +7,7 @@ from typing import Any
 from functools import partial
 
 from modules import script_callbacks, scripts
-from ldm_patched.contrib.external_freelunch import FreeU_V2
+from ldm_patched.contrib.nodes_freelunch import FreeU_V2
 
 
 opFreeU_V2 = FreeU_V2()

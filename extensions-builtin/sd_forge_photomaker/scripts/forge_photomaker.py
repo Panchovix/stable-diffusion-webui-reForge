@@ -2,7 +2,7 @@ from modules_forge.supported_preprocessor import Preprocessor, PreprocessorParam
 from modules_forge.shared import add_supported_preprocessor
 from modules_forge.shared import add_supported_control_model
 from modules_forge.supported_controlnet import ControlModelPatcher
-from ldm_patched.contrib.external_photomaker import PhotoMakerEncode, PhotoMakerIDEncoder
+from ldm_patched.contrib.nodes_photomaker import PhotoMakerEncode, PhotoMakerIDEncoder
 
 
 opPhotoMakerEncode = PhotoMakerEncode().apply_photomaker

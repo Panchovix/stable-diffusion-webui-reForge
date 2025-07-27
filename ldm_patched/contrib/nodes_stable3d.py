@@ -1,7 +1,7 @@
 # https://github.com/comfyanonymous/ComfyUI/blob/master/nodes.py 
 
 import torch
-import ldm_patched.contrib.external
+import ldm_patched.contrib.nodes
 import ldm_patched.modules.utils
 
 def camera_embeddings(elevation, azimuth):
@@ -28,8 +28,8 @@ class StableZero123_Conditioning:
         return {"required": { "clip_vision": ("CLIP_VISION",),
                               "init_image": ("IMAGE",),
                               "vae": ("VAE",),
-                              "width": ("INT", {"default": 256, "min": 16, "max": ldm_patched.contrib.external.MAX_RESOLUTION, "step": 8}),
-                              "height": ("INT", {"default": 256, "min": 16, "max": ldm_patched.contrib.external.MAX_RESOLUTION, "step": 8}),
+                              "width": ("INT", {"default": 256, "min": 16, "max": ldm_patched.contrib.nodes.MAX_RESOLUTION, "step": 8}),
+                              "height": ("INT", {"default": 256, "min": 16, "max": ldm_patched.contrib.nodes.MAX_RESOLUTION, "step": 8}),
                               "batch_size": ("INT", {"default": 1, "min": 1, "max": 4096}),
                               "elevation": ("FLOAT", {"default": 0.0, "min": -180.0, "max": 180.0}),
                               "azimuth": ("FLOAT", {"default": 0.0, "min": -180.0, "max": 180.0}),
@@ -61,8 +61,8 @@ class StableZero123_Conditioning_Batched:
         return {"required": { "clip_vision": ("CLIP_VISION",),
                               "init_image": ("IMAGE",),
                               "vae": ("VAE",),
-                              "width": ("INT", {"default": 256, "min": 16, "max": ldm_patched.contrib.external.MAX_RESOLUTION, "step": 8}),
-                              "height": ("INT", {"default": 256, "min": 16, "max": ldm_patched.contrib.external.MAX_RESOLUTION, "step": 8}),
+                              "width": ("INT", {"default": 256, "min": 16, "max": ldm_patched.contrib.nodes.MAX_RESOLUTION, "step": 8}),
+                              "height": ("INT", {"default": 256, "min": 16, "max": ldm_patched.contrib.nodes.MAX_RESOLUTION, "step": 8}),
                               "batch_size": ("INT", {"default": 1, "min": 1, "max": 4096}),
                               "elevation": ("FLOAT", {"default": 0.0, "min": -180.0, "max": 180.0}),
                               "azimuth": ("FLOAT", {"default": 0.0, "min": -180.0, "max": 180.0}),

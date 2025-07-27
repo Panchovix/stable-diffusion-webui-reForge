@@ -3,7 +3,7 @@
 
 
 import torch
-import ldm_patched.contrib.external
+import ldm_patched.contrib.nodes
 import ldm_patched.modules.utils
 
 class SD_4XUpscale_Conditioning:
