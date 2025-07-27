@@ -64,6 +64,7 @@ class ImageUpscaleWithModel:
         s = torch.clamp(s.movedim(-3,-1), min=0, max=1.0)
         return (s,)
 
+# Original code and file from ComfyUI, https://github.com/comfyanonymous/ComfyUI
 NODE_CLASS_MAPPINGS = {
     "UpscaleModelLoader": UpscaleModelLoader,
     "ImageUpscaleWithModel": ImageUpscaleWithModel

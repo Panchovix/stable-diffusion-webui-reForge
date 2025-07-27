@@ -34,6 +34,7 @@ class DifferentialDiffusion():
             return (denoise_mask >= threshold).to(denoise_mask.dtype)
 
     
+# Original code and file from ComfyUI, https://github.com/comfyanonymous/ComfyUI
 NODE_CLASS_MAPPINGS = {
     "DifferentialDiffusion": DifferentialDiffusion,
 }

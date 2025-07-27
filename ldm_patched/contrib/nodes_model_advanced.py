@@ -4,7 +4,7 @@ import ldm_patched.modules.model_sampling
 import ldm_patched.modules.latent_formats
 #import nodes
 import torch
-#import node_helpers
+#import ldm_patched.contrib.node_helpers
 
 
 class LCM(ldm_patched.modules.model_sampling.EPS):
@@ -309,10 +309,11 @@ class RescaleCFG:
 
 #     def patch(self, model, dtype):
 #         m = model.clone()
-#         m.set_model_compute_dtype(node_helpers.string_to_torch_dtype(dtype))
+#         m.set_model_compute_dtype(ldm_patched.contrib.node_helpers.string_to_torch_dtype(dtype))
 #         return (m, )
 
 
+# Original code and file from ComfyUI, https://github.com/comfyanonymous/ComfyUI
 NODE_CLASS_MAPPINGS = {
     "ModelSamplingDiscrete": ModelSamplingDiscrete,
     "ModelSamplingContinuousEDM": ModelSamplingContinuousEDM,

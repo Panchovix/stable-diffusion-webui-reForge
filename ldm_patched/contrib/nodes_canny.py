@@ -298,6 +298,7 @@ class Canny:
         img_out = output[1].to(ldm_patched.modules.model_management.intermediate_device()).repeat(1, 3, 1, 1).movedim(1, -1)
         return (img_out,)
 
+# Original code and file from ComfyUI, https://github.com/comfyanonymous/ComfyUI
 NODE_CLASS_MAPPINGS = {
     "Canny": Canny,
 }

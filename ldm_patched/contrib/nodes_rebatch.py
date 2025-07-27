@@ -131,6 +131,7 @@ class ImageRebatch:
 
         return (output_list,)
 
+# Original code and file from ComfyUI, https://github.com/comfyanonymous/ComfyUI
 NODE_CLASS_MAPPINGS = {
     "RebatchLatents": LatentRebatch,
     "RebatchImages": ImageRebatch,

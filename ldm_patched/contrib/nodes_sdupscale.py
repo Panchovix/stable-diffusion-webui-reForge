@@ -46,6 +46,7 @@ class SD_4XUpscale_Conditioning:
         latent = torch.zeros([images.shape[0], 4, height // 4, width // 4])
         return (out_cp, out_cn, {"samples":latent})
 
+# Original code and file from ComfyUI, https://github.com/comfyanonymous/ComfyUI
 NODE_CLASS_MAPPINGS = {
     "SD_4XUpscale_Conditioning": SD_4XUpscale_Conditioning,
 }

@@ -102,6 +102,7 @@ class StableCascade_StageB_Conditioning:
             c.append(n)
         return (c, )
 
+# Original code and file from ComfyUI, https://github.com/comfyanonymous/ComfyUI
 NODE_CLASS_MAPPINGS = {
     "StableCascade_EmptyLatentImage": StableCascade_EmptyLatentImage,
     "StableCascade_StageB_Conditioning": StableCascade_StageB_Conditioning,

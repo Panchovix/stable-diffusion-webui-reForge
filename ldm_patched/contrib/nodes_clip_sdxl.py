@@ -54,6 +54,7 @@ class CLIPTextEncodeSDXL:
         cond, pooled = clip.encode_from_tokens(tokens, return_pooled=True)
         return ([[cond, {"pooled_output": pooled, "width": width, "height": height, "crop_w": crop_w, "crop_h": crop_h, "target_width": target_width, "target_height": target_height}]], )
 
+# Original code and file from ComfyUI, https://github.com/comfyanonymous/ComfyUI
 NODE_CLASS_MAPPINGS = {
     "CLIPTextEncodeSDXLRefiner": CLIPTextEncodeSDXLRefiner,
     "CLIPTextEncodeSDXL": CLIPTextEncodeSDXL,
