@@ -5,7 +5,8 @@ import logging
 try:
     import torchaudio
 except:
-    logging.warning("torchaudio missing, ACE model will be broken")
+    # logging.warning("torchaudio missing, ACE model will be broken")
+    pass
 import torchvision.transforms as transforms
 from .music_vocoder import ADaMoSHiFiGANV1
 
