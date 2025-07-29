@@ -6,7 +6,8 @@ import logging
 try:
     from torchaudio.transforms import MelScale
 except:
-    logging.warning("torchaudio missing, ACE model will be broken")
+    # logging.warning("torchaudio missing, ACE model will be broken")
+    pass
 import ldm_patched.modules.model_management
 
 class LinearSpectrogram(nn.Module):

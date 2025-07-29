@@ -3,6 +3,9 @@ from __future__ import annotations
 import re
 from collections import namedtuple
 import lark
+import math
+
+import logging
 
 # a prompt like this: "fantasy landscape with a [mountain:lake:0.25] and [an oak:a christmas tree:0.75][ in foreground::0.6][: in background:0.25] [shoddy:masterful:0.5]"
 # will be represented with prompt_schedule like this (assuming steps=100):
@@ -451,16 +454,15 @@ def parse_prompt_attention(text):
             if weight.lower().startswith('x'):
                 val = float(weight[1:])
                 start = round_brackets.pop()
-                sign, abs_val = (1, val) if val >= 0 else (-1, val)
-                count = int(abs_val)
-                remain = abs_val - count
                 segment = res[start:]
-                if remain > 1e-4 or count > 1:
-                    res.extend(segment * max(0,count-2))
-                    res.extend([[t, w * (1.0 + remain)] for t,w in segment])
-                else:
-                    multiply_range(start, remain)
-                if sign < 0:
+                abs_val = abs(val)
+                count = max(1,int(abs_val))
+                tail = (abs_val % 1) + (abs_val >= 1)
+                res[start:] = [[t,w] for _ in range(count) for t,w in segment]
+                if tail > 1e-4:
+                    for seg in res[-len(segment):]:
+                        seg[1] *= tail
+                if val < 0:
                     multiply_range(start, -1.0)
             else:
                 multiply_range(round_brackets.pop(), float(weight))
@@ -495,6 +497,7 @@ def parse_prompt_attention(text):
             merged.append([curr_text, curr_weight])
             curr_text, curr_weight = next_text, next_weight
     merged.append([curr_text, curr_weight])
+    logging.debug(merged)
     
     return merged
 
