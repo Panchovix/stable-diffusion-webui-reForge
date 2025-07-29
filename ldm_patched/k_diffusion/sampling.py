@@ -1228,6 +1228,9 @@ def sample_dpmpp_3m_sde(model, x, sigmas, extra_args=None, callback=None, disabl
     lambda_fn = partial(sigma_to_half_log_snr, model_sampling=model_sampling)
     sigmas = offset_first_sigma_for_snr(sigmas, model_sampling)
 
+    denoised_1, denoised_2 = None, None
+    h_1, h_2 = None, None
+
     for i in trange(len(sigmas) - 1, disable=disable):
         denoised = model(x, sigmas[i] * s_in, **extra_args)
         if callback is not None:

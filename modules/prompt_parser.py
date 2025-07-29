@@ -361,7 +361,6 @@ def reconstruct_multicond_batch(c: MulticondLearnedConditioning, current_step):
 
     return conds_list, stacked
 
-
 re_attention = re.compile(r"""
 \\\(|
 \\\)|
@@ -371,7 +370,7 @@ re_attention = re.compile(r"""
 \\|
 \(|
 \[|
-:\s*([+-]?[.\d]+)\s*\)|
+:\s*(x?[+-]?[.\d]+)\s*\)|
 \)|
 ]|
 [^\\()\[\]:]+|
@@ -385,8 +384,9 @@ def parse_prompt_attention(text):
     Parses a string with attention tokens and returns a list of pairs: text and its associated weight.
     Accepted tokens are:
       (abc) - increases attention to abc by a multiplier of 1.1
-      (abc:3.12) - increases attention to abc by a multiplier of 3.12
       [abc] - decreases attention to abc by a multiplier of 1.1
+      (abc:3.12) - modifies attention to abc by the multiplier 3.12
+      (abc:x3.12) - expands to 3 copies of abc with attention 1.12 to the last
       \( - literal character '('
       \[ - literal character '['
       \) - literal character ')'
@@ -414,6 +414,16 @@ def parse_prompt_attention(text):
      [', sun, ', 1.1],
      ['sky', 1.4641000000000006],
      ['.', 1.1]]
+    >>> parse_prompt_attention('(hello world, a poem, :x3.2)')
+    [['hello world, a poem, hello world, a poem, ', 1.0],
+     ['hello world, a poem, ', 1.2]]
+    >>> parse_prompt_attention('(hello world, a poem, :x2.5)')
+    [['hello world, a poem, ', 1.0],
+     ['hello world, a poem, ', 1.5]]
+    >>> parse_prompt_attention('(hello world, a poem, :x1.4)')
+    [['hello world, a poem, ', 1.4]]
+    >>> parse_prompt_attention('(hello world, a poem, :x0.8)')
+    [['hello world, a poem, ', 0.8]]
     """
 
     res = []
@@ -438,7 +448,22 @@ def parse_prompt_attention(text):
         elif text == '[':
             square_brackets.append(len(res))
         elif weight is not None and round_brackets:
-            multiply_range(round_brackets.pop(), float(weight))
+            if weight.lower().startswith('x'):
+                val = float(weight[1:])
+                start = round_brackets.pop()
+                sign, abs_val = (1, val) if val >= 0 else (-1, val)
+                count = int(abs_val)
+                remain = abs_val - count
+                segment = res[start:]
+                if remain > 1e-4 or count > 1:
+                    res.extend(segment * max(0,count-2))
+                    res.extend([[t, w * (1.0 + remain)] for t,w in segment])
+                else:
+                    multiply_range(start, remain)
+                if sign < 0:
+                    multiply_range(start, -1.0)
+            else:
+                multiply_range(round_brackets.pop(), float(weight))
         elif text == ')' and round_brackets:
             multiply_range(round_brackets.pop(), round_bracket_multiplier)
         elif text == ']' and square_brackets:
@@ -460,15 +485,18 @@ def parse_prompt_attention(text):
         res = [["", 1.0]]
 
     # merge runs of identical weights
-    i = 0
-    while i + 1 < len(res):
-        if res[i][1] == res[i + 1][1]:
-            res[i][0] += res[i + 1][0]
-            res.pop(i + 1)
+    merged = []
+    [curr_text, curr_weight] = res.pop(0)
+    while res:
+        [next_text, next_weight] = res.pop(0)
+        if abs(next_weight - curr_weight) < 1e-4:
+            curr_text += next_text
         else:
-            i += 1
-
-    return res
+            merged.append([curr_text, curr_weight])
+            curr_text, curr_weight = next_text, next_weight
+    merged.append([curr_text, curr_weight])
+    
+    return merged
 
 if __name__ == "__main__":
     import doctest
