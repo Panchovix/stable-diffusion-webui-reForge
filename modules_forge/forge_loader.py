@@ -34,13 +34,47 @@ def maybe_override_text_encoder(forge_objects, checkpoint_info):
 
         text_encoder_option = getattr(shared.opts, 'sd_text_encoder', 'Automatic')
         
+        # Check if we should use a separate text encoder
+        should_use_separate_te = False
+        selected_option = None
+        
         # If CLIP is None (was skipped during loading), we must load a separate TE
         if forge_objects.clip is None:
+            should_use_separate_te = True
             print("No checkpoint CLIP loaded - must use separate text encoder")
             if text_encoder_option == 'None':
                 raise RuntimeError("Cannot use 'None' text encoder option when checkpoint CLIP was not loaded")
+        else:
+            # Normal case: checkpoint CLIP was loaded, decide whether to replace it
+            if text_encoder_option == 'None':
+                # User explicitly wants no separate TE - use checkpoint's built-in
+                return forge_objects
+            elif text_encoder_option == 'Automatic':
+                # In Automatic mode, don't use separate TE - just use checkpoint's built-in
+                return forge_objects
+            else:
+                # User explicitly selected a specific TE
+                matching_te = next((x for x in sd_text_encoder.text_encoder_options if x.label == text_encoder_option), None)
+                if matching_te:
+                    # Check if the selected TE is the same as the checkpoint
+                    if checkpoint_info and matching_te.te_info.model_name == checkpoint_info.model_name:
+                        # Same model - use checkpoint's built-in TE
+                        print(f"Selected text encoder matches checkpoint model - using checkpoint's built-in text encoder")
+                        return forge_objects
+                    else:
+                        # Different model - use separate TE
+                        should_use_separate_te = True
+                        selected_option = matching_te
+                else:
+                    print(f"Warning: Text encoder '{text_encoder_option}' not found, using checkpoint's built-in text encoder")
+                    return forge_objects
+        
+        # If we reach here and should_use_separate_te is False, return original
+        if not should_use_separate_te:
+            return forge_objects
             
-            # Force finding a text encoder to use
+        # Find the text encoder to use if not already selected
+        if selected_option is None:
             if text_encoder_option == 'Automatic' and checkpoint_info:
                 model_name = checkpoint_info.model_name
                 matching_options = [x for x in sd_text_encoder.text_encoder_options if x.model_name == model_name]
@@ -57,25 +91,6 @@ def maybe_override_text_encoder(forge_objects, checkpoint_info):
                 selected_option = next((x for x in sd_text_encoder.text_encoder_options if x.label == text_encoder_option), None)
                 if selected_option is None:
                     raise RuntimeError(f"Text encoder '{text_encoder_option}' not found and checkpoint CLIP was not loaded")
-        else:
-            # Normal case: checkpoint CLIP was loaded, decide whether to replace it
-            if text_encoder_option in ['Automatic', 'None']:
-                if text_encoder_option == 'Automatic' and checkpoint_info:
-                    model_name = checkpoint_info.model_name
-                    matching_options = [x for x in sd_text_encoder.text_encoder_options if x.model_name == model_name]
-                    if not matching_options:
-                        return forge_objects
-                        
-                    selected_option = matching_options[0]
-                elif text_encoder_option == 'None':
-                    return forge_objects
-                else:
-                    return forge_objects
-            else:
-                selected_option = next((x for x in sd_text_encoder.text_encoder_options if x.label == text_encoder_option), None)
-                if selected_option is None:
-                    print(f"Warning: Text encoder '{text_encoder_option}' not found, using checkpoint's built-in text encoder")
-                    return forge_objects
         
         # Store reference to original CLIP for cleanup
         original_clip = forge_objects.clip
