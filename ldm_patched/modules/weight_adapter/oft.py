@@ -13,6 +13,13 @@ class OFTAdapter(WeightAdapterBase):
         self.loaded_keys = loaded_keys
         self.weights = weights
 
+    def __getitem__(self, index):
+        """Compatibility for extensions expecting val[1][0] indexing"""
+        if index == 0:
+            return self.name
+        else:
+            raise IndexError(f"Index {index} not supported for LoRAAdapter compatibility")
+
     @classmethod
     def load(
         cls,

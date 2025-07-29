@@ -1104,22 +1104,32 @@ def aggressive_memory_cleanup():
     
     return f"Memory cleanup complete. Current usage: {mem_info.rss/(1024*1024*1024):.2f} GB"
 
-def load_model(checkpoint_info=None, already_loaded_state_dict=None):
+def load_model(checkpoint_info=None, already_loaded_state_dict=None, forced_reload=False):
     import logging as log
     global model_data
 
     checkpoint_info = checkpoint_info or select_checkpoint()
     timer = Timer()
 
-    # Check if the model is already loaded
-    for i, loaded_model in enumerate(model_data.loaded_sd_models):
-        if loaded_model.filename == checkpoint_info.filename:
-            log.debug(f"Using already loaded model {loaded_model.sd_checkpoint_info.title}")
-            # Set this model as active by moving it to the front
-            model_data.loaded_sd_models.remove(loaded_model)
-            model_data.loaded_sd_models.insert(0, loaded_model)
-            model_data.set_sd_model(loaded_model, already_loaded=True)
-            return loaded_model
+    # Check if the model is already loaded (skip this check if forced_reload is True)
+    if not forced_reload:
+        for i, loaded_model in enumerate(model_data.loaded_sd_models):
+            if loaded_model.filename == checkpoint_info.filename:
+                log.debug(f"Using already loaded model {loaded_model.sd_checkpoint_info.title}")
+                # Set this model as active by moving it to the front
+                model_data.loaded_sd_models.remove(loaded_model)
+                model_data.loaded_sd_models.insert(0, loaded_model)
+                model_data.set_sd_model(loaded_model, already_loaded=True)
+                return loaded_model
+    else:
+        # For forced reload, remove any existing model with the same filename first
+        for i, loaded_model in enumerate(model_data.loaded_sd_models):
+            if loaded_model.filename == checkpoint_info.filename:
+                print(f"Forced reload: Unloading existing model {loaded_model.sd_checkpoint_info.title}")
+                model_data.loaded_sd_models.remove(loaded_model)
+                # Completely unload the existing model
+                complete_model_teardown(loaded_model)
+                break
 
     # Enforce model limit
     while len(model_data.loaded_sd_models) >= shared.opts.sd_checkpoints_limit:
@@ -1268,7 +1278,7 @@ def reuse_model_from_already_loaded(sd_model, checkpoint_info, timer):
 
 
 def reload_model_weights(sd_model=None, info=None, forced_reload=False):
-    return load_model(info)
+    return load_model(info, forced_reload=forced_reload)
 
 
 def unload_model_weights(model=None):
