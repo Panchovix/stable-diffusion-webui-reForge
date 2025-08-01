@@ -17,6 +17,7 @@ __pycache__
 /ui-config.json
 /outputs
 /config.json
+/config_linux.json
 /log
 /webui.settings.bat
 /styles.csv
