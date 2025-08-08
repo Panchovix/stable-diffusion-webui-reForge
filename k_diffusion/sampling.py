@@ -345,7 +345,7 @@ class ODESampler:
         for i in trange(x.shape[0], desc=self.solver, disable=disable):
             ode.reset()
 
-            samples[i] = torchdiffeq.odeint(
+            samples[i] = odeint(
                 ode,
                 x[i],
                 t,
