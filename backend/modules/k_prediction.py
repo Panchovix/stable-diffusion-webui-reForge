@@ -63,100 +63,6 @@ def rescale_zero_terminal_snr_sigmas(sigmas):
     alphas_bar[-1] = 4.8973451890853435e-08
     return ((1 - alphas_bar) / alphas_bar) ** 0.5
 
-class CONST:
-    def calculate_input(self, sigma, noise):
-        return noise
-
-    def calculate_denoised(self, sigma, model_output, model_input):
-        sigma = sigma.view(sigma.shape[:1] + (1,) * (model_output.ndim - 1))
-        return model_input - model_output * sigma
-
-    def noise_scaling(self, sigma, noise, latent_image, max_denoise=False):
-        sigma = sigma.view(sigma.shape[:1] + (1,) * (noise.ndim - 1))
-        return sigma * noise + (1.0 - sigma) * latent_image
-
-    def inverse_noise_scaling(self, sigma, latent):
-        sigma = sigma.view(sigma.shape[:1] + (1,) * (latent.ndim - 1))
-        return latent / (1.0 - sigma)
-
-class ModelSamplingDiscrete(torch.nn.Module):
-    def __init__(self, model_config=None, zsnr=None):
-        super().__init__()
-
-        if model_config is not None:
-            sampling_settings = model_config.sampling_settings
-        else:
-            sampling_settings = {}
-
-        beta_schedule = sampling_settings.get("beta_schedule", "linear")
-        linear_start = sampling_settings.get("linear_start", 0.00085)
-        linear_end = sampling_settings.get("linear_end", 0.012)
-        timesteps = sampling_settings.get("timesteps", 1000)
-
-        if zsnr is None:
-            zsnr = sampling_settings.get("zsnr", False)
-
-        self._register_schedule(given_betas=None, beta_schedule=beta_schedule, timesteps=timesteps, linear_start=linear_start, linear_end=linear_end, cosine_s=8e-3, zsnr=zsnr)
-        self.sigma_data = 1.0
-
-    def _register_schedule(self, given_betas=None, beta_schedule="linear", timesteps=1000,
-                          linear_start=1e-4, linear_end=2e-2, cosine_s=8e-3, zsnr=False):
-        if given_betas is not None:
-            betas = given_betas
-        else:
-            betas = make_beta_schedule(beta_schedule, timesteps, linear_start=linear_start, linear_end=linear_end, cosine_s=cosine_s)
-        alphas = 1. - betas
-        alphas_cumprod = torch.cumprod(alphas, dim=0)
-
-        timesteps, = betas.shape
-        self.num_timesteps = int(timesteps)
-        self.linear_start = linear_start
-        self.linear_end = linear_end
-        self.zsnr = zsnr
-
-        # self.register_buffer('betas', torch.tensor(betas, dtype=torch.float32))
-        # self.register_buffer('alphas_cumprod', torch.tensor(alphas_cumprod, dtype=torch.float32))
-        # self.register_buffer('alphas_cumprod_prev', torch.tensor(alphas_cumprod_prev, dtype=torch.float32))
-
-        sigmas = ((1 - alphas_cumprod) / alphas_cumprod) ** 0.5
-        if self.zsnr or zsnr:
-            sigmas = rescale_zero_terminal_snr_sigmas(sigmas)
-
-        self.set_sigmas(sigmas)
-
-    def set_sigmas(self, sigmas):
-        self.register_buffer('sigmas', sigmas.float())
-        self.register_buffer('log_sigmas', sigmas.log().float())
-
-    @property
-    def sigma_min(self):
-        return self.sigmas[0]
-
-    @property
-    def sigma_max(self):
-        return self.sigmas[-1]
-
-    def timestep(self, sigma):
-        log_sigma = sigma.log()
-        dists = log_sigma.to(self.log_sigmas.device) - self.log_sigmas[:, None]
-        return dists.abs().argmin(dim=0).view(sigma.shape).to(sigma.device)
-
-    def sigma(self, timestep):
-        t = torch.clamp(timestep.float().to(self.log_sigmas.device), min=0, max=(len(self.sigmas) - 1))
-        low_idx = t.floor().long()
-        high_idx = t.ceil().long()
-        w = t.frac()
-        log_sigma = (1 - w) * self.log_sigmas[low_idx] + w * self.log_sigmas[high_idx]
-        return log_sigma.exp().to(timestep.device)
-
-    def percent_to_sigma(self, percent):
-        if percent <= 0.0:
-            return 999999999.9
-        if percent >= 1.0:
-            return 0.0
-        percent = 1.0 - percent
-        return self.sigma(torch.tensor(percent * 999.0)).item()
-
 class AbstractPrediction(torch.nn.Module):
     def __init__(self, sigma_data=1.0, prediction_type='epsilon'):
         super().__init__()
@@ -423,3 +329,21 @@ def k_prediction_from_diffusers_scheduler(scheduler):
                               timesteps=scheduler.config.num_train_timesteps)
 
     raise NotImplementedError(f'Failed to recognize {scheduler}')
+
+
+#backported CONST, but it already exists
+class CONST:
+    def calculate_input(self, sigma, noise):
+        return noise
+
+    def calculate_denoised(self, sigma, model_output, model_input):
+        sigma = sigma.view(sigma.shape[:1] + (1,) * (model_output.ndim - 1))
+        return model_input - model_output * sigma
+
+    def noise_scaling(self, sigma, noise, latent_image, max_denoise=False):
+        sigma = sigma.view(sigma.shape[:1] + (1,) * (noise.ndim - 1))
+        return sigma * noise + (1.0 - sigma) * latent_image
+
+    def inverse_noise_scaling(self, sigma, latent):
+        sigma = sigma.view(sigma.shape[:1] + (1,) * (latent.ndim - 1))
+        return latent / (1.0 - sigma)
