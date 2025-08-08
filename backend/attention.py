@@ -658,15 +658,23 @@ def optimized_attention_for_device(device, mask=False, small_input=False):
 
     return attention_function
 
-if memory_management.xformers_enabled_vae():
-    print("Using xformers attention for VAE")
-    attention_function_single_head_spatial = xformers_attention_single_head_spatial
-elif memory_management.pytorch_attention_enabled():
+if memory_management.vae_attention_xformers():
+    if memory_management.xformers_enabled_vae():
+        print("Using xformers attention for VAE")
+        attention_function_single_head_spatial = xformers_attention_single_head_spatial
+    else:
+        print("You're using --disable-xformers, so xformers not available for VAE, falling back to pytorch attention for VAE")
+        attention_function_single_head_spatial = pytorch_attention_single_head_spatial
+elif memory_management.vae_attention_split():
+    print("Using split attention for VAE")
+    attention_function_single_head_spatial = normal_attention_single_head_spatial
+elif memory_management.vae_attention_pytorch():
     print("Using pytorch attention for VAE")
     attention_function_single_head_spatial = pytorch_attention_single_head_spatial
 else:
-    print("Using split attention for VAE")
-    attention_function_single_head_spatial = normal_attention_single_head_spatial
+    # Default fallback (should not happen)
+    print("Using pytorch attention for VAE (fallback)")
+    attention_function_single_head_spatial = pytorch_attention_single_head_spatial
 
 
 class AttentionProcessorForge:

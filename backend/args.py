@@ -35,6 +35,8 @@ attn_group.add_argument("--use-sage-attention", action="store_true", help="Use s
 attn_group.add_argument("--use-sage-attention3", action="store_true", help="Use sage attention 3. Supported only on blackwell GPUs.")
 attn_group.add_argument("--use-flash-attention", action="store_true", help="Use FlashAttention.")
 
+parser.add_argument("--vae-attention", type=str, choices=["xformers", "pytorch", "split"], default="pytorch", help="VAE attention type (default: pytorch if not using xformers)")
+
 parser.add_argument("--allow-fp16-accumulation", action="store_true", help="Enable FP16 accumulation in cuBLAS operations")
 
 upcast = parser.add_mutually_exclusive_group()

@@ -1016,6 +1016,29 @@ def pytorch_attention_flash_attention():
             return True
     return False
 
+def vae_attention_xformers():
+    if args.vae_attention == "xformers":
+        return True
+    if args.vae_attention == "pytorch":
+        return xformers_enabled()
+    return False
+
+def vae_attention_pytorch():
+    if args.vae_attention == "pytorch":
+        if xformers_enabled():
+            return False
+        if args.attention_split:
+            return False
+        return True
+    return False
+
+def vae_attention_split():
+    if args.vae_attention == "split":
+        return True
+    if args.vae_attention == "pytorch":
+        return args.attention_split
+    return False
+
 
 def force_upcast_attention_dtype():
     upcast = args.force_upcast_attention
