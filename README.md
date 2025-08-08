@@ -1,4 +1,4 @@
-a backup of my local (experimental, opinionated) changes to Forge2 webUI
+a backup of local (experimental, opinionated) changes to Forge2 webUI from DenOfEquity.
 
 * auto selection of VAE and text encoders per model / UI setting
 * Chroma (based on https://github.com/croquelois/forgeChroma)
@@ -16,3 +16,5 @@ a backup of my local (experimental, opinionated) changes to Forge2 webUI
 * PuLID (sdxl) (based on https://github.com/cubiq/PuLID_ComfyUI/)
 * nVidia Cosmos predict2 t2i (only tested 2B model)
 
+Besides that, it has:
+Python 3.12 support, sage3 attention support, all the samplers and schedulers from reForge (1), and recently, support for CFG++ samplers via the comfy way
