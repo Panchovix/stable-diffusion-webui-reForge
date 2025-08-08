@@ -3,7 +3,7 @@ from modules import modelloader, devices, errors
 from modules.shared import opts, cmd_opts, models_path
 from modules.upscaler import Upscaler, UpscalerData
 from modules.upscaler_utils import upscale_with_model
-from modules_forge.forge_util import prepare_free_memory
+from modules_forge.utils import prepare_free_memory
 
 
 class UpscalerRCAN(Upscaler):
