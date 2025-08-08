@@ -32,7 +32,10 @@ attn_group.add_argument("--attention-split", action="store_true")
 attn_group.add_argument("--attention-quad", action="store_true")
 attn_group.add_argument("--attention-pytorch", action="store_true")
 attn_group.add_argument("--use-sage-attention", action="store_true", help="Use sage attention.")
+attn_group.add_argument("--use-sage-attention3", action="store_true", help="Use sage attention 3. Supported only on blackwell GPUs.")
 attn_group.add_argument("--use-flash-attention", action="store_true", help="Use FlashAttention.")
+
+parser.add_argument("--vae-attention", type=str, choices=["xformers", "pytorch", "split"], default="pytorch", help="VAE attention type (default: pytorch if not using xformers)")
 
 upcast = parser.add_mutually_exclusive_group()
 upcast.add_argument("--force-upcast-attention", action="store_true")

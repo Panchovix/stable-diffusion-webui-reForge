@@ -1,6 +1,7 @@
 import math
 import torch
 import einops
+import sys
 
 from backend.args import args
 from backend import memory_management
@@ -21,8 +22,23 @@ if memory_management.xformers_enabled():
 if memory_management.sage_attention_enabled():
     try:
         from sageattention import sageattn
-    except ModuleNotFoundError:
-        print(f"\n\nTo use the `--use-sage-attention` feature, the `sageattention` package must be installed first.\ncommand:\n\t{sys.executable} -m pip install sageattention")
+        print("Found SageAttention 1.x/2.x (sageattention package)")
+    except ModuleNotFoundError as e:
+        if e.name == "sageattention":
+            print(f"\n\nTo use the `--use-sage-attention` feature, the `sageattention` package must be installed first.\ncommand:\n\t{sys.executable} -m pip install sageattention")
+        else:
+            raise e
+        exit(-1)
+
+if memory_management.sage_attention3_enabled():
+    try:
+        from sageattn import sageattn_blackwell
+        print("Found SageAttention3 (sageattn package)")
+    except ModuleNotFoundError as e:
+        if e.name == "sageattn":
+            print(f"\n\nTo use the `--use-sage-attention3` feature, the `sageattn` package must be installed first.\ncommand:\n\t{sys.executable} -m pip install sageattn")
+        else:
+            raise e
         exit(-1)
 
 if memory_management.flash_attention_enabled():
@@ -32,8 +48,6 @@ if memory_management.flash_attention_enabled():
         print(f"\n\nTo use the `--use-flash-attention` feature, the `flash-attn` package must be installed first.\ncommand:\n\t{sys.executable} -m pip install flash-attn")
         exit(-1)
 
-import backend.operations
-ops = backend.operations.ForgeOperations
 
 FORCE_UPCAST_ATTENTION_DTYPE = memory_management.force_upcast_attention_dtype()
 
@@ -355,13 +369,9 @@ def attention_pytorch(q, k, v, heads, mask=None, attn_precision=None, skip_resha
     return out
 
 def attention_sage(q, k, v, heads, mask=None, attn_precision=None, skip_reshape=False, skip_output_reshape=False):
-    # sageattn doesn't work with sd1.5, fallback to sdpa
-    if q.shape[-1] // heads not in [64, 96, 128]:
-        return attention_pytorch(q, k, v, heads, mask=mask, attn_precision=attn_precision, skip_reshape=skip_reshape)
-
     if skip_reshape:
         b, _, _, dim_head = q.shape
-        tensor_layout="HND"
+        tensor_layout = "HND"
     else:
         b, _, dim_head = q.shape
         dim_head //= heads
@@ -369,7 +379,7 @@ def attention_sage(q, k, v, heads, mask=None, attn_precision=None, skip_reshape=
             lambda t: t.view(b, -1, heads, dim_head),
             (q, k, v),
         )
-        tensor_layout="NHD"
+        tensor_layout = "NHD"
 
     if mask is not None:
         # add a batch dimension if there isn't already one
@@ -379,8 +389,16 @@ def attention_sage(q, k, v, heads, mask=None, attn_precision=None, skip_reshape=
         if mask.ndim == 3:
             mask = mask.unsqueeze(1)
 
-    out = sageattn(q, k, v, attn_mask=mask, is_causal=False, tensor_layout=tensor_layout)
-
+    try:
+        out = sageattn(q, k, v, attn_mask=mask, is_causal=False, tensor_layout=tensor_layout)
+    except Exception as e:
+        print("Error running sage attention: {}, using pytorch attention instead.".format(e))
+        if tensor_layout == "NHD":
+            q, k, v = map(
+                lambda t: t.transpose(1, 2),
+                (q, k, v),
+            )
+        return attention_pytorch(q, k, v, heads, mask=mask, skip_reshape=True, skip_output_reshape=skip_output_reshape)
     if tensor_layout == "HND":
         if not skip_output_reshape:
             out = (
@@ -391,6 +409,66 @@ def attention_sage(q, k, v, heads, mask=None, attn_precision=None, skip_reshape=
             out = out.transpose(1, 2)
         else:
             out = out.reshape(b, -1, heads * dim_head)
+    return out
+
+
+def attention_sage3(q, k, v, heads, mask=None, attn_precision=None, skip_reshape=False, skip_output_reshape=False):
+    if skip_reshape:
+        b, _, _, dim_head = q.shape
+        tensor_layout = "HND"
+    else:
+        b, _, dim_head = q.shape
+        dim_head //= heads
+        q, k, v = map(
+            lambda t: t.view(b, -1, heads, dim_head),
+            (q, k, v),
+        )
+        tensor_layout = "NHD"
+
+    if mask is not None:
+        # add a batch dimension if there isn't already one
+        if mask.ndim == 2:
+            mask = mask.unsqueeze(0)
+        # add a heads dimension if there isn't already one
+        if mask.ndim == 3:
+            mask = mask.unsqueeze(1)
+
+    try:
+        if dim_head >= 256:
+            # SageAttention3 doesn't support head_dim >= 256, fall back to pytorch
+            print(f"SageAttention3 doesn't support head_dim >= 256 (got {dim_head}), falling back to pytorch attention")
+            if tensor_layout == "NHD":
+                q, k, v = map(
+                    lambda t: t.transpose(1, 2),
+                    (q, k, v),
+                )
+            return attention_pytorch(q, k, v, heads, mask=mask, skip_reshape=True, skip_output_reshape=skip_output_reshape)
+        
+        # SageAttention3 expects tensor layout as (batch, heads, seq_len, head_dim)
+        if tensor_layout == "NHD":
+            q_sa3, k_sa3, v_sa3 = map(lambda t: t.transpose(1, 2), (q, k, v))
+        else:
+            q_sa3, k_sa3, v_sa3 = q, k, v
+        
+        out = sageattn_blackwell(q_sa3, k_sa3, v_sa3, attn_mask=mask, is_causal=False, per_block_mean=False)
+        
+        # Convert back to expected layout
+        if tensor_layout == "HND":
+            if not skip_output_reshape:
+                out = out.transpose(1, 2).reshape(b, -1, heads * dim_head)
+        else:
+            if skip_output_reshape:
+                out = out.transpose(1, 2)
+            else:
+                out = out.transpose(1, 2).reshape(b, -1, heads * dim_head)
+    except Exception as e:
+        print("Error running sage attention 3: {}, using pytorch attention instead.".format(e))
+        if tensor_layout == "NHD":
+            q, k, v = map(
+                lambda t: t.transpose(1, 2),
+                (q, k, v),
+            )
+        return attention_pytorch(q, k, v, heads, mask=mask, skip_reshape=True, skip_output_reshape=skip_output_reshape)
     return out
 
 try:
@@ -447,8 +525,8 @@ def attention_flash(q, k, v, heads, mask=None, attn_precision=None, skip_reshape
             out.transpose(1, 2).reshape(b, -1, heads * dim_head)
         )
     return out
-    
-    
+
+
 def slice_attention_single_head_spatial(q, k, v):
     r1 = torch.zeros_like(k, device=q.device)
     scale = (int(q.shape[-1]) ** (-0.5))
@@ -537,34 +615,65 @@ def pytorch_attention_single_head_spatial(q, k, v):
     return out
 
 
-if memory_management.sage_attention_enabled():
-    print("Using sage attention")
+attention_function = attention_basic
+
+if memory_management.sage_attention3_enabled():
+    print("Using sage attention 3")
+    attention_function = attention_sage3
+elif memory_management.sage_attention_enabled():
+    print("Using sage attention 1.x/2.x")
     attention_function = attention_sage
 elif memory_management.xformers_enabled():
-    print("Using xformers cross attention")
+    print("Using xformers attention")
     attention_function = attention_xformers
 elif memory_management.flash_attention_enabled():
     print("Using Flash Attention")
     attention_function = attention_flash
 elif memory_management.pytorch_attention_enabled():
-    print("Using pytorch cross attention")
+    print("Using pytorch attention")
     attention_function = attention_pytorch
-elif args.attention_split:
-    print("Using split optimization for cross attention")
-    attention_function = attention_split
 else:
-    print("Using sub quadratic optimization for cross attention")
-    attention_function = attention_sub_quad
+    if args.attention_split:
+        print("Using split optimization for attention")
+        attention_function = attention_split
+    else:
+        print("Using sub quadratic optimization for attention, if you have memory or speed issues try using: --use-split-cross-attention")
+        attention_function = attention_sub_quad
 
-if memory_management.xformers_enabled_vae():
-    print("Using xformers attention for VAE")
-    attention_function_single_head_spatial = xformers_attention_single_head_spatial
-elif memory_management.pytorch_attention_enabled():
+attention_function_masked = attention_function
+
+def optimized_attention_for_device(device, mask=False, small_input=False):
+    if small_input:
+        if memory_management.pytorch_attention_enabled():
+            return attention_pytorch #TODO: need to confirm but this is probably slightly faster for small inputs in all cases
+        else:
+            return attention_basic
+
+    if device == torch.device("cpu"):
+        return attention_sub_quad
+
+    if mask:
+        return attention_function_masked
+
+    return attention_function
+
+if memory_management.vae_attention_xformers():
+    if memory_management.xformers_enabled_vae():
+        print("Using xformers attention for VAE")
+        attention_function_single_head_spatial = xformers_attention_single_head_spatial
+    else:
+        print("You're using --disable-xformers, so xformers not available for VAE, falling back to pytorch attention for VAE")
+        attention_function_single_head_spatial = pytorch_attention_single_head_spatial
+elif memory_management.vae_attention_split():
+    print("Using split attention for VAE")
+    attention_function_single_head_spatial = normal_attention_single_head_spatial
+elif memory_management.vae_attention_pytorch():
     print("Using pytorch attention for VAE")
     attention_function_single_head_spatial = pytorch_attention_single_head_spatial
 else:
-    print("Using split attention for VAE")
-    attention_function_single_head_spatial = normal_attention_single_head_spatial
+    # Default fallback (should not happen)
+    print("Using pytorch attention for VAE (fallback)")
+    attention_function_single_head_spatial = pytorch_attention_single_head_spatial
 
 
 class AttentionProcessorForge:
