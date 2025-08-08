@@ -616,32 +616,32 @@ def pytorch_attention_single_head_spatial(q, k, v):
     return out
 
 
-optimized_attention = attention_basic
+attention_function = attention_basic
 
 if memory_management.sage_attention3_enabled():
     print("Using sage attention 3")
-    optimized_attention = attention_sage3
+    attention_function = attention_sage3
 elif memory_management.sage_attention_enabled():
     print("Using sage attention 1.x/2.x")
-    optimized_attention = attention_sage
+    attention_function = attention_sage
 elif memory_management.xformers_enabled():
     print("Using xformers attention")
-    optimized_attention = attention_xformers
+    attention_function = attention_xformers
 elif memory_management.flash_attention_enabled():
     print("Using Flash Attention")
-    optimized_attention = attention_flash
+    attention_function = attention_flash
 elif memory_management.pytorch_attention_enabled():
     print("Using pytorch attention")
-    optimized_attention = attention_pytorch
+    attention_function = attention_pytorch
 else:
     if args.attention_split:
         print("Using split optimization for attention")
-        optimized_attention = attention_split
+        attention_function = attention_split
     else:
         print("Using sub quadratic optimization for attention, if you have memory or speed issues try using: --use-split-cross-attention")
-        optimized_attention = attention_sub_quad
+        attention_function = attention_sub_quad
 
-optimized_attention_masked = optimized_attention
+attention_function_masked = attention_function
 
 def optimized_attention_for_device(device, mask=False, small_input=False):
     if small_input:
@@ -654,9 +654,9 @@ def optimized_attention_for_device(device, mask=False, small_input=False):
         return attention_sub_quad
 
     if mask:
-        return optimized_attention_masked
+        return attention_function_masked
 
-    return optimized_attention
+    return attention_function
 
 if memory_management.xformers_enabled_vae():
     print("Using xformers attention for VAE")
