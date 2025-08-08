@@ -153,7 +153,7 @@ class CFGDenoiser(torch.nn.Module):
 
         return cond, uncond
 
-    def forward(self, x, sigma, uncond, cond, cond_scale, s_min_uncond, image_cond):
+    def forward(self, x, sigma, uncond, cond, cond_scale, s_min_uncond, image_cond, **kwargs):
         if state.interrupted or state.skipped:
             raise sd_samplers_common.InterruptedException
 
@@ -196,7 +196,9 @@ class CFGDenoiser(torch.nn.Module):
             if shared.opts.s_min_uncond_all:
                 self.p.extra_generation_params["NGMS all steps"] = shared.opts.s_min_uncond_all
 
-        denoised, cond_pred, uncond_pred = sampling_function(self, denoiser_params=denoiser_params, cond_scale=cond_scale, cond_composition=cond_composition)
+        # Extract model_options from kwargs (needed for CFG++ samplers)
+        extra_model_options = kwargs.get('model_options', {})
+        denoised, cond_pred, uncond_pred = sampling_function(self, denoiser_params=denoiser_params, cond_scale=cond_scale, cond_composition=cond_composition, extra_model_options=extra_model_options)
 
         if self.need_last_noise_uncond:
             self.last_noise_uncond = (x - uncond_pred) / sigma[:, None, None, None]
