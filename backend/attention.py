@@ -616,18 +616,47 @@ def pytorch_attention_single_head_spatial(q, k, v):
     return out
 
 
-if memory_management.xformers_enabled():
-    print("Using xformers cross attention")
-    attention_function = attention_xformers
+optimized_attention = attention_basic
+
+if memory_management.sage_attention3_enabled():
+    print("Using sage attention 3")
+    optimized_attention = attention_sage3
+elif memory_management.sage_attention_enabled():
+    print("Using sage attention 1.x/2.x")
+    optimized_attention = attention_sage
+elif memory_management.xformers_enabled():
+    print("Using xformers attention")
+    optimized_attention = attention_xformers
+elif memory_management.flash_attention_enabled():
+    print("Using Flash Attention")
+    optimized_attention = attention_flash
 elif memory_management.pytorch_attention_enabled():
-    print("Using pytorch cross attention")
-    attention_function = attention_pytorch
-elif args.attention_split:
-    print("Using split optimization for cross attention")
-    attention_function = attention_split
+    print("Using pytorch attention")
+    optimized_attention = attention_pytorch
 else:
-    print("Using sub quadratic optimization for cross attention")
-    attention_function = attention_sub_quad
+    if args.attention_split:
+        print("Using split optimization for attention")
+        optimized_attention = attention_split
+    else:
+        print("Using sub quadratic optimization for attention, if you have memory or speed issues try using: --use-split-cross-attention")
+        optimized_attention = attention_sub_quad
+
+optimized_attention_masked = optimized_attention
+
+def optimized_attention_for_device(device, mask=False, small_input=False):
+    if small_input:
+        if memory_management.pytorch_attention_enabled():
+            return attention_pytorch #TODO: need to confirm but this is probably slightly faster for small inputs in all cases
+        else:
+            return attention_basic
+
+    if device == torch.device("cpu"):
+        return attention_sub_quad
+
+    if mask:
+        return optimized_attention_masked
+
+    return optimized_attention
 
 if memory_management.xformers_enabled_vae():
     print("Using xformers attention for VAE")
