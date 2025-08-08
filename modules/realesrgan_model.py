@@ -16,7 +16,7 @@ class UpscalerRealESRGAN(Upscaler):
         self.scalers = []
         scalers = get_realesrgan_models(self)
 
-        local_model_paths = self.find_models(ext_filter=[".pth"])
+        local_model_paths = self.find_models(ext_filter=[".pth", ".safetensors"])
         for scaler in scalers:
             if scaler.local_data_path.startswith("http"):
                 filename = modelloader.friendly_name(scaler.local_data_path)

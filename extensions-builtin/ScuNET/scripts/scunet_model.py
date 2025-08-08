@@ -15,7 +15,7 @@ class UpscalerScuNET(modules.upscaler.Upscaler):
         self.model_url2 = "https://github.com/cszn/KAIR/releases/download/v1.0/scunet_color_real_psnr.pth"
         self.user_path = dirname
         super().__init__()
-        model_paths = self.find_models(ext_filter=[".pth"])
+        model_paths = self.find_models(ext_filter=[".pth", ".safetensors"])
         scalers = []
         add_model2 = True
         for file in model_paths:
