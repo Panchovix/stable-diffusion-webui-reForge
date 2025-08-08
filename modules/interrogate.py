@@ -106,7 +106,7 @@ class InterrogateModels:
         files = modelloader.load_models(
             model_path=os.path.join(paths.models_path, "BLIP"),
             model_url='https://storage.googleapis.com/sfr-vision-language-research/BLIP/models/model_base_caption_capfilt_large.pth',
-            ext_filter=[".pth"],
+            ext_filter=[".pth", ".safetensors"],
             download_name='model_base_caption_capfilt_large.pth',
         )
 
