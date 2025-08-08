@@ -11,14 +11,20 @@ reForge is at the point that unstability is really high, and I'm not sure if I w
 If you want to keep using old forge backend as it is, for sd1.x,2.x and SDXL, I suggest to use forge classic by @Haoming02 instead https://github.com/Haoming02/sd-webui-forge-classic, as at the moment that is the real succesor to old forge.
 
 # Important: Branches
+# main/dev/dev2/experimental/gradio4-main will have only bug fixes and not new features.
+# New updates will be done on newmain_newforge and newforge_dendev.
 
+You can read more on https://github.com/Panchovix/stable-diffusion-webui-reForge/discussions/377#discussioncomment-14010687. You can tell me here if you want to keep these branches here or do something like "reForge2".
+
+* newmain_newforge: Based on latest forge2 (gradio4, flux, etc) with some small changes that I plan to add very slowly (i.e., real CFG++ at some point, more upscalers like reForge, etc). For now it has python 3.12 support and sage2/sage3 support, and new samplers from reforge (CFG++ is WIP)
+* newforge_dendev: Based on latest ersatzForge fork (gradio4, flux, chroma, cosmos, longclip, and a ton more) from @DenOfEquity (https://github.com/DenOfEquity/ersatzForge). Many thanks Den for letting me to work on base on your fork on reForge. I will try to add new features from old reforge as well, like all the samplers.
+
+Bug fixes and older branches:
 * main: Main branch with multiple changes and updates. But not stable as main-old branch.
 * dev: Similar to main but with more unstable changes. I.e. using comfy/ldm_patched backend for sd1.x and sdxl instead of A1111.
 * dev2: More unstable than dev, for now same as dev.
 * experimental: same as dev2 but with gradio 4.
 * main-old: Branch with old forge backend. Possibly the most stable and older one (2025-03)
-* newmain_newforge: Based on latest forge2 (gradio4, flux, etc) with some small changes that I plan to add very slowly (i.e., real CFG++ at some point, more upscalers like reForge, etc). For now it has python 3.12 support and sage2/sage3 support.
-
 # Installing Forge/reForge
 
 ### (Suggested) Clean install.

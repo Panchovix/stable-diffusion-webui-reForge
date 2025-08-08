@@ -238,6 +238,7 @@ except:
 
 XFORMERS_VERSION = ""
 XFORMERS_ENABLED_VAE = True
+XFORMERS_IS_AVAILABLE = True
 if args.disable_xformers:
     XFORMERS_IS_AVAILABLE = False
 else:
@@ -1088,6 +1089,8 @@ def flash_attention_enabled():
 def xformers_enabled():
     global directml_enabled
     global cpu_state
+    if sys.modules.get("xformers") is None:
+        return False
     if cpu_state != CPUState.GPU:
         return False
     if is_intel_xpu():
