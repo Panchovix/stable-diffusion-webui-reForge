@@ -329,21 +329,3 @@ def k_prediction_from_diffusers_scheduler(scheduler):
                               timesteps=scheduler.config.num_train_timesteps)
 
     raise NotImplementedError(f'Failed to recognize {scheduler}')
-
-
-#backported CONST, but it already exists
-class CONST:
-    def calculate_input(self, sigma, noise):
-        return noise
-
-    def calculate_denoised(self, sigma, model_output, model_input):
-        sigma = sigma.view(sigma.shape[:1] + (1,) * (model_output.ndim - 1))
-        return model_input - model_output * sigma
-
-    def noise_scaling(self, sigma, noise, latent_image, max_denoise=False):
-        sigma = sigma.view(sigma.shape[:1] + (1,) * (noise.ndim - 1))
-        return sigma * noise + (1.0 - sigma) * latent_image
-
-    def inverse_noise_scaling(self, sigma, latent):
-        sigma = sigma.view(sigma.shape[:1] + (1,) * (latent.ndim - 1))
-        return latent / (1.0 - sigma)

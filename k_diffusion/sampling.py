@@ -30,6 +30,16 @@ from modules.sd_samplers_kdiffusion_smea import Rescaler
 def append_zero(x):
     return torch.cat([x, x.new_zeros([1])])
 
+def get_model_predictor(model):
+    """Get the prediction/sampling object from various model types."""
+    if hasattr(model.inner_model, 'model_patcher'):
+        return model.inner_model.model_patcher.get_model_object('predictor')
+    elif hasattr(model, 'forge_objects') and hasattr(model.forge_objects, 'unet'):
+        return model.forge_objects.unet.model.predictor
+    else:
+        import backend.modules.k_prediction
+        return backend.modules.k_prediction.Prediction()
+
 
 def get_sigmas_karras(n, sigma_min, sigma_max, rho=7., device='cpu'):
     """Constructs the noise schedule of Karras et al. (2022)."""
@@ -434,7 +444,7 @@ class BrownianTreeNoiseSampler:
     
 def sigma_to_half_log_snr(sigma, model_sampling):
     """Convert sigma to half-logSNR log(alpha_t / sigma_t)."""
-    if isinstance(model_sampling, backend.modules.k_prediction.CONST):
+    if hasattr(model_sampling, 'prediction_type') and model_sampling.prediction_type == 'const':
         # log((1 - t) / t) = log((1 - sigma) / sigma)
         return sigma.logit().neg()
     return sigma.log().neg()
@@ -442,7 +452,7 @@ def sigma_to_half_log_snr(sigma, model_sampling):
 
 def half_log_snr_to_sigma(half_log_snr, model_sampling):
     """Convert half-logSNR log(alpha_t / sigma_t) to sigma."""
-    if isinstance(model_sampling, backend.modules.k_prediction.CONST):
+    if hasattr(model_sampling, 'prediction_type') and model_sampling.prediction_type == 'const':
         # 1 / (1 + exp(half_log_snr))
         return half_log_snr.neg().sigmoid()
     return half_log_snr.neg().exp()
@@ -452,7 +462,7 @@ def offset_first_sigma_for_snr(sigmas, model_sampling, percent_offset=1e-4):
     """Adjust the first sigma to avoid invalid logSNR."""
     if len(sigmas) <= 1:
         return sigmas
-    if isinstance(model_sampling, backend.modules.k_prediction.CONST):
+    if hasattr(model_sampling, 'prediction_type') and model_sampling.prediction_type == 'const':
         if sigmas[0] >= 1:
             sigmas = sigmas.clone()
             sigmas[0] = model_sampling.percent_to_sigma(percent_offset)
@@ -1066,13 +1076,7 @@ def sample_dpmpp_sde(model, x, sigmas, extra_args=None, callback=None, disable=N
     noise_sampler = BrownianTreeNoiseSampler(x, sigma_min, sigma_max, seed=seed, cpu=True) if noise_sampler is None else noise_sampler
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
-    if hasattr(model.inner_model, 'model_patcher'):
-        model_sampling = model.inner_model.model_patcher.get_model_object('model_sampling')
-    elif hasattr(model, 'forge_objects') and hasattr(model.forge_objects, 'unet'):
-        model_sampling = model.forge_objects.unet.get_model_object('model_sampling')
-    else:
-        import backend.modules.k_prediction
-        model_sampling = backend.modules.k_prediction.Prediction()
+    model_sampling = get_model_predictor(model)
     sigma_fn = partial(half_log_snr_to_sigma, model_sampling=model_sampling)
     lambda_fn = partial(sigma_to_half_log_snr, model_sampling=model_sampling)
     sigmas = offset_first_sigma_for_snr(sigmas, model_sampling)
@@ -1160,13 +1164,7 @@ def sample_dpmpp_2m_sde(model, x, sigmas, extra_args=None, callback=None, disabl
     noise_sampler = BrownianTreeNoiseSampler(x, sigma_min, sigma_max, seed=seed, cpu=True) if noise_sampler is None else noise_sampler
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
-    if hasattr(model.inner_model, 'model_patcher'):
-        model_sampling = model.inner_model.model_patcher.get_model_object('model_sampling')
-    elif hasattr(model, 'forge_objects') and hasattr(model.forge_objects, 'unet'):
-        model_sampling = model.forge_objects.unet.get_model_object('model_sampling')
-    else:
-        import backend.modules.k_prediction
-        model_sampling = backend.modules.k_prediction.Prediction()
+    model_sampling = get_model_predictor(model)
     lambda_fn = partial(sigma_to_half_log_snr, model_sampling=model_sampling)
     sigmas = offset_first_sigma_for_snr(sigmas, model_sampling)
 
@@ -1218,13 +1216,7 @@ def sample_dpmpp_3m_sde(model, x, sigmas, extra_args=None, callback=None, disabl
     noise_sampler = BrownianTreeNoiseSampler(x, sigma_min, sigma_max, seed=seed, cpu=True) if noise_sampler is None else noise_sampler
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
-    if hasattr(model.inner_model, 'model_patcher'):
-        model_sampling = model.inner_model.model_patcher.get_model_object('model_sampling')
-    elif hasattr(model, 'forge_objects') and hasattr(model.forge_objects, 'unet'):
-        model_sampling = model.forge_objects.unet.get_model_object('model_sampling')
-    else:
-        import backend.modules.k_prediction
-        model_sampling = backend.modules.k_prediction.Prediction()
+    model_sampling = get_model_predictor(model)
     lambda_fn = partial(sigma_to_half_log_snr, model_sampling=model_sampling)
     sigmas = offset_first_sigma_for_snr(sigmas, model_sampling)
 
@@ -3235,13 +3227,7 @@ def sample_er_sde(model, x, sigmas, extra_args=None, callback=None, disable=None
     num_integration_points = 200.0
     point_indice = torch.arange(0, num_integration_points, dtype=torch.float32, device=x.device)
 
-    if hasattr(model.inner_model, 'model_patcher'):
-        model_sampling = model.inner_model.model_patcher.get_model_object('model_sampling')
-    elif hasattr(model, 'forge_objects') and hasattr(model.forge_objects, 'unet'):
-        model_sampling = model.forge_objects.unet.get_model_object('model_sampling')
-    else:
-        import backend.modules.k_prediction
-        model_sampling = backend.modules.k_prediction.Prediction()
+    model_sampling = get_model_predictor(model)
     sigmas = offset_first_sigma_for_snr(sigmas, model_sampling)
     half_log_snrs = sigma_to_half_log_snr(sigmas, model_sampling)
     er_lambdas = half_log_snrs.neg().exp()  # er_lambda_t = sigma_t / alpha_t
@@ -3301,13 +3287,7 @@ def sample_seeds_2(model, x, sigmas, extra_args=None, callback=None, disable=Non
 
     inject_noise = eta > 0 and s_noise > 0
 
-    if hasattr(model.inner_model, 'model_patcher'):
-        model_sampling = model.inner_model.model_patcher.get_model_object('model_sampling')
-    elif hasattr(model, 'forge_objects') and hasattr(model.forge_objects, 'unet'):
-        model_sampling = model.forge_objects.unet.get_model_object('model_sampling')
-    else:
-        import backend.modules.k_prediction
-        model_sampling = backend.modules.k_prediction.Prediction()
+    model_sampling = get_model_predictor(model)
     sigma_fn = partial(half_log_snr_to_sigma, model_sampling=model_sampling)
     lambda_fn = partial(sigma_to_half_log_snr, model_sampling=model_sampling)
     sigmas = offset_first_sigma_for_snr(sigmas, model_sampling)
@@ -3363,13 +3343,7 @@ def sample_seeds_3(model, x, sigmas, extra_args=None, callback=None, disable=Non
 
     inject_noise = eta > 0 and s_noise > 0
 
-    if hasattr(model.inner_model, 'model_patcher'):
-        model_sampling = model.inner_model.model_patcher.get_model_object('model_sampling')
-    elif hasattr(model, 'forge_objects') and hasattr(model.forge_objects, 'unet'):
-        model_sampling = model.forge_objects.unet.get_model_object('model_sampling')
-    else:
-        import backend.modules.k_prediction
-        model_sampling = backend.modules.k_prediction.Prediction()
+    model_sampling = get_model_predictor(model)
     sigma_fn = partial(half_log_snr_to_sigma, model_sampling=model_sampling)
     lambda_fn = partial(sigma_to_half_log_snr, model_sampling=model_sampling)
     sigmas = offset_first_sigma_for_snr(sigmas, model_sampling)
@@ -3429,13 +3403,7 @@ def sample_sa_solver(model, x, sigmas, extra_args=None, callback=None, disable=F
     noise_sampler = default_noise_sampler(x, seed=seed) if noise_sampler is None else noise_sampler
     s_in = x.new_ones([x.shape[0]])
 
-    if hasattr(model.inner_model, 'model_patcher'):
-        model_sampling = model.inner_model.model_patcher.get_model_object('model_sampling')
-    elif hasattr(model, 'forge_objects') and hasattr(model.forge_objects, 'unet'):
-        model_sampling = model.forge_objects.unet.get_model_object('model_sampling')
-    else:
-        import backend.modules.k_prediction
-        model_sampling = backend.modules.k_prediction.Prediction()
+    model_sampling = get_model_predictor(model)
     sigmas = offset_first_sigma_for_snr(sigmas, model_sampling)
     lambdas = sigma_to_half_log_snr(sigmas, model_sampling=model_sampling)
 
