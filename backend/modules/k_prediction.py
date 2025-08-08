@@ -68,7 +68,7 @@ class AbstractPrediction(torch.nn.Module):
         super().__init__()
         self.sigma_data = sigma_data
         self.prediction_type = prediction_type
-        assert self.prediction_type in ['epsilon', 'const', 'v_prediction', 'edm']
+        assert self.prediction_type in ['eps', 'epsilon', 'const', 'v_prediction', 'edm'] #investigate why some are epsilon and some are eps
 
     def calculate_input(self, sigma, noise):
         if self.prediction_type == 'const':

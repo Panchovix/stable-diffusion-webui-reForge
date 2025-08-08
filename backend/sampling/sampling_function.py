@@ -322,7 +322,7 @@ def sampling_function_inner(model, x, timestep, uncond, cond, cond_scale, model_
     return cfg_result
 
 
-def sampling_function(self, denoiser_params, cond_scale, cond_composition):
+def sampling_function(self, denoiser_params, cond_scale, cond_composition, extra_model_options=None):
     unet_patcher = self.inner_model.inner_model.forge_objects.unet
     model = unet_patcher.model
     control = unet_patcher.controlnet_linked_list
@@ -331,7 +331,10 @@ def sampling_function(self, denoiser_params, cond_scale, cond_composition):
     timestep = denoiser_params.sigma
     uncond = compile_conditions(denoiser_params.text_uncond)
     cond = compile_weighted_conditions(denoiser_params.text_cond, cond_composition)
-    model_options = unet_patcher.model_options
+    model_options = unet_patcher.model_options.copy() if unet_patcher.model_options else {}
+    # Merge extra_model_options from CFG++ samplers
+    if extra_model_options:
+        model_options.update(extra_model_options)
     seed = self.p.seeds[0]
 
     if extra_concat_condition is not None:

@@ -34,6 +34,9 @@ class Condition:
         for x in others:
             conds.append(x.cond)
         return torch.cat(conds)
+    
+    def size(self):
+        return list(self.cond.size())
 
 
 class ConditionNoiseShape(Condition):
