@@ -1,18 +1,20 @@
 import dataclasses
 import torch
-import k_diffusion
 import numpy as np
 from scipy import stats
+import math
 
 from modules import shared
 
+from k_diffusion.sampling import append_zero
+from k_diffusion import sampling
 
 def to_d(x, sigma, denoised):
     """Converts a denoiser output to a Karras ODE derivative."""
     return (x - denoised) / sigma
 
 
-k_diffusion.sampling.to_d = to_d
+# sampling.to_d = to_d #prob unneded as it comes from k_diffusion.sampling
 
 
 @dataclasses.dataclass
@@ -39,6 +41,46 @@ def sgm_uniform(n, sigma_min, sigma_max, inner_model, device):
     ]
     sigs += [0.0]
     return torch.FloatTensor(sigs).to(device)
+
+def get_sigmas_karras(n, sigma_min, sigma_max, rho=7., device='cpu'):
+    rho = shared.opts.karras_rho
+    return sampling.get_sigmas_karras(n, sigma_min, sigma_max, rho, device)
+
+def get_sigmas_exponential(n, sigma_min, sigma_max, device='cpu'):
+    shrink_factor = shared.opts.exponential_shrink_factor
+    sigmas = torch.linspace(math.log(sigma_max), math.log(sigma_min), n, device=device).exp()
+    sigmas = sigmas * torch.exp(shrink_factor * torch.linspace(0, 1, n, device=device))
+    return append_zero(sigmas)
+
+
+def get_sigmas_polyexponential(n, sigma_min, sigma_max, device='cpu'):
+    rho = shared.opts.polyexponential_rho
+    return sampling.get_sigmas_polyexponential(n, sigma_min, sigma_max, rho, device)
+
+
+def get_sigmas_sinusoidal_sf(n, sigma_min, sigma_max, device='cpu'):
+    sf = shared.opts.sinusoidal_sf_factor
+    x = torch.linspace(0, 1, n, device=device)
+    sigmas = (sigma_min + (sigma_max - sigma_min) * (1 - torch.sin(torch.pi / 2 * x)))/sigma_max
+    sigmas = sigmas**sf
+    sigmas = sigmas * sigma_max
+    return sigmas
+
+def get_sigmas_invcosinusoidal_sf(n, sigma_min, sigma_max, device='cpu'):
+    sf = shared.opts.invcosinusoidal_sf_factor
+    x = torch.linspace(0, 1, n, device=device)
+    sigmas = (sigma_min + (sigma_max - sigma_min) * (0.5*(torch.cos(x * math.pi) + 1)))/sigma_max
+    sigmas = sigmas**sf
+    sigmas = sigmas * sigma_max
+    return sigmas
+
+def get_sigmas_react_cosinusoidal_dynsf(n, sigma_min, sigma_max, device='cpu'):
+    sf = shared.opts.react_cosinusoidal_dynsf_factor
+    x = torch.linspace(0, 1, n, device=device)
+    sigmas = (sigma_min+(sigma_max-sigma_min)*(torch.cos(x*(torch.pi/2))))/sigma_max
+    sigmas = sigmas**(sf*(n*x/n))
+    sigmas = sigmas * sigma_max
+    return sigmas
 
 
 def get_align_your_steps_sigmas(n, sigma_min, sigma_max, device):
@@ -69,6 +111,20 @@ def get_align_your_steps_sigmas(n, sigma_min, sigma_max, device):
 
     return torch.FloatTensor(sigmas).to(device)
 
+def get_sigmas_ays_custom(n, sigma_min, sigma_max, device='cpu'):
+    try:
+        sigmas_str = shared.opts.ays_custom_sigmas
+        sigmas_values = sigmas_str.strip('[]').split(',')
+        sigmas = np.array([float(x.strip()) for x in sigmas_values])
+        
+        if n != len(sigmas):
+            sigmas = np.interp(np.linspace(0, 1, n), np.linspace(0, 1, len(sigmas)), sigmas)
+        sigmas = np.append(sigmas, [0.0])
+        return torch.FloatTensor(sigmas).to(device)
+    except Exception as e:
+        print(f"Error parsing custom sigmas: {e}")
+        print("Falling back to default AYS sigmas")
+        return get_align_your_steps_sigmas(n, sigma_min, sigma_max, device)
 
 def kl_optimal(n, sigma_min, sigma_max, device):
     alpha_min = torch.arctan(torch.tensor(sigma_min, device=device))
@@ -77,7 +133,6 @@ def kl_optimal(n, sigma_min, sigma_max, device):
     sigmas = torch.tan(step_indices / n * alpha_min + (1.0 - step_indices / n) * alpha_max)
     return sigmas
 
-
 def simple_scheduler(n, sigma_min, sigma_max, inner_model, device):
     sigs = []
     ss = len(inner_model.sigmas) / n
@@ -85,7 +140,6 @@ def simple_scheduler(n, sigma_min, sigma_max, inner_model, device):
         sigs += [float(inner_model.sigmas[-(1 + int(x * ss))])]
     sigs += [0.0]
     return torch.FloatTensor(sigs).to(device)
-
 
 def normal_scheduler(n, sigma_min, sigma_max, inner_model, device, sgm=False, floor=False):
     start = inner_model.sigma_to_t(torch.tensor(sigma_max))
@@ -103,7 +157,6 @@ def normal_scheduler(n, sigma_min, sigma_max, inner_model, device, sgm=False, fl
     sigs += [0.0]
     return torch.FloatTensor(sigs).to(device)
 
-
 def ddim_scheduler(n, sigma_min, sigma_max, inner_model, device):
     sigs = []
     ss = max(len(inner_model.sigmas) // n, 1)
@@ -115,17 +168,25 @@ def ddim_scheduler(n, sigma_min, sigma_max, inner_model, device):
     sigs += [0.0]
     return torch.FloatTensor(sigs).to(device)
 
-
 def beta_scheduler(n, sigma_min, sigma_max, inner_model, device):
-    # From "Beta Sampling is All You Need" [arXiv:2407.12173] (Lee et. al, 2024) """
+    """
+    Beta scheduler, based on "Beta Sampling is All You Need" [arXiv:2407.12173] (Lee et. al, 2024)
+    """
     alpha = shared.opts.beta_dist_alpha
     beta = shared.opts.beta_dist_beta
-    timesteps = 1 - np.linspace(0, 1, n)
-    timesteps = [stats.beta.ppf(x, alpha, beta) for x in timesteps]
-    sigmas = [sigma_min + (x * (sigma_max-sigma_min)) for x in timesteps]
-    sigmas += [0.0]
-    return torch.FloatTensor(sigmas).to(device)
+    
+    total_timesteps = (len(inner_model.sigmas) - 1)
+    ts = 1 - np.linspace(0, 1, n, endpoint=False)
+    ts = np.rint(stats.beta.ppf(ts, alpha, beta) * total_timesteps)
 
+    sigs = []
+    last_t = -1
+    for t in ts:
+        if t != last_t:
+            sigs += [float(inner_model.sigmas[int(t)])]
+        last_t = t
+    sigs += [0.0]
+    return torch.FloatTensor(sigs).to(device)
 
 def turbo_scheduler(n, sigma_min, sigma_max, inner_model, device):
     unet = inner_model.inner_model.forge_objects.unet
@@ -207,21 +268,88 @@ def ays_32_sigmas(n, sigma_min, sigma_max, device='cpu'):
         sigmas.append(0.0)
     return torch.FloatTensor(sigmas).to(device)
 
+def cosine_scheduler(n, sigma_min, sigma_max, device='cpu'):
+    sf = shared.opts.cosine_sf_factor
+    sigmas = torch.zeros(n, device=device)
+    if n == 1:
+        sigmas[0] = sigma_max ** 0.5
+    else:
+        for x in range(n):
+            p = x / (n-1)
+            C = sigma_min + 0.5*(sigma_max-sigma_min)*(1 - math.cos(math.pi*(1 - p**0.5)))
+            sigmas[x] = C * sf
+    return torch.cat([sigmas, sigmas.new_zeros([1])])
+
+def cosexpblend_scheduler(n, sigma_min, sigma_max, device='cpu'):
+    decay = shared.opts.cosexpblend_exp_decay
+    sigmas = []
+    if n == 1:
+        sigmas.append(sigma_max ** 0.5)
+    else:
+        K = decay ** (1/(n-1))
+        E = sigma_max
+        for x in range(n):
+            p = x / (n-1)
+            C = sigma_min + 0.5*(sigma_max-sigma_min)*(1 - math.cos(math.pi*(1 - p**0.5)))
+            sigmas.append(C + p * (E - C))
+            E *= K
+    sigmas += [0.0]
+    return torch.FloatTensor(sigmas).to(device)
+
+def phi_scheduler(n, sigma_min, sigma_max, device='cpu'):
+    power = shared.opts.phi_power
+    sigmas = torch.zeros(n, device=device)
+    if n == 1:
+        sigmas[0] = sigma_max ** 0.5
+    else:
+        phi = (1 + 5**0.5) / 2
+        for x in range(n):
+            sigmas[x] = sigma_min + (sigma_max-sigma_min)*((1-x/(n-1))**(phi**power))
+    return torch.cat([sigmas, sigmas.new_zeros([1])])
+
+def get_sigmas_laplace(n, sigma_min, sigma_max, device='cpu'):
+    mu = shared.opts.laplace_mu
+    beta = shared.opts.laplace_beta
+    epsilon = 1e-5 # avoid log(0)
+    x = torch.linspace(0, 1, n, device=device)
+    clamp = lambda x: torch.clamp(x, min=sigma_min, max=sigma_max)
+    lmb = mu - beta * torch.sign(0.5-x) * torch.log(1 - 2 * torch.abs(0.5-x) + epsilon)
+    sigmas = clamp(torch.exp(lmb))
+    return torch.cat([sigmas, sigmas.new_zeros([1])])
+
+def get_sigmas_karras_dynamic(n, sigma_min, sigma_max, device='cpu'):
+    rho = shared.opts.karras_dynamic_rho
+    ramp = torch.linspace(0, 1, n, device=device)
+    min_inv_rho = sigma_min ** (1 / rho)
+    max_inv_rho = sigma_max ** (1 / rho)
+    sigmas = torch.zeros_like(ramp)
+    for i in range(n):
+        sigmas[i] = (max_inv_rho + ramp[i] * (min_inv_rho - max_inv_rho)) ** (math.cos(i*math.tau/n)*2+rho) 
+    return torch.cat([sigmas, sigmas.new_zeros([1])])
 
 schedulers = [
     Scheduler('automatic', 'Automatic', None),
+    Scheduler('karras', 'Karras', sampling.get_sigmas_karras, default_rho=7.0),
+    Scheduler('exponential', 'Exponential', sampling.get_sigmas_exponential),
+    Scheduler('polyexponential', 'Polyexponential', sampling.get_sigmas_polyexponential, default_rho=1.0),
+    Scheduler('sinusoidal_sf', 'Sinusoidal SF', get_sigmas_sinusoidal_sf),
+    Scheduler('invcosinusoidal_sf', 'Invcosinusoidal SF', get_sigmas_invcosinusoidal_sf),
+    Scheduler('react_cosinusoidal_dynsf', 'React Cosinusoidal DynSF', get_sigmas_react_cosinusoidal_dynsf),
     Scheduler('uniform', 'Uniform', uniform, need_inner_model=True),
-    Scheduler('karras', 'Karras', k_diffusion.sampling.get_sigmas_karras, default_rho=7.0),
-    Scheduler('exponential', 'Exponential', k_diffusion.sampling.get_sigmas_exponential),
-    Scheduler('polyexponential', 'Polyexponential', k_diffusion.sampling.get_sigmas_polyexponential, default_rho=1.0),
     Scheduler('sgm_uniform', 'SGM Uniform', sgm_uniform, need_inner_model=True, aliases=["SGMUniform"]),
     Scheduler('kl_optimal', 'KL Optimal', kl_optimal),
-    Scheduler('align_your_steps', 'Align Your Steps', get_align_your_steps_sigmas),
     Scheduler('simple', 'Simple', simple_scheduler, need_inner_model=True),
     Scheduler('normal', 'Normal', normal_scheduler, need_inner_model=True),
     Scheduler('ddim', 'DDIM', ddim_scheduler, need_inner_model=True),
+    Scheduler('align_your_steps', 'Align Your Steps', get_align_your_steps_sigmas),
+    Scheduler('align_your_steps_custom', 'Align Your Steps Custom', get_sigmas_ays_custom),
     Scheduler('beta', 'Beta', beta_scheduler, need_inner_model=True),
     Scheduler('turbo', 'Turbo', turbo_scheduler, need_inner_model=True),
+    Scheduler('cosine', 'Cosine', cosine_scheduler),
+    Scheduler('cosine-exponential blend', 'Cosine-exponential Blend', cosexpblend_scheduler),
+    Scheduler('phi', 'Phi', phi_scheduler),
+    Scheduler('laplace', 'Laplace', get_sigmas_laplace),
+    Scheduler('karras dynamic', 'Karras Dynamic', get_sigmas_karras_dynamic),
     Scheduler('align_your_steps_GITS', 'Align Your Steps GITS', get_align_your_steps_sigmas_GITS),
     Scheduler('align_your_steps_11', 'Align Your Steps 11', ays_11_sigmas),
     Scheduler('align_your_steps_32', 'Align Your Steps 32', ays_32_sigmas),
