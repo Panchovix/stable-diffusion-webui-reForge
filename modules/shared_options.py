@@ -6,6 +6,7 @@ from modules.paths_internal import models_path, script_path, data_path, extensio
 from modules.shared_cmd_options import cmd_opts
 from modules.options import options_section, OptionInfo, OptionHTML, categories
 from modules_forge import shared_options as forge_shared_options
+from k_diffusion.sampling import ALL_SOLVERS
 
 from backend.text_processing import emphasis
 
