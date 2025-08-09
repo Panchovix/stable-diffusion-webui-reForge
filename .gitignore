@@ -5,7 +5,6 @@ __pycache__
 .DS_Store
 /ESRGAN/*
 /SwinIR/*
-/repositories
 /torch_compile_debug
 /venv
 /random_res_config
