@@ -41,6 +41,9 @@ def create_setting_component(key, is_quicksettings=False):
 
     elem_id = f"setting_{key}"
 
+    if comp == gr.State:
+        return gr.State(fun())
+
     if info.refresh is not None:
         if is_quicksettings:
             res = comp(label=info.label, value=fun(), elem_id=elem_id, **(args or {}))
@@ -256,14 +259,14 @@ class UiSettings:
                 fn=lambda: None,
                 inputs=[],
                 outputs=[],
-                _js='function(){}'
+                js='function(){}'
             )
 
             download_localization.click(
                 fn=lambda: None,
                 inputs=[],
                 outputs=[],
-                _js='download_localization'
+                js='download_localization'
             )
 
             def reload_scripts():
@@ -278,7 +281,7 @@ class UiSettings:
 
             restart_gradio.click(
                 fn=shared.state.request_restart,
-                _js='restart_reload',
+                js='restart_reload',
                 inputs=[],
                 outputs=[],
             )
@@ -316,11 +319,12 @@ class UiSettings:
         self.interface = settings_interface
 
     def add_quicksettings(self):
-        with gr.Row(elem_id="quicksettings", variant="compact"):
+        with gr.Row(elem_id="quicksettings", variant="compact") as quicksettings_row:
             for _i, k, _item in sorted(self.quicksettings_list, key=lambda x: self.quicksettings_names.get(x[1], x[0])):
                 component = create_setting_component(k, is_quicksettings=True)
                 self.component_dict[k] = component
-
+        return quicksettings_row
+    
     def add_functionality(self, demo):
         self.submit.click(
             fn=wrap_gradio_call_no_job(lambda *args: self.run_settings(*args), extra_outputs=[gr.update()]),
@@ -344,13 +348,13 @@ class UiSettings:
                     fn=lambda value, k=k: self.run_settings_single(value, key=k),
                     inputs=[component],
                     outputs=[component, self.text_settings],
-                    show_progress=info.refresh is not None,
+                    show_progress=False,
                 )
 
         button_set_checkpoint = gr.Button('Change checkpoint', elem_id='change_checkpoint', visible=False)
         button_set_checkpoint.click(
             fn=lambda value, _: self.run_settings_single(value, key='sd_model_checkpoint'),
-            _js="function(v){ var res = desiredCheckpointName; desiredCheckpointName = ''; return [res || v, null]; }",
+            js="function(v){ var res = desiredCheckpointName; desiredCheckpointName = ''; return [res || v, null]; }",
             inputs=[self.component_dict['sd_model_checkpoint'], self.dummy_component],
             outputs=[self.component_dict['sd_model_checkpoint'], self.text_settings],
         )
