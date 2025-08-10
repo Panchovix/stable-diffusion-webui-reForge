@@ -37,6 +37,7 @@ gradio_rangeslider==0.0.6
 gradio_imageslider==0.0.20
 loadimg==0.1.2
 tqdm==4.66.1
-peft==0.13.2
+peft==0.15.0
 pydantic==2.8.2
+
 huggingface-hub>=0.26.2
