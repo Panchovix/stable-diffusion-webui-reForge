@@ -79,6 +79,7 @@ class AlterSampler(sd_samplers_kdiffusion.KDiffusionSampler):
             'SEEDS_3': k_diffusion_sampling.sample_seeds_3,
             'SA-Solver': k_diffusion_sampling.sample_sa_solver,
             'SA-Solver-Pece': k_diffusion_sampling.sample_sa_solver_pece,
+            'dpmpp_sde_classic': k_diffusion_sampling.sample_dpmpp_sde_classic,
         }
         
         sampler_function = sampler_functions.get(sampler_name)
@@ -214,6 +215,7 @@ def build_constructor(sampler_name):
     return constructor
 
 samplers_data_alter = [
+    sd_samplers_common.SamplerData('DPM++ SDE Classic', build_constructor(sampler_name='dpmpp_sde_classic'), ['dpmpp_sde_classic'], {}),
     sd_samplers_common.SamplerData('ER SDE', build_constructor(sampler_name='ER SDE'), ['ER SDE'], {}),
     sd_samplers_common.SamplerData('Kohaku_LoNyu_Yog', build_constructor(sampler_name='Kohaku_LoNyu_Yog'), ['Kohaku_LoNyu_Yog'], {}),
     sd_samplers_common.SamplerData('Euler CFG++', build_constructor(sampler_name='euler_cfg_pp'), ['euler_cfg_pp'], {}),
