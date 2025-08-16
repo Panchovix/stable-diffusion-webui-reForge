@@ -5,8 +5,6 @@ Stable Diffusion WebUI Forge/reForge is a platform on top of [Stable Diffusion W
 The name "Forge" is inspired from "Minecraft Forge". This project is aimed at becoming SD WebUI's Forge.
 
 # Forge2/reForge2
-# New updates will be done on newmain_newforge and newforge_dendev.
-# main/dev/dev2/experimental/gradio4-main will have only bug fixes and not new features.
 
 You can read more on https://github.com/Panchovix/stable-diffusion-webui-reForge/discussions/377#discussioncomment-14010687. You can tell me here if you want to keep these branches here or do something like "reForge2".
 
@@ -19,7 +17,7 @@ reForge(1) is not really stable for all tasks sadly.
 
 So if you want to keep using old forge backend as it is, for sd1.x,2.x and SDXL, I suggest to use forge classic by @Haoming02 instead https://github.com/Haoming02/sd-webui-forge-classic, as at the moment that is the real succesor to old forge.
 
-Bug fixes and older branches based on forge classic:
+Other branches:
 * main: Main branch with multiple changes and updates. But not stable as main-old branch.
 * dev: Similar to main but with more unstable changes. I.e. using comfy/ldm_patched backend for sd1.x and sdxl instead of A1111.
 * dev2: More unstable than dev, for now same as dev.
