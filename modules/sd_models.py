@@ -1175,7 +1175,7 @@ def load_model(checkpoint_info=None, already_loaded_state_dict=None, forced_relo
         vae_file, vae_source = sd_vae.resolve_vae(checkpoint_info.filename).tuple()
         sd_vae.load_vae(sd_model, vae_file, vae_source)
         timer.record("load VAE")
-        validate_and_fix_vae(sd_model)
+        # validate_and_fix_vae(sd_model) # comment it for now, go back if any issue happens.
         timer.record("load textual inversion embeddings")
 
         script_callbacks.model_loaded_callback(sd_model)
