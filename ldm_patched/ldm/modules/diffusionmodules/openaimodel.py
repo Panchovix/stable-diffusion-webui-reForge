@@ -367,10 +367,32 @@ def apply_control(h, control, name):
     if control is not None and name in control and len(control[name]) > 0:
         ctrl = control[name].pop()
         if ctrl is not None:
+            # Step 1: ALWAYS ensure device and dtype match first. This is the most important fix.
+            if ctrl.device != h.device or ctrl.dtype != h.dtype:
+                ctrl = ctrl.to(h)
+
+            # Step 2: Now, check if resizing is needed.
+            if ctrl.shape[-2] != h.shape[-2] or ctrl.shape[-1] != h.shape[-1]:
+                try:
+                    target_h, target_w = h.shape[-2], h.shape[-1]
+                    logging.debug(f"ControlNet apply_control: Resizing control for '{name}'. Original: {ctrl.shape}, Target: {h.shape}")
+                    # Use float() for interpolate, then convert back to the correct device/dtype
+                    ctrl = F.interpolate(
+                        ctrl.float(),
+                        size=(target_h, target_w),
+                        mode="bicubic",
+                        align_corners=False
+                    ).to(h)
+                except Exception as e:
+                    logging.error(f"ControlNet apply_control: Failed to RESIZE control for '{name}'. h: {h.shape}, ctrl: {ctrl.shape}. Error: {e}", exc_info=True)
+                    return h # If resize fails, do not apply control and return original h
+
+            # Step 3: Try to apply the control.
             try:
-                h += ctrl
-            except:
-                logging.warning("warning control could not be applied {} {}".format(h.shape, ctrl.shape))
+                h = h + ctrl
+            except Exception as e:
+                logging.error(f"ControlNet apply_control: Failed to ADD control for '{name}'. h: {h.shape}, ctrl: {ctrl.shape}. Error: {e}", exc_info=True)
+                # Do not raise exception, just return original h to prevent crash
     return h
 
 class UNetModel(nn.Module):
