@@ -204,6 +204,7 @@ options_templates.update(options_section(('sd', "Stable Diffusion", "sd"), {
     "randn_source": OptionInfo("GPU", "Random number generator source.", gr.Radio, {"choices": ["GPU", "CPU", "NV"]}, infotext="RNG").info("changes seeds drastically; use CPU to produce the same picture across different videocard vendors; use NV to produce same picture as on NVidia videocards"),
     "tiling": OptionInfo(False, "Tiling", infotext='Tiling').info("produce a tileable picture"),
     "hires_fix_refiner_pass": OptionInfo("second pass", "Hires fix: which pass to enable refiner for", gr.Radio, {"choices": ["first pass", "second pass", "both passes"]}, infotext="Hires refiner"),
+    "reflective_padding_vae": OptionInfo(False, "Enables or disables reflective vae padding, for models/VAEs like MS-LC-EQ-D-VR VAE", gr.Checkbox, {"interactive": True}),
 }))
 
 options_templates.update(options_section(('sdxl', "Stable Diffusion XL", "sd"), {

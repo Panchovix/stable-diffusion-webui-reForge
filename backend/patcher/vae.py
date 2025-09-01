@@ -5,6 +5,8 @@ import itertools
 from tqdm import trange
 from backend import memory_management
 from backend.patcher.base import ModelPatcher
+import logging
+from modules import shared
 
 
 @torch.inference_mode()
@@ -87,6 +89,16 @@ class VAE:
             load_device=self.device,
             offload_device=offload_device
         )
+
+        if shared.opts.reflective_padding_vae:
+            for module in self.first_stage_model.modules():
+                from torch import nn
+                logging.info(self)
+                if isinstance(module, nn.Conv2d):
+                    pad_h, pad_w = module.padding if isinstance(module.padding, tuple) else (module.padding, module.padding)
+                    if pad_h > 0 or pad_w > 0:
+                        module.padding_mode = "reflect"
+            logging.info("Setting reflective padding")
 
     def clone(self):
         n = VAE(no_init=True)
