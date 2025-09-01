@@ -90,7 +90,7 @@ class VAE:
             offload_device=offload_device
         )
 
-        if shared.opts.reflective_padding_vae:
+        if shared.opts.reflective_padding_vae_sd:
             for module in self.first_stage_model.modules():
                 from torch import nn
                 logging.info(self)
