@@ -205,6 +205,7 @@ options_templates.update(options_section(('sd', "Stable Diffusion", "sd"), {
     "tiling": OptionInfo(False, "Tiling", infotext='Tiling').info("produce a tileable picture"),
     "hires_fix_refiner_pass": OptionInfo("second pass", "Hires fix: which pass to enable refiner for", gr.Radio, {"choices": ["first pass", "second pass", "both passes"]}, infotext="Hires refiner"),
     "cond_stage_model_device_compatibility_check": OptionInfo(False, "Perform device compatibility check for conditional stage model. Enables broader hardware compatibility by falling back to CPU if GPU doesn't support required data types. May improve stability on some systems, but can significantly slow down model loading and potentially impact generation speed.", gr.Checkbox, {"interactive": True}),
+    "reflective_padding_vae_sd": OptionInfo("Disabled", "Enables or disables reflective vae padding, for models/VAEs like MS-LC-EQ-D-VR VAE", gr.Radio, {"choices": ["Disabled", "Enabled"]}, infotext="reflective vae padding"),
 }))
 
 options_templates.update(options_section(('sdxl', "Stable Diffusion XL", "sd"), {
