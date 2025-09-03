@@ -542,6 +542,16 @@ class VAE:
 
         self.patcher = ldm_patched.modules.model_patcher.ModelPatcher(self.first_stage_model, load_device=self.device, offload_device=offload_device)
         logging.info("VAE load device: {}, offload device: {}, dtype: {}".format(self.device, offload_device, self.vae_dtype))
+
+        if shared.opts.reflective_padding_vae_sd == "Enabled":
+            for module in self.first_stage_model.modules():
+                from torch import nn
+                logging.info(self)
+                if isinstance(module, nn.Conv2d):
+                    pad_h, pad_w = module.padding if isinstance(module.padding, tuple) else (module.padding, module.padding)
+                    if pad_h > 0 or pad_w > 0:
+                        module.padding_mode = "reflect"
+            logging.info("Setting reflective padding")
     def throw_exception_if_invalid(self):
         if self.first_stage_model is None:
             raise RuntimeError("ERROR: VAE is invalid: None\n\nIf the VAE is from a checkpoint loader node your checkpoint does not contain a valid VAE.")
