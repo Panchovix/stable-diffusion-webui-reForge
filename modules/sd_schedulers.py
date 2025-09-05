@@ -42,20 +42,118 @@ def uniform(n, sigma_min, sigma_max, inner_model, device):
 
 
 def sgm_uniform(n, sigma_min, sigma_max, inner_model, device):
+    import logging
+    import torch
+    from modules import shared
+    
+    logging.info(f"[WebUI SGM Debug] sgm_uniform called with:")
+    logging.info(f"[WebUI SGM Debug]   n: {n}, sigma_min: {sigma_min}, sigma_max: {sigma_max}")
+    logging.info(f"[WebUI SGM Debug]   inner_model type: {type(inner_model).__name__}")
+    
+    # ADVANCED SAMPLING FIX: Check if we're using SD3/flow sampling
+    # Use a simpler approach - check for global state or environment variable
+    try:
+        # Check if we have a stored global state about advanced sampling
+        if hasattr(shared, 'forge_advanced_sampling_state'):
+            state = shared.forge_advanced_sampling_state
+            if state.get('enabled') and state.get('mode') == 'SD3':
+                shift = state.get('sd3_shift', 3.0)
+                
+                logging.info(f"[WebUI SGM Debug] FLOW SAMPLING FIX APPLIED!")
+                logging.info(f"[WebUI SGM Debug]   Original sigma_min: {sigma_min} -> Flow: 0.003-1.0 range")
+                logging.info(f"[WebUI SGM Debug]   Original sigma_max: {sigma_max} -> Flow: 0.003-1.0 range")
+                logging.info(f"[WebUI SGM Debug]   Using shift: {shift}")
+                
+                # Use flow sampling math directly instead of inner_model
+                from ldm_patched.modules.model_sampling import time_snr_shift
+                
+                # Generate timesteps in [0, 1] range for flow sampling
+                timesteps = torch.linspace(1.0, 0.0, n + 1)[:-1]  # 1.0 to 0.0 for flow
+                
+                # Apply flow sampling sigma calculation: sigma = time_snr_shift(shift, t)
+                sigs = [time_snr_shift(shift, t.item()) for t in timesteps]
+                
+                logging.info(f"[WebUI SGM Debug] FLOW Generated sigmas: {sigs[:3]}...{sigs[-3:]}")
+                
+                sigs += [0.0]
+                return torch.FloatTensor(sigs).to(device)
+        
+        # ALTERNATIVE FIX: Detect if we're using flow sampling by checking sigma range
+        # If sigma_max > 1000 and we're being called, probably using flow sampling on SDXL
+        if sigma_max > 1000 and hasattr(inner_model, '_flow_sampling_detected'):
+            shift = getattr(inner_model, '_flow_shift', 3.0)
+            
+            logging.info(f"[WebUI SGM Debug] FLOW SAMPLING AUTO-DETECTED!")
+            logging.info(f"[WebUI SGM Debug]   Auto-detected shift: {shift}")
+            
+            from ldm_patched.modules.model_sampling import time_snr_shift
+            timesteps = torch.linspace(1.0, 0.0, n + 1)[:-1]
+            sigs = [time_snr_shift(shift, t.item()) for t in timesteps]
+            
+            logging.info(f"[WebUI SGM Debug] FLOW Auto-generated sigmas: {sigs[:3]}...{sigs[-3:]}")
+            
+            sigs += [0.0]
+            return torch.FloatTensor(sigs).to(device)
+            
+    except Exception as e:
+        logging.warning(f"[WebUI SGM Debug] Flow sampling fix failed: {e}, falling back to original")
+    
+    # Original WebUI logic as fallback
     start = inner_model.sigma_to_t(torch.tensor(sigma_max))
     end = inner_model.sigma_to_t(torch.tensor(sigma_min))
+    logging.info(f"[WebUI SGM Debug]   start timestep: {start}, end timestep: {end}")
+    
     sigs = [
         inner_model.t_to_sigma(ts)
         for ts in torch.linspace(start, end, n + 1)[:-1]
     ]
+    
+    logging.info(f"[WebUI SGM Debug]   Generated sigmas: {sigs[:3]}...{sigs[-3:]}")
+    
     sigs += [0.0]
     return torch.FloatTensor(sigs).to(device)
 
+def _check_flow_sampling_override(n, sigma_min, sigma_max, device='cpu'):
+    """Helper function to check if we should override with flow sampling"""
+    import logging
+    import torch
+    from modules import shared
+    
+    try:
+        if hasattr(shared, 'forge_advanced_sampling_state'):
+            state = shared.forge_advanced_sampling_state
+            if state.get('enabled') and state.get('mode') == 'SD3':
+                shift = state.get('sd3_shift', 3.0)
+                
+                logging.info(f"[Scheduler Flow Fix] Overriding scheduler with flow sampling (shift={shift})")
+                
+                from ldm_patched.modules.model_sampling import time_snr_shift
+                timesteps = torch.linspace(1.0, 0.0, n + 1)[:-1]
+                sigs = [time_snr_shift(shift, t.item()) for t in timesteps]
+                sigs += [0.0]
+                return torch.FloatTensor(sigs).to(device)
+    except Exception as e:
+        logging.warning(f"[Scheduler Flow Fix] Failed: {e}")
+    
+    return None  # No override
+
 def get_sigmas_karras(n, sigma_min, sigma_max, rho=7., device='cpu'):
+    # Check for flow sampling override first
+    flow_override = _check_flow_sampling_override(n, sigma_min, sigma_max, device)
+    if flow_override is not None:
+        return flow_override
+    
+    # Original Karras logic
     rho = shared.opts.karras_rho
     return ldm_patched.k_diffusion.sampling.get_sigmas_karras(n, sigma_min, sigma_max, rho, device)
 
 def get_sigmas_exponential(n, sigma_min, sigma_max, device='cpu'):
+    # Check for flow sampling override first
+    flow_override = _check_flow_sampling_override(n, sigma_min, sigma_max, device)
+    if flow_override is not None:
+        return flow_override
+    
+    # Original exponential logic
     shrink_factor = shared.opts.exponential_shrink_factor
     sigmas = torch.linspace(math.log(sigma_max), math.log(sigma_min), n, device=device).exp()
     sigmas = sigmas * torch.exp(shrink_factor * torch.linspace(0, 1, n, device=device))
@@ -63,6 +161,12 @@ def get_sigmas_exponential(n, sigma_min, sigma_max, device='cpu'):
 
 
 def get_sigmas_polyexponential(n, sigma_min, sigma_max, device='cpu'):
+    # Check for flow sampling override first
+    flow_override = _check_flow_sampling_override(n, sigma_min, sigma_max, device)
+    if flow_override is not None:
+        return flow_override
+    
+    # Original polyexponential logic
     rho = shared.opts.polyexponential_rho
     return ldm_patched.k_diffusion.sampling.get_sigmas_polyexponential(n, sigma_min, sigma_max, rho, device)
 
@@ -152,6 +256,12 @@ def simple_scheduler(n, sigma_min, sigma_max, inner_model, device):
     return torch.FloatTensor(sigs).to(device)
 
 def normal_scheduler(n, sigma_min, sigma_max, inner_model, device, sgm=False, floor=False):
+    # Check for flow sampling override first
+    flow_override = _check_flow_sampling_override(n, sigma_min, sigma_max, device)
+    if flow_override is not None:
+        return flow_override
+    
+    # Original normal scheduler logic
     start = inner_model.sigma_to_t(torch.tensor(sigma_max))
     end = inner_model.sigma_to_t(torch.tensor(sigma_min))
 

@@ -113,17 +113,57 @@ class ModelSamplingStableCascade:
 
 class ModelSamplingSD3:
     def patch(self, model, shift, multiplier=1000):
+        import logging
+        
+        logging.info(f"[ModelSamplingSD3 Debug] Starting patch with shift={shift}, multiplier={multiplier}")
+        
         m = model.clone()
+
+        # Debug model info
+        if hasattr(model.model, 'model_config'):
+            config = model.model.model_config
+            logging.info(f"[ModelSamplingSD3 Debug] Model config type: {type(config).__name__}")
+            if hasattr(config, 'sampling_settings'):
+                logging.info(f"[ModelSamplingSD3 Debug] Original sampling_settings: {config.sampling_settings}")
+            if hasattr(config, 'unet_config'):
+                unet_keys = list(config.unet_config.keys()) if config.unet_config else []
+                logging.info(f"[ModelSamplingSD3 Debug] UNet config keys: {unet_keys}")
+        else:
+            logging.warning("[ModelSamplingSD3 Debug] No model_config found!")
 
         sampling_base = model_sampling.ModelSamplingDiscreteFlow
         sampling_type = model_sampling.CONST
 
         class ModelSamplingAdvanced(sampling_base, sampling_type):
-            pass
+            def calculate_input(self, sigma, noise):
+                logging.debug(f"[CONST Debug] calculate_input called with sigma shape: {sigma.shape}, noise shape: {noise.shape}")
+                result = super().calculate_input(sigma, noise)
+                logging.debug(f"[CONST Debug] calculate_input result shape: {result.shape}")
+                return result
+            
+            def calculate_denoised(self, sigma, model_output, model_input):
+                logging.debug(f"[CONST Debug] calculate_denoised called with sigma: {sigma.mean().item():.4f}")
+                result = super().calculate_denoised(sigma, model_output, model_input)
+                return result
+            
+            def noise_scaling(self, sigma, noise, latent_image, max_denoise=False):
+                logging.debug(f"[CONST Debug] noise_scaling called with sigma: {sigma.mean().item():.4f}, max_denoise: {max_denoise}")
+                result = super().noise_scaling(sigma, noise, latent_image, max_denoise)
+                return result
 
+        logging.info(f"[ModelSamplingSD3 Debug] Creating ModelSamplingAdvanced with base={sampling_base.__name__}, type={sampling_type.__name__}")
+        
         model_sampling_obj = ModelSamplingAdvanced(model.model.model_config)
+        logging.info(f"[ModelSamplingSD3 Debug] Created model_sampling_obj: {type(model_sampling_obj).__name__}")
+        logging.info(f"[ModelSamplingSD3 Debug] Before set_parameters - shift: {getattr(model_sampling_obj, 'shift', 'N/A')}, multiplier: {getattr(model_sampling_obj, 'multiplier', 'N/A')}")
+        
         model_sampling_obj.set_parameters(shift=shift, multiplier=multiplier)
+        logging.info(f"[ModelSamplingSD3 Debug] After set_parameters - shift: {getattr(model_sampling_obj, 'shift', 'N/A')}, multiplier: {getattr(model_sampling_obj, 'multiplier', 'N/A')}")
+        logging.info(f"[ModelSamplingSD3 Debug] Sigma range: {model_sampling_obj.sigma_min} - {model_sampling_obj.sigma_max}")
+        
         m.add_object_patch("model_sampling", model_sampling_obj)
+        logging.info("[ModelSamplingSD3 Debug] Added object_patch successfully")
+        
         return (m, )
 
 class ModelSamplingAuraFlow(ModelSamplingSD3):
