@@ -119,6 +119,18 @@ class AdvancedModelSamplingScript(scripts.Script):
 
         unet = p.sd_model.forge_objects.unet.clone()
 
+        # Debug: Print original model info
+        original_model_sampling = getattr(unet.model, 'model_sampling', None)
+        if original_model_sampling:
+            logging.info(f"[Advanced Sampling Debug] Original model_sampling type: {type(original_model_sampling).__name__}")
+            logging.info(f"[Advanced Sampling Debug] Original sigma_min: {getattr(original_model_sampling, 'sigma_min', 'N/A')}")
+            logging.info(f"[Advanced Sampling Debug] Original sigma_max: {getattr(original_model_sampling, 'sigma_max', 'N/A')}")
+            logging.info(f"[Advanced Sampling Debug] Model config: {type(unet.model.model_config).__name__ if hasattr(unet.model, 'model_config') else 'No model_config'}")
+        
+        # Debug: Print model type detection
+        model_type = getattr(unet.model.model_config, 'unet_config', {}) if hasattr(unet.model, 'model_config') else {}
+        logging.info(f"[Advanced Sampling Debug] UNet config keys: {list(model_type.keys()) if model_type else 'No unet_config'}")
+
         if self.sampling_mode == "Discrete":
             unet = ModelSamplingDiscrete().patch(unet, self.discrete_sampling, self.discrete_zsnr)[0]
         elif self.sampling_mode == "Continuous EDM":
@@ -128,11 +140,59 @@ class AdvancedModelSamplingScript(scripts.Script):
         elif self.sampling_mode == "Stable Cascade":
             unet = ModelSamplingStableCascade().patch(unet, self.stable_cascade_shift)[0]
         elif self.sampling_mode == "SD3":
+            logging.info(f"[Advanced Sampling Debug] Applying SD3 sampling with shift={self.sd3_shift}")
             unet = ModelSamplingSD3().patch(unet, self.sd3_shift)[0]
         elif self.sampling_mode == "Aura Flow":
             unet = ModelSamplingAuraFlow().patch_aura(unet, self.aura_flow_shift)[0]
         elif self.sampling_mode == "Flux":
             unet = ModelSamplingFlux().patch(unet, self.flux_max_shift, self.flux_base_shift, self.flux_width, self.flux_height)[0]
+
+        # Debug: Print patched model info
+        patched_model_sampling = getattr(unet.model, 'model_sampling', None)
+        if patched_model_sampling:
+            logging.info(f"[Advanced Sampling Debug] Patched model_sampling type: {type(patched_model_sampling).__name__}")
+            logging.info(f"[Advanced Sampling Debug] Patched sigma_min: {getattr(patched_model_sampling, 'sigma_min', 'N/A')}")
+            logging.info(f"[Advanced Sampling Debug] Patched sigma_max: {getattr(patched_model_sampling, 'sigma_max', 'N/A')}")
+            logging.info(f"[Advanced Sampling Debug] Shift: {getattr(patched_model_sampling, 'shift', 'N/A')}")
+            logging.info(f"[Advanced Sampling Debug] Multiplier: {getattr(patched_model_sampling, 'multiplier', 'N/A')}")
+            
+        # Debug: Check object_patches
+        if hasattr(unet, 'object_patches'):
+            logging.info(f"[Advanced Sampling Debug] Object patches: {list(unet.object_patches.keys())}")
+            if 'model_sampling' in unet.object_patches:
+                obj_patch = unet.object_patches['model_sampling']
+                logging.info(f"[Advanced Sampling Debug] model_sampling patch type: {type(obj_patch).__name__}")
+                logging.info(f"[Advanced Sampling Debug] model_sampling patch shift: {getattr(obj_patch, 'shift', 'N/A')}")
+                logging.info(f"[Advanced Sampling Debug] model_sampling patch multiplier: {getattr(obj_patch, 'multiplier', 'N/A')}")
+
+        # POTENTIAL FIX: Force apply the model_sampling patch immediately
+        # The issue seems to be that object patches aren't applied until sampling starts
+        # But we need model_sampling to be applied immediately for the sigma values to be correct
+        if 'model_sampling' in unet.object_patches:
+            logging.info(f"[Advanced Sampling Debug] APPLYING FIX - Force applying model_sampling patch immediately")
+            patch_obj = unet.object_patches['model_sampling']
+            # Store the original in backup if not already done
+            if 'model_sampling' not in unet.object_patches_backup:
+                unet.object_patches_backup['model_sampling'] = unet.model.model_sampling
+            # Apply the patch immediately
+            unet.model.model_sampling = patch_obj
+            logging.info(f"[Advanced Sampling Debug] FIX APPLIED - type: {type(unet.model.model_sampling).__name__}")
+            logging.info(f"[Advanced Sampling Debug] FIX APPLIED - sigma_min: {unet.model.model_sampling.sigma_min}")
+            logging.info(f"[Advanced Sampling Debug] FIX APPLIED - sigma_max: {unet.model.model_sampling.sigma_max}")
+            logging.info(f"[Advanced Sampling Debug] FIX APPLIED - shift: {getattr(unet.model.model_sampling, 'shift', 'N/A')}")
+            logging.info(f"[Advanced Sampling Debug] FIX APPLIED - multiplier: {getattr(unet.model.model_sampling, 'multiplier', 'N/A')}")
+
+        # SCHEDULER FIX: Set global state for WebUI scheduler to detect
+        from modules import shared
+        shared.forge_advanced_sampling_state = {
+            'enabled': self.enabled,
+            'mode': self.sampling_mode,
+            'sd3_shift': self.sd3_shift,
+            'aura_flow_shift': self.aura_flow_shift,
+            'discrete_sampling': self.discrete_sampling,
+            'discrete_zsnr': self.discrete_zsnr
+        }
+        logging.info(f"[Advanced Sampling Debug] Set global state for scheduler: {shared.forge_advanced_sampling_state}")
 
         p.sd_model.forge_objects.unet = unet
 

@@ -458,8 +458,17 @@ def ddim_scheduler(model_sampling, steps):
 
 def normal_scheduler(model_sampling, steps, sgm=False, floor=False):
     s = model_sampling
+    logging.info(f"[Normal Scheduler Debug] normal_scheduler called:")
+    logging.info(f"[Normal Scheduler Debug]   model_sampling type: {type(s).__name__}")
+    logging.info(f"[Normal Scheduler Debug]   sigma_min: {s.sigma_min}, sigma_max: {s.sigma_max}")
+    logging.info(f"[Normal Scheduler Debug]   shift: {getattr(s, 'shift', 'N/A')}")
+    logging.info(f"[Normal Scheduler Debug]   sgm: {sgm}, steps: {steps}")
+    
     start = s.timestep(s.sigma_max)
     end = s.timestep(s.sigma_min)
+    
+    logging.info(f"[Normal Scheduler Debug]   start: {start}, end: {end}")
+    logging.info(f"[Normal Scheduler Debug]   timestep(sigma_max): {start}, timestep(sigma_min): {end}")
 
     append_zero = True
     if sgm:
@@ -473,8 +482,13 @@ def normal_scheduler(model_sampling, steps, sgm=False, floor=False):
     sigs = []
     for x in range(len(timesteps)):
         ts = timesteps[x]
-        sigs.append(float(s.sigma(ts)))
+        sig = float(s.sigma(ts))
+        sigs.append(sig)
+        if x < 3:  # Log first few sigmas
+            logging.info(f"[Normal Scheduler Debug]   timestep {ts:.4f} -> sigma {sig:.4f}")
 
+    logging.info(f"[Normal Scheduler Debug]   Generated {len(sigs)} sigmas: {sigs[:3]}...{sigs[-3:]}")
+    
     if append_zero:
         sigs += [0.0]
 
@@ -536,7 +550,13 @@ def get_sigmas_karras(model_sampling, steps, device='cpu'):
     rho = shared.opts.reforge_karras_rho
     sigma_min = float(model_sampling.sigma_min)
     sigma_max = float(model_sampling.sigma_max)
-    return k_diffusion_sampling.get_sigmas_karras(steps, sigma_min, sigma_max, rho, device)
+    logging.info(f"[Karras Debug] get_sigmas_karras called:")
+    logging.info(f"[Karras Debug]   model_sampling type: {type(model_sampling).__name__}")
+    logging.info(f"[Karras Debug]   sigma_min: {sigma_min}, sigma_max: {sigma_max}")
+    logging.info(f"[Karras Debug]   shift: {getattr(model_sampling, 'shift', 'N/A')}")
+    result = k_diffusion_sampling.get_sigmas_karras(steps, sigma_min, sigma_max, rho, device)
+    logging.info(f"[Karras Debug]   result sigmas: {result[:5].tolist()}...{result[-5:].tolist()}")
+    return result
 
 def get_sigmas_exponential(model_sampling, steps, device='cpu'):
     shrink_factor = shared.opts.reforge_exponential_shrink_factor
@@ -1239,6 +1259,14 @@ SCHEDULER_NAMES = list(SCHEDULER_HANDLERS)
 SAMPLER_NAMES = KSAMPLER_NAMES + ["ddim", "uni_pc", "uni_pc_bh2"]
 
 def calculate_sigmas(model_sampling: object, scheduler_name: str, steps: int, is_sdxl: bool = False) -> torch.Tensor:
+    # Debug: Check what model_sampling object we're getting
+    logging.info(f"[Scheduler Debug] calculate_sigmas called with:")
+    logging.info(f"[Scheduler Debug]   model_sampling type: {type(model_sampling).__name__}")
+    logging.info(f"[Scheduler Debug]   sigma_min: {model_sampling.sigma_min}")
+    logging.info(f"[Scheduler Debug]   sigma_max: {model_sampling.sigma_max}")
+    logging.info(f"[Scheduler Debug]   shift: {getattr(model_sampling, 'shift', 'N/A')}")
+    logging.info(f"[Scheduler Debug]   scheduler: {scheduler_name}, steps: {steps}")
+    
     handler = SCHEDULER_HANDLERS.get(scheduler_name)
     if handler is None:
         err = f"error invalid scheduler {scheduler_name}"
