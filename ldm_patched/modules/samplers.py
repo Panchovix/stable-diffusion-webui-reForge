@@ -360,6 +360,15 @@ def calc_cond_uncond_batch(model, cond, uncond, x_in, timestep, model_options): 
 
 import math
 
+def _epsilon_scaling_post_cfg(args, scaling_factor: float):
+    """Scale the denoised prediction by adjusting the predicted noise."""
+    denoised = args["denoised"]
+    x = args["input"]
+    noise_pred = x - denoised
+    scaled_noise_pred = noise_pred / scaling_factor
+    return x - scaled_noise_pred
+
+
 def cfg_function(model, cond_pred, uncond_pred, cond_scale, x, timestep, model_options={}, cond=None, uncond=None):
     edit_strength = sum((item.get('strength', 1) for item in cond))
 
@@ -388,6 +397,14 @@ def cfg_function(model, cond_pred, uncond_pred, cond_scale, x, timestep, model_o
         args = {"denoised": cfg_result, "cond": cond, "uncond": uncond, "cond_scale": cond_scale, "model": model, "uncond_denoised": uncond_pred, "cond_denoised": cond_pred,
                 "sigma": timestep, "model_options": model_options, "input": x}
         cfg_result = fn(args)
+
+    if getattr(shared.opts, "epsilon_scaling_enabled", False):
+        scaling_factor = getattr(shared.opts, "epsilon_scaling_factor", 1.005)
+        if math.isclose(scaling_factor, 0.0):
+            scaling_factor = 1e-9
+        args = {"denoised": cfg_result, "cond": cond, "uncond": uncond, "cond_scale": cond_scale, "model": model, "uncond_denoised": uncond_pred, "cond_denoised": cond_pred,
+                "sigma": timestep, "model_options": model_options, "input": x}
+        cfg_result = _epsilon_scaling_post_cfg(args, scaling_factor)
 
     return cfg_result
 
