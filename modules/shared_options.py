@@ -250,6 +250,11 @@ options_templates.update(options_section(('sd_sampling', "SD Sampling backend fo
     ),
 }))
 
+options_templates.update(options_section(('epsilon_scaling', "Epsilon Scaling", "sd"), {
+    "epsilon_scaling_enabled": OptionInfo(False, "Enable epsilon scaling").info("Scale the guided prediction to mitigate exposure bias during sampling."),
+    "epsilon_scaling_factor": OptionInfo(1.005, "Epsilon scaling factor", gr.Slider, {"minimum": 0.5, "maximum": 1.5, "step": 0.001}).info("Noise scaling multiplier from 'Elucidating the Exposure Bias in Diffusion Models'."),
+}))
+
 options_templates.update(options_section(('img2img', "img2img", "sd"), {
     "inpainting_mask_weight": OptionInfo(1.0, "Inpainting conditioning mask strength", gr.Slider, {"minimum": 0.0, "maximum": 1.0, "step": 0.01}, infotext='Conditional mask weight'),
     "initial_noise_multiplier": OptionInfo(1.0, "Noise multiplier for img2img", gr.Slider, {"minimum": 0.0, "maximum": 1.5, "step": 0.001}, infotext='Noise multiplier'),
