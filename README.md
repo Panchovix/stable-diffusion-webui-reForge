@@ -1,5 +1,10 @@
-# reForge users should move to other repos that are more stable and updated
-# Suggested repos instead of reForge
+# Stable Diffusion WebUI Forge/reForge
+
+Stable Diffusion WebUI Forge/reForge is a platform on top of [Stable Diffusion WebUI](https://github.com/AUTOMATIC1111/stable-diffusion-webui) (based on [Gradio](https://www.gradio.app/)) to make development easier, optimize resource management, speed up inference, and study experimental features.
+
+The name "Forge" is inspired from "Minecraft Forge". This project is aimed at becoming SD WebUI's Forge.
+
+# Suggested repos instead of reForge for stability
 
 * Forge Classic: https://github.com/Haoming02/sd-webui-forge-classic, from @Haoming02 with a lot of optimizations and features, from reforge, forge, etc based on old backend of forge.
 * Forge Neo: https://github.com/Haoming02/sd-webui-forge-classic/tree/neo, from @Haoming02.
@@ -7,12 +12,6 @@ It is a continuation of Forge2 (so Flux, fp8, gguf, etc) but with more features 
 * ersatzForge: https://github.com/DenOfEquity/ersatzForge, from DenOfEquity, based on Forge2, but as he says, with (experimental, opinionated) changes to Forge2 webUI.
 
 Thanks!
-
-# Stable Diffusion WebUI Forge/reForge
-
-Stable Diffusion WebUI Forge/reForge is a platform on top of [Stable Diffusion WebUI](https://github.com/AUTOMATIC1111/stable-diffusion-webui) (based on [Gradio](https://www.gradio.app/)) to make development easier, optimize resource management, speed up inference, and study experimental features.
-
-The name "Forge" is inspired from "Minecraft Forge". This project is aimed at becoming SD WebUI's Forge.
 
 # Forge2/reForge2
 
@@ -209,6 +208,7 @@ Since the UI got really cluttered with built it extensions, I have removed some 
 Some people have been asking how to donate or support the project, and I'm really grateful for that! I did this buymeacoffe link from some suggestions!
 
 [!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/Panchovix)
+
 
 
 
