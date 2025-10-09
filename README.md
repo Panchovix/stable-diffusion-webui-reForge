@@ -202,10 +202,3 @@ Since the UI got really cluttered with built it extensions, I have removed some 
 Some people have been asking how to donate or support the project, and I'm really grateful for that! I did this buymeacoffe link from some suggestions!
 
 [!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/Panchovix)
-
-
-
-
-
-
-
