@@ -17,12 +17,6 @@ Thanks!
 
 * newmain_newforge: Based on latest forge2 (gradio4, flux, etc) with some small changes that I plan to add very slowly. For now it has python 3.12 support, sage/flash attention support, all the samplers and schedulers from reForge (1), and recently, support for CFG++ samplers.
 
-# Suggestion: For stability based on old forge, use forge classic
-
-reForge(1) is not really stable for all tasks sadly.
-
-So if you want to keep using old forge backend as it is, for sd1.x,2.x and SDXL, I suggest to use forge classic by @Haoming02 instead https://github.com/Haoming02/sd-webui-forge-classic, as at the moment that is the real succesor to old forge.
-
 # Other branches:
 * main: Main branch with multiple changes and updates. But not stable as main-old branch.
 * dev: Similar to main but with more unstable changes. I.e. using comfy/ldm_patched backend for sd1.x and sdxl instead of A1111.
@@ -208,6 +202,7 @@ Since the UI got really cluttered with built it extensions, I have removed some 
 Some people have been asking how to donate or support the project, and I'm really grateful for that! I did this buymeacoffe link from some suggestions!
 
 [!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/Panchovix)
+
 
 
 
