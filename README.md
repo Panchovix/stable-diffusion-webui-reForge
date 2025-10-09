@@ -1,9 +1,12 @@
+# reForge users should move to other repos that are more stable and updated
 # Suggested repos instead of reForge
 
 * Forge Classic: https://github.com/Haoming02/sd-webui-forge-classic, from @Haoming02 with a lot of optimizations and features, from reforge, forge, etc based on old backend of forge.
 * Forge Neo: https://github.com/Haoming02/sd-webui-forge-classic/tree/neo, from @Haoming02.
 It is a continuation of Forge2 (so Flux, fp8, gguf, etc) but with more features (wan 2.2, Qwen Image, Nunchaku, etc), aimed on optimizations and new features.
 * ersatzForge: https://github.com/DenOfEquity/ersatzForge, from DenOfEquity, based on Forge2, but as he says, with (experimental, opinionated) changes to Forge2 webUI.
+
+Thanks!
 
 # Stable Diffusion WebUI Forge/reForge
 
