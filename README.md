@@ -1,3 +1,10 @@
+# Suggested repos instead of reForge
+
+* Forge Classic: https://github.com/Haoming02/sd-webui-forge-classic, from @Haoming02 with a lot of optimizations and features, from reforge, forge, etc based on old backend of forge.
+* Forge Neo: https://github.com/Haoming02/sd-webui-forge-classic/tree/neo, from @Haoming02.
+It is a continuation of Forge2 (so Flux, fp8, gguf, etc) but with more features (wan 2.2, Qwen Image, Nunchaku, etc), aimed on optimizations and new features.
+* ersatzForge: https://github.com/DenOfEquity/ersatzForge, from DenOfEquity, based on Forge2, but as he says, with (experimental, opinionated) changes to Forge2 webUI.
+
 # Stable Diffusion WebUI Forge/reForge
 
 Stable Diffusion WebUI Forge/reForge is a platform on top of [Stable Diffusion WebUI](https://github.com/AUTOMATIC1111/stable-diffusion-webui) (based on [Gradio](https://www.gradio.app/)) to make development easier, optimize resource management, speed up inference, and study experimental features.
@@ -6,10 +13,7 @@ The name "Forge" is inspired from "Minecraft Forge". This project is aimed at be
 
 # Forge2/reForge2
 
-You can read more on https://github.com/Panchovix/stable-diffusion-webui-reForge/discussions/377#discussioncomment-14010687. You can tell me here if you want to keep these branches here or do something like "reForge2".
-
 * newmain_newforge: Based on latest forge2 (gradio4, flux, etc) with some small changes that I plan to add very slowly. For now it has python 3.12 support, sage/flash attention support, all the samplers and schedulers from reForge (1), and recently, support for CFG++ samplers.
-* newforge_dendev: Based on latest ersatzForge fork which is based on forge2 (gradio4, flux, chroma, cosmos, longclip, and a ton more) from @DenOfEquity (https://github.com/DenOfEquity/ersatzForge). Many thanks Den for letting me to work on base on your fork on reForge. I will try to add new features from old reforge as well, like all the samplers.
 
 # Suggestion: For stability based on old forge, use forge classic
 
@@ -17,7 +21,7 @@ reForge(1) is not really stable for all tasks sadly.
 
 So if you want to keep using old forge backend as it is, for sd1.x,2.x and SDXL, I suggest to use forge classic by @Haoming02 instead https://github.com/Haoming02/sd-webui-forge-classic, as at the moment that is the real succesor to old forge.
 
-Other branches:
+# Other branches:
 * main: Main branch with multiple changes and updates. But not stable as main-old branch.
 * dev: Similar to main but with more unstable changes. I.e. using comfy/ldm_patched backend for sd1.x and sdxl instead of A1111.
 * dev2: More unstable than dev, for now same as dev.
