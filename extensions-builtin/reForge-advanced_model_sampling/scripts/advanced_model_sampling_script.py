@@ -31,6 +31,11 @@ class FlowMatchingDenoiser(torch.nn.Module):
         self.inner_model.model_sampling = self.model_sampling
         logging.info(f"[FlowMatchingDenoiser] Patched inner_model.model_sampling")
 
+        # Add compatibility for Comfy samplers that expect model_patcher
+        # This allows DPM++ SDE and other advanced samplers to access model_sampling
+        self.model_patcher = self.unet
+        logging.info(f"[FlowMatchingDenoiser] Exposed model_patcher for Comfy sampler compatibility")
+
     @property
     def model_sampling(self):
         """Always get the latest model_sampling from the unet - this picks up patches"""
