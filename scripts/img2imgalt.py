@@ -9,7 +9,7 @@ import gradio as gr
 from modules import processing, shared, sd_samplers, sd_samplers_common
 
 import torch
-import k_diffusion as K
+import k_diff.k_diffusion as K
 
 def find_noise_for_image(p, cond, uncond, cfg_scale, steps):
     x = p.init_latent

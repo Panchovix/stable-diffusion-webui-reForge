@@ -2,7 +2,7 @@ import torch
 import tqdm
 from modules.shared import opts
 if opts.sd_sampling == "A1111":
-    from k_diffusion import sampling
+    from k_diff.k_diffusion import sampling
 elif opts.sd_sampling == "ldm patched (Comfy)":
     from ldm_patched.k_diffusion import sampling as sampling
 
@@ -17,7 +17,7 @@ def restart_sampler(model, x, sigmas, extra_args=None, callback=None, disable=No
     s_in = x.new_ones([x.shape[0]])
     step_id = 0
     if opts.sd_sampling == "A1111":
-        from k_diffusion.sampling import to_d, get_sigmas_karras
+        from k_diff.k_diffusion.sampling import to_d, get_sigmas_karras
     elif opts.sd_sampling == "ldm patched (Comfy)":
         from ldm_patched.k_diffusion.sampling import to_d, get_sigmas_karras
 
