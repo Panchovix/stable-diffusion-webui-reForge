@@ -180,5 +180,10 @@ class CompVisVDenoiser(DiscreteVDDPMDenoiser):
     def __init__(self, model, quantize=False, device='cpu'):
         super().__init__(model, model.alphas_cumprod, quantize=quantize)
 
+        if hasattr(model, 'forge_objects') and hasattr(model.forge_objects, 'unet'):
+            self.model_patcher = model.forge_objects.unet
+        else:
+            self.model_patcher = None
+
     def get_v(self, x, t, cond, **kwargs):
         return self.inner_model.apply_model(x, t, cond)
