@@ -4,7 +4,7 @@ import numpy as np
 
 from modules import shared
 if shared.opts.sd_sampling == "A1111":
-    from k_diffusion import sampling
+    from k_diff.k_diffusion import sampling
 elif shared.opts.sd_sampling == "ldm patched (Comfy)":
     from ldm_patched.k_diffusion import sampling as sampling
 from modules.models.diffusion.uni_pc import uni_pc
