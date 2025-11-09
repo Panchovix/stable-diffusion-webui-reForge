@@ -3,7 +3,7 @@ from modules.shared import opts
 import torch
 
 if opts.sd_sampling == "A1111":
-    import k_diffusion
+    import k_diff.k_diffusion
 elif opts.sd_sampling == "ldm patched (Comfy)":
     import ldm_patched.k_diffusion as k_diffusion
 from modules.models.sd3.sd3_impls import BaseModel, SDVAE, SD3LatentFormat

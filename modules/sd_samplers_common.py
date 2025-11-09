@@ -8,7 +8,7 @@ from modules.shared import opts, state
 from modules_forge.forge_sampler import sampling_prepare, sampling_cleanup
 from modules import extra_networks
 if opts.sd_sampling == "A1111":
-    from k_diffusion import sampling
+    from k_diff.k_diffusion import sampling
 elif opts.sd_sampling == "ldm patched (Comfy)":
     from ldm_patched.k_diffusion import sampling as sampling
 
@@ -361,7 +361,7 @@ class Sampler:
             return None
 
         if opts.sd_sampling == "A1111":
-            from k_diffusion.sampling import BrownianTreeNoiseSampler
+            from k_diff.k_diffusion.sampling import BrownianTreeNoiseSampler
         elif opts.sd_sampling == "ldm patched (Comfy)":
             from ldm_patched.k_diffusion.sampling import BrownianTreeNoiseSampler
         sigma_min, sigma_max = sigmas[sigmas > 0].min(), sigmas.max()
