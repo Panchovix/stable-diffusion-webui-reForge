@@ -7,9 +7,9 @@ import math
 from modules import shared
 
 if shared.opts.sd_sampling == "A1111":
-    import k_diffusion
-    from k_diffusion.sampling import append_zero
-    from k_diffusion import sampling
+    import k_diff.k_diffusion
+    from k_diff.k_diffusion.sampling import append_zero
+    from k_diff.k_diffusion import sampling
 elif shared.opts.sd_sampling == "ldm patched (Comfy)":
     import ldm_patched.k_diffusion
     from ldm_patched.k_diffusion.sampling import append_zero
@@ -21,7 +21,7 @@ def to_d(x, sigma, denoised):
 
 
 if shared.opts.sd_sampling == "A1111":
-    k_diffusion.sampling.to_d = to_d
+    k_diff.k_diffusion.sampling.to_d = to_d
 elif shared.opts.sd_sampling == "ldm patched (Comfy)":
     ldm_patched.k_diffusion.sampling.to_d = to_d
 
