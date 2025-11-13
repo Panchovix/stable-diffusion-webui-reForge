@@ -1032,10 +1032,10 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
 
             def infotext(index=0, use_main_prompt=False):
                 if shared.opts.enable_prompt_comments_def:
-                    commented_prompts = p.prompts
-                    commented_prompts[index] = p.prompt
-                    commented_negative_prompts = p.negative_prompts
-                    commented_negative_prompts[index] = p.negative_prompt
+                    commented_prompts = list(p.prompts)
+                    commented_prompts[index] = p.all_prompts[index]
+                    commented_negative_prompts = list(p.negative_prompts)
+                    commented_negative_prompts[index] = p.all_negative_prompts[index]
                     return create_infotext(p, commented_prompts, p.seeds, p.subseeds, use_main_prompt=False, index=index, all_negative_prompts=commented_negative_prompts)
                 else:
                     clean_prompts = [comments_parser.strip_comments(prompt) for prompt in p.prompts]
@@ -1845,3 +1845,4 @@ class StableDiffusionProcessingImg2Img(StableDiffusionProcessing):
 
     def get_token_merging_ratio(self, for_hr=False):
         return self.token_merging_ratio or ("token_merging_ratio" in self.override_settings and opts.token_merging_ratio) or opts.token_merging_ratio_img2img or opts.token_merging_ratio
+
