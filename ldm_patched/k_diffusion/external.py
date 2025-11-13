@@ -134,6 +134,13 @@ class CompVisDenoiser(DiscreteEpsDDPMDenoiser):
     def __init__(self, model, quantize=False, device='cpu'):
         super().__init__(model, model.alphas_cumprod, quantize=quantize)
 
+        # Add model_patcher for compatibility with Comfy samplers (DPM++ SDE, etc.)
+        # This allows samplers to access model_sampling via model.inner_model.model_patcher.get_model_object('model_sampling')
+        if hasattr(model, 'forge_objects') and hasattr(model.forge_objects, 'unet'):
+            self.model_patcher = model.forge_objects.unet
+        else:
+            self.model_patcher = None
+
     def get_eps(self, *args, **kwargs):
         return self.inner_model.apply_model(*args, **kwargs)
 
@@ -172,6 +179,11 @@ class CompVisVDenoiser(DiscreteVDDPMDenoiser):
 
     def __init__(self, model, quantize=False, device='cpu'):
         super().__init__(model, model.alphas_cumprod, quantize=quantize)
+
+        if hasattr(model, 'forge_objects') and hasattr(model.forge_objects, 'unet'):
+            self.model_patcher = model.forge_objects.unet
+        else:
+            self.model_patcher = None
 
     def get_v(self, x, t, cond, **kwargs):
         return self.inner_model.apply_model(x, t, cond)
