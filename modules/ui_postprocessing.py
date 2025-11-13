@@ -5,14 +5,14 @@ from modules.ui_components import ResizeHandleRow
 
 
 def create_ui():
-    dummy_component = gr.Label(visible=False)
-    tab_index = gr.Number(value=0, visible=False)
+    dummy_component = gr.Textbox(visible=False)
+    tab_index = gr.State(value=0, visible=False)
 
     with ResizeHandleRow(equal_height=False, variant='compact'):
         with gr.Column(variant='compact'):
             with gr.Tabs(elem_id="mode_extras"):
                 with gr.TabItem('Single Image', id="single_image", elem_id="extras_single_tab") as tab_single:
-                    extras_image = gr.Image(label="Source", source="upload", interactive=True, type="pil", elem_id="extras_image", image_mode="RGBA")
+                    extras_image = gr.Image(label="Source", interactive=True, type="pil", elem_id="extras_image", image_mode="RGBA", height="55vh")
 
                 with gr.TabItem('Batch Process', id="batch_process", elem_id="extras_batch_process_tab") as tab_batch:
                     image_batch = gr.Files(label="Batch Process", interactive=True, elem_id="extras_image_batch")
@@ -37,7 +37,7 @@ def create_ui():
 
     submit.click(
         fn=call_queue.wrap_gradio_gpu_call(postprocessing.run_postprocessing_webui, extra_outputs=[None, '']),
-        _js="submit_extras",
+        js="submit_extras",
         inputs=[
             dummy_component,
             tab_index,
@@ -53,7 +53,7 @@ def create_ui():
             output_panel.generation_info,
             output_panel.html_log,
         ],
-        show_progress=False,
+        show_progress='hidden',
     )
 
     parameters_copypaste.add_paste_fields("extras", extras_image, None)
