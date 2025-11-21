@@ -91,7 +91,7 @@ class UiCheckpointMerger:
         self.modelmerger_merge.click(fn=lambda: '', inputs=[], outputs=[self.modelmerger_result])
         self.modelmerger_merge.click(
             fn=call_queue.wrap_gradio_gpu_call(modelmerger, extra_outputs=lambda: [gr.update() for _ in range(4)]),
-            _js='modelmerger',
+            js='modelmerger',
             inputs=[
                 dummy_component,
                 self.primary_model_name,
