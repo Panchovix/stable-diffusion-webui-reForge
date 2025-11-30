@@ -1032,10 +1032,10 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
 
             def infotext(index=0, use_main_prompt=False):
                 if shared.opts.enable_prompt_comments_def:
-                    commented_prompts = list(p.prompts)
-                    commented_prompts[index] = p.all_prompts[index]
-                    commented_negative_prompts = list(p.negative_prompts)
-                    commented_negative_prompts[index] = p.all_negative_prompts[index]
+                    commented_prompts = p.prompts
+                    commented_prompts[index] = p.prompt
+                    commented_negative_prompts = p.negative_prompts
+                    commented_negative_prompts[index] = p.negative_prompt
                     return create_infotext(p, commented_prompts, p.seeds, p.subseeds, use_main_prompt=False, index=index, all_negative_prompts=commented_negative_prompts)
                 else:
                     clean_prompts = [comments_parser.strip_comments(prompt) for prompt in p.prompts]
