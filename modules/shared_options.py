@@ -544,6 +544,11 @@ options_templates.update(options_section(('sampler-params', "reForge Sampler Par
     "euler_ancestral_og_eta": OptionInfo(1.0, "Euler Ancestral - eta", gr.Slider, {"minimum": -1.0, "maximum": 2.0, "step": 0.01}, infotext='Euler Ancestral eta'),
     "euler_ancestral_og_s_noise": OptionInfo(1.0, "Euler Ancestral - s_noise", gr.Slider, {"minimum": -1.0, "maximum": 2.0, "step": 0.1}, infotext='Euler Ancestral s_noise'),
 
+    "rx_dpm_group": OptionHTML("<br><h3>RX-DPM (Richardson Extrapolation)</h3>"),
+    "rx_dpm_enable": OptionInfo(False, "Enable RX-DPM extrapolation").info("Experimental: extrapolates across multiple Euler ancestral steps using paper 'Extrapolation with Multiple ODE Solutions'."),
+    "rx_dpm_block_size": OptionInfo(2, "RX-DPM block size (k)", gr.Slider, {"minimum": 2, "maximum": 8, "step": 1}, infotext='RX-DPM k').info("Number of denoising steps per extrapolation block."),
+    "rx_dpm_order": OptionInfo(2.0, "RX-DPM truncation order (p)", gr.Slider, {"minimum": 1.0, "maximum": 4.0, "step": 0.5}, infotext='RX-DPM p').info("Order used when weighting step spans; Euler derivation uses p=2."),
+
     # Heun Parameters
     "heun_group": OptionHTML("<br><h3>Heun Settings</h3>"),
     "heun_og_s_churn": OptionInfo(0.0, "Heun - s_churn", gr.Slider, {"minimum": -1.0, "maximum": 2.0, "step": 0.01}, infotext='Heun s_churn'),
