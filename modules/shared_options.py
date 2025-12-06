@@ -548,6 +548,10 @@ options_templates.update(options_section(('sampler-params', "reForge Sampler Par
     "rx_dpm_enable": OptionInfo(False, "Enable RX-DPM extrapolation").info("Experimental: extrapolates across multiple Euler ancestral steps using paper 'Extrapolation with Multiple ODE Solutions'."),
     "rx_dpm_block_size": OptionInfo(2, "RX-DPM block size (k)", gr.Slider, {"minimum": 2, "maximum": 8, "step": 1}, infotext='RX-DPM k').info("Number of denoising steps per extrapolation block."),
     "rx_dpm_order": OptionInfo(2.0, "RX-DPM truncation order (p)", gr.Slider, {"minimum": 1.0, "maximum": 4.0, "step": 0.5}, infotext='RX-DPM p').info("Order used when weighting step spans; Euler derivation uses p=2."),
+    "rx_dpm_start_frac": OptionInfo(0.0, "RX-DPM start after fraction of steps", gr.Slider, {"minimum": 0.0, "maximum": 1.0, "step": 0.01}, infotext='RX-DPM start').info("0 = start immediately; 0.5 = start after half the steps; 1 = only final block."),
+    "rx_dpm_force_final": OptionInfo(True, "RX-DPM force final block").info("Always extrapolate the final block using the selected k, even if start fraction is later."),
+    "rx_dpm_mix_orders": OptionInfo("", "RX-DPM mix orders (comma-separated)", gr.Textbox, {"placeholder": "e.g. 1,4"}, infotext='RX-DPM mix orders').info("Optional: mix an additional order with the base order."),
+    "rx_dpm_mix_alpha": OptionInfo(0.0, "RX-DPM mix alpha", gr.Slider, {"minimum": 0.0, "maximum": 1.0, "step": 0.05}, infotext='RX-DPM mix alpha').info("Blend between base order and first mix order; 0 = base only, 1 = mix only."),
 
     # Heun Parameters
     "heun_group": OptionHTML("<br><h3>Heun Settings</h3>"),
