@@ -552,7 +552,6 @@ options_templates.update(options_section(('sampler-params', "reForge Sampler Par
     "rx_dpm_force_final": OptionInfo(True, "RX-DPM force final block").info("Always extrapolate the final block using the selected k, even if start fraction is later."),
     "rx_dpm_mix_orders": OptionInfo("", "RX-DPM mix orders (comma-separated)", gr.Textbox, {"placeholder": "e.g. 1,4"}, infotext='RX-DPM mix orders').info("Optional: mix an additional order with the base order."),
     "rx_dpm_mix_alpha": OptionInfo(0.0, "RX-DPM mix alpha", gr.Slider, {"minimum": 0.0, "maximum": 1.0, "step": 0.05}, infotext='RX-DPM mix alpha').info("Blend between base order and first mix order; 0 = base only, 1 = mix only."),
-    "rx_dpm_power": OptionInfo(1.0, "RX-DPM extrapolation power", gr.Slider, {"minimum": 0.0, "maximum": 2.0, "step": 0.05}, infotext='RX-DPM power').info("Scales the extrapolation offset; 0 = disable, 1 = normal, >1 = stronger."),
 
     # Heun Parameters
     "heun_group": OptionHTML("<br><h3>Heun Settings</h3>"),
