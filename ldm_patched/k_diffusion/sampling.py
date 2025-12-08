@@ -281,13 +281,6 @@ def _rx_extrapolate(x_multi, x_single, sigmas_block, order):
     return x_multi - (weight_sum / denom) * x_single
 
 
-def _rx_parse_orders(raw):
-    try:
-        return [float(x.strip()) for x in str(raw).split(",") if x.strip() != ""]
-    except Exception:
-        return []
-
-
 def _euler_ancestral_rf_update(x, denoised, sigma_from, sigma_to, eta, s_noise, noise_sampler):
     """Single Euler ancestral RF step using precomputed denoised output."""
     if sigma_to == 0:
@@ -576,10 +569,6 @@ def sample_euler_ancestral(model, x, sigmas, extra_args=None, callback=None, dis
     rx_enabled = modules.shared.opts.rx_dpm_enable
     rx_block = int(modules.shared.opts.rx_dpm_block_size) if rx_enabled else 0
     rx_order = float(modules.shared.opts.rx_dpm_order) if rx_enabled else 2.0
-    rx_start_frac = float(modules.shared.opts.rx_dpm_start_frac) if rx_enabled else 0.0
-    rx_force_final = bool(modules.shared.opts.rx_dpm_force_final) if rx_enabled else False
-    rx_mix_orders = _rx_parse_orders(modules.shared.opts.rx_dpm_mix_orders) if rx_enabled else []
-    rx_mix_alpha = max(0.0, min(1.0, float(modules.shared.opts.rx_dpm_mix_alpha))) if rx_enabled else 0.0
     rx_noise_sampler = _rx_build_noise_sampler(x, seed=seed) if rx_enabled else None
 
     if (not rx_enabled) or rx_block < 2:
@@ -591,11 +580,6 @@ def sample_euler_ancestral(model, x, sigmas, extra_args=None, callback=None, dis
         return x
 
     total_steps = len(sigmas) - 1
-    rx_start_idx = int(total_steps * rx_start_frac)
-    if rx_force_final:
-        rx_start_idx = min(rx_start_idx, max(0, total_steps - rx_block + 1))
-
-    rx_started = False
     block_start = 0
     block_start_x = None
     block_start_denoised = None
@@ -603,19 +587,6 @@ def sample_euler_ancestral(model, x, sigmas, extra_args=None, callback=None, dis
     for i in trange(total_steps, disable=disable):
         sigma_curr = sigmas[i]
         sigma_next = sigmas[i + 1]
-
-        if (not rx_started) and i < rx_start_idx:
-            denoised = model(x, sigma_curr * s_in, **extra_args)
-            if callback is not None:
-                callback({'x': x, 'i': i, 'sigma': sigma_curr, 'sigma_hat': sigma_curr, 'denoised': denoised})
-            x = _euler_ancestral_update(x, denoised, sigma_curr, sigma_next, eta, s_noise, noise_sampler)
-            continue
-
-        if not rx_started:
-            rx_started = True
-            block_start = i
-            block_start_x = x
-            block_start_denoised = None
 
         if i == block_start:
             block_start_x = x
@@ -634,7 +605,6 @@ def sample_euler_ancestral(model, x, sigmas, extra_args=None, callback=None, dis
 
         if block_complete and block_len > 1:
             sigmas_block = sigmas[block_start:i + 2]
-            x_multi = x
             x_single = _euler_ancestral_update(
                 block_start_x,
                 block_start_denoised,
@@ -644,20 +614,10 @@ def sample_euler_ancestral(model, x, sigmas, extra_args=None, callback=None, dis
                 s_noise,
                 rx_noise_sampler if rx_noise_sampler is not None else noise_sampler,
             )
-            x_base = _rx_extrapolate(x_multi, x_single, sigmas_block, rx_order)
-            x_final = x_base
-            if rx_mix_orders and rx_mix_alpha > 0:
-                mix_order = rx_mix_orders[0]
-                if mix_order != rx_order:
-                    x_alt = _rx_extrapolate(x_multi, x_single, sigmas_block, mix_order)
-                    w = rx_mix_alpha
-                    x_final = (1 - w) * x_base + w * x_alt
-            x = x_final
+            x = _rx_extrapolate(x, x_single, sigmas_block, rx_order)
 
         if block_complete:
             block_start = i + 1
-            block_start_x = x
-            block_start_denoised = None
 
     return x
 
@@ -672,10 +632,6 @@ def sample_euler_ancestral_RF(model, x, sigmas, extra_args=None, callback=None, 
     rx_enabled = modules.shared.opts.rx_dpm_enable
     rx_block = int(modules.shared.opts.rx_dpm_block_size) if rx_enabled else 0
     rx_order = float(modules.shared.opts.rx_dpm_order) if rx_enabled else 2.0
-    rx_start_frac = float(modules.shared.opts.rx_dpm_start_frac) if rx_enabled else 0.0
-    rx_force_final = bool(modules.shared.opts.rx_dpm_force_final) if rx_enabled else False
-    rx_mix_orders = _rx_parse_orders(modules.shared.opts.rx_dpm_mix_orders) if rx_enabled else []
-    rx_mix_alpha = max(0.0, min(1.0, float(modules.shared.opts.rx_dpm_mix_alpha))) if rx_enabled else 0.0
     rx_noise_sampler = _rx_build_noise_sampler(x, seed=seed) if rx_enabled else None
 
     if (not rx_enabled) or rx_block < 2:
@@ -699,11 +655,6 @@ def sample_euler_ancestral_RF(model, x, sigmas, extra_args=None, callback=None, 
         return x
 
     total_steps = len(sigmas) - 1
-    rx_start_idx = int(total_steps * rx_start_frac)
-    if rx_force_final:
-        rx_start_idx = min(rx_start_idx, max(0, total_steps - rx_block + 1))
-
-    rx_started = False
     block_start = 0
     block_start_x = None
     block_start_denoised = None
@@ -711,19 +662,6 @@ def sample_euler_ancestral_RF(model, x, sigmas, extra_args=None, callback=None, 
     for i in trange(total_steps, disable=disable):
         sigma_curr = sigmas[i]
         sigma_next = sigmas[i + 1]
-
-        if (not rx_started) and i < rx_start_idx:
-            denoised = model(x, sigma_curr * s_in, **extra_args)
-            if callback is not None:
-                callback({'x': x, 'i': i, 'sigma': sigma_curr, 'sigma_hat': sigma_curr, 'denoised': denoised})
-            x = _euler_ancestral_rf_update(x, denoised, sigma_curr, sigma_next, eta, s_noise, noise_sampler)
-            continue
-
-        if not rx_started:
-            rx_started = True
-            block_start = i
-            block_start_x = x
-            block_start_denoised = None
 
         if i == block_start:
             block_start_x = x
@@ -742,7 +680,6 @@ def sample_euler_ancestral_RF(model, x, sigmas, extra_args=None, callback=None, 
 
         if block_complete and block_len > 1:
             sigmas_block = sigmas[block_start:i + 2]
-            x_multi = x
             x_single = _euler_ancestral_rf_update(
                 block_start_x,
                 block_start_denoised,
@@ -752,20 +689,10 @@ def sample_euler_ancestral_RF(model, x, sigmas, extra_args=None, callback=None, 
                 s_noise,
                 rx_noise_sampler if rx_noise_sampler is not None else noise_sampler,
             )
-            x_base = _rx_extrapolate(x_multi, x_single, sigmas_block, rx_order)
-            x_final = x_base
-            if rx_mix_orders and rx_mix_alpha > 0:
-                mix_order = rx_mix_orders[0]
-                if mix_order != rx_order:
-                    x_alt = _rx_extrapolate(x_multi, x_single, sigmas_block, mix_order)
-                    w = rx_mix_alpha
-                    x_final = (1 - w) * x_base + w * x_alt
-            x = x_final
+            x = _rx_extrapolate(x, x_single, sigmas_block, rx_order)
 
         if block_complete:
             block_start = i + 1
-            block_start_x = x
-            block_start_denoised = None
 
     return x
 
