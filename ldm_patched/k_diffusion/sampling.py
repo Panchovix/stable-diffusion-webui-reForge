@@ -580,6 +580,7 @@ def sample_euler_ancestral(model, x, sigmas, extra_args=None, callback=None, dis
     rx_force_final = bool(modules.shared.opts.rx_dpm_force_final) if rx_enabled else False
     rx_mix_orders = _rx_parse_orders(modules.shared.opts.rx_dpm_mix_orders) if rx_enabled else []
     rx_mix_alpha = max(0.0, min(1.0, float(modules.shared.opts.rx_dpm_mix_alpha))) if rx_enabled else 0.0
+    rx_power = max(0.0, float(modules.shared.opts.rx_dpm_power)) if rx_enabled else 1.0
     rx_noise_sampler = _rx_build_noise_sampler(x, seed=seed) if rx_enabled else None
 
     if (not rx_enabled) or rx_block < 2:
@@ -652,7 +653,7 @@ def sample_euler_ancestral(model, x, sigmas, extra_args=None, callback=None, dis
                     x_alt = _rx_extrapolate(x_multi, x_single, sigmas_block, mix_order)
                     w = rx_mix_alpha
                     x_final = (1 - w) * x_base + w * x_alt
-            x = x_final
+            x = x_multi + rx_power * (x_final - x_multi)
 
         if block_complete:
             block_start = i + 1
@@ -676,6 +677,7 @@ def sample_euler_ancestral_RF(model, x, sigmas, extra_args=None, callback=None, 
     rx_force_final = bool(modules.shared.opts.rx_dpm_force_final) if rx_enabled else False
     rx_mix_orders = _rx_parse_orders(modules.shared.opts.rx_dpm_mix_orders) if rx_enabled else []
     rx_mix_alpha = max(0.0, min(1.0, float(modules.shared.opts.rx_dpm_mix_alpha))) if rx_enabled else 0.0
+    rx_power = max(0.0, float(modules.shared.opts.rx_dpm_power)) if rx_enabled else 1.0
     rx_noise_sampler = _rx_build_noise_sampler(x, seed=seed) if rx_enabled else None
 
     if (not rx_enabled) or rx_block < 2:
@@ -760,7 +762,7 @@ def sample_euler_ancestral_RF(model, x, sigmas, extra_args=None, callback=None, 
                     x_alt = _rx_extrapolate(x_multi, x_single, sigmas_block, mix_order)
                     w = rx_mix_alpha
                     x_final = (1 - w) * x_base + w * x_alt
-            x = x_final
+            x = x_multi + rx_power * (x_final - x_multi)
 
         if block_complete:
             block_start = i + 1

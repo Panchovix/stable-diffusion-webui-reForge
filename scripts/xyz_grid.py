@@ -271,6 +271,7 @@ axis_options = [
     AxisOption("RX-DPM mix alpha", float, apply_override("rx_dpm_mix_alpha")),
     AxisOption("RX-DPM start fraction", float, apply_override("rx_dpm_start_frac")),
     AxisOption("RX-DPM force final block", str, apply_override('rx_dpm_force_final', boolean=True), choices=boolean_choice(reverse=True)),
+    AxisOption("RX-DPM power", float, apply_override("rx_dpm_power")),
     AxisOption("Clip skip", int, apply_override('CLIP_stop_at_last_layers')),
     AxisOption("Dynamic clip skip", str, apply_override('dynamic_clip_skip_enabled', boolean=True), choices=boolean_choice(reverse=True)),
     AxisOption("Dynamic clip skip start", int, apply_override('dynamic_clip_skip_start'), confirm=confirm_range(2, 12, "Dynamic clip skip start")),
