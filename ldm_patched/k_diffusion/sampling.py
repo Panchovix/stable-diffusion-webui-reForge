@@ -246,67 +246,6 @@ def default_noise_sampler(x, seed=None):
 
     return lambda sigma, sigma_next: torch.randn(x.size(), dtype=x.dtype, layout=x.layout, device=x.device, generator=generator)
 
-
-def _rx_build_noise_sampler(x, seed=None):
-    """Separate RNG for RX single-step estimation to avoid perturbing the main sampler noise stream."""
-    generator = torch.Generator(device=x.device)
-    if seed is not None:
-        generator.manual_seed(seed + 1)
-    else:
-        generator.manual_seed(torch.seed())
-    return lambda sigma, sigma_next: torch.randn(x.size(), dtype=x.dtype, layout=x.layout, device=x.device, generator=generator)
-
-
-def _rx_extrapolate(x_multi, x_single, sigmas_block, order):
-    """Apply Richardson-style extrapolation using Equation (22) from the paper."""
-    if sigmas_block.numel() < 2:
-        return x_multi
-
-    sigma_start = sigmas_block[0]
-    sigma_end = sigmas_block[-1]
-    total_span = float((sigma_start - sigma_end).abs().item())
-    if total_span == 0:
-        return x_multi
-
-    weights = []
-    for idx in range(len(sigmas_block) - 1):
-        step_span = float((sigmas_block[idx] - sigmas_block[idx + 1]).abs().item())
-        weights.append((step_span / total_span) ** order)
-
-    weight_sum = sum(weights)
-    denom = 1.0 - weight_sum
-    if abs(denom) < 1e-6:
-        return x_multi
-
-    return x_multi - (weight_sum / denom) * x_single
-
-
-def _euler_ancestral_rf_update(x, denoised, sigma_from, sigma_to, eta, s_noise, noise_sampler):
-    """Single Euler ancestral RF step using precomputed denoised output."""
-    if sigma_to == 0:
-        return denoised
-
-    downstep_ratio = 1 + (sigma_to / sigma_from - 1) * eta
-    sigma_down = sigma_to * downstep_ratio
-    alpha_next = 1 - sigma_to
-    alpha_down = 1 - sigma_down
-    renoise_coeff = (sigma_to**2 - sigma_down**2 * alpha_next**2 / alpha_down**2) ** 0.5
-    sigma_ratio = sigma_down / sigma_from
-    x_out = sigma_ratio * x + (1 - sigma_ratio) * denoised
-    if eta > 0:
-        x_out = (alpha_next / alpha_down) * x_out + noise_sampler(sigma_from, sigma_to) * s_noise * renoise_coeff
-    return x_out
-
-
-def _euler_ancestral_update(x, denoised, sigma_from, sigma_to, eta, s_noise, noise_sampler):
-    sigma_down, sigma_up = get_ancestral_step(sigma_from, sigma_to, eta=eta)
-    if sigma_down == 0:
-        return denoised
-
-    d = to_d(x, sigma_from, denoised)
-    dt = sigma_down - sigma_from
-    return x + d * dt + noise_sampler(sigma_from, sigma_to) * s_noise * sigma_up
-
 ADAPTIVE_SOLVERS = {"dopri8", "dopri5", "bosh3", "fehlberg2", "adaptive_heun"}
 FIXED_SOLVERS = {"euler", "midpoint", "rk4", "heun3", "explicit_adams", "implicit_adams"}
 ALL_SOLVERS = list(ADAPTIVE_SOLVERS | FIXED_SOLVERS)
@@ -554,6 +493,8 @@ def sample_euler(model, x, sigmas, extra_args=None, callback=None, disable=None)
 
 @torch.no_grad()
 def sample_euler_ancestral(model, x, sigmas, extra_args=None, callback=None, disable=None, noise_sampler=None):
+    if hasattr(model, 'model_sampling') and isinstance(model.model_sampling, CONST):
+        return sample_euler_ancestral_RF(model, x, sigmas, extra_args, callback, disable, eta, s_noise, noise_sampler)
     """Ancestral sampling with Euler method steps."""
     eta = modules.shared.opts.euler_ancestral_og_eta
     s_noise = modules.shared.opts.euler_ancestral_og_s_noise
@@ -562,63 +503,18 @@ def sample_euler_ancestral(model, x, sigmas, extra_args=None, callback=None, dis
     seed = extra_args.get("seed", None)
     noise_sampler = default_noise_sampler(x, seed=seed) if noise_sampler is None else noise_sampler
     s_in = x.new_ones([x.shape[0]])
-
-    if hasattr(model, 'model_sampling') and isinstance(model.model_sampling, CONST):
-        return sample_euler_ancestral_RF(model, x, sigmas, extra_args, callback, disable, eta, s_noise, noise_sampler)
-
-    rx_enabled = modules.shared.opts.rx_dpm_enable
-    rx_block = int(modules.shared.opts.rx_dpm_block_size) if rx_enabled else 0
-    rx_order = float(modules.shared.opts.rx_dpm_order) if rx_enabled else 2.0
-    rx_noise_sampler = _rx_build_noise_sampler(x, seed=seed) if rx_enabled else None
-
-    if (not rx_enabled) or rx_block < 2:
-        for i in trange(len(sigmas) - 1, disable=disable):
-            denoised = model(x, sigmas[i] * s_in, **extra_args)
-            if callback is not None:
-                callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
-            x = _euler_ancestral_update(x, denoised, sigmas[i], sigmas[i + 1], eta, s_noise, noise_sampler)
-        return x
-
-    total_steps = len(sigmas) - 1
-    block_start = 0
-    block_start_x = None
-    block_start_denoised = None
-
-    for i in trange(total_steps, disable=disable):
-        sigma_curr = sigmas[i]
-        sigma_next = sigmas[i + 1]
-
-        if i == block_start:
-            block_start_x = x
-            block_start_denoised = None
-
-        denoised = model(x, sigma_curr * s_in, **extra_args)
-        if block_start_denoised is None:
-            block_start_denoised = denoised
+    for i in trange(len(sigmas) - 1, disable=disable):
+        denoised = model(x, sigmas[i] * s_in, **extra_args)
+        sigma_down, sigma_up = get_ancestral_step(sigmas[i], sigmas[i + 1], eta=eta)
         if callback is not None:
-            callback({'x': x, 'i': i, 'sigma': sigma_curr, 'sigma_hat': sigma_curr, 'denoised': denoised})
-
-        x = _euler_ancestral_update(x, denoised, sigma_curr, sigma_next, eta, s_noise, noise_sampler)
-
-        block_len = i - block_start + 1
-        block_complete = (block_len == rx_block) or (i == total_steps - 1)
-
-        if block_complete and block_len > 1:
-            sigmas_block = sigmas[block_start:i + 2]
-            x_single = _euler_ancestral_update(
-                block_start_x,
-                block_start_denoised,
-                sigmas_block[0],
-                sigmas_block[-1],
-                eta,
-                s_noise,
-                rx_noise_sampler if rx_noise_sampler is not None else noise_sampler,
-            )
-            x = _rx_extrapolate(x, x_single, sigmas_block, rx_order)
-
-        if block_complete:
-            block_start = i + 1
-
+            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
+        if sigma_down == 0:
+            x = denoised
+        else:
+            d = to_d(x, sigmas[i], denoised)
+            # Euler method
+            dt = sigma_down - sigmas[i]
+            x = x + d * dt + noise_sampler(sigmas[i], sigmas[i + 1]) * s_noise * sigma_up
     return x
 
 @torch.no_grad()
@@ -628,72 +524,25 @@ def sample_euler_ancestral_RF(model, x, sigmas, extra_args=None, callback=None, 
     seed = extra_args.get("seed", None)
     noise_sampler = default_noise_sampler(x, seed=seed) if noise_sampler is None else noise_sampler
     s_in = x.new_ones([x.shape[0]])
-
-    rx_enabled = modules.shared.opts.rx_dpm_enable
-    rx_block = int(modules.shared.opts.rx_dpm_block_size) if rx_enabled else 0
-    rx_order = float(modules.shared.opts.rx_dpm_order) if rx_enabled else 2.0
-    rx_noise_sampler = _rx_build_noise_sampler(x, seed=seed) if rx_enabled else None
-
-    if (not rx_enabled) or rx_block < 2:
-        for i in trange(len(sigmas) - 1, disable=disable):
-            denoised = model(x, sigmas[i] * s_in, **extra_args)
-            if callback is not None:
-                callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
-
-            if sigmas[i + 1] == 0:
-                x = denoised
-            else:
-                downstep_ratio = 1 + (sigmas[i + 1] / sigmas[i] - 1) * eta
-                sigma_down = sigmas[i + 1] * downstep_ratio
-                alpha_ip1 = 1 - sigmas[i + 1]
-                alpha_down = 1 - sigma_down
-                renoise_coeff = (sigmas[i + 1]**2 - sigma_down**2 * alpha_ip1**2 / alpha_down**2)**0.5
-                sigma_down_i_ratio = sigma_down / sigmas[i]
-                x = sigma_down_i_ratio * x + (1 - sigma_down_i_ratio) * denoised
-                if eta > 0:
-                    x = (alpha_ip1 / alpha_down) * x + noise_sampler(sigmas[i], sigmas[i + 1]) * s_noise * renoise_coeff
-        return x
-
-    total_steps = len(sigmas) - 1
-    block_start = 0
-    block_start_x = None
-    block_start_denoised = None
-
-    for i in trange(total_steps, disable=disable):
-        sigma_curr = sigmas[i]
-        sigma_next = sigmas[i + 1]
-
-        if i == block_start:
-            block_start_x = x
-            block_start_denoised = None
-
-        denoised = model(x, sigma_curr * s_in, **extra_args)
-        if block_start_denoised is None:
-            block_start_denoised = denoised
+    for i in trange(len(sigmas) - 1, disable=disable):
+        denoised = model(x, sigmas[i] * s_in, **extra_args)
+        # sigma_down, sigma_up = get_ancestral_step(sigmas[i], sigmas[i + 1], eta=eta)
         if callback is not None:
-            callback({'x': x, 'i': i, 'sigma': sigma_curr, 'sigma_hat': sigma_curr, 'denoised': denoised})
+            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
 
-        x = _euler_ancestral_rf_update(x, denoised, sigma_curr, sigma_next, eta, s_noise, noise_sampler)
-
-        block_len = i - block_start + 1
-        block_complete = (block_len == rx_block) or (i == total_steps - 1)
-
-        if block_complete and block_len > 1:
-            sigmas_block = sigmas[block_start:i + 2]
-            x_single = _euler_ancestral_rf_update(
-                block_start_x,
-                block_start_denoised,
-                sigmas_block[0],
-                sigmas_block[-1],
-                eta,
-                s_noise,
-                rx_noise_sampler if rx_noise_sampler is not None else noise_sampler,
-            )
-            x = _rx_extrapolate(x, x_single, sigmas_block, rx_order)
-
-        if block_complete:
-            block_start = i + 1
-
+        if sigmas[i + 1] == 0:
+            x = denoised
+        else:
+            downstep_ratio = 1 + (sigmas[i + 1] / sigmas[i] - 1) * eta
+            sigma_down = sigmas[i + 1] * downstep_ratio
+            alpha_ip1 = 1 - sigmas[i + 1]
+            alpha_down = 1 - sigma_down
+            renoise_coeff = (sigmas[i + 1]**2 - sigma_down**2 * alpha_ip1**2 / alpha_down**2)**0.5
+            # Euler method
+            sigma_down_i_ratio = sigma_down / sigmas[i]
+            x = sigma_down_i_ratio * x + (1 - sigma_down_i_ratio) * denoised
+            if eta > 0:
+                x = (alpha_ip1 / alpha_down) * x + noise_sampler(sigmas[i], sigmas[i + 1]) * s_noise * renoise_coeff
     return x
 
 @torch.no_grad()

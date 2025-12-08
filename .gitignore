@@ -86,4 +86,3 @@ webui-user-8160-gpu3-nopass.sh
 webui-user-8160-gpu3-nopass_fp8.sh
 /models/VAE/*
 !/models/VAE/Put VAE here.txt
-*.pdf
