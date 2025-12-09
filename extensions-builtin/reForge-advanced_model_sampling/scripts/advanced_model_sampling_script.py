@@ -174,7 +174,7 @@ class AdvancedModelSamplingScript(scripts.Script):
         self.continuous_v_sigma_max = 500.0
         self.continuous_v_sigma_min = 0.03
         self.stable_cascade_shift = 2.0
-        self.sd3_shift = 3.0
+        self.sd3_shift = 2.5
         self.aura_flow_shift = 1.73
         self.flux_max_shift = 1.15
         self.flux_base_shift = 0.5
