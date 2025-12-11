@@ -808,13 +808,15 @@ def process_images(p: StableDiffusionProcessing) -> Processed:
         # and if after running refiner, the refiner model is not unloaded - webui swaps back to main model here, if model over is present it will be reloaded afterwards
         if sd_models.checkpoint_aliases.get(p.override_settings.get('sd_model_checkpoint')) is None:
             p.override_settings.pop('sd_model_checkpoint', None)
-            sd_models.reload_model_weights()
+            if shared.opts.reload_model_on_generate:
+                sd_models.reload_model_weights()
 
         for k, v in p.override_settings.items():
             opts.set(k, v, is_api=True, run_callbacks=False)
 
             if k == 'sd_model_checkpoint':
-                sd_models.reload_model_weights()
+                if shared.opts.reload_model_on_generate:
+                    sd_models.reload_model_weights()
 
             if k == 'sd_vae':
                 sd_vae.reload_vae_weights()
@@ -918,7 +920,8 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
             if state.interrupted or state.stopping_generation:
                 break
 
-            sd_models.reload_model_weights()  # model can be changed for example by refiner
+            if shared.opts.reload_model_on_generate:
+                sd_models.reload_model_weights()  # model can be changed for example by refiner
 
             p.sd_model.forge_objects = p.sd_model.forge_objects_original.shallow_copy()
             p.prompts = p.all_prompts[n * p.batch_size:(n + 1) * p.batch_size]
