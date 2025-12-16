@@ -43,3 +43,6 @@ timm==1.0.14
 packaging
 wheel
 ninja
+# For adetailer, you need to install mediapipe and ultralytics manually first.
+# mediapipe>=0.10.30
+# ultralytics
