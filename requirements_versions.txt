@@ -1,5 +1,8 @@
 setuptools==69.5.1  # temp fix for compatibility with some old packages
 GitPython==3.1.32
+# For adetailer, you need to install mediapipe>=0.10.30 and ultralytics manually first.
+# mediapipe>=0.10.30
+# ultralytics
 pillow==10.4.0
 accelerate==0.31.0
 blendmodes==2024.1.1
@@ -40,3 +43,6 @@ loadimg==0.1.2
 pydantic==2.8.2
 cachetools==5.5.1
 huggingface-hub==0.26.2
+packaging
+wheel
+ninja
