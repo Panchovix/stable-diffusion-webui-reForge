@@ -40,3 +40,6 @@ cachetools==5.5.1
 colorama==0.4.6
 huggingface_hub==0.25.0
 timm==1.0.14
+packaging
+wheel
+ninja
