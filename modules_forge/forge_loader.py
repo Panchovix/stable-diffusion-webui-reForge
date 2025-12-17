@@ -518,7 +518,11 @@ def load_model_for_a1111(timer, checkpoint_info=None, state_dict=None):
     sd_model.ztsnr = ztsnr
 
     sd_model.is_sd3 = is_sd3
-    sd_model.latent_channels = 16 if is_sd3 else 4
+    # Prefer latent channels from the loaded Forge UNet if available (handles SDXL_flux2 with 32ch latents).
+    if hasattr(forge_objects, "unet") and hasattr(forge_objects.unet.model, "latent_channels"):
+        sd_model.latent_channels = forge_objects.unet.model.latent_channels
+    else:
+        sd_model.latent_channels = 16 if is_sd3 else 4
     sd_model.is_sdxl = conditioner is not None and not is_sd3
     sd_model.is_sdxl_inpaint = sd_model.is_sdxl and forge_objects.unet.model.diffusion_model.in_channels == 9
     sd_model.is_sd2 = not sd_model.is_sdxl and not is_sd3 and hasattr(sd_model.cond_stage_model, 'model')
