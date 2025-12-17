@@ -264,6 +264,16 @@ class SDXL(supported_models_base.BASE):
     def clip_target(self, state_dict={}):
         return supported_models_base.ClipTarget(sdxl_clip.SDXLTokenizer, sdxl_clip.SDXLClipModel)
 
+class SDXL_flux2(SDXL):
+    unet_config = dict(SDXL.unet_config, in_channels=32, out_channels=32)
+    latent_format = latent_formats.SDXL_Flux2
+    vae_key_prefix = ["vae.", "first_stage_model."]
+    packed_vae_latent_channels = 32
+    packed_vae_spatial_factor = 2
+
+    def inpaint_model(self):
+        return False
+
 class SSD1B(SDXL):
     unet_config = {
         "model_channels": 320,
@@ -1229,6 +1239,6 @@ class Omnigen2(supported_models_base.BASE):
         return supported_models_base.ClipTarget(ldm_patched.modules.text_encoders.omnigen2.Omnigen2Tokenizer, ldm_patched.modules.text_encoders.omnigen2.te(**hunyuan_detect)) #check tokenizer after
 
 
-models = [LotusD, Stable_Zero123, SD15_instructpix2pix, SD15, SD20, SD21UnclipL, SD21UnclipH, SDXL_instructpix2pix, SDXLRefiner, SDXL, SSD1B, KOALA_700M, KOALA_1B, Segmind_Vega, SD_X4Upscaler, Stable_Cascade_C, Stable_Cascade_B, SV3D_u, SV3D_p, SD3, StableAudio, AuraFlow, PixArtAlpha, PixArtSigma, HunyuanDiT, HunyuanDiT1, FluxInpaint, Flux, FluxSchnell, GenmoMochi, LTXV, HunyuanVideoSkyreelsI2V, HunyuanVideoI2V, HunyuanVideo, CosmosT2V, CosmosI2V, CosmosT2IPredict2, CosmosI2VPredict2, Lumina2, WAN21_T2V, WAN21_I2V, WAN21_FunControl2V, WAN21_Vace, WAN21_Camera, Hunyuan3Dv2mini, Hunyuan3Dv2, HiDream, Chroma, ACEStep, Omnigen2]
+models = [LotusD, Stable_Zero123, SD15_instructpix2pix, SD15, SD20, SD21UnclipL, SD21UnclipH, SDXL_instructpix2pix, SDXLRefiner, SDXL_flux2, SDXL, SSD1B, KOALA_700M, KOALA_1B, Segmind_Vega, SD_X4Upscaler, Stable_Cascade_C, Stable_Cascade_B, SV3D_u, SV3D_p, SD3, StableAudio, AuraFlow, PixArtAlpha, PixArtSigma, HunyuanDiT, HunyuanDiT1, FluxInpaint, Flux, FluxSchnell, GenmoMochi, LTXV, HunyuanVideoSkyreelsI2V, HunyuanVideoI2V, HunyuanVideo, CosmosT2V, CosmosI2V, CosmosT2IPredict2, CosmosI2VPredict2, Lumina2, WAN21_T2V, WAN21_I2V, WAN21_FunControl2V, WAN21_Vace, WAN21_Camera, Hunyuan3Dv2mini, Hunyuan3Dv2, HiDream, Chroma, ACEStep, Omnigen2]
 
 models += [SVD_img2vid]

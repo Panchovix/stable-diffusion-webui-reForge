@@ -118,6 +118,9 @@ class BaseModel(torch.nn.Module):
 
         unet_config = model_config.unet_config
         self.latent_format = model_config.latent_format
+        # Expose latent channel info for downstream noise scheduling / sampling utils.
+        self.latent_channels = getattr(self.latent_format, "latent_channels", None)
+        self.latent_dimensions = getattr(self.latent_format, "latent_dimensions", 2)
         self.model_config = model_config
         self.manual_cast_dtype = model_config.manual_cast_dtype
         self.device = device

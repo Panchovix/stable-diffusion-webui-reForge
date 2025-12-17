@@ -344,6 +344,10 @@ class VAE:
         self.downscale_index_formula = None
         self.upscale_index_formula = None
         self.extra_1d_channel = None
+        self.packed_latent_channels = None
+        self.packed_latent_spatial_factor = 2
+        self.latent_shift_factor = 0.0
+        self.latent_scale_factor = 1.0
 
         if config is None:
             if "decoder.mid.block_1.mix_factor" in sd:
@@ -401,6 +405,13 @@ class VAE:
                     self.first_stage_model = AutoencodingEngine(regularizer_config={'target': "ldm_patched.ldm.models.autoencoder.DiagonalGaussianRegularizer"},
                                                                 encoder_config={'target': "ldm_patched.ldm.modules.diffusionmodules.model.Encoder", 'params': ddconfig},
                                                                 decoder_config={'target': "ldm_patched.ldm.modules.diffusionmodules.model.Decoder", 'params': ddconfig})
+                if 'bn.running_mean' in sd:
+                    # Some VAEs use batch norm in the latent space; enable without changing channel count.
+                    ddconfig["batch_norm_latent"] = True
+                # Flux2 VAE latent scaling (latents were trained with scale/shift).
+                if self.latent_channels == 32:
+                    self.latent_shift_factor = 0.0760
+                    self.latent_scale_factor = 0.6043
             elif "decoder.layers.1.layers.0.beta" in sd:
                 self.first_stage_model = AudioOobleckVAE()
                 self.memory_used_encode = lambda shape, dtype: (1000 * shape[2]) * model_management.dtype_size(dtype)
@@ -575,7 +586,52 @@ class VAE:
         n.latent_dim = self.latent_dim
         n.downscale_index_formula = self.downscale_index_formula
         n.upscale_index_formula = self.upscale_index_formula
+        n.packed_latent_channels = self.packed_latent_channels
+        n.packed_latent_spatial_factor = self.packed_latent_spatial_factor
         return n
+
+    def set_packed_latents(self, packed_channels, spatial_factor=2):
+        self.packed_latent_channels = packed_channels
+        self.packed_latent_spatial_factor = spatial_factor
+
+    def _to_vae_latent(self, latent):
+        packed_channels = getattr(self, "packed_latent_channels", None)
+        sf = getattr(self, "packed_latent_spatial_factor", 2)
+        # Unscale model latents into VAE latent space if needed (e.g., flux2).
+        if self.latent_scale_factor != 1.0 or self.latent_shift_factor != 0.0:
+            latent = (latent - self.latent_shift_factor) / self.latent_scale_factor
+        if packed_channels is None and latent.shape[1] * (sf ** 2) == getattr(self, "latent_channels", latent.shape[1]):
+            # Allow implicit packing when latents are spatially packed (32 -> 128 for flux2)
+            packed_channels = latent.shape[1]
+        if packed_channels is not None and latent.shape[1] == packed_channels:
+            if packed_channels * (sf ** 2) == self.latent_channels and latent.ndim >= 4:
+                h = latent.shape[-2]
+                w = latent.shape[-1]
+                if h % sf != 0 or w % sf != 0:
+                    pad_h = (sf - (h % sf)) % sf
+                    pad_w = (sf - (w % sf)) % sf
+                    latent = torch.nn.functional.pad(latent, (0, pad_w, 0, pad_h))
+                    h = latent.shape[-2]
+                    w = latent.shape[-1]
+                latent = latent.reshape(latent.shape[0], packed_channels, h // sf, sf, w // sf, sf)
+                latent = latent.permute(0, 1, 3, 5, 2, 4).reshape(latent.shape[0], self.latent_channels, h // sf, w // sf)
+        return latent
+
+    def _from_vae_latent(self, latent):
+        packed_channels = getattr(self, "packed_latent_channels", None)
+        sf = getattr(self, "packed_latent_spatial_factor", 2)
+        if packed_channels is None and self.latent_channels == 128 and latent.shape[1] == 128:
+            packed_channels = 32  # implicit flux2 packing
+        if packed_channels is not None and latent.shape[1] == self.latent_channels:
+            if packed_channels * (sf ** 2) == self.latent_channels and latent.ndim >= 4:
+                h = latent.shape[-2]
+                w = latent.shape[-1]
+                latent = latent.reshape(latent.shape[0], packed_channels, sf, sf, h, w)
+                latent = latent.permute(0, 1, 4, 2, 5, 3).reshape(latent.shape[0], packed_channels, h * sf, w * sf)
+        # Scale encoded latents back to model space.
+        if self.latent_scale_factor != 1.0 or self.latent_shift_factor != 0.0:
+            latent = latent * self.latent_scale_factor + self.latent_shift_factor
+        return latent
 
     def vae_encode_crop_pixels(self, pixels):
         downscale_ratio = self.spacial_compression_encode()
@@ -594,27 +650,29 @@ class VAE:
         steps += samples.shape[0] * ldm_patched.modules.utils.get_tiled_scale_steps(samples.shape[3], samples.shape[2], tile_x * 2, tile_y // 2, overlap)
         pbar = ldm_patched.modules.utils.ProgressBar(steps)
 
-        decode_fn = lambda a: self.first_stage_model.decode(a.to(self.vae_dtype).to(self.device)).float()
+        decode_fn = lambda a: self.first_stage_model.decode(self._to_vae_latent(a).to(self.vae_dtype).to(self.device)).float()
+        input_samples = self._to_vae_latent(samples)
         output = self.process_output(
-            (ldm_patched.modules.utils.tiled_scale(samples, decode_fn, tile_x // 2, tile_y * 2, overlap, upscale_amount = self.upscale_ratio, output_device=self.output_device, pbar = pbar) +
-            ldm_patched.modules.utils.tiled_scale(samples, decode_fn, tile_x * 2, tile_y // 2, overlap, upscale_amount = self.upscale_ratio, output_device=self.output_device, pbar = pbar) +
-             ldm_patched.modules.utils.tiled_scale(samples, decode_fn, tile_x, tile_y, overlap, upscale_amount = self.upscale_ratio, output_device=self.output_device, pbar = pbar))
+            (ldm_patched.modules.utils.tiled_scale(input_samples, decode_fn, tile_x // 2, tile_y * 2, overlap, upscale_amount = self.upscale_ratio, output_device=self.output_device, pbar = pbar) +
+            ldm_patched.modules.utils.tiled_scale(input_samples, decode_fn, tile_x * 2, tile_y // 2, overlap, upscale_amount = self.upscale_ratio, output_device=self.output_device, pbar = pbar) +
+             ldm_patched.modules.utils.tiled_scale(input_samples, decode_fn, tile_x, tile_y, overlap, upscale_amount = self.upscale_ratio, output_device=self.output_device, pbar = pbar))
             / 3.0)
         return output
 
     def decode_tiled_1d(self, samples, tile_x=128, overlap=32):
         if samples.ndim == 3:
-            decode_fn = lambda a: self.first_stage_model.decode(a.to(self.vae_dtype).to(self.device)).float()
+            decode_fn = lambda a: self.first_stage_model.decode(self._to_vae_latent(a).to(self.vae_dtype).to(self.device)).float()
         else:
             og_shape = samples.shape
             samples = samples.reshape((og_shape[0], og_shape[1] * og_shape[2], -1))
-            decode_fn = lambda a: self.first_stage_model.decode(a.reshape((-1, og_shape[1], og_shape[2], a.shape[-1])).to(self.vae_dtype).to(self.device)).float()
+            decode_fn = lambda a: self.first_stage_model.decode(self._to_vae_latent(a.reshape((-1, og_shape[1], og_shape[2], a.shape[-1]))).to(self.vae_dtype).to(self.device)).float()
 
         return self.process_output(ldm_patched.modules.utils.tiled_scale_multidim(samples, decode_fn, tile=(tile_x,), overlap=overlap, upscale_amount=self.upscale_ratio, out_channels=self.output_channels, output_device=self.output_device))
 
     def decode_tiled_3d(self, samples, tile_t=999, tile_x=32, tile_y=32, overlap=(1, 8, 8)):
-        decode_fn = lambda a: self.first_stage_model.decode(a.to(self.vae_dtype).to(self.device)).float()
-        return self.process_output(ldm_patched.modules.utils.tiled_scale_multidim(samples, decode_fn, tile=(tile_t, tile_x, tile_y), overlap=overlap, upscale_amount=self.upscale_ratio, out_channels=self.output_channels, index_formulas=self.upscale_index_formula, output_device=self.output_device))
+        decode_fn = lambda a: self.first_stage_model.decode(self._to_vae_latent(a).to(self.vae_dtype).to(self.device)).float()
+        input_samples = self._to_vae_latent(samples)
+        return self.process_output(ldm_patched.modules.utils.tiled_scale_multidim(input_samples, decode_fn, tile=(tile_t, tile_x, tile_y), overlap=overlap, upscale_amount=self.upscale_ratio, out_channels=self.output_channels, index_formulas=self.upscale_index_formula, output_device=self.output_device))
 
     def encode_tiled_(self, pixel_samples, tile_x=512, tile_y=512, overlap = 64):
         steps = pixel_samples.shape[0] * ldm_patched.modules.utils.get_tiled_scale_steps(pixel_samples.shape[3], pixel_samples.shape[2], tile_x, tile_y, overlap)
@@ -626,7 +684,7 @@ class VAE:
         samples = ldm_patched.modules.utils.tiled_scale(pixel_samples, encode_fn, tile_x, tile_y, overlap, upscale_amount = (1/self.downscale_ratio), out_channels=self.latent_channels, output_device=self.output_device, pbar=pbar)
         samples += ldm_patched.modules.utils.tiled_scale(pixel_samples, encode_fn, tile_x * 2, tile_y // 2, overlap, upscale_amount = (1/self.downscale_ratio), out_channels=self.latent_channels, output_device=self.output_device, pbar=pbar)
         samples += ldm_patched.modules.utils.tiled_scale(pixel_samples, encode_fn, tile_x // 2, tile_y * 2, overlap, upscale_amount = (1/self.downscale_ratio), out_channels=self.latent_channels, output_device=self.output_device, pbar=pbar)
-        samples /= 3.0
+        samples = self._from_vae_latent(samples / 3.0)
         return samples
 
     def encode_tiled_1d(self, samples, tile_x=256 * 2048, overlap=64 * 2048):
@@ -643,6 +701,7 @@ class VAE:
             encode_fn = lambda a: self.first_stage_model.encode((self.process_input(a)).to(self.vae_dtype).to(self.device)).reshape(1, out_channels, -1).float()
 
         out = ldm_patched.modules.utils.tiled_scale_multidim(samples, encode_fn, tile=(tile_x,), overlap=overlap, upscale_amount=upscale_amount, out_channels=out_channels, output_device=self.output_device)
+        out = self._from_vae_latent(out)
         if self.latent_dim == 1:
             return out
         else:
@@ -665,7 +724,7 @@ class VAE:
 
             pixel_samples = torch.empty((samples_in.shape[0], 3, round(samples_in.shape[2] * self.downscale_ratio), round(samples_in.shape[3] * self.downscale_ratio)), device=self.output_device)
             for x in range(0, samples_in.shape[0], batch_number):
-                samples = samples_in[x:x+batch_number].to(self.vae_dtype).to(self.device)
+                samples = self._to_vae_latent(samples_in[x:x+batch_number]).to(self.vae_dtype).to(self.device)
                 pixel_samples[x:x+batch_number] = torch.clamp((self.first_stage_model.decode(samples).to(self.output_device).float() + 1.0) / 2.0, min=0.0, max=1.0)
         except model_management.OOM_EXCEPTION:
             print("Warning: Ran out of memory when regular VAE decoding, retrying with tiled VAE decoding.")
@@ -685,7 +744,7 @@ class VAE:
             batch_number = max(1, batch_number)
 
             for x in range(0, samples_in.shape[0], batch_number):
-                samples = samples_in[x:x+batch_number].to(self.vae_dtype).to(self.device)
+                samples = self._to_vae_latent(samples_in[x:x+batch_number]).to(self.vae_dtype).to(self.device)
                 out = self.process_output(self.first_stage_model.decode(samples, **vae_options).to(self.output_device).float())
                 if pixel_samples is None:
                     pixel_samples = torch.empty((samples_in.shape[0],) + tuple(out.shape[1:]), device=self.output_device)
@@ -754,7 +813,7 @@ class VAE:
             samples = torch.empty((pixel_samples.shape[0], self.latent_channels, round(pixel_samples.shape[2] // self.downscale_ratio), round(pixel_samples.shape[3] // self.downscale_ratio)), device=self.output_device)
             for x in range(0, pixel_samples.shape[0], batch_number):
                 pixels_in = (2. * pixel_samples[x:x+batch_number] - 1.).to(self.vae_dtype).to(self.device)
-                samples[x:x+batch_number] = self.first_stage_model.encode(pixels_in, regulation).to(self.output_device).float()
+                samples[x:x+batch_number] = self._from_vae_latent(self.first_stage_model.encode(pixels_in, regulation).to(self.output_device).float())
 
         except model_management.OOM_EXCEPTION:
             print("Warning: Ran out of memory when regular VAE encoding, retrying with tiled VAE encoding.")
@@ -777,7 +836,7 @@ class VAE:
             samples = None
             for x in range(0, pixel_samples.shape[0], batch_number):
                 pixels_in = self.process_input(pixel_samples[x:x + batch_number]).to(self.vae_dtype).to(self.device)
-                out = self.first_stage_model.encode(pixels_in).to(self.output_device).float()
+                out = self._from_vae_latent(self.first_stage_model.encode(pixels_in).to(self.output_device).float())
                 if samples is None:
                     samples = torch.empty((pixel_samples.shape[0],) + tuple(out.shape[1:]), device=self.output_device)
                 samples[x:x + batch_number] = out
@@ -1197,6 +1256,8 @@ def load_state_dict_guess_config(sd, output_vae=True, output_clip=True, output_c
         vae_sd = ldm_patched.modules.utils.state_dict_prefix_replace(sd, {k: "" for k in model_config.vae_key_prefix}, filter_keys=True)
         vae_sd = model_config.process_vae_state_dict(vae_sd)
         vae = VAE(sd=vae_sd, metadata=metadata)
+        if hasattr(model_config, "packed_vae_latent_channels"):
+            vae.set_packed_latents(model_config.packed_vae_latent_channels, getattr(model_config, "packed_vae_spatial_factor", 2))
 
     if output_clip:
         clip_target = model_config.clip_target(state_dict=sd)

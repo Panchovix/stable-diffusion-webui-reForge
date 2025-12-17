@@ -239,7 +239,16 @@ def load_vae(model, vae_file=None, vae_source="from unknown source"):
 
 # don't call this from outside
 def _load_vae_dict(model, vae_dict_1):
-    model.first_stage_model.load_state_dict(vae_dict_1)
+    try:
+        model.first_stage_model.load_state_dict(vae_dict_1)
+    except RuntimeError:
+        # If the current VAE architecture doesn't match, rebuild one that matches the weights (e.g. flux2/Bn VAEs)
+        from ldm_patched import modules as ldm_modules
+        from ldm_patched.modules import sd as ldm_sd
+
+        device = getattr(model.first_stage_model, "device", None)
+        rebuilt = ldm_sd.VAE(sd=vae_dict_1, device=device)
+        model.first_stage_model = rebuilt.first_stage_model
 
 
 def clear_loaded_vae():
