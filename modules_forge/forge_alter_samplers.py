@@ -27,7 +27,6 @@ class AlterSampler(sd_samplers_kdiffusion.KDiffusionSampler):
         sampler_functions = {
             'euler_comfy': k_diffusion_sampling.sample_euler,
             'euler_ancestral_comfy': k_diffusion_sampling.sample_euler_ancestral,
-            'euler_a2': k_diffusion_sampling.sample_euler_a2,
             'euler_ancestral_comfy_RF': k_diffusion_sampling.sample_euler_ancestral_RF,
             'heun_comfy': k_diffusion_sampling.sample_heun,
             'dpmpp_2s_ancestral_comfy': k_diffusion_sampling.sample_dpmpp_2s_ancestral,
