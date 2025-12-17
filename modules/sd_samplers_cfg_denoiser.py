@@ -137,6 +137,15 @@ class CFGDenoiser(torch.nn.Module):
             #         uc=uncond,
             #     )
 
+        if getattr(shared.opts, "dynamic_clip_skip_enabled", False):
+            schedule = getattr(self.p, "dynamic_clip_skip_schedule", None)
+            cond_sets = getattr(self.p, "dynamic_clip_skip_sets", None) or {}
+            if schedule:
+                schedule_index = min(self.step, len(schedule) - 1)
+                clip_skip = schedule[schedule_index]
+                selected = cond_sets.get(clip_skip)
+                if selected is not None:
+                    cond, uncond = selected
         cond_composition, cond = prompt_parser.reconstruct_multicond_batch(cond, self.step)
         uncond = prompt_parser.reconstruct_cond_batch(uncond, self.step)
 
