@@ -592,49 +592,6 @@ def sample_euler_a2(model, x, sigmas, extra_args=None, callback=None, disable=No
     return x
 
 @torch.no_grad()
-def sample_euler_a4(model, x, sigmas, extra_args=None, callback=None, disable=None, noise_sampler=None):
-    """Euler ancestral sampler that averages four noise paths and extrapolates along their mean direction."""
-    extra_args = {} if extra_args is None else extra_args
-    eta = extra_args.get("eta", modules.shared.opts.euler_a4_eta)
-    s_noise = extra_args.get("s_noise", modules.shared.opts.euler_a4_s_noise)
-    extrapolation = extra_args.get("extrapolation", modules.shared.opts.euler_a4_extrapolation)
-
-    seed = extra_args.get("seed", None)
-    noise_sampler = default_noise_sampler(x, seed=seed) if noise_sampler is None else noise_sampler
-    s_in = x.new_ones([x.shape[0]])
-
-    for i in trange(len(sigmas) - 1, disable=disable):
-        denoised = model(x, sigmas[i] * s_in, **extra_args)
-        if callback is not None:
-            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
-
-        if sigmas[i + 1] == 0:
-            x = denoised
-            continue
-
-        downstep_ratio = 1 + (sigmas[i + 1] / sigmas[i] - 1) * eta
-        sigma_down = sigmas[i + 1] * downstep_ratio
-        alpha_ip1 = 1 - sigmas[i + 1]
-        alpha_down = 1 - sigma_down
-
-        sigma_down_i_ratio = sigma_down / sigmas[i]
-        deterministic_path = sigma_down_i_ratio * x + (1 - sigma_down_i_ratio) * denoised
-
-        if eta > 0 and s_noise != 0:
-            base = (alpha_ip1 / alpha_down) * deterministic_path
-            renoise_coeff = (sigmas[i + 1]**2 - sigma_down**2 * alpha_ip1**2 / alpha_down**2).clamp_min(0).sqrt()
-            noise_scale = s_noise * renoise_coeff
-
-            noises = [noise_sampler(sigmas[i], sigmas[i + 1]) for _ in range(4)]
-            paths = [base + n * noise_scale for n in noises]
-            merged = sum(paths) / 4
-            direction = merged - base
-            x = merged + extrapolation * direction
-        else:
-            x = deterministic_path
-    return x
-
-@torch.no_grad()
 def sample_dpmpp_2s_ancestral_cfg_pp(model, x, sigmas, extra_args=None, callback=None, disable=None, eta=1., s_noise=1., noise_sampler=None):
     
     """Ancestral sampling with DPM-Solver++(2S) second-order steps."""
@@ -3160,7 +3117,6 @@ def sample_custom(model, x, sigmas, extra_args=None, callback=None, disable=None
             'euler_comfy': sample_euler,
             'euler_ancestral_comfy': sample_euler_ancestral,
             'euler_a2': sample_euler_a2,
-            'euler_a4': sample_euler_a4,
             'heun_comfy': sample_heun,
             'dpmpp_2s_ancestral_comfy': sample_dpmpp_2s_ancestral,
             'dpmpp_sde_comfy': sample_dpmpp_sde,

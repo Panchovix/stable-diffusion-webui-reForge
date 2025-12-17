@@ -348,6 +348,9 @@ class VAE:
         self.packed_latent_spatial_factor = 2
         self.latent_shift_factor = 0.0
         self.latent_scale_factor = 1.0
+        self.latent_bn_running_mean = None
+        self.latent_bn_running_var = None
+        self.latent_bn_eps = 1.0e-5
 
         if config is None:
             if "decoder.mid.block_1.mix_factor" in sd:
@@ -405,9 +408,13 @@ class VAE:
                     self.first_stage_model = AutoencodingEngine(regularizer_config={'target': "ldm_patched.ldm.models.autoencoder.DiagonalGaussianRegularizer"},
                                                                 encoder_config={'target': "ldm_patched.ldm.modules.diffusionmodules.model.Encoder", 'params': ddconfig},
                                                                 decoder_config={'target': "ldm_patched.ldm.modules.diffusionmodules.model.Decoder", 'params': ddconfig})
-                if 'bn.running_mean' in sd:
-                    # Some VAEs use batch norm in the latent space; enable without changing channel count.
-                    ddconfig["batch_norm_latent"] = True
+                if 'bn.running_mean' in sd and 'bn.running_var' in sd:
+                    # Some Flux2 VAEs ship latent normalization statistics stored in a BN module
+                    # (affine=False, so only running stats exist). These stats are applied via
+                    # wrapper helpers rather than being part of the AutoencoderKL graph.
+                    self.latent_bn_running_mean = sd.pop('bn.running_mean')
+                    self.latent_bn_running_var = sd.pop('bn.running_var')
+                    sd.pop('bn.num_batches_tracked', None)
                 # Flux2 VAE latent scaling (latents were trained with scale/shift).
                 if self.latent_channels == 32:
                     self.latent_shift_factor = 0.0760
@@ -588,11 +595,69 @@ class VAE:
         n.upscale_index_formula = self.upscale_index_formula
         n.packed_latent_channels = self.packed_latent_channels
         n.packed_latent_spatial_factor = self.packed_latent_spatial_factor
+        n.latent_shift_factor = self.latent_shift_factor
+        n.latent_scale_factor = self.latent_scale_factor
+        n.latent_bn_running_mean = self.latent_bn_running_mean
+        n.latent_bn_running_var = self.latent_bn_running_var
+        n.latent_bn_eps = self.latent_bn_eps
         return n
 
     def set_packed_latents(self, packed_channels, spatial_factor=2):
         self.packed_latent_channels = packed_channels
         self.packed_latent_spatial_factor = spatial_factor
+
+    def set_latent_bn_stats(self, running_mean, running_var, eps: float = 1.0e-5):
+        self.latent_bn_running_mean = running_mean
+        self.latent_bn_running_var = running_var
+        self.latent_bn_eps = eps
+
+    def _apply_packed_latent_bn(self, latent, inverse: bool):
+        """
+        Apply (or invert) latent BN normalization stats stored as bn.running_mean/var.
+
+        These stats are defined over a spatially-packed representation (2x2) where
+        channels become `packed_channels * 4`.
+        """
+        mean = getattr(self, "latent_bn_running_mean", None)
+        var = getattr(self, "latent_bn_running_var", None)
+        if mean is None or var is None:
+            return latent
+        if latent.ndim < 4:
+            return latent
+
+        sf = 2
+        bn_channels = int(mean.shape[0])
+        if bn_channels % (sf ** 2) != 0:
+            return latent
+        packed_channels = bn_channels // (sf ** 2)
+        if latent.shape[1] != packed_channels:
+            return latent
+
+        h0 = latent.shape[-2]
+        w0 = latent.shape[-1]
+        pad_h = (sf - (h0 % sf)) % sf
+        pad_w = (sf - (w0 % sf)) % sf
+        if pad_h != 0 or pad_w != 0:
+            latent = torch.nn.functional.pad(latent, (0, pad_w, 0, pad_h))
+
+        h = latent.shape[-2]
+        w = latent.shape[-1]
+        # Pack 32@HxW -> 128@(H/2)x(W/2)
+        packed = latent.reshape(latent.shape[0], packed_channels, h // sf, sf, w // sf, sf)
+        packed = packed.permute(0, 1, 3, 5, 2, 4).reshape(latent.shape[0], bn_channels, h // sf, w // sf)
+
+        mean_t = mean.to(device=packed.device, dtype=packed.dtype).view(1, bn_channels, 1, 1)
+        var_t = var.to(device=packed.device, dtype=packed.dtype).view(1, bn_channels, 1, 1)
+        denom = (var_t + float(getattr(self, "latent_bn_eps", 1.0e-5))) ** 0.5
+        if inverse:
+            packed = packed * denom + mean_t
+        else:
+            packed = (packed - mean_t) / denom
+
+        # Unpack 128@(H/2)x(W/2) -> 32@HxW and crop back if padded.
+        unpacked = packed.reshape(packed.shape[0], packed_channels, sf, sf, packed.shape[-2], packed.shape[-1])
+        unpacked = unpacked.permute(0, 1, 4, 2, 5, 3).reshape(packed.shape[0], packed_channels, packed.shape[-2] * sf, packed.shape[-1] * sf)
+        return unpacked[..., :h0, :w0]
 
     def _to_vae_latent(self, latent):
         packed_channels = getattr(self, "packed_latent_channels", None)
