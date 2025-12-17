@@ -44,7 +44,6 @@ class AlterSampler(sd_samplers_kdiffusion.KDiffusionSampler):
             'deis': k_diffusion_sampling.sample_deis,
             'euler_cfg_pp': k_diffusion_sampling.sample_euler_cfg_pp,
             'euler_ancestral_cfg_pp': k_diffusion_sampling.sample_euler_ancestral_cfg_pp,
-            'sample_euler_ancestral_RF': k_diffusion_sampling.sample_euler_ancestral_RF,
             'dpmpp_2s_ancestral_cfg_pp': k_diffusion_sampling.sample_dpmpp_2s_ancestral_cfg_pp,
             'sample_dpmpp_2s_ancestral_RF': k_diffusion_sampling.sample_dpmpp_2s_ancestral_RF,
             'dpmpp_2s_ancestral_cfg_pp_dyn': k_diffusion_sampling.sample_dpmpp_2s_ancestral_cfg_pp_dyn,
@@ -271,6 +270,4 @@ samplers_data_alter = [
     sd_samplers_common.SamplerData('DPM++ 2S Ancestral CFG++ Dyn', build_constructor(sampler_name='dpmpp_2s_ancestral_cfg_pp_dyn'), ['dpmpp_2s_ancestral_cfg_pp_dyn'], {}),
     sd_samplers_common.SamplerData('DPM++ 2S Ancestral CFG++ Intern', build_constructor(sampler_name='dpmpp_2s_ancestral_cfg_pp_intern'), ['dpmpp_2s_ancestral_cfg_pp_intern'], {}),
     sd_samplers_common.SamplerData('Custom Sampler', build_constructor(sampler_name='custom_sampler'), ['custom_sampler'], {}),
-    #sd_samplers_common.SamplerData('Euler A RF', build_constructor(sampler_name='sample_euler_ancestral_RF'), ['sample_euler_ancestral_RF'], {}),
-    # sd_samplers_common.SamplerData('DPM++ 2S Ancestral RF', build_constructor(sampler_name='sample_dpmpp_2s_ancestral_RF'), ['sample_dpmpp_2s_ancestral_RF'], {}),
 ]

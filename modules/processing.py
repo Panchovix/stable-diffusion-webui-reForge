@@ -1943,3 +1943,4 @@ class StableDiffusionProcessingImg2Img(StableDiffusionProcessing):
 
     def get_token_merging_ratio(self, for_hr=False):
         return self.token_merging_ratio or ("token_merging_ratio" in self.override_settings and opts.token_merging_ratio) or opts.token_merging_ratio_img2img or opts.token_merging_ratio
+
