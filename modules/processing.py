@@ -232,6 +232,8 @@ class StableDiffusionProcessing:
 
     latents_after_sampling = []
     pixels_after_sampling = []
+    dynamic_clip_skip_schedule: list | None = field(default=None, init=False)
+    dynamic_clip_skip_sets: dict | None = field(default=None, init=False)
 
     def __post_init__(self):
         if self.sampler_index is not None:
@@ -258,6 +260,9 @@ class StableDiffusionProcessing:
 
         self.cached_uc = StableDiffusionProcessing.cached_uc
         self.cached_c = StableDiffusionProcessing.cached_c
+
+        self.dynamic_clip_skip_schedule = None
+        self.dynamic_clip_skip_sets = None
 
         self.extra_result_images = []
         self.latents_after_sampling = []
@@ -462,6 +467,10 @@ class StableDiffusionProcessing:
             hires_steps,
             use_old_scheduling,
             opts.CLIP_stop_at_last_layers,
+            opts.dynamic_clip_skip_enabled,
+            opts.dynamic_clip_skip_start,
+            opts.dynamic_clip_skip_use_schedule,
+            opts.dynamic_clip_skip_schedule_values,
             shared.sd_model.sd_checkpoint_info,
             extra_network_data,
             opts.sdxl_crop_left,
@@ -472,6 +481,44 @@ class StableDiffusionProcessing:
             opts.cache_fp16_weight,
             opts.emphasis,
         )
+
+    def _minimal_clip_skip(self):
+        model = self.sd_model or shared.sd_model
+        cond_model = getattr(model, "cond_stage_model", None) if model is not None else None
+        return getattr(cond_model, "minimal_clip_skip", 1)
+
+    def _build_dynamic_clip_skip_schedule(self, total_steps, start):
+        schedule = []
+        current = int(start)
+        for _ in range(total_steps):
+            schedule.append(current)
+            if current > 2:
+                current -= 1
+            if current < 2:
+                current = 2
+        return schedule
+
+    def _parse_dynamic_schedule(self, total_steps, minimal_clip_skip):
+        raw = opts.dynamic_clip_skip_schedule_values or ""
+        parts = [p.strip() for p in raw.replace(";", ",").split(",") if p.strip() != ""]
+        values = []
+        for p in parts:
+            try:
+                v = int(float(p))
+                v = max(v, 2, minimal_clip_skip)
+                v = min(v, 12)
+                values.append(v)
+            except Exception:
+                continue
+
+        if not values:
+            return None
+
+        schedule = []
+        for i in range(total_steps):
+            idx = min(i, len(values) - 1)
+            schedule.append(values[idx])
+        return schedule
 
     def get_conds_with_caching(self, function, required_prompts, steps, caches, extra_network_data, hires_steps=None):
         """
@@ -519,8 +566,59 @@ class StableDiffusionProcessing:
         self.step_multiplier = total_steps // self.steps
         self.firstpass_steps = total_steps
 
-        self.uc = self.get_conds_with_caching(prompt_parser.get_learned_conditioning, negative_prompts, total_steps, [self.cached_uc], self.extra_network_data)
-        self.c = self.get_conds_with_caching(prompt_parser.get_multicond_learned_conditioning, prompts, total_steps, [self.cached_c], self.extra_network_data)
+        self.dynamic_clip_skip_schedule = None
+        self.dynamic_clip_skip_sets = None
+
+        if opts.dynamic_clip_skip_enabled:
+            minimal_clip_skip = self._minimal_clip_skip()
+            schedule = None
+            custom_schedule_used = False
+
+            if opts.dynamic_clip_skip_use_schedule:
+                schedule = self._parse_dynamic_schedule(total_steps, minimal_clip_skip)
+                custom_schedule_used = schedule is not None
+
+            if schedule is None:
+                start_clip_skip = max(int(opts.dynamic_clip_skip_start), 2, minimal_clip_skip)
+                start_clip_skip = min(start_clip_skip, 12)
+                schedule = self._build_dynamic_clip_skip_schedule(total_steps, start_clip_skip)
+            else:
+                start_clip_skip = schedule[0] if schedule else max(int(opts.dynamic_clip_skip_start), 2, minimal_clip_skip)
+
+            unique_clip_skips = list(dict.fromkeys(schedule))
+
+            original_clip_skip = opts.CLIP_stop_at_last_layers
+            cond_sets = {}
+            try:
+                for clip_skip in unique_clip_skips:
+                    opts.CLIP_stop_at_last_layers = clip_skip
+                    uc = self.get_conds_with_caching(prompt_parser.get_learned_conditioning, negative_prompts, total_steps, [self.cached_uc], self.extra_network_data)
+                    c = self.get_conds_with_caching(prompt_parser.get_multicond_learned_conditioning, prompts, total_steps, [self.cached_c], self.extra_network_data)
+                    cond_sets[clip_skip] = (c, uc)
+            finally:
+                opts.CLIP_stop_at_last_layers = original_clip_skip
+
+            self.dynamic_clip_skip_schedule = schedule
+            self.dynamic_clip_skip_sets = cond_sets
+
+            selected_clip_skip = schedule[0] if len(schedule) > 0 else original_clip_skip
+            selected_clip_skip = selected_clip_skip if selected_clip_skip in cond_sets else original_clip_skip
+            if selected_clip_skip in cond_sets:
+                self.c, self.uc = cond_sets[selected_clip_skip]
+            else:
+                self.uc = self.get_conds_with_caching(prompt_parser.get_learned_conditioning, negative_prompts, total_steps, [self.cached_uc], self.extra_network_data)
+                self.c = self.get_conds_with_caching(prompt_parser.get_multicond_learned_conditioning, prompts, total_steps, [self.cached_c], self.extra_network_data)
+
+            self.clip_skip = start_clip_skip
+            if custom_schedule_used:
+                self.extra_generation_params["Dynamic clip skip schedule"] = opts.dynamic_clip_skip_schedule_values or ",".join(map(str, schedule))
+            else:
+                self.extra_generation_params["Dynamic clip skip"] = f"{start_clip_skip}->2"
+                self.extra_generation_params["Dynamic clip skip start"] = start_clip_skip
+        else:
+            self.uc = self.get_conds_with_caching(prompt_parser.get_learned_conditioning, negative_prompts, total_steps, [self.cached_uc], self.extra_network_data)
+            self.c = self.get_conds_with_caching(prompt_parser.get_multicond_learned_conditioning, prompts, total_steps, [self.cached_c], self.extra_network_data)
+            self.clip_skip = opts.CLIP_stop_at_last_layers
 
     def get_conds(self):
         return self.c, self.uc
