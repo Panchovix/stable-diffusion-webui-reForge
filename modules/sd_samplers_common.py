@@ -35,8 +35,31 @@ def setup_img2img_steps(p, steps=None):
     return steps, t_enc
 
 
-approximation_indexes = {"Full": 0, "Approx NN": 1, "Approx cheap": 2, "TAESD": 3}
+approximation_indexes = {"Full": 0, "Approx NN": 1, "Approx cheap": 2, "TAESD": 3, "Approx PCA": 4}
 
+
+_pca_cache = {}
+
+def _pca_project_latent(sample):
+    """Cheap projection of arbitrary-channel latents to RGB using a cached random orthonormal basis."""
+    # sample: B,C,H,W
+    key = (sample.shape[1], sample.device.type)
+    proj = _pca_cache.get(key, None)
+    if proj is None:
+        with torch.no_grad():
+            rand = torch.randn(sample.shape[1], 3, device=sample.device, dtype=torch.float32)
+            # Orthonormalize for stable scaling.
+            q, _ = torch.linalg.qr(rand, mode="reduced")
+            proj = q.to(sample.dtype)
+        _pca_cache[key] = proj
+
+    # Project channels -> 3
+    x = torch.einsum("bchw,cp->bhwp", sample, proj)
+    # Normalize to [-1,1] to mimic decoded output range.
+    max_abs = torch.amax(torch.abs(x), dim=(1,2,3), keepdim=True).clamp_min(1e-6)
+    x = (x / max_abs).clamp_(-1, 1)
+    x = x.permute(0, 3, 1, 2)  # B,3,H,W
+    return x
 
 def samples_to_images_tensor(sample, approximation=None, model=None):
     """Transforms 4-channel latent space images into 3-channel RGB image tensors, with values in range [-1, 1]."""
@@ -46,6 +69,10 @@ def samples_to_images_tensor(sample, approximation=None, model=None):
         if approximation == 0:
             approximation = 1
 
+    # For non-4-channel latents (e.g., SD3/Flux2), use PCA projection as a cheap preview.
+    if sample.shape[1] != 4 and approximation in (1, 2, 3):
+        approximation = 4
+
     if approximation == 2:
         x_sample = sd_vae_approx.cheap_approximation(sample)
     elif approximation == 1:
@@ -53,6 +80,8 @@ def samples_to_images_tensor(sample, approximation=None, model=None):
     elif approximation == 3:
         x_sample = sd_vae_taesd.decoder_model()(sample.to(devices.device, devices.dtype)).detach()
         x_sample = x_sample * 2 - 1
+    elif approximation == 4:
+        x_sample = _pca_project_latent(sample)
     else:
         if model is None:
             model = shared.sd_model
