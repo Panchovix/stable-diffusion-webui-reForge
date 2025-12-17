@@ -200,6 +200,10 @@ options_templates.update(options_section(('sd', "Stable Diffusion", "sd"), {
     "comma_padding_backtrack": OptionInfo(20, "Prompt word wrap length limit", gr.Slider, {"minimum": 0, "maximum": 74, "step": 1}).info("in tokens - for texts shorter than specified, if they don't fit into 75 token limit, move them to the next 75 token chunk"),
     "sdxl_clip_l_skip": OptionInfo(False, "Clip skip SDXL", gr.Checkbox).info("Enable Clip skip for the secondary clip model in sdxl. Has no effect on SD 1.5 or SD 2.0/2.1."),
     "CLIP_stop_at_last_layers": OptionInfo(1, "Clip skip", gr.Slider, {"minimum": 1, "maximum": 12, "step": 1}, infotext="Clip skip").link("wiki", "https://github.com/AUTOMATIC1111/stable-diffusion-webui/wiki/Features#clip-skip").info("ignore last layers of CLIP network; 1 ignores none, 2 ignores one layer"),
+    "dynamic_clip_skip_enabled": OptionInfo(False, "Dynamic clip skip ramp", gr.Checkbox).info("Start sampling with a higher clip skip and decrease by 1 each step until reaching 2."),
+    "dynamic_clip_skip_start": OptionInfo(4, "Dynamic clip skip: starting clip skip", gr.Slider, {"minimum": 2, "maximum": 12, "step": 1}).info("Only used when dynamic clip skip ramp is enabled; will clamp to model minimum and 2+."),
+    "dynamic_clip_skip_use_schedule": OptionInfo(False, "Dynamic clip skip: use custom schedule", gr.Checkbox).info("Use a custom per-step clip skip schedule instead of the default ramp."),
+    "dynamic_clip_skip_schedule_values": OptionInfo("", "Dynamic clip skip: schedule (comma-separated)", component_args={"placeholder": "e.g. 9,7,4,3,3,3,2"}).info("Numbers are clip-skip values per step; if steps exceed the list, the last value repeats."),
     "upcast_attn": OptionInfo(False, "Upcast cross attention layer to float32"),
     "randn_source": OptionInfo("GPU", "Random number generator source.", gr.Radio, {"choices": ["GPU", "CPU", "NV"]}, infotext="RNG").info("changes seeds drastically; use CPU to produce the same picture across different videocard vendors; use NV to produce same picture as on NVidia videocards"),
     "tiling": OptionInfo(False, "Tiling", infotext='Tiling').info("produce a tileable picture"),
@@ -540,6 +544,13 @@ options_templates.update(options_section(('sampler-params', "reForge Sampler Par
     "euler_ancestral_og_eta": OptionInfo(1.0, "Euler Ancestral - eta", gr.Slider, {"minimum": -1.0, "maximum": 2.0, "step": 0.01}, infotext='Euler Ancestral eta'),
     "euler_ancestral_og_s_noise": OptionInfo(1.0, "Euler Ancestral - s_noise", gr.Slider, {"minimum": -1.0, "maximum": 2.0, "step": 0.1}, infotext='Euler Ancestral s_noise'),
 
+    # Euler A2 Parameters
+    "euler_a2_group": OptionHTML("<br><h3>Euler A2 Settings</h3>"),
+    "euler_a2_eta": OptionInfo(1.0, "Euler A2 - eta", gr.Slider, {"minimum": -1.0, "maximum": 2.0, "step": 0.01}, infotext='Euler A2 eta').info('Default = 1.0; noise scale factor used by Euler A2'),
+    "euler_a2_s_noise": OptionInfo(1.0, "Euler A2 - s_noise", gr.Slider, {"minimum": -1.0, "maximum": 2.0, "step": 0.1}, infotext='Euler A2 s_noise').info('Default = 1.0; controls strength of added noise for Euler A2'),
+    "euler_a2_extrapolation": OptionInfo(0.425, "Euler A2 - extrapolation", gr.Slider, {"minimum": 0.0, "maximum": 1.5, "step": 0.05}, infotext='Euler A2 extrapolation').info('Extra push along the averaged path; 0 = average only'),
+
+
     # Heun Parameters
     "heun_group": OptionHTML("<br><h3>Heun Settings</h3>"),
     "heun_og_s_churn": OptionInfo(0.0, "Heun - s_churn", gr.Slider, {"minimum": -1.0, "maximum": 2.0, "step": 0.01}, infotext='Heun s_churn'),
@@ -774,7 +785,7 @@ options_templates.update(options_section(('sampler-params', "Custom Sampler Para
     # Common sampler parameters
     "custom_sampler_name": OptionInfo("euler_comfy", "Custom Sampler - Type", gr.Dropdown, {
         "choices": [
-            "euler_comfy", "euler_ancestral_comfy", "heun_comfy", 
+            "euler_comfy", "euler_ancestral_comfy", "euler_a2", "heun_comfy", 
             "dpmpp_2s_ancestral_comfy", "dpmpp_sde_comfy", "dpmpp_2m_comfy",
             "dpmpp_2m_sde_comfy", "dpmpp_3m_sde_comfy", "euler_ancestral_turbo",
             "dpmpp_2m_turbo", "dpmpp_2m_sde_turbo", "ddpm", "heunpp2",

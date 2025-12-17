@@ -798,7 +798,15 @@ def set_model_type(model, state_dict):
 
 
 def set_model_fields(model):
-    if not hasattr(model, 'latent_channels'):
+    # Prefer latent info from the wrapped model/latent_format when available.
+    if hasattr(model, "latent_format"):
+        model.latent_channels = getattr(model.latent_format, "latent_channels", 4)
+        model.latent_dimensions = getattr(model.latent_format, "latent_dimensions", 2)
+    elif hasattr(model, "model") and hasattr(getattr(model, "model"), "latent_format"):
+        lf = model.model.latent_format
+        model.latent_channels = getattr(lf, "latent_channels", 4)
+        model.latent_dimensions = getattr(lf, "latent_dimensions", 2)
+    elif not hasattr(model, 'latent_channels'):
         model.latent_channels = 4
 
 

@@ -189,8 +189,7 @@ def resolve_vae(checkpoint_file) -> VaeResolution:
 def load_vae_dict(filename, map_location):
     vae_ckpt = sd_models.read_state_dict(filename, map_location=map_location)
     vae_dict_1 = {k: v for k, v in vae_ckpt.items() if k[0:4] != "loss" and k not in vae_ignore_keys}
-    if 'decoder.up_blocks.0.resnets.0.norm1.weight' in vae_dict_1.keys(): #diffusers format
-        vae_dict_1 = diffusers_convert.convert_vae_state_dict(vae_dict_1)
+    vae_dict_1 = _normalize_vae_state_dict(vae_dict_1, source=filename)
     return vae_dict_1
 
 
@@ -205,7 +204,8 @@ def load_vae(model, vae_file=None, vae_source="from unknown source"):
             # use vae checkpoint cache
             print(f"Loading VAE weights {vae_source}: cached {get_filename(vae_file)}")
             store_base_vae(model)
-            _load_vae_dict(model, checkpoints_loaded[vae_file])
+            vae_dict_1 = _normalize_vae_state_dict(checkpoints_loaded[vae_file], source=f"cache:{vae_file}")
+            _load_vae_dict(model, vae_dict_1)
         else:
             assert os.path.isfile(vae_file), f"VAE {vae_source} doesn't exist: {vae_file}"
             print(f"Loading VAE weights {vae_source}: {vae_file}")
@@ -239,7 +239,136 @@ def load_vae(model, vae_file=None, vae_source="from unknown source"):
 
 # don't call this from outside
 def _load_vae_dict(model, vae_dict_1):
-    model.first_stage_model.load_state_dict(vae_dict_1)
+    # Prefer loading into the Forge VAE wrapper if available, because decode/encode in Forge uses it directly.
+    forge_vae = getattr(getattr(model, "forge_objects", None), "vae", None)
+    target_first_stage = getattr(forge_vae, "first_stage_model", None) if forge_vae is not None else None
+    if target_first_stage is None:
+        target_first_stage = model.first_stage_model
+
+    # Capture optional Flux2 latent BN stats for the wrapper (Comfy-style weights sometimes store these as bn.* buffers).
+    if forge_vae is not None and hasattr(forge_vae, "set_latent_bn_stats"):
+        if "bn.running_mean" in vae_dict_1 and "bn.running_var" in vae_dict_1:
+            forge_vae.set_latent_bn_stats(vae_dict_1["bn.running_mean"], vae_dict_1["bn.running_var"])
+            print("VAE load: detected bn.* latent stats (ignored for compatibility).")
+        else:
+            # Prevent stale stats when switching VAEs.
+            forge_vae.set_latent_bn_stats(None, None)
+
+    state_dict_to_load = vae_dict_1
+    if any(k.startswith("bn.") for k in vae_dict_1.keys()):
+        # The underlying AutoencoderKL does not define a `bn` module; strip these keys before strict loading.
+        state_dict_to_load = {k: v for k, v in vae_dict_1.items() if not k.startswith("bn.")}
+
+    try:
+        # strict=True ensures we don't silently ignore a VAE that didn't actually load.
+        target_first_stage.load_state_dict(state_dict_to_load, strict=True)
+        # Keep the canonical reference consistent.
+        if forge_vae is not None:
+            forge_vae.first_stage_model = target_first_stage
+            model.first_stage_model = target_first_stage
+            print(f"VAE load: loaded into existing Forge VAE wrapper ({_summarize_vae_first_stage(target_first_stage)})")
+        else:
+            print(f"VAE load: loaded into model.first_stage_model ({_summarize_vae_first_stage(target_first_stage)})")
+    except RuntimeError as e:
+        # If the current VAE architecture doesn't match, rebuild a VAE wrapper that matches the weights
+        # (e.g. flux2/BN VAEs) and make sure Forge references are updated too.
+        print(f"VAE load: state_dict mismatch, rebuilding VAE wrapper ({type(e).__name__}: {e})")
+
+        from ldm_patched.modules import sd as ldm_sd
+
+        device = getattr(forge_vae, "device", None)
+        rebuilt = ldm_sd.VAE(sd=vae_dict_1, device=device)
+        rebuilt.throw_exception_if_invalid()
+
+        # Preserve packing behavior driven by the UNet model config (needed for flux2 packed latents).
+        try:
+            model_config = model.forge_objects.unet.model.model_config if hasattr(model, "forge_objects") else None
+            if model_config is not None and hasattr(model_config, "packed_vae_latent_channels"):
+                rebuilt.set_packed_latents(
+                    model_config.packed_vae_latent_channels,
+                    getattr(model_config, "packed_vae_spatial_factor", 2),
+                )
+        except Exception as pack_e:
+            print(f"VAE load: warning, could not apply packed-latent settings ({pack_e})")
+
+        if hasattr(model, "forge_objects") and getattr(model.forge_objects, "vae", None) is not None:
+            model.forge_objects.vae = rebuilt
+            if hasattr(model, "forge_objects_original") and getattr(model.forge_objects_original, "vae", None) is not None:
+                model.forge_objects_original.vae = rebuilt
+            if hasattr(model, "forge_objects_after_applying_lora") and getattr(model.forge_objects_after_applying_lora, "vae", None) is not None:
+                model.forge_objects_after_applying_lora.vae = rebuilt
+
+        model.first_stage_model = rebuilt.first_stage_model
+        print("VAE load: rebuilt VAE wrapper is now active.")
+
+
+def _summarize_vae_first_stage(first_stage_model) -> str:
+    try:
+        w = first_stage_model.decoder.conv_in.weight
+        shape = tuple(w.shape)
+        # The scalar read helps confirm that weights actually changed when swapping VAEs.
+        scalar = float(w.reshape(-1)[0].item())
+        return f"decoder.conv_in.weight={shape}, sample={scalar:.6g}"
+    except Exception:
+        return f"type={type(first_stage_model).__name__}"
+
+
+def _looks_like_vae_state_dict(sd: dict) -> bool:
+    if not sd:
+        return False
+    # Common LDM VAE keys
+    if "decoder.conv_in.weight" in sd or "encoder.conv_in.weight" in sd:
+        return True
+    # Diffusers VAE keys (before conversion)
+    if "decoder.up_blocks.0.resnets.0.norm1.weight" in sd:
+        return True
+    # A few other common patterns
+    return any(k.startswith("decoder.") or k.startswith("encoder.") for k in sd.keys())
+
+
+def _strip_prefix(sd: dict, prefix: str) -> dict:
+    out = {}
+    for k, v in sd.items():
+        if k.startswith(prefix):
+            out[k[len(prefix):]] = v
+    return out
+
+
+def _normalize_vae_state_dict(sd: dict, source: str = "unknown") -> dict:
+    """
+    Normalize external VAE checkpoints into the expected (unprefixed) LDM format.
+
+    External VAEs (especially flux2-based ones) often store weights under prefixes like
+    `first_stage_model.` or `vae.` which must be stripped before loading or format detection.
+    """
+    if not sd:
+        return sd
+
+    if _looks_like_vae_state_dict(sd):
+        out = sd
+    else:
+        # Try common prefixes used by checkpoints and loaders.
+        prefixes = [
+            "first_stage_model.",
+            "vae.",
+            "model.first_stage_model.",
+            "model.vae.",
+            "module.first_stage_model.",
+            "module.vae.",
+        ]
+        out = sd
+        for p in prefixes:
+            cand = _strip_prefix(sd, p)
+            if _looks_like_vae_state_dict(cand):
+                print(f"VAE load: stripped prefix {p!r} from {source}")
+                out = cand
+                break
+
+    # Convert diffusers VAE format to LDM format after prefix normalization.
+    if "decoder.up_blocks.0.resnets.0.norm1.weight" in out:
+        out = diffusers_convert.convert_vae_state_dict(out)
+
+    return out
 
 
 def clear_loaded_vae():
