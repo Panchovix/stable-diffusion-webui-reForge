@@ -28,7 +28,6 @@ samplers_k_diffusion = [
     ('DPM++ 3M SDE', 'sample_dpmpp_3m_sde', ['k_dpmpp_3m_sde'], {'scheduler': 'exponential', 'discard_next_to_last_sigma': True, "brownian_noise": True}),
     ('Euler a', 'sample_euler_ancestral', ['k_euler_a', 'k_euler_ancestral'], {"uses_ensd": True}),
     ('Euler A2', 'sample_euler_a2', ['k_euler_a2'], {"uses_ensd": True}),
-    ('Euler A4', 'sample_euler_a4', ['k_euler_a4'], {"uses_ensd": True}),
     ('Euler', 'sample_euler', ['k_euler'], {}),
     ('LMS', 'sample_lms', ['k_lms'], {}),
     ('Heun', 'sample_heun', ['k_heun'], {"second_order": True}),
@@ -313,5 +312,4 @@ class KDiffusionSampler(sd_samplers_common.Sampler):
         sampling_cleanup(unet_patcher)
 
         return samples
-
 

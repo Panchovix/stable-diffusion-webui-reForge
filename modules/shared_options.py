@@ -550,11 +550,6 @@ options_templates.update(options_section(('sampler-params', "reForge Sampler Par
     "euler_a2_s_noise": OptionInfo(1.0, "Euler A2 - s_noise", gr.Slider, {"minimum": -1.0, "maximum": 2.0, "step": 0.1}, infotext='Euler A2 s_noise').info('Default = 1.0; controls strength of added noise for Euler A2'),
     "euler_a2_extrapolation": OptionInfo(0.425, "Euler A2 - extrapolation", gr.Slider, {"minimum": 0.0, "maximum": 1.5, "step": 0.05}, infotext='Euler A2 extrapolation').info('Extra push along the averaged path; 0 = average only'),
 
-    # Euler A4 Parameters
-    "euler_a4_group": OptionHTML("<br><h3>Euler A4 Settings</h3>"),
-    "euler_a4_eta": OptionInfo(1.0, "Euler A4 - eta", gr.Slider, {"minimum": -1.0, "maximum": 2.0, "step": 0.01}, infotext='Euler A4 eta').info('Default = 1.0; noise scale factor used by Euler A4'),
-    "euler_a4_s_noise": OptionInfo(1.0, "Euler A4 - s_noise", gr.Slider, {"minimum": -1.0, "maximum": 2.0, "step": 0.1}, infotext='Euler A4 s_noise').info('Default = 1.0; controls strength of added noise for Euler A4'),
-    "euler_a4_extrapolation": OptionInfo(0.95, "Euler A4 - extrapolation", gr.Slider, {"minimum": 0.0, "maximum": 1.5, "step": 0.05}, infotext='Euler A4 extrapolation').info('Extra push along the averaged path; 0 = average only'),
 
     # Heun Parameters
     "heun_group": OptionHTML("<br><h3>Heun Settings</h3>"),
@@ -790,7 +785,7 @@ options_templates.update(options_section(('sampler-params', "Custom Sampler Para
     # Common sampler parameters
     "custom_sampler_name": OptionInfo("euler_comfy", "Custom Sampler - Type", gr.Dropdown, {
         "choices": [
-            "euler_comfy", "euler_ancestral_comfy", "euler_a2", "euler_a4", "heun_comfy", 
+            "euler_comfy", "euler_ancestral_comfy", "euler_a2", "heun_comfy", 
             "dpmpp_2s_ancestral_comfy", "dpmpp_sde_comfy", "dpmpp_2m_comfy",
             "dpmpp_2m_sde_comfy", "dpmpp_3m_sde_comfy", "euler_ancestral_turbo",
             "dpmpp_2m_turbo", "dpmpp_2m_sde_turbo", "ddpm", "heunpp2",
