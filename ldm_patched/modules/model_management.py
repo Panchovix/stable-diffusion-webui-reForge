@@ -397,12 +397,12 @@ ALWAYS_VRAM_OFFLOAD = args.always_offload_from_vram
 if ALWAYS_VRAM_OFFLOAD:
     print("Always offload VRAM")
 
-# PIN_SHARED_MEMORY = args.pin_shared_memory
+PIN_SHARED_MEMORY = args.pin_shared_memory
 
-# if PIN_SHARED_MEMORY:
-#     print("Always pin shared GPU memory")
+if PIN_SHARED_MEMORY:
+    print("Always pin shared GPU memory")
 
-DISABLE_SMART_MEMORY = args.pin_shared_memory
+DISABLE_SMART_MEMORY = args.disable_smart_memory
 
 if DISABLE_SMART_MEMORY:
     # logging.info("Disabling smart memory management")
