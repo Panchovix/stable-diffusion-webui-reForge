@@ -142,6 +142,7 @@ vram_group.add_argument("--always-normal-vram", action="store_true", help="Used 
 vram_group.add_argument("--always-low-vram", action="store_true", help="Split the unet in parts to use less vram.")
 vram_group.add_argument("--always-no-vram", action="store_true", help="When lowvram isn't enough.")
 vram_group.add_argument("--always-cpu", action="store_true", help="To use the CPU for everything (slow).")
+vram_group.add_argument("--disable-smart-memory", action="store_true")
 
 parser.add_argument("--reserve-vram", type=float, default=None, help="Set the amount of vram in GB you want to reserve for use by your OS/other software. By default some amount is reverved depending on your OS.")
 
