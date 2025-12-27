@@ -48,35 +48,6 @@ ranbooru_cache.sqlite
 webui.bundle
 webui.cert
 webui.key
-webui-user-7860-gpu0-nopass-noalwaysgpu.bat
-webui-user-7860-gpu0-nopass.bat
-webui-user-7860-gpu1-nopass-noalwaysgpu.bat
-webui-user-7860-gpu1-nopass.bat
-webui-user-7860-gpu2-nopass-noalwaysgpu.bat
-webui-user-7860-gpu2-nopass.bat
-webui-user-7980-gpu0-noalwaysgpu.bat
-webui-user-7980-gpu0.bat
-webui-user-7980-gpu1 - sdpa.bat
-webui-user-7980-gpu1-noalwaysgpu-fp8_test.bat
-webui-user-7980-gpu1-noalwaysgpu-tests.bat
-webui-user-7980-gpu1-noalwaysgpu.bat
-webui-user-7980-gpu1.bat
-webui-user-7980-gpu2-noalwaysgpu.bat
-webui-user-7980-gpu2.bat
-webui-user-7981-gpu0 - nopass.bat
-webui-user-7981-gpu0.bat
-webui-user-7981-gpu2-noalwaysgpu-nopass.bat
-webui-user-7981-gpu2.bat
-webui-user-7982-gpu0.bat
-webui-user-7982-gpu1.bat
-webui-user-7982-gpu2 - no pass.bat
-webui-user-7982-gpu2.bat
-webui-user-7991-gpu0 - no pass.bat
-webui-user-7991-gpu0.bat
-webui-user-7991-gpu1.bat
-webui-user-7991-gpu2 - no pass.bat
-webui-user-7991-gpu2.bat
-webui-user-7980-gpu1_main.bat
 main.obj
 main.lib
 main.exp
@@ -86,3 +57,11 @@ webui-user-8160-gpu3-nopass.sh
 webui-user-8160-gpu3-nopass_fp8.sh
 /models/VAE/*
 !/models/VAE/Put VAE here.txt
+*.sh
+*.bat
+
+!webui.bat
+!webui.sh
+!webui-macos-env.sh
+!webui-user.bat
+!webui-user.sh
