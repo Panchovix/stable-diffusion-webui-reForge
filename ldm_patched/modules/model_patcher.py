@@ -564,9 +564,10 @@ class ModelPatcher:
         inplace_update = self.weight_inplace_update or inplace_update
 
         if key not in self.backup:
-            # if ldm_patched.modules.model_management.PIN_SHARED_MEMORY and ldm_patched.modules.model_management.is_device_cpu(self.offload_device):
-            #     backup_weight = backup_weight.pin_memory()
-            self.backup[key] = collections.namedtuple('Dimension', ['weight', 'inplace_update'])(weight.to(device=self.offload_device, copy=inplace_update), inplace_update)
+            backup_weight = weight.to(device=self.offload_device, copy=inplace_update)
+            if ldm_patched.modules.model_management.PIN_SHARED_MEMORY and ldm_patched.modules.model_management.is_device_cpu(self.offload_device):
+                backup_weight = backup_weight.pin_memory()
+            self.backup[key] = collections.namedtuple('Dimension', ['weight', 'inplace_update'])(backup_weight, inplace_update)
 
         if device_to is not None:
             temp_weight = ldm_patched.modules.model_management.cast_to_device(weight, device_to, torch.float32, copy=True)
@@ -803,8 +804,8 @@ class ModelPatcher:
                     if move_weight:
                         cast_weight = self.force_cast_weights
                         m.to(device_to)
-                        # if ldm_patched.modules.model_management.PIN_SHARED_MEMORY and ldm_patched.modules.model_management.is_device_cpu(device_to):
-                        #     m._apply(lambda x: x.pin_memory())
+                        if ldm_patched.modules.model_management.PIN_SHARED_MEMORY and ldm_patched.modules.model_management.is_device_cpu(device_to):
+                            m._apply(lambda x: x.pin_memory())
                         module_mem += move_weight_functions(m, device_to)
                         if lowvram_possible:
                             if weight_key in self.patches:
@@ -1155,9 +1156,10 @@ class ModelPatcher:
                 used = memory_counter.use(weight)
                 if used:
                     target_device = weight.device
-            # if ldm_patched.modules.model_management.PIN_SHARED_MEMORY and ldm_patched.modules.model_management.is_device_cpu(target_device):
-            #     backup_weight = backup_weight.pin_memory()
-            self.hook_backup[key] = (weight.to(device=target_device, copy=True), weight.device)
+            backup_weight = weight.to(device=target_device, copy=True)
+            if ldm_patched.modules.model_management.PIN_SHARED_MEMORY and ldm_patched.modules.model_management.is_device_cpu(target_device):
+                backup_weight = backup_weight.pin_memory()
+            self.hook_backup[key] = (backup_weight, weight.device)
         ldm_patched.modules.utils.copy_to_param(self.model, key, cached_weights[key][0].to(device=cached_weights[key][1]))
 
     def clear_cached_hook_weights(self):
@@ -1176,9 +1178,10 @@ class ModelPatcher:
                 used = memory_counter.use(weight)
                 if used:
                     target_device = weight.device
-            # if ldm_patched.modules.model_management.PIN_SHARED_MEMORY and ldm_patched.modules.model_management.is_device_cpu(target_device):
-            #     backup_weight = backup_weight.pin_memory()
-            self.hook_backup[key] = (weight.to(device=target_device, copy=True), weight.device)
+            backup_weight = weight.to(device=target_device, copy=True)
+            if ldm_patched.modules.model_management.PIN_SHARED_MEMORY and ldm_patched.modules.model_management.is_device_cpu(target_device):
+                backup_weight = backup_weight.pin_memory()
+            self.hook_backup[key] = (backup_weight, weight.device)
         # TODO: properly handle LowVramPatch, if it ends up an issue
         temp_weight = ldm_patched.modules.model_management.cast_to_device(weight, weight.device, torch.float32, copy=True)
         if convert_func is not None:
