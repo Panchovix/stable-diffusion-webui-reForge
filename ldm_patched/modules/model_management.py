@@ -733,10 +733,16 @@ def cleanup_models_gc():
         gc.collect()
         soft_empty_cache()
 
+        to_delete = []
         for i in range(len(current_loaded_models)):
             cur = current_loaded_models[i]
             if cur.is_dead():
-                print("WARNING, memory leak with model {}. Please make sure it is not being referenced from somewhere.".format(cur.real_model().__class__.__name__))
+                print("WARNING, memory leak with model {}. It will be removed from the model list.".format(cur.real_model().__class__.__name__))
+                to_delete.append(i)
+        
+        if to_delete:
+            for i in sorted(to_delete, reverse=True):
+                current_loaded_models.pop(i)
 
 
 
