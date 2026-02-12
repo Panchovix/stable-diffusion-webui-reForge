@@ -1,7 +1,9 @@
 import logging
+import json
+import os
 import gradio as gr
 import torch
-from modules import scripts
+from modules import scripts, shared
 from modules.shared import opts
 from ldm_patched.modules import model_sampling
 from advanced_model_sampling.nodes_model_advanced import (
@@ -9,6 +11,9 @@ from advanced_model_sampling.nodes_model_advanced import (
     ModelSamplingStableCascade, ModelSamplingSD3, ModelSamplingAuraFlow, ModelSamplingFlux
 )
 #checkpoint 1
+
+MISSING = object()
+VALID_SAMPLING_MODES = ("Discrete", "Continuous EDM", "Continuous V", "Stable Cascade", "SD3", "Aura Flow", "Flux")
 
 class FlowMatchingDenoiser(torch.nn.Module):
     """Custom denoiser for flow matching models that uses CONST prediction and patched model_sampling sigmas"""
@@ -174,7 +179,7 @@ class AdvancedModelSamplingScript(scripts.Script):
         self.continuous_v_sigma_max = 500.0
         self.continuous_v_sigma_min = 0.03
         self.stable_cascade_shift = 2.0
-        self.sd3_shift = 2.5
+        self.sd3_shift = 4.5
         self.aura_flow_shift = 1.73
         self.flux_max_shift = 1.15
         self.flux_base_shift = 0.5
@@ -189,19 +194,101 @@ class AdvancedModelSamplingScript(scripts.Script):
     def show(self, is_img2img):
         return scripts.AlwaysVisible
 
+    def _read_ui_config(self):
+        ui_config_path = getattr(getattr(shared, "cmd_opts", None), "ui_config_file", None)
+        if not ui_config_path:
+            return {}
+
+        try:
+            with open(ui_config_path, "r", encoding="utf8") as file:
+                loaded = json.load(file)
+                return loaded if isinstance(loaded, dict) else {}
+        except Exception as e:
+            logging.debug(f"[Advanced Sampling] Could not read ui-config file: {e}")
+            return {}
+
+    def _ui_config_value(self, tabname, label, default=MISSING):
+        ui_config = self._read_ui_config()
+        script_source = os.path.basename(__file__)
+        key = f"customscript/{script_source}/{tabname}/{label}/value"
+        return ui_config.get(key, default)
+
+    def _coerce_float(self, value, default):
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
+    def _saved_mode(self, tabname):
+        mode = self._ui_config_value(tabname, "Sampling Mode", self.sampling_mode)
+        return mode if mode in VALID_SAMPLING_MODES else self.sampling_mode
+
+    def _saved_mode_value(self, tabname, initial_mode, mode_name, new_label, legacy_label, default):
+        saved_new_value = self._ui_config_value(tabname, new_label, MISSING)
+        if saved_new_value is not MISSING:
+            return self._coerce_float(saved_new_value, default)
+
+        # Backward-compat path: only map legacy duplicated labels for the currently active mode.
+        if initial_mode == mode_name:
+            saved_legacy_value = self._ui_config_value(tabname, legacy_label, MISSING)
+            if saved_legacy_value is not MISSING:
+                coerced_legacy_value = self._coerce_float(saved_legacy_value, default)
+
+                # Legacy "Shift" often contains stale Stable Cascade default (2.0) due old key collision.
+                # Avoid re-applying that stale value for SD3/Aura Flow; prefer current defaults in that case.
+                if mode_name in ("SD3", "Aura Flow") and abs(coerced_legacy_value - 2.0) < 1e-9:
+                    return default
+
+                return coerced_legacy_value
+
+        return default
+
     def ui(self, *args, **kwargs):
+        is_img2img = bool(args[0]) if args else bool(kwargs.get("is_img2img", False))
+        tabname = "img2img" if is_img2img else "txt2img"
+        initial_mode = self._saved_mode(tabname)
+
+        continuous_edm_sigma_max_value = self._saved_mode_value(
+            tabname, initial_mode, "Continuous EDM",
+            "Sigma Max (Continuous EDM)", "Sigma Max", self.continuous_edm_sigma_max
+        )
+        continuous_edm_sigma_min_value = self._saved_mode_value(
+            tabname, initial_mode, "Continuous EDM",
+            "Sigma Min (Continuous EDM)", "Sigma Min", self.continuous_edm_sigma_min
+        )
+        continuous_v_sigma_max_value = self._saved_mode_value(
+            tabname, initial_mode, "Continuous V",
+            "Sigma Max (Continuous V)", "Sigma Max", self.continuous_v_sigma_max
+        )
+        continuous_v_sigma_min_value = self._saved_mode_value(
+            tabname, initial_mode, "Continuous V",
+            "Sigma Min (Continuous V)", "Sigma Min", self.continuous_v_sigma_min
+        )
+        stable_cascade_shift_value = self._saved_mode_value(
+            tabname, initial_mode, "Stable Cascade",
+            "Shift (Stable Cascade)", "Shift", self.stable_cascade_shift
+        )
+        sd3_shift_value = self._saved_mode_value(
+            tabname, initial_mode, "SD3",
+            "Shift (SD3)", "Shift", self.sd3_shift
+        )
+        aura_flow_shift_value = self._saved_mode_value(
+            tabname, initial_mode, "Aura Flow",
+            "Shift (Aura Flow)", "Shift", self.aura_flow_shift
+        )
+
         with gr.Accordion(open=False, label=self.title()):
             gr.HTML("<p><i>Adjust the settings for Advanced Model Sampling.</i></p>")
 
             enabled = gr.Checkbox(label="Enable Advanced Model Sampling", value=self.enabled)
 
             sampling_mode = gr.Radio(
-                ["Discrete", "Continuous EDM", "Continuous V", "Stable Cascade", "SD3", "Aura Flow", "Flux"],
+                list(VALID_SAMPLING_MODES),
                 label="Sampling Mode",
-                value=self.sampling_mode
+                value=initial_mode
             )
 
-            with gr.Group(visible=True) as discrete_group:
+            with gr.Group(visible=(initial_mode == "Discrete")) as discrete_group:
                 discrete_sampling = gr.Radio(
                     ["eps", "v_prediction", "lcm", "x0"],
                     label="Discrete Sampling Type",
@@ -209,29 +296,29 @@ class AdvancedModelSamplingScript(scripts.Script):
                 )
                 discrete_zsnr = gr.Checkbox(label="Zero SNR", value=self.discrete_zsnr)
 
-            with gr.Group(visible=False) as continuous_edm_group:
+            with gr.Group(visible=(initial_mode == "Continuous EDM")) as continuous_edm_group:
                 continuous_edm_sampling = gr.Radio(
                     ["v_prediction", "edm_playground_v2.5", "eps"],
                     label="Continuous EDM Sampling Type",
                     value=self.continuous_edm_sampling
                 )
-                continuous_edm_sigma_max = gr.Slider(label="Sigma Max", minimum=0.0, maximum=1000.0, step=0.001, value=self.continuous_edm_sigma_max)
-                continuous_edm_sigma_min = gr.Slider(label="Sigma Min", minimum=0.0, maximum=1000.0, step=0.001, value=self.continuous_edm_sigma_min)
+                continuous_edm_sigma_max = gr.Slider(label="Sigma Max (Continuous EDM)", minimum=0.0, maximum=1000.0, step=0.001, value=continuous_edm_sigma_max_value)
+                continuous_edm_sigma_min = gr.Slider(label="Sigma Min (Continuous EDM)", minimum=0.0, maximum=1000.0, step=0.001, value=continuous_edm_sigma_min_value)
 
-            with gr.Group(visible=False) as continuous_v_group:
-                continuous_v_sigma_max = gr.Slider(label="Sigma Max", minimum=0.0, maximum=1000.0, step=0.001, value=self.continuous_v_sigma_max)
-                continuous_v_sigma_min = gr.Slider(label="Sigma Min", minimum=0.0, maximum=1000.0, step=0.001, value=self.continuous_v_sigma_min)
+            with gr.Group(visible=(initial_mode == "Continuous V")) as continuous_v_group:
+                continuous_v_sigma_max = gr.Slider(label="Sigma Max (Continuous V)", minimum=0.0, maximum=1000.0, step=0.001, value=continuous_v_sigma_max_value)
+                continuous_v_sigma_min = gr.Slider(label="Sigma Min (Continuous V)", minimum=0.0, maximum=1000.0, step=0.001, value=continuous_v_sigma_min_value)
 
-            with gr.Group(visible=False) as stable_cascade_group:
-                stable_cascade_shift = gr.Slider(label="Shift", minimum=0.0, maximum=100.0, step=0.01, value=self.stable_cascade_shift)
+            with gr.Group(visible=(initial_mode == "Stable Cascade")) as stable_cascade_group:
+                stable_cascade_shift = gr.Slider(label="Shift (Stable Cascade)", minimum=0.0, maximum=100.0, step=0.01, value=stable_cascade_shift_value)
 
-            with gr.Group(visible=False) as sd3_group:
-                sd3_shift = gr.Slider(label="Shift", minimum=0.0, maximum=100.0, step=0.01, value=self.sd3_shift)
+            with gr.Group(visible=(initial_mode == "SD3")) as sd3_group:
+                sd3_shift = gr.Slider(label="Shift (SD3)", minimum=0.0, maximum=100.0, step=0.01, value=sd3_shift_value)
 
-            with gr.Group(visible=False) as aura_flow_group:
-                aura_flow_shift = gr.Slider(label="Shift", minimum=0.0, maximum=100.0, step=0.01, value=self.aura_flow_shift)
+            with gr.Group(visible=(initial_mode == "Aura Flow")) as aura_flow_group:
+                aura_flow_shift = gr.Slider(label="Shift (Aura Flow)", minimum=0.0, maximum=100.0, step=0.01, value=aura_flow_shift_value)
 
-            with gr.Group(visible=False) as flux_group:
+            with gr.Group(visible=(initial_mode == "Flux")) as flux_group:
                 flux_max_shift = gr.Slider(label="Max Shift", minimum=0.0, maximum=100.0, step=0.01, value=self.flux_max_shift)
                 flux_base_shift = gr.Slider(label="Base Shift", minimum=0.0, maximum=100.0, step=0.01, value=self.flux_base_shift)
                 flux_width = gr.Slider(label="Width", minimum=16, maximum=8192, step=8, value=self.flux_width)
