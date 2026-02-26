@@ -289,15 +289,14 @@ class Script(scripts.Script):
             total = sum(weights)
             weights = [w / total for w in weights]
 
-        # Set random seed and choose resolution
-        opt_C = 4
-        opt_f = 8
-        random.seed(p.seed + kwargs.get('batch_number', 0))
-        res_tuple = random.choices(res_list, weights=weights, k=1)[0]
+        rnd = random.Random(p.seeds[0])
+        res_tuple = rnd.choices(res_list, weights=weights, k=1)[0]
         
         # Apply chosen resolution
         p.width = res_tuple[0]
         p.height = res_tuple[1]
+        opt_C = 4
+        opt_f = 8
 
         # Handle hi-res fix settings
         if hasattr(p, 'enable_hr') and p.enable_hr:
