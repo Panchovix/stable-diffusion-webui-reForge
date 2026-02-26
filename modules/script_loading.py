@@ -1,5 +1,6 @@
-import os
+import os, sys
 import importlib.util
+import sys
 
 from modules import errors
 
@@ -10,6 +11,12 @@ loaded_scripts = {}
 def load_module(path):
     module_spec = importlib.util.spec_from_file_location(os.path.basename(path), path)
     module = importlib.util.module_from_spec(module_spec)
+    
+    # HACK: script modules should be added to sys.modules based on PR 1614
+    # https://github.com/lllyasviel/stable-diffusion-webui-forge/pull/1614
+    # Elegant? Nope! - Ristellise
+    # if module_spec.name not in sys.modules:
+    #     sys.modules[module_spec.name] = module
     module_spec.loader.exec_module(module)
 
     loaded_scripts[path] = module

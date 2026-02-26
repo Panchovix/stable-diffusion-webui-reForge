@@ -7,6 +7,7 @@ from annotator.openpose import decode_json_as_poses, draw_poses
 from annotator.openpose.animalpose import draw_animalposes
 from lib_controlnet.controlnet_ui.modal import ModalInterface
 from modules import shared
+from modules_forge.forge_canvas.canvas import ForgeCanvas
 from lib_controlnet.logging import logger
 
 
@@ -76,7 +77,7 @@ class OpenposeEditor(object):
 
     def register_callbacks(
         self,
-        generated_image: gr.Image,
+        generated_image: ForgeCanvas,
         use_preview_as_input: gr.Checkbox,
         model: gr.Dropdown,
     ):
@@ -112,7 +113,7 @@ class OpenposeEditor(object):
         self.render_button.click(
             fn=render_pose,
             inputs=[self.pose_input],
-            outputs=[generated_image, use_preview_as_input, *self.outputs()],
+            outputs=[generated_image.background, use_preview_as_input, *self.outputs()],
         )
 
         def update_upload_link(model: str) -> Dict:

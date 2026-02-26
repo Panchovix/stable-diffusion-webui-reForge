@@ -26,7 +26,7 @@ class State:
     current_image = None
     current_image_sampling_step = 0
     id_live_preview = 0
-    textinfo = None
+    textinfo: str|None = None
     time_start = None
     server_start = None
     _server_command_signal = threading.Event()

@@ -16,31 +16,3 @@ function onCalcResolutionHires(enable, width, height, hr_scale, hr_resize_x, hr_
 
     return [enable, width, height, hr_scale, hr_resize_x, hr_resize_y];
 }
-
-function updateHrCfgScaleState() {
-    const hrCfgScale = gradioApp().getElementById('txt2img_hr_cfg');
-    if (hrCfgScale) {
-        const input = hrCfgScale.querySelector('input');
-        if (input) {
-            const value = parseFloat(input.value);
-            hrCfgScale.classList.toggle('inactive', value === 0);
-        }
-    }
-}
-
-document.addEventListener('DOMContentLoaded', function() {
-    const hrCfgScale = gradioApp().getElementById('txt2img_hr_cfg');
-    if (hrCfgScale) {
-        const input = hrCfgScale.querySelector('input');
-        if (input) {
-            input.addEventListener('input', updateHrCfgScaleState);
-            input.addEventListener('change', updateHrCfgScaleState);
-            
-            updateHrCfgScaleState();
-        }
-    }
-});
-
-onUiUpdate(function() {
-    updateHrCfgScaleState();
-});

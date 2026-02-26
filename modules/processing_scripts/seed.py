@@ -47,8 +47,8 @@ class ScriptSeed(scripts.ScriptBuiltinUI):
                 seed_resize_from_w = gr.Slider(minimum=0, maximum=2048, step=8, label="Resize seed from width", value=0, elem_id=self.elem_id("seed_resize_from_w"))
                 seed_resize_from_h = gr.Slider(minimum=0, maximum=2048, step=8, label="Resize seed from height", value=0, elem_id=self.elem_id("seed_resize_from_h"))
 
-        random_seed.click(fn=None, _js="function(){setRandomSeed('" + self.elem_id("seed") + "')}", show_progress=False, inputs=[], outputs=[])
-        random_subseed.click(fn=None, _js="function(){setRandomSeed('" + self.elem_id("subseed") + "')}", show_progress=False, inputs=[], outputs=[])
+        random_seed.click(fn=None, js="function(){setRandomSeed('" + self.elem_id("seed") + "')}", show_progress=False, inputs=[], outputs=[])
+        random_subseed.click(fn=None, js="function(){setRandomSeed('" + self.elem_id("subseed") + "')}", show_progress=False, inputs=[], outputs=[])
 
         seed_checkbox.change(lambda x: gr.update(visible=x), show_progress=False, inputs=[seed_checkbox], outputs=[seed_extras])
 
@@ -98,7 +98,7 @@ def connect_reuse_seed(seed: gr.Number, reuse_seed: gr.Button, generation_info: 
 
     reuse_seed.click(
         fn=copy_seed,
-        _js="(x, y) => [x, selected_gallery_index()]",
+        js="(x, y) => [x, selected_gallery_index()]",
         show_progress=False,
         inputs=[generation_info, seed],
         outputs=[seed, seed]

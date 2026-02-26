@@ -113,6 +113,8 @@ def webui_worker():
             elif shared.opts.auto_launch_browser == "Local":
                 auto_launch_browser = not cmd_opts.webui_is_non_local
 
+        from modules_forge.forge_canvas.canvas import canvas_js_root_path
+
         app, local_url, share_url = shared.demo.launch(
             share=cmd_opts.share,
             server_name=initialize_util.gradio_server_name(),
@@ -124,7 +126,7 @@ def webui_worker():
             auth=gradio_auth_creds,
             inbrowser=auto_launch_browser,
             prevent_thread_lock=True,
-            allowed_paths=cmd_opts.gradio_allowed_path,
+            allowed_paths=cmd_opts.gradio_allowed_path + [canvas_js_root_path],
             app_kwargs={
                 "docs_url": "/docs",
                 "redoc_url": "/redoc",
