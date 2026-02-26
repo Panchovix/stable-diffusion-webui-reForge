@@ -289,14 +289,6 @@ class Script(scripts.Script):
             total = sum(weights)
             weights = [w / total for w in weights]
 
-        # We want to pick a random resolution in a somewhat reproducable way so that the user can adjust his prompt
-        # when using fixed seeds without the resolution changing -> so we just base it on the seed used for the image.
-        # When generating an image with a fixed seed the same resolution will be picked every time.
-        # When generating an image with a random seed the resolution will be random because the seed is random.
-        # When generating a batch of images the resolution will be picked based on the first image's seed.
-        # When generating multiple batches of images the resolution will be picked independently for each batch.
-        # p.seed will be -1 when the user wants to use a random seed so we use p.seeds (plural) which
-        # contains the generated random seeds or the picked fixed seeds for the current batch.
         rnd = random.Random(p.seeds[0])
         res_tuple = rnd.choices(res_list, weights=weights, k=1)[0]
         
