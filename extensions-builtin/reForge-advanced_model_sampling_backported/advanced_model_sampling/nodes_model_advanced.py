@@ -86,7 +86,7 @@ class ModelSamplingDiscrete:
 
     CATEGORY = "advanced/model"
 
-    def patch(self, model, sampling, zsnr):
+    def patch(self, model, sampling, zsnr, patch_timesteps, patch_linear_start, patch_linear_end):
         m = model.clone()
 
         sampling_base = ldm_patched.modules.model_sampling.ModelSamplingDiscrete
@@ -107,6 +107,9 @@ class ModelSamplingDiscrete:
             
             # Create new sampling object
             model_sampling = ModelSamplingAdvanced(model.model.model_config)
+            #if you ever changed the noise schedule in any way, this will recalculate values needed by samplers + schedule generators.
+            #see model_sampling.py line 27 for related data structures.
+            model_sampling._register_schedule(timesteps=int(patch_timesteps), linear_start=patch_linear_start, linear_end=patch_linear_end)
             if zsnr:
                 model_sampling.set_sigmas(rescale_zero_terminal_snr_sigmas(model_sampling.sigmas))
 
