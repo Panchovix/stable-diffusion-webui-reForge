@@ -3,7 +3,6 @@ from __future__ import annotations
 import importlib
 import logging
 import os
-from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 import torch
@@ -12,9 +11,7 @@ from modules import shared
 from modules.upscaler import Upscaler, UpscalerLanczos, UpscalerNearest, UpscalerNone
 from modules.util import load_file_from_url  # noqa, backwards compatibility
 from ldm_patched.modules.utils import load_torch_file
-
-if TYPE_CHECKING:
-    import spandrel
+import spandrel
 
 logger = logging.getLogger(__name__)
 
