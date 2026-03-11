@@ -39,7 +39,7 @@ function extract_image_from_gallery(gallery) {
         return [null];
     }
     if (gallery.length == 1) {
-        return [gallery[0]];
+        return [[gallery[0]]];
     }
 
     var index = selected_gallery_index();
@@ -49,7 +49,7 @@ function extract_image_from_gallery(gallery) {
         index = 0;
     }
 
-    return [gallery[index]];
+    return [[gallery[index]]];
 }
 
 window.args_to_array = Array.from; // Compatibility with e.g. extensions that may expect this to be around
@@ -125,8 +125,14 @@ function create_submit_args(args) {
     // This can lead to uploading a huge gallery of previously generated images, which leads to an unnecessary delay between submitting and beginning to generate.
     // I don't know why gradio is sending outputs along with inputs, but we can prevent sending the image gallery here, which seems to be an issue for some.
     // If gradio at some point stops sending outputs, this may break something
-    if (Array.isArray(res[res.length - 3])) {
-        res[res.length - 3] = null;
+    if (Array.isArray(res[res.length - 4])) {
+        //res[res.length - 4] = null;
+        // simply drop output args
+        res = res.slice(0, res.length - 4);
+    } else if (Array.isArray(res[res.length - 3])) {
+        // for submit_extras()
+        //res[res.length - 3] = null;
+        res = res.slice(0, res.length - 3);
     }
 
     return res;
@@ -211,6 +217,27 @@ function submit_extras() {
     var res = create_submit_args(arguments);
 
     res[0] = id;
+
+    console.log(res)
+    
+    /*
+        HACK: DO NOT DO THIS! THIS IS EXTREMELY BAD.
+        Gradio pads null values wrongly by... inserted somewhere in the arguments.
+        This gets passed down to the python side of gradio and it litterally spews rainbows all over the floor.
+        (Like in konosuba if you know what I mean.)
+        
+        We pad an *extra* null value here so that it is happy.
+
+        Adding extensions seem to get rid of the issue for whatever reason.
+        But... I don't think we should be advocating for "Install an extension to fix an issue".
+
+        To fix this issue, we add a null value of the length is less than the default.
+        This fixes the issue for without extensions.
+         - Ristellise (12/03/25)
+    */
+    // If we add any more args to extras, we should relook at this.
+    if (res.length < 42)
+        res.push(null);
 
     console.log(res);
     return res;
@@ -382,8 +409,8 @@ function selectCheckpoint(name) {
 }
 
 function currentImg2imgSourceResolution(w, h, scaleBy) {
-    var img = gradioApp().querySelector('#mode_img2img > div[style="display: block;"] img');
-    return img ? [img.naturalWidth, img.naturalHeight, scaleBy] : [0, 0, scaleBy];
+    var img = gradioApp().querySelector('#mode_img2img > div[style="display: block;"] :is(img, canvas)');
+    return img ? [img.naturalWidth || img.width, img.naturalHeight || img.height, scaleBy] : [0, 0, scaleBy];
 }
 
 function updateImg2imgResizeToTextAfterChangingImage() {
