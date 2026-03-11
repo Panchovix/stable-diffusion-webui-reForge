@@ -46,4 +46,3 @@ huggingface-hub==0.26.2
 packaging
 wheel
 ninja
-audioop-lts #we need this for python 3.13, for some reason
