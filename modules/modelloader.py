@@ -85,6 +85,7 @@ def load_upscalers():
     from modules.omnisr_model   import UpscalerOmniSR
     from modules.span_model     import UpscalerSPAN
     from modules.compact_model  import UpscalerCOMPACT
+    from modules.realesrgan_model import UpscalerRealESRGAN
 
     del shared.sd_upscalers
 
@@ -99,6 +100,7 @@ def load_upscalers():
         (UpscalerOmniSR,   'omnisr_models_path'),
         (UpscalerSPAN,     'span_models_path'),
         (UpscalerCOMPACT,  'compact_models_path'),
+        (UpscalerRealESRGAN, 'realesrgan_models_path'),
     ]
 
     all_scalers = []
