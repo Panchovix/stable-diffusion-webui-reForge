@@ -46,4 +46,3 @@ timm==1.0.14
 packaging
 wheel
 ninja
-audioop-lts #we need this for python 3.13, for some reason
