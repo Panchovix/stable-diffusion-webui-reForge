@@ -1,9 +1,15 @@
 import os
-
-from modules import modelloader, errors
+import re
+from functools import lru_cache
+from modules import modelloader, devices, errors
 from modules.shared import cmd_opts, opts, hf_endpoint
 from modules.upscaler import Upscaler, UpscalerData
 from modules.upscaler_utils import upscale_with_model
+from modules_forge.forge_util import prepare_free_memory
+
+PREFER_HALF = opts.prefer_fp16_upscalers
+if PREFER_HALF:
+    print("[Upscalers] Prefer Half-Precision:", PREFER_HALF)
 
 
 class UpscalerDAT(Upscaler):
@@ -14,8 +20,17 @@ class UpscalerDAT(Upscaler):
         super().__init__()
 
         for file in self.find_models(ext_filter=[".pt", ".pth", ".safetensors"]):
-            name = modelloader.friendly_name(file)
-            scaler_data = UpscalerData(name, file, upscaler=self, scale=None)
+            if file.startswith("http"):
+                name = modelloader.friendly_name(file)
+            else:
+                name = modelloader.friendly_name(file)
+
+            if match := re.search(r"(\d)[xX]|[xX](\d)", name):
+                scale = int(match.group(1) or match.group(2))
+            else:
+                scale = 4
+
+            scaler_data = UpscalerData(name, file, upscaler=self, scale=scale)
             self.scalers.append(scaler_data)
 
         for model in get_dat_models(self):
@@ -23,26 +38,24 @@ class UpscalerDAT(Upscaler):
                 self.scalers.append(model)
 
     def do_upscale(self, img, path):
+        prepare_free_memory()
         try:
-            info = self.load_model(path)
+            model = self.load_model(path)
         except Exception:
             errors.report(f"Unable to load DAT model {path}", exc_info=True)
             return img
-
-        model_descriptor = modelloader.load_spandrel_model(
-            info.local_data_path,
-            device=self.device,
-            prefer_half=(not cmd_opts.no_half and not cmd_opts.upcast_sampling),
-            expected_architecture="DAT",
-        )
+        model.to(devices.device_esrgan)
         return upscale_with_model(
-            model_descriptor,
-            img,
+            model=model,
+            img=img,
             tile_size=opts.DAT_tile,
             tile_overlap=opts.DAT_tile_overlap,
         )
 
-    def load_model(self, path):
+    @lru_cache(maxsize=4)
+    def load_model(self, path: str):
+        # Resolve UpscalerData entry (needed for bundled DAT models with sha256)
+        local_path = path
         for scaler in self.scalers:
             if scaler.data_path == path:
                 if scaler.local_data_path.startswith("http"):
@@ -51,20 +64,32 @@ class UpscalerDAT(Upscaler):
                         model_dir=self.model_download_path,
                         hash_prefix=scaler.sha256,
                     )
-
                     if os.path.getsize(scaler.local_data_path) < 200:
-                        # Re-download if the file is too small, probably an LFS pointer
+                        # Re-download if the file is too small (LFS pointer)
                         scaler.local_data_path = modelloader.load_file_from_url(
                             scaler.data_path,
                             model_dir=self.model_download_path,
                             hash_prefix=scaler.sha256,
                             re_download=True,
                         )
-
                 if not os.path.exists(scaler.local_data_path):
                     raise FileNotFoundError(f"DAT data missing: {scaler.local_data_path}")
-                return scaler
-        raise ValueError(f"Unable to find model info: {path}")
+                local_path = scaler.local_data_path
+                break
+        else:
+            # Plain local file passed directly
+            if path.startswith("http"):
+                local_path = modelloader.load_file_from_url(
+                    url=path,
+                    model_dir=self.model_download_path,
+                    file_name=path.rsplit("/", 1)[-1],
+                )
+            if not os.path.isfile(local_path):
+                raise FileNotFoundError(f"Model file {local_path} not found")
+
+        model = modelloader.load_spandrel_model(local_path, device=devices.cpu, prefer_half=PREFER_HALF)
+        model.to(devices.device_esrgan)
+        return model
 
 
 def get_dat_models(scaler):
