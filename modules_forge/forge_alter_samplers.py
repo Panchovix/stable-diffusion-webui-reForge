@@ -81,6 +81,8 @@ class AlterSampler(sd_samplers_kdiffusion.KDiffusionSampler):
             'SA-Solver': k_diffusion_sampling.sample_sa_solver,
             'SA-Solver-Pece': k_diffusion_sampling.sample_sa_solver_pece,
             'dpmpp_sde_classic': k_diffusion_sampling.sample_dpmpp_sde_classic,
+            'exp_heun2': k_diffusion_sampling.sample_exp_heun_2_x0,
+            'exp_heun2_sde': k_diffusion_sampling.sample_exp_heun_2_x0_sde,
         }
         
         sampler_function = sampler_functions.get(sampler_name)
@@ -240,6 +242,8 @@ samplers_data_alter = [
     sd_samplers_common.SamplerData('SA-Solver', build_constructor(sampler_name='SA-Solver'), ['SA-Solver'], {}),
     sd_samplers_common.SamplerData('SA-Solver-Pece', build_constructor(sampler_name='SA-Solver-Pece'), ['SA-Solver-Pece'], {}),
     # sd_samplers_common.SamplerData('Kohaku_LoNyu_Yog CFG++', build_constructor(sampler_name='kohaku_lonyu_yog_cfg_pp'), ['kohaku_lonyu_yog_cfg_pp'], {}),
+    sd_samplers_common.SamplerData('EXP Heun 2 x0', build_constructor(sampler_name='exp_heun2'), ['exp_heun2'], {}),
+    sd_samplers_common.SamplerData('EXP Heun 2 x0 SDE', build_constructor(sampler_name='exp_heun2_sde'), ['exp_heun2_sde'], {}),
     sd_samplers_common.SamplerData('DPM++ 2M DY', build_constructor(sampler_name='dpmpp_2m_dy'), ['dpmpp_2m_dy'], {}),
     sd_samplers_common.SamplerData('DPM++ 3M DY', build_constructor(sampler_name='dpmpp_3m_dy'), ['dpmpp_3m_dy'], {}),
     sd_samplers_common.SamplerData('DPM++ 3M SDE DY', build_constructor(sampler_name='dpmpp_3m_sde_dy'), ['dpmpp_3m_sde_dy'], {}),
