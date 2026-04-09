@@ -239,12 +239,24 @@ def get_ancestral_step(sigma_from, sigma_to, eta=None):
 
 def default_noise_sampler(x, seed=None):
     if seed is not None:
+        # ComfyUI path (see ldm_patched/modules/samplers.py:1163): an explicit
+        # seed is supplied via extra_args. Build a fresh torch.Generator and
+        # use torch.randn with it. This branch is byte-identical to the
+        # previous implementation so the Comfy sampling path is untouched.
         generator = torch.Generator(device=x.device)
         generator.manual_seed(seed)
-    else:
-        generator = None
+        return lambda sigma, sigma_next: torch.randn(x.size(), dtype=x.dtype, layout=x.layout, device=x.device, generator=generator)
 
-    return lambda sigma, sigma_next: torch.randn(x.size(), dtype=x.dtype, layout=x.layout, device=x.device, generator=generator)
+    # WebUI path: no explicit seed. Route through torch.randn_like so that
+    # modules/sd_samplers_common.py::TorchHijack (installed on this module's
+    # `torch` attribute in Sampler.initialize) can intercept the call and
+    # return seeded noise from p.rng.next(). Regular WebUI k-diffusion
+    # samplers have used this hijack-based reproducibility mechanism on the
+    # A1111 backend for a long time via k_diff.k_diffusion.sampling, which
+    # already uses torch.randn_like. Switching this branch to torch.randn_like
+    # extends the same reproducibility path to AlterSamplers, which always
+    # route through ldm_patched.k_diffusion.sampling regardless of backend.
+    return lambda sigma, sigma_next: torch.randn_like(x)
 
 def ei_h_phi_1(h: torch.Tensor) -> torch.Tensor:
     """Compute the result of h*phi_1(h) in exponential integrator methods."""
