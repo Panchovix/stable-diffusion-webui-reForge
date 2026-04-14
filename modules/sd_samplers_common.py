@@ -334,6 +334,22 @@ class Sampler:
 
         sampling.torch = TorchHijack(p)
 
+        # AlterSamplers (modules_forge/forge_alter_samplers.py) unconditionally
+        # bind to functions from ldm_patched.k_diffusion.sampling regardless of
+        # opts.sd_sampling, so when the A1111 backend is selected above the
+        # hijack lands on k_diff.k_diffusion.sampling and AlterSamplers miss
+        # it. Also install the hijack on the ldm_patched module when it is a
+        # distinct module object, so the randn_like intercept applies to the
+        # sampler functions AlterSamplers actually call. When the Comfy
+        # backend is selected `sampling` already IS that module and this is a
+        # no-op.
+        try:
+            from ldm_patched.k_diffusion import sampling as _ldm_patched_sampling
+        except ImportError:
+            _ldm_patched_sampling = None
+        if _ldm_patched_sampling is not None and _ldm_patched_sampling is not sampling:
+            _ldm_patched_sampling.torch = TorchHijack(p)
+
         extra_params_kwargs = {}
         for param_name in self.extra_params:
             if hasattr(p, param_name) and param_name in inspect.signature(self.func).parameters:
