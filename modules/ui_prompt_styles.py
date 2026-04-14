@@ -2,9 +2,9 @@ import gradio as gr
 
 from modules import shared, ui_common, ui_components, styles
 
-styles_edit_symbol = '\U0001f58c\uFE0F'  # 🖌️
-styles_materialize_symbol = '\U0001f4cb'  # 📋
-styles_copy_symbol = '\U0001f4dd'  # 📝
+styles_edit_symbol = '\U0001f58c\uFE0F'  # ≡ƒûî∩╕Å
+styles_materialize_symbol = '\U0001f4cb'  # ≡ƒôï
+styles_copy_symbol = '\U0001f4dd'  # ≡ƒô¥
 
 
 def select_style(name):
@@ -97,7 +97,7 @@ class UiPromptStyles:
 
         self.delete.click(
             fn=delete_style,
-            _js='function(name){ if(name == "") return ""; return confirm("Delete style " + name + "?") ? name : ""; }',
+            js='function(name){ if(name == "") return ""; return confirm("Delete style " + name + "?") ? name : ""; }',
             inputs=[self.selection],
             outputs=[self.selection, self.prompt, self.neg_prompt],
             show_progress=False,
@@ -120,4 +120,4 @@ class UiPromptStyles:
             inputs=[self.main_ui_prompt, self.main_ui_negative_prompt, self.dropdown],
             outputs=[self.main_ui_prompt, self.main_ui_negative_prompt, self.dropdown],
             show_progress=False,
-        ).then(fn=None, _js="function(){update_"+self.tabname+"_tokens(); closePopup();}", show_progress=False)
+        ).then(fn=None, js="function(){update_"+self.tabname+"_tokens(); closePopup();}", show_progress=False)

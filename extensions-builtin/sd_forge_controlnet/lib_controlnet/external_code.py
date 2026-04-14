@@ -192,7 +192,7 @@ class ControlNetUnit:
     ## If the new field can be specified on UI, you need to
     - Add a new field of the same name in constructor of `ControlNetUiGroup`
     - Initialize the new `ControlNetUiGroup` field in `ControlNetUiGroup.render`
-      as a Gradio `IOComponent`.
+      as a Gradio `Component`.
     - Add the new `ControlNetUiGroup` field to `unit_args` in
       `ControlNetUiGroup.render`. The order of parameters matters.
 
@@ -223,6 +223,7 @@ class ControlNetUnit:
     # Following fields are used in both the API and the UI.
     # Holds the mask image; defaults to None.
     mask_image: Optional[GradioImageMaskPair] = None
+    mask_image_fg: Optional[GradioImageMaskPair] = None
     # Specifies how this unit should be applied in each pass of high-resolution fix.
     # Ignored if high-resolution fix is not enabled.
     hr_option: HiResFixOption = HiResFixOption.BOTH
@@ -236,6 +237,7 @@ class ControlNetUnit:
     weight: float = 1.0
     # Optional image for input; defaults to None.
     image: Optional[GradioImageMaskPair] = None
+    image_fg: Optional[GradioImageMaskPair] = None
     # Specifies the mode of image resizing; defaults to inner fit.
     resize_mode: ResizeMode = ResizeMode.INNER_FIT
     # Resolution for processing by the unit; defaults to -1 (unspecified).
@@ -310,6 +312,9 @@ class ControlNetUnit:
                 "image": img,
                 "mask": np.zeros_like(img),
             }
+        # NOTE: Unsure 100% of we need to apply to unit.mask_image_fg.
+        # If we do, then remove this comment and then fix it here.
+        # - Ristellise
         if isinstance(unit.mask_image, str):
             mask = np.array(api.decode_base64_to_image(unit.mask_image)).astype('uint8')
             if unit.image is not None:

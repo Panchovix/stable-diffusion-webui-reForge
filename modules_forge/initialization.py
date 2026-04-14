@@ -58,6 +58,9 @@ def initialize_forge():
     import modules_forge.patch_basic
     modules_forge.patch_basic.patch_all_basics()
 
+    from modules_forge import ultralytics_hijack
+    ultralytics_hijack.apply()
+
     from modules_forge import stream
     print('CUDA Stream Activated: ', stream.using_stream)
 
@@ -77,4 +80,5 @@ def initialize_forge():
 
     if 'HF_HUB_CACHE' not in os.environ:
         os.environ['HF_HUB_CACHE'] = diffusers_dir
+    
     return

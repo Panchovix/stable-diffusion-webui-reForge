@@ -17,6 +17,10 @@ class CLIP_SD_15_L(FrozenCLIPEmbedderWithCustomWords):
     def __init__(self, wrapped, hijack):
         super().__init__(wrapped, hijack)
         self.minimal_clip_skip = 1
+        # SGM compatibility attributes
+        self.ucg_rate = 0.0
+        self.legacy_ucg_val = None
+        self.input_key = getattr(wrapped, 'input_key', 'txt')
 
     def encode_with_transformers(self, tokens):
         move_clip_to_gpu()
@@ -47,6 +51,10 @@ class CLIP_SD_21_H(FrozenCLIPEmbedderWithCustomWords):
         self.id_end = 49407
         self.id_pad = 0
         self.minimal_clip_skip = 2
+        # SGM compatibility attributes
+        self.ucg_rate = 0.0
+        self.legacy_ucg_val = None
+        self.input_key = getattr(wrapped, 'input_key', 'txt')
 
     def encode_with_transformers(self, tokens):
         move_clip_to_gpu()
@@ -72,6 +80,10 @@ class CLIP_SD_XL_L(FrozenCLIPEmbedderWithCustomWords):
     def __init__(self, wrapped, hijack):
         super().__init__(wrapped, hijack)
         self.minimal_clip_skip = 2
+        # SGM compatibility attributes
+        self.ucg_rate = 0.0
+        self.legacy_ucg_val = None
+        self.input_key = getattr(wrapped, 'input_key', 'txt')
 
     def encode_with_transformers(self, tokens):
         self.wrapped.transformer.text_model.embeddings.to(tokens.device)
@@ -102,6 +114,10 @@ class CLIP_SD_XL_G(FrozenCLIPEmbedderWithCustomWords):
         self.id_end = 49407
         self.id_pad = 0
         self.minimal_clip_skip = 2
+        # SGM compatibility attributes
+        self.ucg_rate = 0.0
+        self.legacy_ucg_val = None
+        self.input_key = getattr(wrapped, 'input_key', 'txt')
 
     def encode_with_transformers(self, tokens):
         self.wrapped.transformer.text_model.embeddings.to(tokens.device)

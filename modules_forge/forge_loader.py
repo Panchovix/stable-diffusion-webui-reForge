@@ -384,7 +384,6 @@ def load_diffusion_model(unet_path, model_options={}):
         raise RuntimeError("ERROR: Could not detect model type of: {}\n{}".format(unet_path, model_detection_error_hint(unet_path, sd)))
     return model
 
-
 @torch.no_grad()
 def load_model_for_a1111(timer, checkpoint_info=None, state_dict=None):
     is_sd3 = 'model.diffusion_model.x_embedder.proj.weight' in state_dict
@@ -486,6 +485,12 @@ def load_model_for_a1111(timer, checkpoint_info=None, state_dict=None):
             sd_model.cond_stage_model = text_cond_models[0]
         else:
             sd_model.cond_stage_model = conditioner
+            # Add methods to conditioner for textual inversion compatibility
+            from modules.sd_models_xl import encode_embedding_init_text, tokenize, process_texts, get_target_prompt_token_count
+            conditioner.encode_embedding_init_text = types.MethodType(encode_embedding_init_text, conditioner)
+            conditioner.tokenize = types.MethodType(tokenize, conditioner)
+            conditioner.process_texts = types.MethodType(process_texts, conditioner)
+            conditioner.get_target_prompt_token_count = types.MethodType(get_target_prompt_token_count, conditioner)
     elif type(sd_model.cond_stage_model).__name__ == 'FrozenCLIPEmbedder':  # SD15 Clip
         sd_model.cond_stage_model.tokenizer = forge_objects.clip.tokenizer.clip_l.tokenizer
         sd_model.cond_stage_model.transformer = forge_objects.clip.cond_stage_model.clip_l.transformer
@@ -551,4 +556,9 @@ def load_model_for_a1111(timer, checkpoint_info=None, state_dict=None):
     sd_model.tiling_enabled = False
     timer.record("forge finalize")
     sd_model.current_lora_hash = str([])
+    
+    # Add get_learned_conditioning method to the main model for compatibility
+    from modules.sd_models_xl import get_learned_conditioning
+    sd_model.get_learned_conditioning = types.MethodType(get_learned_conditioning, sd_model)
+    
     return sd_model
