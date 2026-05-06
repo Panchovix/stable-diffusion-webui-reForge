@@ -6287,23 +6287,31 @@ def sample_sure_wavelet_auto(model, x, sigmas, extra_args=None, callback=None, d
 
     # ── Phase 3: advisory — check if cal_steps was sufficient ───────────────
     if len(snapshots) > 1:
+        import math as _math
         import statistics as _stat
         per_step = [
             _sure_score_config([snap], best_wavelet, best_level, best_lp_frac)
             for snap in snapshots
         ]
-        cv = _stat.stdev(per_step) / (abs(_stat.mean(per_step)) + 1e-8)
-        if cv > float(sure_wavelet_bo_cv_warn):
-            _sure_logger.warning(
-                "SURE-Wavelet Auto: winner SURE CV=%.3f > %.2f — "
-                "objective is noisy across calibration steps; consider increasing "
-                "sure_wavelet_cal_steps (current=%d) for more reliable selection.",
-                cv, float(sure_wavelet_bo_cv_warn), cal_steps,
-            )
+        finite = [v for v in per_step if _math.isfinite(v)]
+        if len(finite) >= 2:
+            cv = _stat.stdev(finite) / (abs(_stat.mean(finite)) + 1e-8)
+            if cv > float(sure_wavelet_bo_cv_warn):
+                _sure_logger.warning(
+                    "SURE-Wavelet Auto: winner SURE CV=%.3f > %.2f — "
+                    "objective is noisy across calibration steps; consider increasing "
+                    "sure_wavelet_cal_steps (current=%d) for more reliable selection.",
+                    cv, float(sure_wavelet_bo_cv_warn), cal_steps,
+                )
+            else:
+                _sure_logger.info(
+                    "SURE-Wavelet Auto: winner CV=%.3f — calibration stable.",
+                    cv,
+                )
         else:
-            _sure_logger.info(
-                "SURE-Wavelet Auto: winner CV=%.3f — calibration stable.",
-                cv,
+            _sure_logger.warning(
+                "SURE-Wavelet Auto: all per-step SURE scores are non-finite — "
+                "CV advisory skipped. Verify pywt/ptwt are installed correctly.",
             )
 
     # ── Phase 4: main sampling from original x with winning config ───────────

@@ -43,3 +43,5 @@ timm==1.0.14
 packaging
 wheel
 ninja
+PyWavelets
+ptwt
