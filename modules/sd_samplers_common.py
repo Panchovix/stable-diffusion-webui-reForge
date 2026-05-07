@@ -375,6 +375,7 @@ class Sampler:
 
         _SURE_SAMPLERS = {
             'sample_sure', 'sample_sure_wavelet', 'sample_sure_wavelet_auto',
+            'sample_sure_wavelet_converge', 'sample_sure_wavelet_auto_converge',
             'sample_sure_adaptive',
             'sample_dpmpp_2m_sure', 'sample_dpmpp_2m_sde_sure',
             'sample_dpmpp_3m_sde_sure', 'sample_dpmpp_2m_sde_sure_adaptive',
@@ -442,6 +443,10 @@ class Sampler:
                 extra_params_kwargs['sure_wavelet_bo_patience'] = int(getattr(shared.opts, 'sure_wavelet_bo_patience', 8))
             if 'sure_wavelet_bo_cv_warn' in _sure_sig:
                 extra_params_kwargs['sure_wavelet_bo_cv_warn'] = float(getattr(shared.opts, 'sure_wavelet_bo_cv_warn', 0.4))
+            if 'sure_inner_steps' in _sure_sig:
+                extra_params_kwargs['sure_inner_steps'] = int(getattr(shared.opts, 'sure_inner_steps', 4))
+            if 'sure_inner_tol' in _sure_sig:
+                extra_params_kwargs['sure_inner_tol'] = float(getattr(shared.opts, 'sure_inner_tol', 1e-4))
             p.extra_generation_params['SURE alpha']         = sure_alpha
             p.extra_generation_params['SURE n_mc']          = sure_n_mc
             p.extra_generation_params['SURE eps']           = sure_eps

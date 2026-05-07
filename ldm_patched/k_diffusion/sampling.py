@@ -6331,6 +6331,375 @@ def sample_sure_wavelet_auto(model, x, sigmas, extra_args=None, callback=None, d
     )
 
 
+def sample_sure_wavelet_converge(
+    model, x, sigmas, extra_args=None, callback=None, disable=None,
+    sure_alpha=0.05, sure_n_mc=1, sure_eps=1e-3,
+    sure_jac_interval=2,
+    sure_adam_mode='none', sure_adam_beta1=0.9,
+    sure_adam_beta2=0.999, sure_adam_wd=0.01,
+    sure_wavelet='db4', sure_wavelet_level=3,
+    sure_approx_coeff=2.0, sure_csv_path=None,
+    sure_sigma_ema=0.0, sure_wavelet_warmup_steps=0,
+    sure_wavelet_lp_frac=1.0,
+    sure_grad_mode='vjp',
+    sure_inner_steps=4,
+    sure_inner_tol=1e-4,
+):
+    """SURE-Wavelet with convergence-driven inner loop per sigma stage.
+
+    At each sigma σᵢ, instead of a single SURE correction, iterates up to
+    sure_inner_steps times — stopping early when the correction step
+    (pixel_delta_rms) falls below sure_inner_tol.  A divergence guard stops
+    the inner loop if SURE value rises more than 10% vs. the previous inner step.
+
+    Cost per sigma stage (approx mode): 1 outer + N_inner_done model calls.
+    Cost per sigma stage (vjp/vjp_sb): 1 outer + N_inner_done × (1+n_mc) calls.
+
+    Per-sigma Adam state is reset each stage so the inner steps form a clean
+    gradient-descent sequence toward the SURE minimum at that noise level.
+
+    sure_inner_steps: max SURE correction iterations per sigma stage (default 4)
+    sure_inner_tol:   pixel_delta_rms early-stop threshold; 0 = always run all steps
+    """
+    extra_args    = {} if extra_args is None else extra_args
+    seed          = extra_args.get("seed", None)
+    noise_sampler = default_noise_sampler(x, seed=seed)
+    s_in          = x.new_ones([x.shape[0]])
+
+    n_steps    = len(sigmas) - 1
+    _max_inner = max(1, int(sure_inner_steps))
+    _sigma_hat_0_ema: float | None = None
+
+    _sure_logger.info(
+        "SURE-Wavelet-Converge: %d steps  alpha=%.4f  n_mc=%d  wavelet=%s  "
+        "level=%d  lp_frac=%.2f  adam=%s  grad_mode=%s  "
+        "inner_steps=%d  inner_tol=%.2e",
+        n_steps, sure_alpha, sure_n_mc, sure_wavelet, sure_wavelet_level,
+        sure_wavelet_lp_frac, sure_adam_mode, sure_grad_mode,
+        _max_inner, float(sure_inner_tol),
+    )
+
+    for i in trange(n_steps, disable=disable):
+        sigma      = sigmas[i]
+        sigma_next = sigmas[i + 1]
+        sigma_val  = sigma.item()
+
+        # ── ONE outer model call: get x̂₀ ────────────────────────────────────
+        with torch.no_grad():
+            x0_hat = model(x, sigma * s_in, **extra_args).detach()
+
+        # ── PCA noise estimate + ceiling + optional EMA ──────────────────────
+        _sigma_raw = _pca_noise_estimate(x0_hat, min_sigma=float(sure_eps))
+        _sigma_raw = min(_sigma_raw, sigma_val)
+        if sure_sigma_ema > 0.0:
+            if _sigma_hat_0_ema is None:
+                _sigma_hat_0_ema = _sigma_raw
+            else:
+                _sigma_hat_0_ema = (sure_sigma_ema * _sigma_hat_0_ema
+                                    + (1.0 - sure_sigma_ema) * _sigma_raw)
+            sigma_hat_0 = min(_sigma_hat_0_ema, sigma_val)
+        else:
+            sigma_hat_0 = _sigma_raw
+
+        # ── Inner SURE convergence loop ──────────────────────────────────────
+        # Fresh Adam state per sigma stage so inner steps are a clean gradient-
+        # descent sequence toward the SURE minimum at this noise level.
+        _inner_adam  = {} if sure_adam_mode != 'none' else None
+        _use_jac     = (sure_jac_interval <= 1) or (i % max(1, sure_jac_interval) == 0)
+        _prev_sure   = float('inf')
+        _inner_done  = 0
+        _stats: dict = {'sure_val': 0.0, 'pixel_delta_rms': 0.0}
+
+        for inner_i in range(_max_inner):
+            x0_hat, _stats = _sure_correct_x0_wavelet(
+                model, x0_hat, sigma_hat_0, s_in, extra_args,
+                alpha=sure_alpha, n_mc=sure_n_mc, eps_mc=sure_eps,
+                use_jac=_use_jac, sigma_t=sigma,
+                adam_state=_inner_adam, adam_mode=sure_adam_mode,
+                adam_beta1=sure_adam_beta1, adam_beta2=sure_adam_beta2,
+                adam_wd=sure_adam_wd,
+                wavelet=sure_wavelet, wavelet_level=sure_wavelet_level,
+                approx_coeff=sure_approx_coeff,
+                warmup_steps=sure_wavelet_warmup_steps,
+                lp_frac=sure_wavelet_lp_frac,
+                grad_mode=sure_grad_mode,
+            )
+            _inner_done = inner_i + 1
+            _sure_val   = _stats['sure_val']
+            _delta_rms  = _stats['pixel_delta_rms']
+
+            # Convergence: step size is negligible
+            if sure_inner_tol > 0 and _delta_rms < float(sure_inner_tol):
+                _sure_logger.debug(
+                    "[converge] sigma=%.4f  inner=%d/%d  converged  "
+                    "pixel_delta_rms=%.2e < tol=%.2e",
+                    sigma_val, _inner_done, _max_inner, _delta_rms, float(sure_inner_tol),
+                )
+                break
+
+            if _prev_sure < float('inf'):
+                # Log zero-crossing: SURE went negative for the first time this stage.
+                # The correction has passed through the SURE minimum — the gradient
+                # now points away from the data manifold (opposite direction).
+                if _prev_sure >= 0 and _sure_val < 0:
+                    _sure_logger.debug(
+                        "[converge] sigma=%.4f  inner=%d/%d  SURE crossed zero: %.2f → %.2f  "
+                        "(overshoot candidate — watching next step)",
+                        sigma_val, _inner_done, _max_inner, _prev_sure, _sure_val,
+                    )
+
+                # Positive divergence: SURE rising (correction destabilising in positive direction)
+                if _prev_sure >= 0 and _sure_val > _prev_sure * 1.1:
+                    _sure_logger.debug(
+                        "[converge] sigma=%.4f  inner=%d/%d  +diverge-stop  "
+                        "sure_val=%.2f  prev=%.2f",
+                        sigma_val, _inner_done, _max_inner, _sure_val, _prev_sure,
+                    )
+                    break
+
+                # Negative divergence: SURE already negative and going more extreme.
+                # Both corrections apply the same gradient direction; once the SURE
+                # minimum is behind us the gradient flips sign conceptually, so each
+                # further step moves x̂₀ further from the data manifold.
+                # prev_sure * 1.1 is more negative than prev_sure → flags a >10% drift.
+                if _prev_sure < 0 and _sure_val < _prev_sure * 1.1:
+                    _sure_logger.debug(
+                        "[converge] sigma=%.4f  inner=%d/%d  -diverge-stop  "
+                        "sure_val=%.2f  prev=%.2f  (drifting more negative)",
+                        sigma_val, _inner_done, _max_inner, _sure_val, _prev_sure,
+                    )
+                    break
+
+            _prev_sure = _sure_val
+
+        _sure_logger.info(
+            "[converge] sigma=%.4f  inner=%d/%d  sure_val=%.2f  pixel_delta_rms=%.2e",
+            sigma_val, _inner_done, _max_inner,
+            _stats['sure_val'], _stats['pixel_delta_rms'],
+        )
+
+        x0_corrected = x0_hat
+
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigma,
+                      'sigma_hat': sigma, 'denoised': x0_corrected})
+
+        # ── Ancestral step from converged x̂*₀ ───────────────────────────────
+        if float(sigma_next) == 0:
+            x = x0_corrected
+        else:
+            sigma_down, sigma_up = get_ancestral_step(sigma, sigma_next, eta=1.0)
+            d = (x - x0_corrected) / sigma
+            x = x + d * (sigma_down - sigma)
+            x = x + sigma_up * noise_sampler(sigma, sigma_next)
+
+    if x.device.type == "cuda":
+        torch.cuda.empty_cache()
+
+    return x
+
+
+def sample_sure_wavelet_auto_converge(
+    model, x, sigmas, extra_args=None, callback=None, disable=None,
+    sure_alpha=0.05, sure_n_mc=1, sure_eps=1e-3,
+    sure_jac_interval=2,
+    sure_adam_mode='none', sure_adam_beta1=0.9,
+    sure_adam_beta2=0.999, sure_adam_wd=0.01,
+    sure_approx_coeff=2.0, sure_csv_path=None,
+    sure_sigma_ema=0.0, sure_wavelet_warmup_steps=0,
+    sure_grad_mode='vjp',
+    sure_wavelet_cal_steps=5,
+    sure_wavelet_cal_wavelets=('haar', 'db2', 'db4', 'db6', 'sym4'),
+    sure_wavelet_cal_levels=(1, 6),
+    sure_wavelet_bo_trials=40,
+    sure_wavelet_bo_patience=8,
+    sure_wavelet_bo_cv_warn=0.4,
+    sure_inner_steps=4,
+    sure_inner_tol=1e-4,
+):
+    """SURE-Wavelet Auto + convergence loop.
+
+    Phase 1-3: Same Bayesian-optimised wavelet-config search as
+    sample_sure_wavelet_auto (collect snapshots → BO/grid → CV advisory).
+
+    Phase 4: Run sample_sure_wavelet_converge with the winning config,
+    so each sigma stage iterates SURE corrections until convergence rather
+    than applying a single fixed correction.
+    """
+    extra_args    = {} if extra_args is None else extra_args
+    s_in          = x.new_ones([x.shape[0]])
+    noise_sampler = default_noise_sampler(x, seed=extra_args.get('seed', None))
+    n_steps       = len(sigmas) - 1
+    cal_steps     = min(int(sure_wavelet_cal_steps), n_steps)
+
+    _lvls  = list(sure_wavelet_cal_levels)
+    lvl_min, lvl_max = (min(_lvls), max(_lvls)) if len(_lvls) >= 2 else (_lvls[0], _lvls[0])
+    cal_wavelet_list  = list(sure_wavelet_cal_wavelets)
+
+    _sure_logger.info(
+        "SURE-Wavelet Auto-Converge: collecting %d calibration snapshots  "
+        "wavelets=%s  level=[%d,%d]  bo_trials=%d  bo_patience=%d  "
+        "inner_steps=%d  inner_tol=%.2e",
+        cal_steps, cal_wavelet_list, lvl_min, lvl_max,
+        int(sure_wavelet_bo_trials), int(sure_wavelet_bo_patience),
+        int(sure_inner_steps), float(sure_inner_tol),
+    )
+
+    # ── Phase 1: collect (residual, sigma2) snapshots ───────────────────────
+    snapshots = []
+    x_cal     = x.clone()
+    for i in range(cal_steps):
+        sigma      = sigmas[i]
+        sigma_next = sigmas[i + 1]
+        sigma_val  = sigma.item()
+
+        with torch.no_grad():
+            x0_hat = model(x_cal, sigma * s_in, **extra_args).detach()
+
+        sigma_hat_0 = min(
+            _pca_noise_estimate(x0_hat, min_sigma=float(sure_eps)),
+            sigma_val,
+        )
+        residual = (x_cal - x0_hat).detach()
+        snapshots.append((residual, sigma_hat_0 ** 2))
+
+        if float(sigma_next) > 0:
+            sigma_down, sigma_up = get_ancestral_step(sigma, sigma_next, eta=1.0)
+            d     = (x_cal - x0_hat) / sigma
+            x_cal = x_cal + d * (sigma_down - sigma)
+            x_cal = x_cal + sigma_up * noise_sampler(sigma, sigma_next)
+
+    del x_cal
+
+    # ── Phase 2: Bayesian optimisation (or grid fallback) ────────────────────
+    best_wavelet = cal_wavelet_list[0]
+    best_level   = max(1, min(3, lvl_max))
+    best_lp_frac = 1.0
+    n_trials_run = 0
+
+    try:
+        import optuna as _optuna
+        _optuna.logging.set_verbosity(_optuna.logging.WARNING)
+
+        _no_improve = [0]
+        _best_val   = [float('inf')]
+
+        def _bo_callback(study, trial):
+            val = study.best_value
+            if val < _best_val[0]:
+                _best_val[0]   = val
+                _no_improve[0] = 0
+            else:
+                _no_improve[0] += 1
+            if _no_improve[0] >= int(sure_wavelet_bo_patience):
+                study.stop()
+
+        def _objective(trial):
+            wav   = trial.suggest_categorical('wavelet', cal_wavelet_list)
+            level = trial.suggest_int('level', lvl_min, lvl_max)
+            lpf   = trial.suggest_float('lp_frac', 0.0, 1.0)
+            return _sure_score_config(snapshots, wav, level, lpf)
+
+        study = _optuna.create_study(
+            direction='minimize',
+            sampler=_optuna.samplers.TPESampler(seed=42, n_startup_trials=10),
+        )
+        study.optimize(
+            _objective,
+            n_trials=int(sure_wavelet_bo_trials),
+            callbacks=[_bo_callback],
+            show_progress_bar=False,
+        )
+
+        best         = study.best_params
+        best_wavelet = best['wavelet']
+        best_level   = best['level']
+        best_lp_frac = best['lp_frac']
+        n_trials_run = len(study.trials)
+
+        ranked = sorted(
+            [t for t in study.trials if t.value is not None],
+            key=lambda t: t.value,
+        )
+        for rank, t in enumerate(ranked[:3], 1):
+            p = t.params
+            _sure_logger.info(
+                "SURE-Wavelet Auto-Converge  #%d: wavelet=%s  level=%d  lp_frac=%.3f  sure=%.2f",
+                rank, p['wavelet'], p['level'], p['lp_frac'], t.value,
+            )
+
+    except ImportError:
+        _sure_logger.warning(
+            "optuna not installed — falling back to grid search. "
+            "Install with: pip install optuna"
+        )
+        import itertools
+        _lp_grid   = [0.0, 0.25, 0.5, 0.75, 1.0]
+        _grid      = list(itertools.product(
+            cal_wavelet_list,
+            range(lvl_min, lvl_max + 1),
+            _lp_grid,
+        ))
+        _scores    = [_sure_score_config(snapshots, w, lv, lf) for w, lv, lf in _grid]
+        _best_idx  = int(min(range(len(_scores)), key=lambda j: _scores[j]))
+        best_wavelet, best_level, best_lp_frac = _grid[_best_idx]
+        n_trials_run = len(_grid)
+
+        ranked_grid = sorted(range(len(_scores)), key=lambda j: _scores[j])
+        for rank, idx in enumerate(ranked_grid[:3], 1):
+            w, lv, lf = _grid[idx]
+            _sure_logger.info(
+                "SURE-Wavelet Auto-Converge (grid)  #%d: wavelet=%s  level=%d  lp_frac=%.2f  "
+                "sure=%.2f", rank, w, lv, lf, _scores[idx],
+            )
+
+    _sure_logger.info(
+        "SURE-Wavelet Auto-Converge: using wavelet=%s  level=%d  lp_frac=%.3f  "
+        "(%d evaluations)",
+        best_wavelet, best_level, best_lp_frac, n_trials_run,
+    )
+
+    # ── Phase 3: advisory — check if cal_steps was sufficient ───────────────
+    if len(snapshots) > 1:
+        import math as _math
+        import statistics as _stat
+        per_step = [
+            _sure_score_config([snap], best_wavelet, best_level, best_lp_frac)
+            for snap in snapshots
+        ]
+        finite = [v for v in per_step if _math.isfinite(v)]
+        if len(finite) >= 2:
+            cv = _stat.stdev(finite) / (abs(_stat.mean(finite)) + 1e-8)
+            if cv > float(sure_wavelet_bo_cv_warn):
+                _sure_logger.warning(
+                    "SURE-Wavelet Auto-Converge: winner SURE CV=%.3f > %.2f — "
+                    "objective is noisy; consider increasing sure_wavelet_cal_steps (current=%d).",
+                    cv, float(sure_wavelet_bo_cv_warn), cal_steps,
+                )
+            else:
+                _sure_logger.info(
+                    "SURE-Wavelet Auto-Converge: winner CV=%.3f — calibration stable.", cv,
+                )
+
+    # ── Phase 4: main sampling with winning config + convergence loop ────────
+    return sample_sure_wavelet_converge(
+        model, x, sigmas,
+        extra_args=extra_args, callback=callback, disable=disable,
+        sure_alpha=sure_alpha, sure_n_mc=sure_n_mc, sure_eps=sure_eps,
+        sure_jac_interval=sure_jac_interval,
+        sure_adam_mode=sure_adam_mode, sure_adam_beta1=sure_adam_beta1,
+        sure_adam_beta2=sure_adam_beta2, sure_adam_wd=sure_adam_wd,
+        sure_wavelet=best_wavelet, sure_wavelet_level=best_level,
+        sure_wavelet_lp_frac=best_lp_frac,
+        sure_approx_coeff=sure_approx_coeff, sure_csv_path=sure_csv_path,
+        sure_sigma_ema=sure_sigma_ema,
+        sure_wavelet_warmup_steps=sure_wavelet_warmup_steps,
+        sure_grad_mode=sure_grad_mode,
+        sure_inner_steps=sure_inner_steps,
+        sure_inner_tol=sure_inner_tol,
+    )
+
+
 def sample_sure_adaptive(model, x, sigma_min, sigma_max, extra_args=None, callback=None, disable=None,
                           rtol=0.05, atol=0.0078, h_init=0.05,
                           pcoeff=0., icoeff=1., dcoeff=0., accept_safety=0.81,
