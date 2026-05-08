@@ -409,20 +409,6 @@ function setRandomSeed(elem_id) {
     return [];
 }
 
-function switchWidthHeight(tabname) {
-    var width = gradioApp().querySelector("#" + tabname + "_width input[type=number]");
-    var height = gradioApp().querySelector("#" + tabname + "_height input[type=number]");
-    if (!width || !height) return [];
-
-    var tmp = width.value;
-    width.value = height.value;
-    height.value = tmp;
-
-    updateInput(width);
-    updateInput(height);
-    return [];
-}
-
 
 var onEditTimers = {};
 

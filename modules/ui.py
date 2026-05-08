@@ -98,14 +98,17 @@ def send_gradio_gallery_to_image(x) -> None | Image.Image:
     return image_from_url_text(x[0])
 
 
-def calc_resolution_hires(enable, width, height, hr_scale, hr_resize_x, hr_resize_y) -> str:
+def calc_resolution_hires(enable, width, height, hr_scale, hr_resize_x, hr_resize_y):
+    row2_visible = not getattr(shared.opts, 'use_old_hires_fix_width_height', False)
+
     if not enable:
-        return ""
+        return "", gr.update(visible=row2_visible)
 
     p = processing.StableDiffusionProcessingTxt2Img(width=width, height=height, enable_hr=True, hr_scale=hr_scale, hr_resize_x=hr_resize_x, hr_resize_y=hr_resize_y)
     p.calculate_target_resolution()
 
-    return f"from <span class='resolution'>{p.width}x{p.height}</span> to <span class='resolution'>{p.hr_resize_x or p.hr_upscale_to_x}x{p.hr_resize_y or p.hr_upscale_to_y}</span>"
+    text = f"from <span class='resolution'>{p.width}x{p.height}</span> to <span class='resolution'>{p.hr_resize_x or p.hr_upscale_to_x}x{p.hr_resize_y or p.hr_upscale_to_y}</span>"
+    return text, gr.update(visible=row2_visible)
 
 
 def resize_from_to_html(width, height, scale_by) -> str:
@@ -150,15 +153,6 @@ def interrogate_deepbooru(image):
     prompt: str = deepbooru.model.tag(image)
     return gr.update() if prompt is None else prompt
 
-
-def connect_clear_prompt(button) -> None:
-    """Given clear button, prompt, and token_counter objects, setup clear prompt button click event"""
-    button.click(
-        _js="clear_prompt",
-        fn=None,
-        inputs=[],
-        outputs=[],
-    )
 
 
 def update_token_counter(text, steps, styles, *, is_positive=True) -> str:
@@ -332,7 +326,7 @@ def create_ui() -> gr.Blocks:
                                     hr_second_pass_steps = gr.Slider(minimum=0, maximum=150, step=1, label='Hires steps', value=0, elem_id="txt2img_hires_steps")
                                     denoising_strength = gr.Slider(minimum=0.0, maximum=1.0, step=0.01, label='Denoising strength', value=0.7, elem_id="txt2img_denoising_strength")
 
-                                with FormRow(elem_id="txt2img_hires_fix_row2", variant="compact"):
+                                with FormRow(elem_id="txt2img_hires_fix_row2", variant="compact") as hires_fix_row2:
                                     hr_scale = gr.Slider(minimum=1.0, maximum=4.0, step=0.05, label="Upscale by", value=2.0, elem_id="txt2img_hr_scale")
                                     hr_resize_x = gr.Slider(minimum=0, maximum=2048, step=8, label="Resize width to", value=0, elem_id="txt2img_hr_resize_x")
                                     hr_resize_y = gr.Slider(minimum=0, maximum=2048, step=8, label="Resize height to", value=0, elem_id="txt2img_hr_resize_y")
@@ -385,7 +379,7 @@ def create_ui() -> gr.Blocks:
                 event(
                     fn=calc_resolution_hires,
                     inputs=hr_resolution_preview_inputs,
-                    outputs=[hr_final_resolution],
+                    outputs=[hr_final_resolution, hires_fix_row2],
                     show_progress=False,
                 )
                 event(
@@ -450,7 +444,7 @@ def create_ui() -> gr.Blocks:
                 show_progress=False,
             )
 
-            res_switch_btn.click(fn=None, _js="function(){switchWidthHeight('txt2img')}", inputs=None, outputs=None, show_progress=False)
+            res_switch_btn.click(fn=lambda w, h: (h, w), inputs=[width, height], outputs=[width, height], show_progress=False)
 
             toprow.restore_progress_button.click(
                 fn=progress.restore_progress,
@@ -512,6 +506,8 @@ def create_ui() -> gr.Blocks:
             toprow.ui_styles.dropdown.change(fn=wrap_queued_call(update_negative_prompt_token_counter), inputs=[toprow.negative_prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.negative_token_counter])
             toprow.token_button.click(fn=wrap_queued_call(update_token_counter), inputs=[toprow.prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.token_counter])
             toprow.negative_token_button.click(fn=wrap_queued_call(update_negative_prompt_token_counter), inputs=[toprow.negative_prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.negative_token_counter])
+            toprow.prompt.change(fn=wrap_queued_call(update_token_counter), inputs=[toprow.prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.token_counter], show_progress=False)
+            toprow.negative_prompt.change(fn=wrap_queued_call(update_negative_prompt_token_counter), inputs=[toprow.negative_prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.negative_token_counter], show_progress=False)
 
         extra_networks_ui: ui_extra_networks.ExtraNetworksUi = ui_extra_networks.create_ui(txt2img_interface, [txt2img_generation_tab], 'txt2img')
         ui_extra_networks.setup_ui(extra_networks_ui, output_panel.gallery)
@@ -793,10 +789,9 @@ def create_ui() -> gr.Blocks:
                 show_progress=False,
             )
 
-            interrogate_args: dict[str, str | list[Label | Any | Textbox | Image]] = dict(
-                _js="get_img2img_tab_index",
+            interrogate_args: dict[str, list[Label | Any | Textbox | Image]] = dict(
                 inputs=[
-                    dummy_component,
+                    img2img_selected_tab,
                     img2img_batch_input_dir,
                     img2img_batch_output_dir,
                     init_img,
@@ -811,7 +806,7 @@ def create_ui() -> gr.Blocks:
             toprow.prompt.submit(**img2img_args)
             toprow.submit.click(**img2img_args)
 
-            res_switch_btn.click(fn=None, _js="function(){switchWidthHeight('img2img')}", inputs=None, outputs=None, show_progress=False)
+            res_switch_btn.click(fn=lambda w, h: (h, w), inputs=[width, height], outputs=[width, height], show_progress=False)
 
             detect_image_size_btn.click(
                 fn=lambda w, h, _: (w or gr.update(), h or gr.update()),
@@ -850,6 +845,8 @@ def create_ui() -> gr.Blocks:
             toprow.ui_styles.dropdown.change(fn=wrap_queued_call(update_negative_prompt_token_counter), inputs=[toprow.negative_prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.negative_token_counter])
             toprow.token_button.click(fn=update_token_counter, inputs=[toprow.prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.token_counter])
             toprow.negative_token_button.click(fn=wrap_queued_call(update_negative_prompt_token_counter), inputs=[toprow.negative_prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.negative_token_counter])
+            toprow.prompt.change(fn=wrap_queued_call(update_token_counter), inputs=[toprow.prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.token_counter], show_progress=False)
+            toprow.negative_prompt.change(fn=wrap_queued_call(update_negative_prompt_token_counter), inputs=[toprow.negative_prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.negative_token_counter], show_progress=False)
 
             img2img_paste_fields = [
                 (toprow.prompt, "Prompt"),
