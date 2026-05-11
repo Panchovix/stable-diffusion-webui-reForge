@@ -5027,6 +5027,42 @@ def _pca_noise_single(img, patch_size=8, min_sigma=1e-3):
     return max(float(sigma2 ** 0.5), min_sigma)
 
 
+def _sure_effective_alpha(alpha: float, sigma_t, adam_active: bool) -> float:
+    """Effective gradient-descent step size validated by Lean (SURE_verification.lean).
+
+    Lean theorem cond4_step_closer proves descent is guaranteed for any
+    effective_alpha ∈ (0, 1/2).  The formula alpha / (1 + σ_norm) satisfies
+    this bound for all σ_norm ≥ 0 whenever alpha < 1/2 (standard choice).
+
+    Scheduler auto-correction
+    ─────────────────────────
+    Flow-matching / VP schedulers  (σ_t ∈ [0, 1]):
+        σ_norm = σ_t → effective_alpha ∈ [alpha/2, alpha]  ← unchanged.
+
+    EDM / Karras schedulers  (σ_t up to ~80 for long schedules):
+        Without correction: effective_alpha ≈ alpha/80 at early steps →
+        SURE takes near-zero steps despite a valid gradient direction.
+        Auto-detected when σ_t > 1; normaliser capped at 1 so that
+        effective_alpha ≥ alpha/2 throughout all noise levels.
+
+    Lean bound (effectiveAlpha_lt_half): alpha/(1 + min(σ_t, 1)) < 1/2
+    holds for all σ_t ≥ 0 and alpha < 1/2, keeping cond4 always satisfied.
+
+    Adam mode: step magnitude is gradient-normalised internally; sigma
+    scaling would double-suppress early steps and is skipped.
+    """
+    if adam_active:
+        return float(alpha)
+    if sigma_t is None:
+        return float(alpha)
+    sigma_t_f = float(sigma_t)
+    if sigma_t_f <= 0.0:
+        return float(alpha)
+    # Scheduler auto-detection: σ_t > 1 → EDM/Karras, cap normaliser at 1
+    sigma_norm = min(sigma_t_f, 1.0)
+    return float(alpha) / (1.0 + sigma_norm)
+
+
 def _sure_correct_x0(model, x0_hat, sigma_hat_0, s_in, extra_args,
                      alpha=0.05, n_mc=1, eps_mc=1e-3, use_jac=True,
                      sigma_t=None,
@@ -5186,12 +5222,37 @@ def _sure_correct_x0(model, x0_hat, sigma_hat_0, s_in, extra_args,
                 del x_pert_hat
 
         jac_trace /= n_mc
-        sure_val  += 2.0 * sigma2 * jac_trace
+        jac_contribution = 2.0 * sigma2 * jac_trace
+        sure_val += jac_contribution
+
+        # ── Lean-backed jac reliability gate ───────────────────────────────────
+        # Lean (SURE_verification.lean, cond5_strict_descent) proves descent is
+        # guaranteed with proxy gradient 2·r regardless of jac.
+        # Hutchinson n_mc=1 has variance O(n²); when jac_trace < −n/n_mc the
+        # single-sample estimate is noise-dominated (true tr{J_D} ≥ 0 for a
+        # contractive denoiser).  Roll back the jac sure_val contribution and
+        # fall back to the Lean-proven proxy gradient for 'full' mode.
+        _jac_floor = -float(n) / max(n_mc, 1)
+        if jac_trace < _jac_floor:
+            _sure_logger.warning(
+                "[sure_x0] jac_trace=%.2f < floor %.2f (n=%d, n_mc=%d): "
+                "Hutchinson estimate noise-dominated; rolling back to proxy "
+                "gradient (Lean: cond5_strict_descent). Use n_mc>=8 for "
+                "reliable sure_val.",
+                jac_trace, _jac_floor, n, n_mc,
+            )
+            sure_val -= jac_contribution   # undo the unreliable jac contribution
+            jac_trace = None               # mark as unreliable for downstream logging
 
         if need_full_grad:
-            # Opt-1: base Jac term already folded into grad via combined scalar in Pass 1.
-            # ∇tr{J} ≈ (1/ε)·Σ J_D(x+εb_i)^T·b_i / n_mc  (no subtraction needed)
-            grad = grad + (2.0 * sigma2 / n_mc) * grad_jac_pert_sum
+            if jac_trace is not None:
+                # Opt-1: base Jac term already folded into grad via combined scalar in Pass 1.
+                # ∇tr{J} ≈ (1/ε)·Σ J_D(x+εb_i)^T·b_i / n_mc  (no subtraction needed)
+                grad = grad + (2.0 * sigma2 / n_mc) * grad_jac_pert_sum
+            else:
+                # Jac unreliable: discard jac-contaminated grad from Pass 1;
+                # fall back to Lean-proven proxy gradient: 2·(x̂₀ − D_θ(x̂₀)).
+                grad = (2.0 * residual).detach()
             del grad_jac_pert_sum
     x0_std = x0_hat.std().item()
     gs     = grad.std().item()
@@ -5203,13 +5264,13 @@ def _sure_correct_x0(model, x0_hat, sigma_hat_0, s_in, extra_args,
         #grad = grad * (x0_std / gs)
     #grad = grad.clamp(-3.0 * x0_std, 3.0 * x0_std)
 
-    # Compute effective_alpha first — needed as lr for the optimizer.
-    # Adam normalises gradients internally so sigma scaling would double-suppress
-    # early steps; keep it only for plain SGD where raw magnitude grows with sigma.
-    if sigma_t is not None and (adam_state is None or adam_mode == 'none'):
-        effective_alpha = alpha / (1.0 + float(sigma_t))
-    else:
-        effective_alpha = alpha
+    # Lean (cond4_step_closer) requires effective_alpha ∈ (0, 1/2).
+    # _sure_effective_alpha auto-detects EDM vs flow-matching from σ_t magnitude
+    # and caps the normaliser at 1 so EDM gets effective_alpha ≥ alpha/2.
+    effective_alpha = _sure_effective_alpha(
+        alpha, sigma_t,
+        adam_active=(adam_state is not None and adam_mode in ('adam', 'adamw')),
+    )
 
     # --- Adam / AdamW via torch.optim ------------------------------------------
     # Each diffusion step is one optimizer iteration. torch.optim.Adam/AdamW
@@ -5697,8 +5758,9 @@ def _sure_correct_x0_wavelet(model, x0_hat, sigma_hat_0, s_in, extra_args,
     # Detail subbands beyond the cutoff are passed through unchanged.
     _n_detail_correct = int(lp_frac * (n_sb - 1))  # 0 = approx only, n_sb-1 = all
 
-    corrected_coeffs  = []
-    sure_subband_vals = []
+    corrected_coeffs       = []
+    corrected_sure_vals    = []   # SURE only for subbands that are actually corrected
+    passthrough_sure_vals  = []   # SURE for pass-through subbands (diagnostic only)
 
     for sb_idx in range(n_sb):
         x0_sb  = x0_coeffs[sb_idx]
@@ -5715,7 +5777,7 @@ def _sure_correct_x0_wavelet(model, x0_hat, sigma_hat_0, s_in, extra_args,
                 adam_state['wavelet_m'][0] = m0_new
                 adam_state['wavelet_v'][0] = v0_new
             corrected_coeffs.append(c_corr)
-            sure_subband_vals.append(sb_sure)
+            corrected_sure_vals.append(sb_sure)
             _sure_logger.debug(
                 "[sure_wavelet]   sb=R  shape=%s  res_rms=%.5f  sure=%.4f  "
                 "grad_rms=%.5f  eff_grad_rms=%.5f  adam_ratio=%.3f  delta_rms=%.5f",
@@ -5727,10 +5789,16 @@ def _sure_correct_x0_wavelet(model, x0_hat, sigma_hat_0, s_in, extra_args,
         else:
             # Detail subbands at this level — tuple(cH, cV, cD)
             if sb_idx > _n_detail_correct:
-                # Beyond LP cutoff — pass through unchanged, accumulate SURE for logging
+                # Beyond LP cutoff — pass through unchanged.
+                # SURE is tracked separately: these fine-detail bands have large n_k
+                # (the finest band has 76 800 elements at 160×160 latent) and would
+                # dominate total_sure with large negative values at mid-to-late steps
+                # even though they receive no gradient correction.  Including them in
+                # the primary sure_val metric was causing misleading spikes (e.g. −703
+                # at step 33/35) that masked the corrected-subband signal.
                 corrected_coeffs.append(x0_sb)
                 for sub_i in range(3):
-                    sure_subband_vals.append(
+                    passthrough_sure_vals.append(
                         float(-res_sb[sub_i].numel() * sigma2 + (res_sb[sub_i] ** 2).sum())
                     )
                 continue
@@ -5757,7 +5825,7 @@ def _sure_correct_x0_wavelet(model, x0_hat, sigma_hat_0, s_in, extra_args,
                 detail_corr.append(c_corr)
                 new_m.append(m_new)
                 new_v.append(v_new)
-                sure_subband_vals.append(sb_sure)
+                corrected_sure_vals.append(sb_sure)
                 _sure_logger.debug(
                     "[sure_wavelet]   sb=L%d_%s  shape=%s  res_rms=%.5f  sure=%.4f  "
                     "grad_rms=%.5f  eff_grad_rms=%.5f  adam_ratio=%.3f  delta_rms=%.5f",
@@ -5778,18 +5846,24 @@ def _sure_correct_x0_wavelet(model, x0_hat, sigma_hat_0, s_in, extra_args,
     # Crop to original spatial dims — wavelet padding may add 1 pixel
     x0_corrected = x0_raw[..., :x0_hat.shape[-2], :x0_hat.shape[-1]]
 
-    total_sure = sum(sure_subband_vals)
+    # Primary metric: SURE of corrected subbands only.  Negative values at mid-to-
+    # late steps mean ‖r_k‖² < n_k·σ² — the denoiser residual is below the noise
+    # floor, which is expected for a well-trained model (Lean: sure_val_negative_iff_good_denoiser).
+    # Pass-through subbands are excluded: their large n_k would otherwise dominate
+    # this sum with irrelevant negative values (see Supplement C in SURE_verification.lean).
+    corrected_sure = sum(corrected_sure_vals)
+    passthrough_sure = sum(passthrough_sure_vals)
     if jac_trace is not None:
-        total_sure += 2.0 * sigma2 * jac_trace
+        corrected_sure += 2.0 * sigma2 * jac_trace
 
     pixel_delta_rms = float(((x0_corrected - x0_hat) ** 2).mean().sqrt())
 
     _sure_logger.info(
-        "[wavelet] total_sure=%.1f  pixel_δ=%.5f  base_alpha=%.5f",
-        total_sure, pixel_delta_rms, base_alpha,
+        "[wavelet] sure=%.1f  pt_sure=%.1f  pixel_δ=%.5f  base_alpha=%.5f",
+        corrected_sure, passthrough_sure, pixel_delta_rms, base_alpha,
     )
 
-    return x0_corrected, {'sure_val': total_sure, 'jac_ratio': None,
+    return x0_corrected, {'sure_val': corrected_sure, 'jac_ratio': None,
                           'pixel_delta_rms': pixel_delta_rms}
 
 
