@@ -1123,7 +1123,8 @@ def sample_dpmpp_2s_a_sure(model, x, sigmas, extra_args=None, callback=None, dis
                              sure_preheat_steps=-1, sure_jac_interval=-1,
                              sure_adam_mode='none', sure_adam_beta1=0.9,
                              sure_adam_beta2=0.999, sure_adam_wd=0.01,
-                             sure_grad_mode='vjp'):
+                             sure_grad_mode='vjp',
+                             sure_alpha_bo_trials=0, sure_alpha_bo_patience=4):
     """DPM-Solver++(2S) Ancestral with SURE trajectory correction.
 
     SURE corrects x̂₀ on the first (main) model call at each step.
@@ -1150,11 +1151,12 @@ def sample_dpmpp_2s_a_sure(model, x, sigmas, extra_args=None, callback=None, dis
     _jac_ratio_ema:   float | None = None
     _corr_count: int               = 0
     _EMA_A = 0.35
-    _adam_state = {'optimizer': None, 'param': None} if sure_adam_mode != 'none' else None
+    _adam_state      = {'optimizer': None, 'param': None} if sure_adam_mode != 'none' else None
+    _alpha_bo_state  = {} if sure_alpha_bo_trials > 0 else None
 
     _sure_logger.info(
-        "DPM++2Sa-SURE: %d steps  preheat=%d  eta=%.2f  alpha=%.4f  adam=%s",
-        n_steps, preheat, eta, sure_alpha, sure_adam_mode,
+        "DPM++2Sa-SURE: %d steps  preheat=%d  eta=%.2f  alpha=%.4f  adam=%s  alpha_bo=%d",
+        n_steps, preheat, eta, sure_alpha, sure_adam_mode, sure_alpha_bo_trials,
     )
 
     for i in trange(n_steps, disable=disable):
@@ -1182,6 +1184,9 @@ def sample_dpmpp_2s_a_sure(model, x, sigmas, extra_args=None, callback=None, dis
                 adam_state=_adam_state, adam_mode=sure_adam_mode,
                 adam_beta1=sure_adam_beta1, adam_beta2=sure_adam_beta2,
                 adam_wd=sure_adam_wd, grad_mode=sure_grad_mode,
+                alpha_bo_trials=sure_alpha_bo_trials,
+                alpha_bo_patience=sure_alpha_bo_patience,
+                alpha_bo_state=_alpha_bo_state,
             )
             _corr_count += 1
             _jac_ratio_new = _stats.get('jac_ratio')
@@ -1241,7 +1246,8 @@ def sample_dpmpp_2s_a_sure_adaptive(model, x, sigma_min, sigma_max,
                                      sure_alpha=0.05, sure_n_mc=1, sure_eps=1e-3,
                                      sure_preheat_frac=0.3, sure_jac_interval=2,
                                      sure_adam_mode='none', sure_adam_beta1=0.9,
-                                     sure_adam_beta2=0.999, sure_adam_wd=0.01, sure_grad_mode='vjp'):
+                                     sure_adam_beta2=0.999, sure_adam_wd=0.01, sure_grad_mode='vjp',
+                                     sure_alpha_bo_trials=0, sure_alpha_bo_patience=4):
     """DPM-Solver++(2S) Ancestral + SURE with adaptive step size (PID).
 
     Error estimate: compare 1st-order Euler (x_low) vs 2S midpoint (x_high),
@@ -1272,7 +1278,8 @@ def sample_dpmpp_2s_a_sure_adaptive(model, x, sigma_min, sigma_max,
     rtol_t = torch.tensor(rtol, dtype=x.dtype, device=x.device)
 
     _corr_count = 0
-    _adam_state = {'optimizer': None, 'param': None} if sure_adam_mode != 'none' else None
+    _adam_state     = {'optimizer': None, 'param': None} if sure_adam_mode != 'none' else None
+    _alpha_bo_state = {} if sure_alpha_bo_trials > 0 else None
     info = {'steps': 0, 'nfe': 0, 'n_accept': 0, 'n_reject': 0}
     x_prev = x.clone()
     s = t_start.clone()
@@ -1314,6 +1321,9 @@ def sample_dpmpp_2s_a_sure_adaptive(model, x, sigma_min, sigma_max,
                     adam_state=_adam_state, adam_mode=sure_adam_mode,
                     adam_beta1=sure_adam_beta1, adam_beta2=sure_adam_beta2,
                     adam_wd=sure_adam_wd, grad_mode=sure_grad_mode,
+                    alpha_bo_trials=sure_alpha_bo_trials,
+                    alpha_bo_patience=sure_alpha_bo_patience,
+                    alpha_bo_state=_alpha_bo_state,
                 )
                 _corr_count += 1
 
@@ -1557,7 +1567,8 @@ def sample_dpmpp_2m_sure(model, x, sigmas, extra_args=None, callback=None, disab
                           sure_alpha=0.05, sure_n_mc=1, sure_eps=1e-3,
                           sure_preheat_steps=-1, sure_jac_interval=-1,
                           sure_adam_mode='none', sure_adam_beta1=0.9,
-                          sure_adam_beta2=0.999, sure_adam_wd=0.01, sure_grad_mode='vjp'):
+                          sure_adam_beta2=0.999, sure_adam_wd=0.01, sure_grad_mode='vjp',
+                          sure_alpha_bo_trials=0, sure_alpha_bo_patience=4):
     """DPM-Solver++(2M) with SURE trajectory correction.
 
     Fully deterministic ODE — zero noise injection at any step. SURE correction
@@ -1586,7 +1597,8 @@ def sample_dpmpp_2m_sure(model, x, sigmas, extra_args=None, callback=None, disab
     _jac_ratio_ema:   float | None = None
     _corr_count: int               = 0
     _EMA_A = 0.35
-    _adam_state = {'optimizer': None, 'param': None} if sure_adam_mode != 'none' else None
+    _adam_state     = {'optimizer': None, 'param': None} if sure_adam_mode != 'none' else None
+    _alpha_bo_state = {} if sure_alpha_bo_trials > 0 else None
 
     _sure_logger.info(
         "DPM++2M-SURE: %d steps  preheat=%d  alpha=%.4f  jac_interval=%s  adam=%s",
@@ -1620,6 +1632,9 @@ def sample_dpmpp_2m_sure(model, x, sigmas, extra_args=None, callback=None, disab
                 adam_state=_adam_state, adam_mode=sure_adam_mode,
                 adam_beta1=sure_adam_beta1, adam_beta2=sure_adam_beta2,
                 adam_wd=sure_adam_wd, grad_mode=sure_grad_mode,
+                alpha_bo_trials=sure_alpha_bo_trials,
+                alpha_bo_patience=sure_alpha_bo_patience,
+                alpha_bo_state=_alpha_bo_state,
             )
             _corr_count += 1
 
@@ -1671,7 +1686,8 @@ def sample_dpmpp_2m_sde_sure(model, x, sigmas, extra_args=None, callback=None, d
                                sure_alpha=0.05, sure_n_mc=1, sure_eps=1e-3,
                                sure_preheat_steps=-1, sure_jac_interval=-1,
                                sure_adam_mode='none', sure_adam_beta1=0.9,
-                               sure_adam_beta2=0.999, sure_adam_wd=0.01, sure_grad_mode='vjp'):
+                               sure_adam_beta2=0.999, sure_adam_wd=0.01, sure_grad_mode='vjp',
+                               sure_alpha_bo_trials=0, sure_alpha_bo_patience=4):
     """DPM-Solver++(2M) SDE with SURE trajectory correction.
 
     Matches the SURE paper (arxiv 2512.23232) Algorithm 1 which uses a stochastic
@@ -1713,7 +1729,8 @@ def sample_dpmpp_2m_sde_sure(model, x, sigmas, extra_args=None, callback=None, d
     _jac_ratio_ema:   float | None = None
     _corr_count: int               = 0
     _EMA_A = 0.35
-    _adam_state = {'optimizer': None, 'param': None} if sure_adam_mode != 'none' else None
+    _adam_state     = {'optimizer': None, 'param': None} if sure_adam_mode != 'none' else None
+    _alpha_bo_state = {} if sure_alpha_bo_trials > 0 else None
 
     _sure_logger.info(
         "DPM++2M-SDE-SURE: %d steps  preheat=%d  eta=%.2f  alpha=%.4f  solver=%s  adam=%s",
@@ -1747,6 +1764,9 @@ def sample_dpmpp_2m_sde_sure(model, x, sigmas, extra_args=None, callback=None, d
                 adam_state=_adam_state, adam_mode=sure_adam_mode,
                 adam_beta1=sure_adam_beta1, adam_beta2=sure_adam_beta2,
                 adam_wd=sure_adam_wd, grad_mode=sure_grad_mode,
+                alpha_bo_trials=sure_alpha_bo_trials,
+                alpha_bo_patience=sure_alpha_bo_patience,
+                alpha_bo_state=_alpha_bo_state,
             )
             _corr_count += 1
 
@@ -1933,7 +1953,8 @@ def sample_dpmpp_3m_sde_sure(model, x, sigmas, extra_args=None, callback=None, d
                                sure_alpha=0.05, sure_n_mc=1, sure_eps=1e-3,
                                sure_preheat_steps=-1, sure_jac_interval=-1,
                                sure_adam_mode='none', sure_adam_beta1=0.9,
-                               sure_adam_beta2=0.999, sure_adam_wd=0.01, sure_grad_mode='vjp'):
+                               sure_adam_beta2=0.999, sure_adam_wd=0.01, sure_grad_mode='vjp',
+                               sure_alpha_bo_trials=0, sure_alpha_bo_patience=4):
     """DPM-Solver++(3M) SDE with SURE trajectory correction.
 
     Implements Algorithm 1 from arXiv:2512.23232 on top of the 3rd-order multistep
@@ -1979,7 +2000,8 @@ def sample_dpmpp_3m_sde_sure(model, x, sigmas, extra_args=None, callback=None, d
     _jac_ratio_ema:   float | None = None
     _corr_count: int               = 0
     _EMA_A = 0.35
-    _adam_state = {'optimizer': None, 'param': None} if sure_adam_mode != 'none' else None
+    _adam_state     = {'optimizer': None, 'param': None} if sure_adam_mode != 'none' else None
+    _alpha_bo_state = {} if sure_alpha_bo_trials > 0 else None
 
     _sure_logger.info(
         "DPM++3M-SDE-SURE: %d steps  preheat=%d  eta=%.2f  alpha=%.4f  adam=%s",
@@ -2013,6 +2035,9 @@ def sample_dpmpp_3m_sde_sure(model, x, sigmas, extra_args=None, callback=None, d
                 adam_state=_adam_state, adam_mode=sure_adam_mode,
                 adam_beta1=sure_adam_beta1, adam_beta2=sure_adam_beta2,
                 adam_wd=sure_adam_wd, grad_mode=sure_grad_mode,
+                alpha_bo_trials=sure_alpha_bo_trials,
+                alpha_bo_patience=sure_alpha_bo_patience,
+                alpha_bo_state=_alpha_bo_state,
             )
             _corr_count += 1
 
@@ -2091,7 +2116,8 @@ def sample_dpmpp_2m_sde_sure_adaptive(model, x, sigma_min, sigma_max,
                                        sure_alpha=0.05, sure_n_mc=1, sure_eps=1e-3,
                                        sure_preheat_frac=0.3, sure_jac_interval=2,
                                        sure_adam_mode='none', sure_adam_beta1=0.9,
-                                       sure_adam_beta2=0.999, sure_adam_wd=0.01, sure_grad_mode='vjp'):
+                                       sure_adam_beta2=0.999, sure_adam_wd=0.01, sure_grad_mode='vjp',
+                                       sure_alpha_bo_trials=0, sure_alpha_bo_patience=4):
     """DPM-Solver++(2M) SDE with SURE correction and adaptive step size (PID).
 
     Combines three ideas from the literature:
@@ -2141,7 +2167,8 @@ def sample_dpmpp_2m_sde_sure_adaptive(model, x, sigma_min, sigma_max,
     rtol_t = torch.tensor(rtol, dtype=x.dtype, device=x.device)
 
     _corr_count = 0
-    _adam_state = {'optimizer': None, 'param': None} if sure_adam_mode != 'none' else None
+    _adam_state     = {'optimizer': None, 'param': None} if sure_adam_mode != 'none' else None
+    _alpha_bo_state = {} if sure_alpha_bo_trials > 0 else None
     info = {'steps': 0, 'nfe': 0, 'n_accept': 0, 'n_reject': 0}
     x_prev = x.clone()
     s = t_start.clone()
@@ -2179,6 +2206,9 @@ def sample_dpmpp_2m_sde_sure_adaptive(model, x, sigma_min, sigma_max,
                     adam_state=_adam_state, adam_mode=sure_adam_mode,
                     adam_beta1=sure_adam_beta1, adam_beta2=sure_adam_beta2,
                     adam_wd=sure_adam_wd, grad_mode=sure_grad_mode,
+                    alpha_bo_trials=sure_alpha_bo_trials,
+                    alpha_bo_patience=sure_alpha_bo_patience,
+                    alpha_bo_state=_alpha_bo_state,
                 )
                 _corr_count += 1
 
@@ -5063,6 +5093,145 @@ def _sure_effective_alpha(alpha: float, sigma_t, adam_active: bool) -> float:
     return float(alpha) / (1.0 + sigma_norm)
 
 
+def _sure_alpha_bo_search(
+    residual,
+    grad,
+    sigma2,
+    jac_trace,
+    alpha_base,
+    alpha_range=None,
+    n_trials=12,
+    patience=4,
+    n_startup=3,
+    prev_study=None,
+):
+    """Bayesian optimisation over the SURE gradient step size α.
+
+    Objective: quadratic stop-gradient proxy (zero UNet calls per trial):
+        SURE_proxy(α) = −n·σ² + ‖residual − α·grad‖² + 2σ²·jac_trace
+
+    Under this proxy the optimum is the closed-form α* = (r·g)/‖g‖²,
+    used as the analytical fallback when optuna is not installed.
+
+    BO adds value over the closed form when the quadratic approximation is
+    inaccurate (large steps, highly non-linear denoiser) and for cross-step
+    landscape exploration via warm-starting from prev_study.
+
+    Args:
+        residual:    detached tensor (x0_hat − x_hat)
+        grad:        detached SURE gradient tensor
+        sigma2:      float  σ̂₀²
+        jac_trace:   float or None  — tr{J_D} MC estimate (0.0 if None)
+        alpha_base:  float  user-set sure_alpha (centres the log-scale range)
+        alpha_range: (lo, hi) or None → auto (alpha_base×0.01, min(alpha_base×20, 0.49))
+        n_trials:    BO trial budget
+        patience:    early-stop after this many non-improving trials
+        n_startup:   TPE random-exploration trials before fitting the model
+        prev_study:  optuna Study from the previous diffusion step (warm-start)
+
+    Returns:
+        (best_alpha: float, study_or_None)
+    """
+    n = residual.numel()
+    jt = float(jac_trace) if jac_trace is not None else 0.0
+
+    # Auto-range: log-scale around alpha_base; hard-cap at 0.49 (Lean bound)
+    if alpha_range is None:
+        lo = max(alpha_base * 0.01, 1e-5)
+        hi = min(alpha_base * 20.0, 0.49)
+        if lo >= hi:
+            hi = min(lo * 10.0, 0.49)
+    else:
+        lo, hi = float(alpha_range[0]), float(alpha_range[1])
+
+    r_flat = residual.detach().float().reshape(-1)
+    g_flat = grad.detach().float().reshape(-1)
+
+    def _proxy_sure(alpha_val):
+        return float(
+            -n * sigma2
+            + ((r_flat - alpha_val * g_flat) ** 2).sum()
+            + 2.0 * sigma2 * jt
+        )
+
+    # Analytical optimum under the quadratic proxy (closed-form line search)
+    dot  = float((r_flat * g_flat).sum())
+    g_sq = float((g_flat * g_flat).sum()) + 1e-12
+    alpha_analytical = float(max(lo, min(hi, dot / g_sq)))
+
+    try:
+        import optuna as _optuna
+        _optuna.logging.set_verbosity(_optuna.logging.WARNING)
+
+        study = _optuna.create_study(
+            direction='minimize',
+            sampler=_optuna.samplers.TPESampler(
+                seed=42,
+                n_startup_trials=n_startup,
+                multivariate=False,
+            ),
+        )
+
+        # Warm-start: inject previous step's observations without decay
+        if prev_study is not None:
+            for t in prev_study.trials:
+                if t.value is not None and t.value != float('inf'):
+                    try:
+                        study.add_trial(
+                            _optuna.trial.create_trial(
+                                params=t.params,
+                                distributions=t.distributions,
+                                value=t.value,
+                            )
+                        )
+                    except Exception:
+                        pass  # distribution mismatch on first step — skip
+
+        # Seed with the analytical optimum as the first trial
+        study.enqueue_trial({'alpha': alpha_analytical})
+
+        _no_improve = [0]
+        _best_val   = [float('inf')]
+
+        def _bo_callback(study, trial):
+            val = study.best_value
+            if val < _best_val[0]:
+                _best_val[0]   = val
+                _no_improve[0] = 0
+            else:
+                _no_improve[0] += 1
+            if _no_improve[0] >= patience:
+                study.stop()
+
+        def _objective(trial):
+            alpha_val = trial.suggest_float('alpha', lo, hi, log=True)
+            return _proxy_sure(alpha_val)
+
+        study.optimize(
+            _objective,
+            n_trials=n_trials,
+            callbacks=[_bo_callback],
+            show_progress_bar=False,
+        )
+
+        best_alpha = float(study.best_params['alpha'])
+        _sure_logger.info(
+            "[sure_alpha_bo] lo=%.5f  hi=%.5f  analytical=%.5f  bo_best=%.5f  "
+            "sure_proxy=%.4f  trials=%d",
+            lo, hi, alpha_analytical, best_alpha,
+            study.best_value, len(study.trials),
+        )
+        return best_alpha, study
+
+    except ImportError:
+        _sure_logger.warning(
+            "[sure_alpha_bo] optuna not installed — using analytical α*=%.5f. "
+            "Install with: pip install optuna",
+            alpha_analytical,
+        )
+        return alpha_analytical, None
+
+
 def _sure_correct_x0(model, x0_hat, sigma_hat_0, s_in, extra_args,
                      alpha=0.05, n_mc=1, eps_mc=1e-3, use_jac=True,
                      sigma_t=None,
@@ -5070,7 +5239,9 @@ def _sure_correct_x0(model, x0_hat, sigma_hat_0, s_in, extra_args,
                      adam_beta1=0.9, adam_beta2=0.999, adam_eps=1e-8,
                      adam_wd=0.01, grad_mode='vjp',
                      approx_coeff=2.0,
-                     csv_writer=None, step_idx=None):
+                     csv_writer=None, step_idx=None,
+                     alpha_bo_trials=0, alpha_bo_patience=4,
+                     alpha_bo_state=None):
     """SURE gradient correction per Algorithm 1 of arXiv:2512.23232.
 
     grad_mode controls how ∇SURE is computed:
@@ -5264,6 +5435,24 @@ def _sure_correct_x0(model, x0_hat, sigma_hat_0, s_in, extra_args,
         #grad = grad * (x0_std / gs)
     #grad = grad.clamp(-3.0 * x0_std, 3.0 * x0_std)
 
+    # ── BO alpha search (optional) ────────────────────────────────────────────
+    # Uses the quadratic stop-gradient proxy to evaluate SURE at different α
+    # values without any additional UNet calls.  Warm-starts from the previous
+    # diffusion step's study via alpha_bo_state['study'].
+    if alpha_bo_trials > 0:
+        alpha, _new_alpha_study = _sure_alpha_bo_search(
+            residual.detach(),
+            grad.detach(),
+            sigma2,
+            jac_trace if jac_trace is not None else 0.0,
+            alpha_base=alpha,
+            n_trials=int(alpha_bo_trials),
+            patience=int(alpha_bo_patience),
+            prev_study=alpha_bo_state.get('study') if alpha_bo_state is not None else None,
+        )
+        if alpha_bo_state is not None:
+            alpha_bo_state['study'] = _new_alpha_study
+
     # Lean (cond4_step_closer) requires effective_alpha ∈ (0, 1/2).
     # _sure_effective_alpha auto-detects EDM vs flow-matching from σ_t magnitude
     # and caps the normaliser at 1 so EDM gets effective_alpha ≥ alpha/2.
@@ -5362,13 +5551,15 @@ def _sure_correct_x0(model, x0_hat, sigma_hat_0, s_in, extra_args,
 def _sure_correct_x0_wavelet(model, x0_hat, sigma_hat_0, s_in, extra_args,
                               alpha=0.05, n_mc=1, eps_mc=1e-3, use_jac=True,
                               sigma_t=None,
-                              adam_state=None, adam_mode='none',
+                              adam_state=None, adam_mode='bo',
                               adam_beta1=0.9, adam_beta2=0.999, adam_eps=1e-8,
                               adam_wd=0.01,
                               wavelet='db4', wavelet_level=3,
                               approx_coeff=2.0, warmup_steps=0,
                               lp_frac=1.0,
-                              grad_mode='approx'):
+                              grad_mode='approx',
+                              alpha_bo_trials=12, alpha_bo_patience=4,
+                              alpha_bo_state=None):
     """SURE-Wavelet: per-subband SURE gradient correction.
 
     Decomposes x0_hat into orthogonal 2D wavelet subbands via ptwt.wavedec2,
@@ -5400,8 +5591,18 @@ def _sure_correct_x0_wavelet(model, x0_hat, sigma_hat_0, s_in, extra_args,
       [cA,  (cH_L, cV_L, cD_L),  ...,  (cH_1, cV_1, cD_1)]
        ^^-- approximation (R)    ^^-- finest detail subbands
 
+    adam_mode: 'none' = plain SGD with fixed alpha (sigma-scaled).
+               'adam' = per-subband Adam moment tracking.
+               'adamw' = per-subband AdamW (decoupled weight decay).
+               'bo'   = Bayesian optimisation for alpha per step (default).
+                        Requires optuna; falls back to Adam with a warning if missing.
+
     adam_state: dict; per-subband moments stored under 'wavelet_m'/'wavelet_v'/
-                'wavelet_t' keys — built on the first call.
+                'wavelet_t' keys — built on the first call (Adam/AdamW only).
+
+    alpha_bo_trials:  BO trial budget per step (used when adam_mode='bo').
+    alpha_bo_patience: BO early-stop patience (non-improving trial count).
+    alpha_bo_state:   persistent dict {'study': ...} for cross-step warm-starting.
 
     Falls back to pixel-space _sure_correct_x0 when ptwt is not installed.
     """
@@ -5424,6 +5625,23 @@ def _sure_correct_x0_wavelet(model, x0_hat, sigma_hat_0, s_in, extra_args,
             adam_beta1=adam_beta1, adam_beta2=adam_beta2, adam_eps=adam_eps,
             adam_wd=adam_wd, grad_mode=grad_mode,
         )
+
+    # ── BO mode: check optuna; warn + fall back to Adam if missing ───────────
+    _effective_adam_mode = adam_mode
+    if adam_mode == 'bo':
+        try:
+            import optuna as _optuna_check  # noqa: F401 — availability probe only
+            del _optuna_check
+        except ImportError:
+            _sure_logger.warning(
+                "[sure_wavelet] adam_mode='bo' requires optuna (pip install optuna). "
+                "Falling back to Adam. "
+                "Install optuna to enable per-step Bayesian alpha optimisation."
+            )
+            _effective_adam_mode = 'adam'
+            # Ensure adam_state is initialised for the fallback
+            if adam_state is None:
+                adam_state = {}
 
     eps            = float(x0_hat.abs().max().clamp(min=eps_mc * 1000.0)) / 1000.0
     sigma_denoiser = torch.tensor(sigma_hat_0, device=x0_hat.device, dtype=x0_hat.dtype)
@@ -5680,7 +5898,7 @@ def _sure_correct_x0_wavelet(model, x0_hat, sigma_hat_0, s_in, extra_args,
     # positive at high σ, so ts_step is always negative → ts_val grew without
     # bound every step, causing pixel_delta_rms to diverge monotonically.
     n_sb = len(residual_coeffs)
-    if adam_state is not None and adam_mode in ('adam', 'adamw'):
+    if adam_state is not None and _effective_adam_mode in ('adam', 'adamw'):
         if 'wavelet_m' not in adam_state:
             adam_state['wavelet_m'] = [None] * n_sb
             adam_state['wavelet_v'] = [None] * n_sb
@@ -5694,11 +5912,12 @@ def _sure_correct_x0_wavelet(model, x0_hat, sigma_hat_0, s_in, extra_args,
 
     x0_std = x0_hat.std().item()
 
-    # Base alpha: sigma-scaled for plain SGD only; flat when Adam is active.
-    # Adam's per-element m/v normalisation already suppresses large early-step
-    # gradients — adding sigma scaling on top would double-suppress step 0 and
-    # under-correct at late steps where sigma_t is near zero.
-    if sigma_t is not None and (adam_state is None or adam_mode == 'none'):
+    # Base alpha: sigma-scaled for plain SGD ('none') only.
+    # Adam's per-element m/v normalisation already handles scale — sigma scaling
+    # would double-suppress early steps and under-correct late steps.
+    # BO mode: alpha is the search-space centre; BO selects the per-step value
+    # without sigma pre-scaling (the proxy geometry already encodes the scale).
+    if sigma_t is not None and _effective_adam_mode == 'none':
         base_alpha = alpha / (1.0 + float(sigma_t))
     else:
         base_alpha = alpha
@@ -5723,7 +5942,7 @@ def _sure_correct_x0_wavelet(model, x0_hat, sigma_hat_0, s_in, extra_args,
         grad = g_c if g_c is not None else approx_coeff * res_c
         raw_grad_rms = float((grad ** 2).mean().sqrt())
 
-        if adam_state is not None and adam_mode in ('adam', 'adamw'):
+        if adam_state is not None and _effective_adam_mode in ('adam', 'adamw'):
             if m_c is None:
                 m_c = torch.zeros_like(grad)
                 v_c = torch.zeros_like(grad)
@@ -5733,6 +5952,8 @@ def _sure_correct_x0_wavelet(model, x0_hat, sigma_hat_0, s_in, extra_args,
             bc2   = 1.0 - adam_beta2 ** t_adam
             eff_g = (m_c / bc1) / ((v_c / bc2).sqrt() + adam_eps)
         else:
+            # 'none' and 'bo' — plain gradient descent
+            # For 'bo' base_alpha is the BO-selected step; moments are not used
             eff_g = grad
             m_c   = None
             v_c   = None
@@ -5746,7 +5967,7 @@ def _sure_correct_x0_wavelet(model, x0_hat, sigma_hat_0, s_in, extra_args,
         # and diffusion schedules only have ~60 steps total.
         warmup_factor = min(1.0, t_adam / warmup_steps) if warmup_steps > 0 else 1.0
         step = base_alpha * warmup_factor
-        if adam_mode == 'adamw' and adam_state is not None:
+        if _effective_adam_mode == 'adamw' and adam_state is not None:
             corrected = (x0_c * (1.0 - step * adam_wd) - step * eff_g).detach()
         else:
             corrected = (x0_c - step * eff_g).detach()
@@ -5757,6 +5978,50 @@ def _sure_correct_x0_wavelet(model, x0_hat, sigma_hat_0, s_in, extra_args,
     # and the floor(lp_frac * (n_sb-1)) coarsest detail levels are corrected.
     # Detail subbands beyond the cutoff are passed through unchanged.
     _n_detail_correct = int(lp_frac * (n_sb - 1))  # 0 = approx only, n_sb-1 = all
+
+    # ── BO / analytical alpha search over corrected subbands ─────────────────
+    # When adam_mode='bo': concatenate residuals and gradients from corrected
+    # subbands into flat tensors, then find the optimal α with zero UNet calls.
+    #
+    #   alpha_bo_trials > 0 → Optuna TPE with warm-start from previous step.
+    #   alpha_bo_trials = 0 → closed-form analytical line search: α* = (r·g)/‖g‖².
+    #                         Still better than a fixed α; free to compute.
+    if _effective_adam_mode == 'bo':
+        _r_bo = [residual_coeffs[0].reshape(-1)]
+        _g_bo = [(grad_coeffs[0] if grad_coeffs is not None
+                  else approx_coeff * residual_coeffs[0]).reshape(-1)]
+        for _sbi in range(1, min(_n_detail_correct + 1, n_sb)):
+            for _si in range(3):
+                _r_bo.append(residual_coeffs[_sbi][_si].reshape(-1))
+                _g_bo.append((grad_coeffs[_sbi][_si] if grad_coeffs is not None
+                               else approx_coeff * residual_coeffs[_sbi][_si]).reshape(-1))
+        _r_flat = torch.cat(_r_bo).float()
+        _g_flat = torch.cat(_g_bo).float()
+
+        if int(alpha_bo_trials) > 0:
+            base_alpha, _new_study = _sure_alpha_bo_search(
+                _r_flat, _g_flat, sigma2,
+                jac_trace if jac_trace is not None else 0.0,
+                alpha_base=alpha,
+                n_trials=int(alpha_bo_trials),
+                patience=int(alpha_bo_patience),
+                prev_study=alpha_bo_state.get('study') if alpha_bo_state is not None else None,
+            )
+            if alpha_bo_state is not None:
+                alpha_bo_state['study'] = _new_study
+        else:
+            # Analytical line search — α* = (r·g) / ‖g‖²  (closed-form SURE minimum)
+            _dot  = float((_r_flat * _g_flat).sum())
+            _g_sq = float((_g_flat * _g_flat).sum()) + 1e-12
+            _lo   = max(alpha * 0.01, 1e-5)
+            _hi   = min(alpha * 20.0, 0.49)
+            base_alpha = float(max(_lo, min(_hi, _dot / _g_sq)))
+
+        del _r_bo, _g_bo, _r_flat, _g_flat
+        _sure_logger.info(
+            "[sure_wavelet_bo] base_alpha=%.5f (was %.5f)  trials=%d",
+            base_alpha, alpha, int(alpha_bo_trials),
+        )
 
     corrected_coeffs       = []
     corrected_sure_vals    = []   # SURE only for subbands that are actually corrected
@@ -5873,7 +6138,8 @@ def sample_sure(model, x, sigmas, extra_args=None, callback=None, disable=None,
                 sure_adam_mode='none', sure_adam_beta1=0.9,
                 sure_adam_beta2=0.999, sure_adam_wd=0.01, sure_grad_mode='vjp',
                 sure_approx_coeff=2.0, sure_csv_path=None,
-                sure_sigma_ema=0.0):
+                sure_sigma_ema=0.0,
+                sure_alpha_bo_trials=0, sure_alpha_bo_patience=4):
     """SURE Guided Posterior Sampling (SGPS) — Euler Ancestral variant.
 
     Implements Algorithm 1 from arXiv:2512.23232 directly.  Every step:
@@ -5899,7 +6165,8 @@ def sample_sure(model, x, sigmas, extra_args=None, callback=None, disable=None,
     _EMA_A = 0.35
     _dyn_jac_interval: int        = max(1, sure_jac_interval)
     _jac_ratio_ema:   float | None = None
-    _adam_state = {'optimizer': None, 'param': None} if sure_adam_mode != 'none' else None
+    _adam_state     = {'optimizer': None, 'param': None} if sure_adam_mode != 'none' else None
+    _alpha_bo_state = {} if sure_alpha_bo_trials > 0 else None
     _sigma_hat_0_ema: float | None = None   # EMA state for PCA noise estimate
 
     # CSV setup — only active in approx mode
@@ -5959,6 +6226,9 @@ def sample_sure(model, x, sigmas, extra_args=None, callback=None, disable=None,
             adam_wd=sure_adam_wd, grad_mode=sure_grad_mode,
             approx_coeff=sure_approx_coeff,
             csv_writer=_csv_writer, step_idx=i,
+            alpha_bo_trials=sure_alpha_bo_trials,
+            alpha_bo_patience=sure_alpha_bo_patience,
+            alpha_bo_state=_alpha_bo_state,
         )
 
         # Adapt jac_interval from jac_ratio EMA
@@ -6009,13 +6279,14 @@ def sample_sure(model, x, sigmas, extra_args=None, callback=None, disable=None,
 def sample_sure_wavelet(model, x, sigmas, extra_args=None, callback=None, disable=None,
                         sure_alpha=0.05, sure_n_mc=1, sure_eps=1e-3,
                         sure_jac_interval=2,
-                        sure_adam_mode='none', sure_adam_beta1=0.9,
+                        sure_adam_mode='bo', sure_adam_beta1=0.9,
                         sure_adam_beta2=0.999, sure_adam_wd=0.01,
                         sure_wavelet='db4', sure_wavelet_level=3,
                         sure_approx_coeff=2.0, sure_csv_path=None,
                         sure_sigma_ema=0.0, sure_wavelet_warmup_steps=0,
                         sure_wavelet_lp_frac=1.0,
-                        sure_grad_mode='vjp'):
+                        sure_grad_mode='vjp',
+                        sure_alpha_bo_trials=12, sure_alpha_bo_patience=4):
     """SURE-Wavelet — Euler Ancestral variant.
 
     Identical control flow to sample_sure, but replaces pixel-space SURE
@@ -6050,7 +6321,8 @@ def sample_sure_wavelet(model, x, sigmas, extra_args=None, callback=None, disabl
     _EMA_A = 0.35
     _dyn_jac_interval: int         = max(1, sure_jac_interval)
     _jac_ratio_ema:   float | None = None
-    _adam_state = {} if sure_adam_mode != 'none' else None
+    _adam_state     = {} if sure_adam_mode in ('adam', 'adamw') else None
+    _alpha_bo_state = {} if sure_adam_mode == 'bo' else None
     _sigma_hat_0_ema: float | None = None
 
     # CSV output (aggregate per-step metrics, wavelet mode)
@@ -6117,6 +6389,9 @@ def sample_sure_wavelet(model, x, sigmas, extra_args=None, callback=None, disabl
             warmup_steps=sure_wavelet_warmup_steps,
             lp_frac=sure_wavelet_lp_frac,
             grad_mode=sure_grad_mode,
+            alpha_bo_trials=sure_alpha_bo_trials,
+            alpha_bo_patience=sure_alpha_bo_patience,
+            alpha_bo_state=_alpha_bo_state,
         )
 
         if _csv_writer is not None:
@@ -6190,7 +6465,7 @@ def _sure_score_config(snapshots, wav_name, level, lp_frac):
 def sample_sure_wavelet_auto(model, x, sigmas, extra_args=None, callback=None, disable=None,
                               sure_alpha=0.05, sure_n_mc=1, sure_eps=1e-3,
                               sure_jac_interval=2,
-                              sure_adam_mode='none', sure_adam_beta1=0.9,
+                              sure_adam_mode='bo', sure_adam_beta1=0.9,
                               sure_adam_beta2=0.999, sure_adam_wd=0.01,
                               sure_approx_coeff=2.0, sure_csv_path=None,
                               sure_sigma_ema=0.0, sure_wavelet_warmup_steps=0,
@@ -6200,7 +6475,8 @@ def sample_sure_wavelet_auto(model, x, sigmas, extra_args=None, callback=None, d
                               sure_wavelet_cal_levels=(1, 6),
                               sure_wavelet_bo_trials=40,
                               sure_wavelet_bo_patience=8,
-                              sure_wavelet_bo_cv_warn=0.4):
+                              sure_wavelet_bo_cv_warn=0.4,
+                              sure_alpha_bo_trials=12, sure_alpha_bo_patience=4):
     """SURE-Wavelet Auto — Bayesian-optimised wavelet config, then SURE-Wavelet.
 
     Search space (mixed discrete/continuous):
@@ -6402,6 +6678,8 @@ def sample_sure_wavelet_auto(model, x, sigmas, extra_args=None, callback=None, d
         sure_sigma_ema=sure_sigma_ema,
         sure_wavelet_warmup_steps=sure_wavelet_warmup_steps,
         sure_grad_mode=sure_grad_mode,
+        sure_alpha_bo_trials=sure_alpha_bo_trials,
+        sure_alpha_bo_patience=sure_alpha_bo_patience,
     )
 
 
@@ -6409,7 +6687,7 @@ def sample_sure_wavelet_converge(
     model, x, sigmas, extra_args=None, callback=None, disable=None,
     sure_alpha=0.05, sure_n_mc=1, sure_eps=1e-3,
     sure_jac_interval=2,
-    sure_adam_mode='none', sure_adam_beta1=0.9,
+    sure_adam_mode='bo', sure_adam_beta1=0.9,
     sure_adam_beta2=0.999, sure_adam_wd=0.01,
     sure_wavelet='db4', sure_wavelet_level=3,
     sure_approx_coeff=2.0, sure_csv_path=None,
@@ -6418,6 +6696,7 @@ def sample_sure_wavelet_converge(
     sure_grad_mode='vjp',
     sure_inner_steps=4,
     sure_inner_tol=1e-4,
+    sure_alpha_bo_trials=12, sure_alpha_bo_patience=4,
 ):
     """SURE-Wavelet with convergence-driven inner loop per sigma stage.
 
@@ -6443,6 +6722,7 @@ def sample_sure_wavelet_converge(
     n_steps    = len(sigmas) - 1
     _max_inner = max(1, int(sure_inner_steps))
     _sigma_hat_0_ema: float | None = None
+    _alpha_bo_state: dict | None   = {} if sure_adam_mode == 'bo' else None
 
     _sure_logger.info(
         "SURE-Wavelet-Converge: %d steps  alpha=%.4f  n_mc=%d  wavelet=%s  "
@@ -6478,7 +6758,8 @@ def sample_sure_wavelet_converge(
         # ── Inner SURE convergence loop ──────────────────────────────────────
         # Fresh Adam state per sigma stage so inner steps are a clean gradient-
         # descent sequence toward the SURE minimum at this noise level.
-        _inner_adam  = {} if sure_adam_mode != 'none' else None
+        # BO state persists across sigma stages for cross-step warm-starting.
+        _inner_adam  = {} if sure_adam_mode in ('adam', 'adamw') else None
         _use_jac     = (sure_jac_interval <= 1) or (i % max(1, sure_jac_interval) == 0)
         _prev_sure   = float('inf')
         _inner_done  = 0
@@ -6497,6 +6778,9 @@ def sample_sure_wavelet_converge(
                 warmup_steps=sure_wavelet_warmup_steps,
                 lp_frac=sure_wavelet_lp_frac,
                 grad_mode=sure_grad_mode,
+                alpha_bo_trials=sure_alpha_bo_trials,
+                alpha_bo_patience=sure_alpha_bo_patience,
+                alpha_bo_state=_alpha_bo_state,
             )
             _inner_done = inner_i + 1
             _sure_val   = _stats['sure_val']
@@ -6577,7 +6861,7 @@ def sample_sure_wavelet_auto_converge(
     model, x, sigmas, extra_args=None, callback=None, disable=None,
     sure_alpha=0.05, sure_n_mc=1, sure_eps=1e-3,
     sure_jac_interval=2,
-    sure_adam_mode='none', sure_adam_beta1=0.9,
+    sure_adam_mode='bo', sure_adam_beta1=0.9,
     sure_adam_beta2=0.999, sure_adam_wd=0.01,
     sure_approx_coeff=2.0, sure_csv_path=None,
     sure_sigma_ema=0.0, sure_wavelet_warmup_steps=0,
@@ -6590,6 +6874,7 @@ def sample_sure_wavelet_auto_converge(
     sure_wavelet_bo_cv_warn=0.4,
     sure_inner_steps=4,
     sure_inner_tol=1e-4,
+    sure_alpha_bo_trials=12, sure_alpha_bo_patience=4,
 ):
     """SURE-Wavelet Auto + convergence loop.
 
@@ -6771,6 +7056,8 @@ def sample_sure_wavelet_auto_converge(
         sure_grad_mode=sure_grad_mode,
         sure_inner_steps=sure_inner_steps,
         sure_inner_tol=sure_inner_tol,
+        sure_alpha_bo_trials=sure_alpha_bo_trials,
+        sure_alpha_bo_patience=sure_alpha_bo_patience,
     )
 
 
@@ -6780,7 +7067,8 @@ def sample_sure_adaptive(model, x, sigma_min, sigma_max, extra_args=None, callba
                           sure_alpha=0.05, sure_n_mc=1, sure_eps=1e-3,
                           sure_preheat_frac=0.3, sure_jac_interval=2,
                           sure_adam_mode='none', sure_adam_beta1=0.9,
-                          sure_adam_beta2=0.999, sure_adam_wd=0.01, sure_grad_mode='vjp'):
+                          sure_adam_beta2=0.999, sure_adam_wd=0.01, sure_grad_mode='vjp',
+                          sure_alpha_bo_trials=0, sure_alpha_bo_patience=4):
     """SURE sampler with adaptive step size (PID controller on DPM-Solver-2 error).
 
     Combines:
@@ -6841,7 +7129,8 @@ def sample_sure_adaptive(model, x, sigma_min, sigma_max, extra_args=None, callba
 
     # jac_interval tracking (fixed for adaptive sampler — not adaptive, to keep control predictable)
     _corr_count = 0
-    _adam_state = {'optimizer': None, 'param': None} if sure_adam_mode != 'none' else None
+    _adam_state     = {'optimizer': None, 'param': None} if sure_adam_mode != 'none' else None
+    _alpha_bo_state = {} if sure_alpha_bo_trials > 0 else None
 
     with tqdm(disable=disable) as pbar:
         while s < t_end - 1e-5:
@@ -6868,6 +7157,9 @@ def sample_sure_adaptive(model, x, sigma_min, sigma_max, extra_args=None, callba
                     adam_state=_adam_state, adam_mode=sure_adam_mode,
                     adam_beta1=sure_adam_beta1, adam_beta2=sure_adam_beta2,
                     adam_wd=sure_adam_wd, grad_mode=sure_grad_mode,
+                    alpha_bo_trials=sure_alpha_bo_trials,
+                    alpha_bo_patience=sure_alpha_bo_patience,
+                    alpha_bo_state=_alpha_bo_state,
                 )
                 _corr_count += 1
 
