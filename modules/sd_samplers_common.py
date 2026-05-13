@@ -447,6 +447,10 @@ class Sampler:
                 extra_params_kwargs['sure_inner_steps'] = int(getattr(shared.opts, 'sure_inner_steps', 4))
             if 'sure_inner_tol' in _sure_sig:
                 extra_params_kwargs['sure_inner_tol'] = float(getattr(shared.opts, 'sure_inner_tol', 1e-4))
+            if 'sure_alpha_bo_trials' in _sure_sig:
+                extra_params_kwargs['sure_alpha_bo_trials'] = int(getattr(shared.opts, 'sure_alpha_bo_trials', 0))
+            if 'sure_alpha_bo_patience' in _sure_sig:
+                extra_params_kwargs['sure_alpha_bo_patience'] = int(getattr(shared.opts, 'sure_alpha_bo_patience', 4))
             p.extra_generation_params['SURE alpha']         = sure_alpha
             p.extra_generation_params['SURE n_mc']          = sure_n_mc
             p.extra_generation_params['SURE eps']           = sure_eps
@@ -460,6 +464,10 @@ class Sampler:
                 p.extra_generation_params['SURE adam_beta2'] = sure_adam_beta2
                 if sure_adam_mode == 'adamw':
                     p.extra_generation_params['SURE adam_wd'] = sure_adam_wd
+            _alpha_bo_trials_val = int(getattr(shared.opts, 'sure_alpha_bo_trials', 0))
+            if _alpha_bo_trials_val > 0:
+                p.extra_generation_params['SURE alpha_bo_trials']   = _alpha_bo_trials_val
+                p.extra_generation_params['SURE alpha_bo_patience'] = int(getattr(shared.opts, 'sure_alpha_bo_patience', 4))
 
         if self.funcname == 'sample_dc_solver':
             import inspect as _inspect
