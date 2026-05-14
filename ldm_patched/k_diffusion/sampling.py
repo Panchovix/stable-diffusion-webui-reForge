@@ -5104,6 +5104,9 @@ def _sure_alpha_bo_search(
     patience=4,
     n_startup=3,
     prev_study=None,
+    prev_sure=None,
+    prev_prev_sure=None,
+    cur_alpha=None,
 ):
     """Bayesian optimisation over the SURE gradient step size α.
 
@@ -5117,17 +5120,24 @@ def _sure_alpha_bo_search(
     inaccurate (large steps, highly non-linear denoiser) and for cross-step
     landscape exploration via warm-starting from prev_study.
 
+    When grad is collinear with residual (approx mode), the proxy degenerates
+    and a SURE-monotone P-controller is used instead: alpha grows by 5% when
+    SURE fell last step, shrinks by 30% when SURE rose, and holds otherwise.
+
     Args:
-        residual:    detached tensor (x0_hat − x_hat)
-        grad:        detached SURE gradient tensor
-        sigma2:      float  σ̂₀²
-        jac_trace:   float or None  — tr{J_D} MC estimate (0.0 if None)
-        alpha_base:  float  user-set sure_alpha (centres the log-scale range)
-        alpha_range: (lo, hi) or None → auto (alpha_base×0.01, min(alpha_base×20, 0.49))
-        n_trials:    BO trial budget
-        patience:    early-stop after this many non-improving trials
-        n_startup:   TPE random-exploration trials before fitting the model
-        prev_study:  optuna Study from the previous diffusion step (warm-start)
+        residual:       detached tensor (x0_hat − x_hat)
+        grad:           detached SURE gradient tensor
+        sigma2:         float  σ̂₀²
+        jac_trace:      float or None  — tr{J_D} MC estimate (0.0 if None)
+        alpha_base:     float  user-set sure_alpha (centres the log-scale range)
+        alpha_range:    (lo, hi) or None → auto (alpha_base×0.01, min(alpha_base×20, 0.49))
+        n_trials:       BO trial budget
+        patience:       early-stop after this many non-improving trials
+        n_startup:      TPE random-exploration trials before fitting the model
+        prev_study:     optuna Study from the previous diffusion step (warm-start)
+        prev_sure:      SURE value from the previous diffusion step (P-controller)
+        prev_prev_sure: SURE value from two steps ago (P-controller trend signal)
+        cur_alpha:      alpha used at the previous step (P-controller state)
 
     Returns:
         (best_alpha: float, study_or_None)
@@ -5162,16 +5172,30 @@ def _sure_alpha_bo_search(
 
     # Degenerate proxy guard: when grad is collinear with residual (e.g. approx
     # mode where grad = coeff·r), the proxy minimum α* = 1/coeff is
-    # sigma-independent and diverges at late low-noise steps.  Return alpha_base
-    # unchanged so the caller keeps its configured step size.
+    # sigma-independent and diverges at late low-noise steps.
+    # Use a SURE-monotone P-controller instead: track SURE trend across steps
+    # and shrink alpha when SURE grows, grow it slightly when SURE falls.
     cos_rg = abs(dot) / (r_sq ** 0.5 * g_sq ** 0.5)
     if cos_rg > 0.99:
-        _sure_logger.debug(
-            "[sure_alpha_bo] grad collinear with residual (|cos|=%.4f); "
-            "proxy degenerate — keeping alpha_base=%.5f unchanged",
-            cos_rg, alpha_base,
+        _ref = cur_alpha if cur_alpha is not None else alpha_base
+        if prev_sure is not None and prev_prev_sure is not None:
+            if prev_sure > prev_prev_sure * 1.05:      # SURE rose >5% → pull back
+                new_alpha = max(lo, _ref * 0.70)
+            elif prev_sure < prev_prev_sure * 0.95:    # SURE fell >5% → push forward
+                new_alpha = min(hi, _ref * 1.05)
+            else:                                       # stable → hold
+                new_alpha = _ref
+        else:
+            new_alpha = _ref  # insufficient history
+        _sure_logger.info(
+            "[sure_alpha_bo] grad collinear (|cos|=%.4f); P-ctrl: "
+            "sure %.2f→%.2f  alpha %.5f→%.5f",
+            cos_rg,
+            prev_prev_sure if prev_prev_sure is not None else float('nan'),
+            prev_sure      if prev_sure      is not None else float('nan'),
+            _ref, new_alpha,
         )
-        return alpha_base, None
+        return new_alpha, None
 
     try:
         import optuna as _optuna
@@ -5454,6 +5478,7 @@ def _sure_correct_x0(model, x0_hat, sigma_hat_0, s_in, extra_args,
     # values without any additional UNet calls.  Warm-starts from the previous
     # diffusion step's study via alpha_bo_state['study'].
     if alpha_bo_trials > 0:
+        _abs = alpha_bo_state if alpha_bo_state is not None else {}
         alpha, _new_alpha_study = _sure_alpha_bo_search(
             residual.detach(),
             grad.detach(),
@@ -5462,10 +5487,14 @@ def _sure_correct_x0(model, x0_hat, sigma_hat_0, s_in, extra_args,
             alpha_base=alpha,
             n_trials=int(alpha_bo_trials),
             patience=int(alpha_bo_patience),
-            prev_study=alpha_bo_state.get('study') if alpha_bo_state is not None else None,
+            prev_study=_abs.get('study'),
+            prev_sure=_abs.get('prev_sure'),
+            prev_prev_sure=_abs.get('prev_prev_sure'),
+            cur_alpha=_abs.get('cur_alpha', alpha),
         )
         if alpha_bo_state is not None:
-            alpha_bo_state['study'] = _new_alpha_study
+            alpha_bo_state['study']     = _new_alpha_study
+            alpha_bo_state['cur_alpha'] = alpha
 
     # Lean (cond4_step_closer) requires effective_alpha ∈ (0, 1/2).
     # _sure_effective_alpha auto-detects EDM vs flow-matching from σ_t magnitude
@@ -5558,6 +5587,11 @@ def _sure_correct_x0(model, x0_hat, sigma_hat_0, s_in, extra_args,
             f"{_step_rms:.6f}",
             f"{_adam_ratio:.6f}",
         ])
+
+    # Feed SURE back for P-controller warm-start across steps.
+    if alpha_bo_state is not None and alpha_bo_trials > 0:
+        alpha_bo_state['prev_prev_sure'] = alpha_bo_state.get('prev_sure')
+        alpha_bo_state['prev_sure']      = float(sure_val)
 
     return x0_corrected, {'jac_ratio': None}
 
@@ -6012,6 +6046,7 @@ def _sure_correct_x0_wavelet(model, x0_hat, sigma_hat_0, s_in, extra_args,
         _r_flat = torch.cat(_r_bo).float()
         _g_flat = torch.cat(_g_bo).float()
 
+        _bs = alpha_bo_state if alpha_bo_state is not None else {}
         if int(alpha_bo_trials) > 0:
             base_alpha, _new_study = _sure_alpha_bo_search(
                 _r_flat, _g_flat, sigma2,
@@ -6019,19 +6054,50 @@ def _sure_correct_x0_wavelet(model, x0_hat, sigma_hat_0, s_in, extra_args,
                 alpha_base=alpha,
                 n_trials=int(alpha_bo_trials),
                 patience=int(alpha_bo_patience),
-                prev_study=alpha_bo_state.get('study') if alpha_bo_state is not None else None,
+                prev_study=_bs.get('study'),
+                prev_sure=_bs.get('prev_sure'),
+                prev_prev_sure=_bs.get('prev_prev_sure'),
+                cur_alpha=_bs.get('cur_alpha', alpha),
             )
             if alpha_bo_state is not None:
                 alpha_bo_state['study'] = _new_study
         else:
             # Analytical line search — α* = (r·g) / ‖g‖²  (closed-form SURE minimum)
+            # Falls back to P-controller via _sure_alpha_bo_search when grad collinear.
             _dot  = float((_r_flat * _g_flat).sum())
             _g_sq = float((_g_flat * _g_flat).sum()) + 1e-12
             _lo   = max(alpha * 0.01, 1e-5)
             _hi   = min(alpha * 20.0, 0.49)
-            base_alpha = float(max(_lo, min(_hi, _dot / _g_sq)))
+            _r_sq_bo = float((_r_flat * _r_flat).sum()) + 1e-12
+            _cos_bo  = abs(_dot) / (_r_sq_bo ** 0.5 * _g_sq ** 0.5)
+            if _cos_bo > 0.99:
+                # degenerate: delegate to P-controller path
+                _ref = _bs.get('cur_alpha', alpha)
+                _ps  = _bs.get('prev_sure')
+                _pps = _bs.get('prev_prev_sure')
+                if _ps is not None and _pps is not None:
+                    if _ps > _pps * 1.05:
+                        base_alpha = max(_lo, _ref * 0.70)
+                    elif _ps < _pps * 0.95:
+                        base_alpha = min(_hi, _ref * 1.05)
+                    else:
+                        base_alpha = _ref
+                else:
+                    base_alpha = _ref
+                _sure_logger.info(
+                    "[sure_wavelet_bo] grad collinear (|cos|=%.4f); P-ctrl: "
+                    "sure %.2f→%.2f  alpha %.5f→%.5f",
+                    _cos_bo,
+                    _pps if _pps is not None else float('nan'),
+                    _ps  if _ps  is not None else float('nan'),
+                    _ref, base_alpha,
+                )
+            else:
+                base_alpha = float(max(_lo, min(_hi, _dot / _g_sq)))
 
         del _r_bo, _g_bo, _r_flat, _g_flat
+        if alpha_bo_state is not None:
+            alpha_bo_state['cur_alpha'] = base_alpha
         _sure_logger.info(
             "[sure_wavelet_bo] base_alpha=%.5f (was %.5f)  trials=%d",
             base_alpha, alpha, int(alpha_bo_trials),
@@ -6141,6 +6207,11 @@ def _sure_correct_x0_wavelet(model, x0_hat, sigma_hat_0, s_in, extra_args,
         "[wavelet] sure=%.1f  pt_sure=%.1f  pixel_δ=%.5f  base_alpha=%.5f",
         corrected_sure, passthrough_sure, pixel_delta_rms, base_alpha,
     )
+
+    # Feed SURE back into alpha_bo_state so the P-controller can track the trend.
+    if alpha_bo_state is not None and _effective_adam_mode == 'bo':
+        alpha_bo_state['prev_prev_sure'] = alpha_bo_state.get('prev_sure')
+        alpha_bo_state['prev_sure']      = corrected_sure
 
     return x0_corrected, {'sure_val': corrected_sure, 'jac_ratio': None,
                           'pixel_delta_rms': pixel_delta_rms}
