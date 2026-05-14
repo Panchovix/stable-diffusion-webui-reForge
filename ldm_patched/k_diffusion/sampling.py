@@ -5155,9 +5155,23 @@ def _sure_alpha_bo_search(
         )
 
     # Analytical optimum under the quadratic proxy (closed-form line search)
-    dot  = float((r_flat * g_flat).sum())
+    r_sq = float((r_flat * r_flat).sum()) + 1e-12
     g_sq = float((g_flat * g_flat).sum()) + 1e-12
+    dot  = float((r_flat * g_flat).sum())
     alpha_analytical = float(max(lo, min(hi, dot / g_sq)))
+
+    # Degenerate proxy guard: when grad is collinear with residual (e.g. approx
+    # mode where grad = coeff·r), the proxy minimum α* = 1/coeff is
+    # sigma-independent and diverges at late low-noise steps.  Return alpha_base
+    # unchanged so the caller keeps its configured step size.
+    cos_rg = abs(dot) / (r_sq ** 0.5 * g_sq ** 0.5)
+    if cos_rg > 0.99:
+        _sure_logger.debug(
+            "[sure_alpha_bo] grad collinear with residual (|cos|=%.4f); "
+            "proxy degenerate — keeping alpha_base=%.5f unchanged",
+            cos_rg, alpha_base,
+        )
+        return alpha_base, None
 
     try:
         import optuna as _optuna
