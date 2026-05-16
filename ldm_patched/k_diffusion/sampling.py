@@ -1151,7 +1151,7 @@ def sample_dpmpp_2s_a_sure(model, x, sigmas, extra_args=None, callback=None, dis
     _jac_ratio_ema:   float | None = None
     _corr_count: int               = 0
     _EMA_A = 0.35
-    _adam_state      = {'optimizer': None, 'param': None} if sure_adam_mode != 'none' else None
+    _adam_state      = {'optimizer': None, 'param': None} if sure_adam_mode in ('adam', 'adamw') else None
     _alpha_bo_state  = {} if sure_alpha_bo_trials > 0 else None
 
     _sure_logger.info(
@@ -1278,7 +1278,7 @@ def sample_dpmpp_2s_a_sure_adaptive(model, x, sigma_min, sigma_max,
     rtol_t = torch.tensor(rtol, dtype=x.dtype, device=x.device)
 
     _corr_count = 0
-    _adam_state     = {'optimizer': None, 'param': None} if sure_adam_mode != 'none' else None
+    _adam_state     = {'optimizer': None, 'param': None} if sure_adam_mode in ('adam', 'adamw') else None
     _alpha_bo_state = {} if sure_alpha_bo_trials > 0 else None
     info = {'steps': 0, 'nfe': 0, 'n_accept': 0, 'n_reject': 0}
     x_prev = x.clone()
@@ -1597,7 +1597,7 @@ def sample_dpmpp_2m_sure(model, x, sigmas, extra_args=None, callback=None, disab
     _jac_ratio_ema:   float | None = None
     _corr_count: int               = 0
     _EMA_A = 0.35
-    _adam_state     = {'optimizer': None, 'param': None} if sure_adam_mode != 'none' else None
+    _adam_state     = {'optimizer': None, 'param': None} if sure_adam_mode in ('adam', 'adamw') else None
     _alpha_bo_state = {} if sure_alpha_bo_trials > 0 else None
 
     _sure_logger.info(
@@ -1729,7 +1729,7 @@ def sample_dpmpp_2m_sde_sure(model, x, sigmas, extra_args=None, callback=None, d
     _jac_ratio_ema:   float | None = None
     _corr_count: int               = 0
     _EMA_A = 0.35
-    _adam_state     = {'optimizer': None, 'param': None} if sure_adam_mode != 'none' else None
+    _adam_state     = {'optimizer': None, 'param': None} if sure_adam_mode in ('adam', 'adamw') else None
     _alpha_bo_state = {} if sure_alpha_bo_trials > 0 else None
 
     _sure_logger.info(
@@ -2000,7 +2000,7 @@ def sample_dpmpp_3m_sde_sure(model, x, sigmas, extra_args=None, callback=None, d
     _jac_ratio_ema:   float | None = None
     _corr_count: int               = 0
     _EMA_A = 0.35
-    _adam_state     = {'optimizer': None, 'param': None} if sure_adam_mode != 'none' else None
+    _adam_state     = {'optimizer': None, 'param': None} if sure_adam_mode in ('adam', 'adamw') else None
     _alpha_bo_state = {} if sure_alpha_bo_trials > 0 else None
 
     _sure_logger.info(
@@ -2167,7 +2167,7 @@ def sample_dpmpp_2m_sde_sure_adaptive(model, x, sigma_min, sigma_max,
     rtol_t = torch.tensor(rtol, dtype=x.dtype, device=x.device)
 
     _corr_count = 0
-    _adam_state     = {'optimizer': None, 'param': None} if sure_adam_mode != 'none' else None
+    _adam_state     = {'optimizer': None, 'param': None} if sure_adam_mode in ('adam', 'adamw') else None
     _alpha_bo_state = {} if sure_alpha_bo_trials > 0 else None
     info = {'steps': 0, 'nfe': 0, 'n_accept': 0, 'n_reject': 0}
     x_prev = x.clone()
@@ -6250,7 +6250,7 @@ def sample_sure(model, x, sigmas, extra_args=None, callback=None, disable=None,
     _EMA_A = 0.35
     _dyn_jac_interval: int        = max(1, sure_jac_interval)
     _jac_ratio_ema:   float | None = None
-    _adam_state     = {'optimizer': None, 'param': None} if sure_adam_mode != 'none' else None
+    _adam_state     = {'optimizer': None, 'param': None} if sure_adam_mode in ('adam', 'adamw') else None
     _alpha_bo_state = {} if sure_alpha_bo_trials > 0 else None
     _sigma_hat_0_ema: float | None = None   # EMA state for PCA noise estimate
 
@@ -7214,7 +7214,7 @@ def sample_sure_adaptive(model, x, sigma_min, sigma_max, extra_args=None, callba
 
     # jac_interval tracking (fixed for adaptive sampler — not adaptive, to keep control predictable)
     _corr_count = 0
-    _adam_state     = {'optimizer': None, 'param': None} if sure_adam_mode != 'none' else None
+    _adam_state     = {'optimizer': None, 'param': None} if sure_adam_mode in ('adam', 'adamw') else None
     _alpha_bo_state = {} if sure_alpha_bo_trials > 0 else None
 
     with tqdm(disable=disable) as pbar:
