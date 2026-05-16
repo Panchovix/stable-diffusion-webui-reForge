@@ -5078,19 +5078,39 @@ def _sure_effective_alpha(alpha: float, sigma_t, adam_active: bool) -> float:
     Lean bound (effectiveAlpha_lt_half): alpha/(1 + min(σ_t, 1)) < 1/2
     holds for all σ_t ≥ 0 and alpha < 1/2, keeping cond4 always satisfied.
 
+    Gap #2 fix: hard-clamp the result to < 0.5 with a warning.  The Lean proof
+    requires η ∈ (0, 1/2) strictly; if a caller passes alpha ≥ 0.5 the formula
+    can exceed this bound at low noise levels (σ_norm ≈ 0), violating Theorem A.3.
+
     Adam mode: step magnitude is gradient-normalised internally; sigma
     scaling would double-suppress early steps and is skipped.
     """
+    _MAX_SURE_ETA = 0.499   # strict upper bound from Theorem A.3 / cond4_step_closer
+
     if adam_active:
-        return float(alpha)
-    if sigma_t is None:
-        return float(alpha)
-    sigma_t_f = float(sigma_t)
-    if sigma_t_f <= 0.0:
-        return float(alpha)
-    # Scheduler auto-detection: σ_t > 1 → EDM/Karras, cap normaliser at 1
-    sigma_norm = min(sigma_t_f, 1.0)
-    return float(alpha) / (1.0 + sigma_norm)
+        result = float(alpha)
+    elif sigma_t is None or float(sigma_t) <= 0.0:
+        result = float(alpha)
+    else:
+        sigma_t_f = float(sigma_t)
+        # Scheduler auto-detection: σ_t > 1 → EDM/Karras, cap normaliser at 1
+        sigma_norm = min(sigma_t_f, 1.0)
+        result = float(alpha) / (1.0 + sigma_norm)
+
+    # Gap #2: Theorem A.3 (Gaussian preservation) requires η < 1/2.
+    # Clamp with a one-time warning so callers with large alpha values don't
+    # silently violate the descent guarantee.
+    if result >= 0.5:
+        _sure_logger.warning(
+            "[sure] Gap #2: effective_alpha=%.4f ≥ 0.5 (alpha=%.4f, sigma_t=%s); "
+            "clamping to %.3f.  Theorem A.3 requires η < 0.5 for Gaussian "
+            "preservation.  Reduce alpha below 0.5 to silence this warning.",
+            result, float(alpha),
+            f"{float(sigma_t):.4f}" if sigma_t is not None else "None",
+            _MAX_SURE_ETA,
+        )
+        result = _MAX_SURE_ETA
+    return result
 
 
 def _sure_alpha_bo_search(
@@ -5300,8 +5320,9 @@ def _sure_correct_x0(model, x0_hat, sigma_hat_0, s_in, extra_args,
 
       ε       = max(|xnoisy|) / 1000   (paper §2.4 recommended choice)
       x̂      = Dθ(xnoisy, σ̂₀)
-      tr{J}  ≈ b^T (Dθ(xnoisy + ε·b, max(ε, σ̂₀)) − x̂) · ε^{-1}   [scalar, MC averaged]
-      SURE   = −n·σ̂₀² + ‖xnoisy − x̂‖² + 2·σ̂₀²·tr{J}             [logged only]
+      tr{J}  ≈ b^T (Dθ(xnoisy + ε·b, σ̂₀) − x̂) · ε^{-1}   [scalar, MC averaged]
+      SURE   = −n·σ̂₀² + ‖xnoisy − x̂‖² + 2·σ̂₀²·tr{J}      [logged only]
+      Note: both denoiser calls use σ̂₀ (not max(ε,σ̂₀)); see SURE_sgps_full.lean §2.1.
 
     adam_state: dict with keys 'optimizer' (torch.optim instance) and 'param'
                 (leaf tensor) — mutated in-place across steps via optimizer.step().
@@ -5323,8 +5344,14 @@ def _sure_correct_x0(model, x0_hat, sigma_hat_0, s_in, extra_args,
 
     device = x0_hat.device
     sigma_denoiser = torch.tensor(sigma_hat_0, device=device, dtype=x0_hat.dtype)
-    # max(ε, σ̂₀) — Algorithm 1 floors the perturbed denoiser sigma here
-    sigma_p = torch.tensor(max(eps, sigma_hat_0), device=device, dtype=x0_hat.dtype)
+    # Use sigma_denoiser for BOTH the base and perturbed calls.
+    # SURE_sgps_full.lean §2.1 (Gap #1) proves that using max(ε, σ̂₀) for the
+    # perturbed call while using σ̂₀ for the base call evaluates two *different*
+    # denoiser functions, introducing a systematic bias of O(|σ_p − σ̂₀|/ε) in
+    # the Hutchinson trace estimate (sigma_inconsistency_bias_structure).
+    # Numerical stability when σ̂₀ is near zero is handled by use_jac=False below
+    # (sigma2 ≤ eps_mc disables the Jacobian call entirely).
+    sigma_p = sigma_denoiser
     sigma2  = float(sigma_denoiser ** 2)
     n       = x0_hat.numel()
     # Opt-2: 2σ²·tr{J} and its gradient vanish quadratically as σ̂₀→0.
@@ -5437,17 +5464,20 @@ def _sure_correct_x0(model, x0_hat, sigma_hat_0, s_in, extra_args,
         # ── Lean-backed jac reliability gate ───────────────────────────────────
         # Lean (SURE_verification.lean, cond5_strict_descent) proves descent is
         # guaranteed with proxy gradient 2·r regardless of jac.
-        # Hutchinson n_mc=1 has variance O(n²); when jac_trace < −n/n_mc the
-        # single-sample estimate is noise-dominated (true tr{J_D} ≥ 0 for a
-        # contractive denoiser).  Roll back the jac sure_val contribution and
-        # fall back to the Lean-proven proxy gradient for 'full' mode.
-        _jac_floor = -float(n) / max(n_mc, 1)
+        #
+        # Gap #6 fix: variance-based Hutchinson floor (3σ bound).
+        # For b ~ N(0,I), Var(b^T J b) = 2‖J‖_F² ≤ 2n (unit operator norm).
+        # With n_mc samples: Std(jac_trace estimate) ≤ sqrt(2n/n_mc).
+        # Floor = 0 − 3·Std = −3·sqrt(2n/n_mc).  This is O(sqrt(n)) tighter
+        # than the old −n/n_mc floor (O(n)), so noise-dominated estimates are
+        # caught much earlier (e.g. n=16384, n_mc=1: −543 vs old −16384).
+        _jac_floor = -3.0 * (2.0 * n / max(n_mc, 1)) ** 0.5
         if jac_trace < _jac_floor:
             _sure_logger.warning(
-                "[sure_x0] jac_trace=%.2f < floor %.2f (n=%d, n_mc=%d): "
-                "Hutchinson estimate noise-dominated; rolling back to proxy "
-                "gradient (Lean: cond5_strict_descent). Use n_mc>=8 for "
-                "reliable sure_val.",
+                "[sure_x0] Gap #6: jac_trace=%.2f < 3σ floor %.2f (n=%d, n_mc=%d); "
+                "Hutchinson estimate noise-dominated (floor = −3·sqrt(2n/n_mc)). "
+                "Rolling back to proxy gradient (Lean: cond5_strict_descent). "
+                "Use n_mc>=8 for reliable jac estimates.",
                 jac_trace, _jac_floor, n, n_mc,
             )
             sure_val -= jac_contribution   # undo the unreliable jac contribution
@@ -5463,6 +5493,28 @@ def _sure_correct_x0(model, x0_hat, sigma_hat_0, s_in, extra_args,
                 # fall back to Lean-proven proxy gradient: 2·(x̂₀ − D_θ(x̂₀)).
                 grad = (2.0 * residual).detach()
             del grad_jac_pert_sum
+
+    # ── Gap #5: sigma self-consistency bias correction ────────────────────────
+    # SURE is unbiased when σ used in the formula equals the true noise level in
+    # x0_hat.  The PCA estimate σ̂₀ may differ from the residual-implied level
+    # σ_res = sqrt(‖r‖²/n).  The bias (proved in SURE_sgps_full.lean §1, theorem
+    # sure_sigma_bias_exact) is:
+    #   SURE(σ̂₀) − SURE(σ_res) = (σ̂₀² − σ_res²)·(−n + 2·tr_J)
+    # Subtracting it gives a bias-corrected value on the σ_res² basis.
+    # When tr_J is unavailable (use_jac=False or jac rejected), we use 0 as a
+    # conservative lower bound (true tr_J ≥ 0 for contractive denoiser).
+    _sigma_sq_residual = float((residual ** 2).sum()) / max(n, 1)
+    _tr_J_bc = jac_trace if jac_trace is not None else 0.0
+    _sure_bias = (sigma2 - _sigma_sq_residual) * (-float(n) + 2.0 * _tr_J_bc)
+    sure_val_bc = sure_val - _sure_bias
+    if abs(_sure_bias) > 0.1 * (abs(sure_val) + 1.0):
+        _sure_logger.debug(
+            "[sure_x0] Gap #5: sigma_bias_correction=%.4f  sigma_hat_0=%.5f  "
+            "sigma_residual=%.5f  sure_raw=%.4f  sure_bc=%.4f",
+            _sure_bias, sigma_hat_0, _sigma_sq_residual ** 0.5,
+            sure_val, sure_val_bc,
+        )
+
     x0_std = x0_hat.std().item()
     gs     = grad.std().item()
     # Clamp before Adam: Adam's v_t accumulates grad², so a single outlier step
@@ -5562,10 +5614,10 @@ def _sure_correct_x0(model, x0_hat, sigma_hat_0, s_in, extra_args,
     _adam_ratio    = _eff_grad_rms / (_raw_grad_rms + 1e-8)
     _sure_logger.info(
         "[sure_x0] eps=%.5f  sigma_hat_0=%.5f  sigma_p=%.5f  lr=%.5f  step_rms=%.5f  "
-        "sure=%.4f  jac_trace=%s  residual_rms=%.5f  grad_rms=%.5f  "
+        "sure=%.4f  sure_bc=%.4f  jac_trace=%s  residual_rms=%.5f  grad_rms=%.5f  "
         "eff_grad_rms=%.5f  adam_ratio=%.4f",
         eps, sigma_hat_0, float(sigma_p), effective_alpha, _step_rms,
-        sure_val,
+        sure_val, sure_val_bc,
         f"{jac_trace:.4f}" if jac_trace is not None else "n/a",
         _residual_rms,
         _raw_grad_rms,
@@ -5580,7 +5632,7 @@ def _sure_correct_x0(model, x0_hat, sigma_hat_0, s_in, extra_args,
             f"{float(sigma_t):.6f}" if sigma_t is not None else "",
             f"{approx_coeff:.4f}",
             f"{_residual_rms:.6f}",
-            f"{sure_val:.6f}",
+            f"{sure_val_bc:.6f}",
             f"{_raw_grad_rms:.6f}",
             f"{_eff_grad_rms:.6f}",
             f"{effective_alpha:.6f}",
@@ -5588,10 +5640,12 @@ def _sure_correct_x0(model, x0_hat, sigma_hat_0, s_in, extra_args,
             f"{_adam_ratio:.6f}",
         ])
 
-    # Feed SURE back for P-controller warm-start across steps.
+    # Feed bias-corrected SURE to P-controller for more reliable alpha adaptation.
+    # sure_val_bc removes the (σ̂₀²−σ_res²)·(−n+2·tr_J) bias (Gap #5) so the
+    # controller tracks the true MSE trend rather than a sigma-schedule artifact.
     if alpha_bo_state is not None and alpha_bo_trials > 0:
         alpha_bo_state['prev_prev_sure'] = alpha_bo_state.get('prev_sure')
-        alpha_bo_state['prev_sure']      = float(sure_val)
+        alpha_bo_state['prev_sure']      = float(sure_val_bc)
 
     return x0_corrected, {'jac_ratio': None}
 
@@ -5693,7 +5747,10 @@ def _sure_correct_x0_wavelet(model, x0_hat, sigma_hat_0, s_in, extra_args,
 
     eps            = float(x0_hat.abs().max().clamp(min=eps_mc * 1000.0)) / 1000.0
     sigma_denoiser = torch.tensor(sigma_hat_0, device=x0_hat.device, dtype=x0_hat.dtype)
-    sigma_p        = torch.tensor(max(eps, sigma_hat_0), device=x0_hat.device, dtype=x0_hat.dtype)
+    # Use sigma_denoiser for both base and perturbed calls (same fix as _sure_correct_x0).
+    # SURE_sgps_full.lean §2.1 proves that sigma_p ≠ sigma_denoiser introduces
+    # O(|sigma_p − σ̂₀|/ε) bias in the Hutchinson trace (sigma_inconsistency_bias_structure).
+    sigma_p        = sigma_denoiser
     sigma2         = float(sigma_denoiser ** 2)
     # Opt-2: 2σ²·tr{J} vanishes quadratically; skip the perturbed forward when negligible.
     use_jac = use_jac and (sigma2 > eps_mc)
@@ -5807,6 +5864,16 @@ def _sure_correct_x0_wavelet(model, x0_hat, sigma_hat_0, s_in, extra_args,
 
         if jac_trace is not None and n_mc > 0:
             jac_trace /= n_mc
+            # Gap #6 fix: variance-based floor (same as pixel-space version).
+            _n_wav = x0_hat.numel()
+            _jac_floor_wav = -3.0 * (2.0 * _n_wav / max(n_mc, 1)) ** 0.5
+            if jac_trace < _jac_floor_wav:
+                _sure_logger.warning(
+                    "[sure_wavelet] Gap #6: jac_trace=%.2f < 3σ floor %.2f "
+                    "(n=%d, n_mc=%d); resetting to None (noise-dominated).",
+                    jac_trace, _jac_floor_wav, _n_wav, n_mc,
+                )
+                jac_trace = None
 
         # Build per-subband gradient: g_k = 2r_k − (2/n_mc)·jac_corr_k
         _inv = 2.0 / n_mc if (_jac_corr is not None and n_mc > 0) else 0.0
@@ -6201,19 +6268,27 @@ def _sure_correct_x0_wavelet(model, x0_hat, sigma_hat_0, s_in, extra_args,
     if jac_trace is not None:
         corrected_sure += 2.0 * sigma2 * jac_trace
 
+    # Gap #5: bias-correct corrected_sure using the pixel-space residual.
+    # residual = x0_hat − x_hat was computed above (pixel space).
+    _n_wav_total = x0_hat.numel()
+    _sigma_sq_res_wav = float((residual ** 2).sum()) / max(_n_wav_total, 1)
+    _tr_J_bc_wav = jac_trace if jac_trace is not None else 0.0
+    _sure_bias_wav = (sigma2 - _sigma_sq_res_wav) * (-float(_n_wav_total) + 2.0 * _tr_J_bc_wav)
+    corrected_sure_bc = corrected_sure - _sure_bias_wav
+
     pixel_delta_rms = float(((x0_corrected - x0_hat) ** 2).mean().sqrt())
 
     _sure_logger.info(
-        "[wavelet] sure=%.1f  pt_sure=%.1f  pixel_δ=%.5f  base_alpha=%.5f",
-        corrected_sure, passthrough_sure, pixel_delta_rms, base_alpha,
+        "[wavelet] sure=%.1f  sure_bc=%.1f  pt_sure=%.1f  pixel_δ=%.5f  base_alpha=%.5f",
+        corrected_sure, corrected_sure_bc, passthrough_sure, pixel_delta_rms, base_alpha,
     )
 
-    # Feed SURE back into alpha_bo_state so the P-controller can track the trend.
+    # Feed bias-corrected SURE into P-controller (Gap #5 fix).
     if alpha_bo_state is not None and _effective_adam_mode == 'bo':
         alpha_bo_state['prev_prev_sure'] = alpha_bo_state.get('prev_sure')
-        alpha_bo_state['prev_sure']      = corrected_sure
+        alpha_bo_state['prev_sure']      = corrected_sure_bc
 
-    return x0_corrected, {'sure_val': corrected_sure, 'jac_ratio': None,
+    return x0_corrected, {'sure_val': corrected_sure_bc, 'jac_ratio': None,
                           'pixel_delta_rms': pixel_delta_rms}
 
 
