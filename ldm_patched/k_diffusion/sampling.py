@@ -5300,8 +5300,9 @@ def _sure_correct_x0(model, x0_hat, sigma_hat_0, s_in, extra_args,
 
       ε       = max(|xnoisy|) / 1000   (paper §2.4 recommended choice)
       x̂      = Dθ(xnoisy, σ̂₀)
-      tr{J}  ≈ b^T (Dθ(xnoisy + ε·b, max(ε, σ̂₀)) − x̂) · ε^{-1}   [scalar, MC averaged]
-      SURE   = −n·σ̂₀² + ‖xnoisy − x̂‖² + 2·σ̂₀²·tr{J}             [logged only]
+      tr{J}  ≈ b^T (Dθ(xnoisy + ε·b, σ̂₀) − x̂) · ε^{-1}   [scalar, MC averaged]
+      SURE   = −n·σ̂₀² + ‖xnoisy − x̂‖² + 2·σ̂₀²·tr{J}      [logged only]
+      Note: both denoiser calls use σ̂₀ (not max(ε,σ̂₀)); see SURE_sgps_full.lean §2.1.
 
     adam_state: dict with keys 'optimizer' (torch.optim instance) and 'param'
                 (leaf tensor) — mutated in-place across steps via optimizer.step().
@@ -5323,8 +5324,14 @@ def _sure_correct_x0(model, x0_hat, sigma_hat_0, s_in, extra_args,
 
     device = x0_hat.device
     sigma_denoiser = torch.tensor(sigma_hat_0, device=device, dtype=x0_hat.dtype)
-    # max(ε, σ̂₀) — Algorithm 1 floors the perturbed denoiser sigma here
-    sigma_p = torch.tensor(max(eps, sigma_hat_0), device=device, dtype=x0_hat.dtype)
+    # Use sigma_denoiser for BOTH the base and perturbed calls.
+    # SURE_sgps_full.lean §2.1 (Gap #1) proves that using max(ε, σ̂₀) for the
+    # perturbed call while using σ̂₀ for the base call evaluates two *different*
+    # denoiser functions, introducing a systematic bias of O(|σ_p − σ̂₀|/ε) in
+    # the Hutchinson trace estimate (sigma_inconsistency_bias_structure).
+    # Numerical stability when σ̂₀ is near zero is handled by use_jac=False below
+    # (sigma2 ≤ eps_mc disables the Jacobian call entirely).
+    sigma_p = sigma_denoiser
     sigma2  = float(sigma_denoiser ** 2)
     n       = x0_hat.numel()
     # Opt-2: 2σ²·tr{J} and its gradient vanish quadratically as σ̂₀→0.
@@ -5693,7 +5700,10 @@ def _sure_correct_x0_wavelet(model, x0_hat, sigma_hat_0, s_in, extra_args,
 
     eps            = float(x0_hat.abs().max().clamp(min=eps_mc * 1000.0)) / 1000.0
     sigma_denoiser = torch.tensor(sigma_hat_0, device=x0_hat.device, dtype=x0_hat.dtype)
-    sigma_p        = torch.tensor(max(eps, sigma_hat_0), device=x0_hat.device, dtype=x0_hat.dtype)
+    # Use sigma_denoiser for both base and perturbed calls (same fix as _sure_correct_x0).
+    # SURE_sgps_full.lean §2.1 proves that sigma_p ≠ sigma_denoiser introduces
+    # O(|sigma_p − σ̂₀|/ε) bias in the Hutchinson trace (sigma_inconsistency_bias_structure).
+    sigma_p        = sigma_denoiser
     sigma2         = float(sigma_denoiser ** 2)
     # Opt-2: 2σ²·tr{J} vanishes quadratically; skip the perturbed forward when negligible.
     use_jac = use_jac and (sigma2 > eps_mc)
