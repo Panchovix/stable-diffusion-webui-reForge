@@ -4706,15 +4706,24 @@ def _mc_jac_trace_grad(model, x0_hat, sigma_hat, s_in, extra_args, n_mc, eps_mc)
 
     Returns (jac_trace_value: float, jac_trace_grad: Tensor on CPU)
     where jac_trace_grad ≈ (J_D^T b - b) / (ε · n_mc)  as a tensor shaped like x0_hat.
+
+    Memory notes:
+      - noise freed immediately after x_noisy_p is formed (tight lifespan).
+      - x0_rep lives until jacTrace (step 5) — its last use.
+      - jac_trace_t kept on-device through the VJP backward; .item() only after
+        backward completes, avoiding a mid-pipeline D2H sync.
     """
     eager_model = getattr(model, '_orig_mod', model)
+    device      = x0_hat.device
 
     spatial   = [1] * (x0_hat.dim() - 1)
     x0_detach = x0_hat.detach()
-    b         = torch.randn_like(x0_detach.repeat(n_mc, *spatial))   # (n_mc·B, C, H, W)
+
+    b         = torch.randn_like(x0_detach.repeat(n_mc, *spatial))
     noise     = torch.randn_like(b)
     x0_rep    = x0_detach.repeat(n_mc, *spatial)
     x_noisy_p = (x0_rep + eps_mc * b + sigma_hat * noise).detach()
+    del noise   # tight lifespan: freed at last use (perturbation step)
 
     s_in_rep  = s_in.repeat(n_mc)
     extra_rep = _repeat_extra_args(extra_args, n_mc)
@@ -4722,12 +4731,13 @@ def _mc_jac_trace_grad(model, x0_hat, sigma_hat, s_in, extra_args, n_mc, eps_mc)
 
     # Free reserved-but-unused CUDA blocks before the expensive backward pass so
     # the activation recompute during checkpoint backward has maximum headroom.
-    if x0_hat.device.type == "cuda":
+    if device.type == "cuda":
         torch.cuda.empty_cache()
 
     with torch.enable_grad():
         x_noisy_p = x_noisy_p.requires_grad_(True)
 
+        # ── Step 4 [S1]: denoiser2 = Dθ(x_perturbed, σ) ─────────────────────
         # Checkpointed forward through the eager model — activations are NOT stored;
         # they are recomputed during backward.  Peak VRAM ≈ one forward, not two.
         d_perturbed = torch.utils.checkpoint.checkpoint(
@@ -4736,17 +4746,34 @@ def _mc_jac_trace_grad(model, x0_hat, sigma_hat, s_in, extra_args, n_mc, eps_mc)
             use_reentrant=False,
         )
 
-        # jac_trace value (scalar) — x0_rep already detached, no grad flows there
-        jac_trace_val = float(
-            (b * (d_perturbed.detach() - x0_rep)).sum() / (eps_mc * n_mc)
-        )
+        # ── Step 5 [S1]: jacTrace — keep on GPU, defer D2H ──────────────────
+        # SureGPU.computeGrad_d2hSURE_concurrent: do NOT call float() here.
+        # A premature .item()/.float() forces a CUDA sync that stalls the GPU
+        # pipeline before the VJP backward.  Instead we keep jac_trace_t on-device
+        # so the backward (Step 6) can start immediately without any D2H break.
+        # The scalar is pulled to CPU in Step 7 only after the backward is done.
+        # x0_rep: tight finish step = here (last use at jacTrace).
+        jac_trace_t = (b * (d_perturbed.detach() - x0_rep)).sum() \
+                      / (eps_mc * n_mc)                   # span_jt lifespan [5,7)
+        del x0_rep   # tight lifespan: freed at finish step (jacTrace = step 5)
 
+        # ── Step 6 [S1]: computeGrad (VJP backward) ─────────────────────────
         # VJP: ∂(b·d_perturbed)/∂x_noisy_p = J_D^T b
         # upstream gradient for d_perturbed is b / (eps_mc * n_mc)
         (jD_T_b,) = torch.autograd.grad(
             d_perturbed, x_noisy_p,
             grad_outputs=b / (eps_mc * n_mc),
         )
+        # span_xp [3,5) and span_r2 [4,6): d_perturbed freed at finish step 5/6
+        del d_perturbed
+
+    # ── Step 7 [S3]: deferred D2H of jac_trace scalar ────────────────────────
+    # SureGPU.sure_async_d2h_free: pull jac_trace_val AFTER the backward so the
+    # GPU pipeline was not interrupted mid-computation.  In practice the backward
+    # kernels and the scalar transfer share the same stream but the ordering
+    # guarantees that D2H happens after all backward work is complete.
+    jac_trace_val = jac_trace_t.item()         # D2H at step 7 (hidden behind backward)
+    del jac_trace_t                            # span_jt finish step 7
 
     # ∂jac_trace/∂x0 = J_D^T b / (ε·n) − b / (ε·n)
     # (the second term comes from d/dx0 of the −x0_rep subtraction)
@@ -4755,10 +4782,10 @@ def _mc_jac_trace_grad(model, x0_hat, sigma_hat, s_in, extra_args, n_mc, eps_mc)
     grad_x0  = grad_raw.view(n_mc, *x0_hat.shape).sum(0) # sum MC samples → (B, C, H, W)
     result   = jac_trace_val, grad_x0.detach().cpu()
 
-    # Explicitly release the backward graph and large intermediates so the CUDA
-    # caching allocator reclaims activation VRAM before the next denoiser call.
-    del d_perturbed, jD_T_b, grad_raw, grad_x0, b, noise, x_noisy_p, x0_rep
-    if x0_hat.device.type == "cuda":
+    # Tight-lifespan cleanup: free all remaining intermediates at their finish step.
+    # SureGPU.all_sure_spans_tight — zero wasted device memory after each step.
+    del jD_T_b, grad_raw, grad_x0, b, x_noisy_p
+    if device.type == "cuda":
         torch.cuda.empty_cache()
 
     return result
@@ -4770,29 +4797,36 @@ def _mc_jac_trace(model, x0_hat, sigma_hat, s_in, extra_args, n_mc, eps_mc):
     Repeats the batch along dim-0 by n_mc, runs a single forward pass, then
     reduces — replacing n_mc sequential model calls with one larger call.
     tr(J) ≈ mean_k [ b_k^T (D(x̂₀ + ε·b_k) - x̂₀) / ε ]
+
+    Memory note: x0_rep freed before the model forward so its VRAM can be reused
+    by the allocator for x0_ref (disjoint lifespans — no simultaneous copies needed).
     """
+    device  = x0_hat.device
     spatial = [1] * (x0_hat.dim() - 1)
 
-    t_prep = _sure_timer(x0_hat.device)
+    t_prep = _sure_timer(device)
     x0_rep = x0_hat.detach().repeat(n_mc, *spatial)
     b = torch.randn_like(x0_rep)
-    # Fuse perturb + re-noise into one expression; free x0_rep early to avoid
-    # holding it alongside the model activations during the forward pass.
+    # Fuse perturb + re-noise; free x0_rep immediately so its VRAM is available
+    # during the model forward (x0_ref allocated after the forward reuses it).
     x_noisy_p = x0_rep + eps_mc * b + sigma_hat * torch.randn_like(x0_rep)
-    del x0_rep  # free before the expensive model call
+    del x0_rep
     s_in_rep = s_in.repeat(n_mc)
     extra_rep = _repeat_extra_args(extra_args, n_mc)
     ms_prep = t_prep()
 
-    t_fwd = _sure_timer(x0_hat.device)
+    t_fwd = _sure_timer(device)
     d_perturbed = model(x_noisy_p, sigma_hat * s_in_rep, **extra_rep).detach()
-    del x_noisy_p  # no longer needed
+    del x_noisy_p
     ms_fwd = t_fwd()
 
-    t_reduce = _sure_timer(x0_hat.device)
-    # Reuse b for the reduce instead of repeating x0_hat again (saves one full copy).
+    # x0_ref allocated after the forward: allocator can reuse x_noisy_p's block.
     x0_ref = x0_hat.detach().repeat(n_mc, *spatial)
+
+    t_reduce = _sure_timer(device)
     jac_trace = (b * (d_perturbed - x0_ref)).sum() / (eps_mc * n_mc)
+    # Tight lifespan: free d_perturbed (span_r2 finish) and x0_ref now.
+    del d_perturbed, x0_ref  # span_r2.disjoint span_sureVal → allocator can reuse
     ms_reduce = t_reduce()
 
     _sure_logger.debug(
@@ -5367,12 +5401,12 @@ def _sure_correct_x0(model, x0_hat, sigma_hat_0, s_in, extra_args,
 
     # ── Pre-draw probe vectors ────────────────────────────────────────────────
     # For 'full' mode draw all n_mc probes BEFORE Pass 1 so their sum can be
-    # folded into a combined scalar, replacing two backward passes with one.
+    # folded into a combined scalar (Opt-1), replacing two backward passes with one.
     need_full_grad = (grad_mode == 'full') and use_jac
-    bs = [torch.randn_like(x0_hat) for _ in range(n_mc)] if use_jac else []
+    bs    = [torch.randn_like(x0_hat) for _ in range(n_mc)] if use_jac else []
     b_sum = torch.stack(bs).sum(0) if need_full_grad else None
 
-    # ── Pass 1: x̂ = Dθ(xnoisy, σ̂₀) ─────────────────────────────────────────
+    # ── Pass 1: x̂ = Dθ(xnoisy, σ̂₀)  [S1, step 1 — concurrent with genB on S2] ─
     # 'approx' needs no grad graph; 'vjp'/'full' require enable_grad to override
     # any outer no_grad context (e.g. CFG wrapper).
     #
