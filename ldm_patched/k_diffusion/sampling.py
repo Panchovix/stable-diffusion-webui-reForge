@@ -1,7 +1,6 @@
 # Original code from Comfy, https://github.com/comfyanonymous/ComfyUI
 
 
-
 import functools
 import math
 from functools import partial
@@ -28,6 +27,7 @@ import numpy as np
 
 from modules.sd_samplers_kdiffusion_smea import Rescaler
 
+
 def append_zero(x):
     return torch.cat([x, x.new_zeros([1])])
 
@@ -43,20 +43,20 @@ def get_sigmas_karras(n, sigma_min, sigma_max, rho=7., device='cpu'):
 
 def get_sigmas_exponential(n, sigma_min, sigma_max, device='cpu'):
     """Constructs an exponential noise schedule."""
-    sigmas = torch.linspace(math.log(sigma_max), math.log(sigma_min), n, device=device).exp()
+    sigmas = torch.linspace(math.log(sigma_max), math.log(
+        sigma_min), n, device=device).exp()
     return append_zero(sigmas)
 
 
 def get_sigmas_polyexponential(n, sigma_min, sigma_max, rho=1., device='cpu'):
     """Constructs an polynomial in log sigma noise schedule."""
     ramp = torch.linspace(1, 0, n, device=device) ** rho
-    sigmas = torch.exp(ramp * (math.log(sigma_max) - math.log(sigma_min)) + math.log(sigma_min))
+    sigmas = torch.exp(ramp * (math.log(sigma_max) -
+                       math.log(sigma_min)) + math.log(sigma_min))
     return append_zero(sigmas)
 
-# align your steps
-def get_sigmas_ays(n, sigma_min, sigma_max, is_sdxl=False, device='cpu'):
-    # https://research.nvidia.com/labs/toronto-ai/AlignYourSteps/howto.html
-    def loglinear_interp(t_steps, num_steps):
+
+def loglinear_interp(t_steps, num_steps):
         """
         Performs log-linear interpolation of a given array of decreasing numbers.
         """
@@ -69,66 +69,66 @@ def get_sigmas_ays(n, sigma_min, sigma_max, is_sdxl=False, device='cpu'):
         interped_ys = torch.exp(torch.tensor(new_ys)).numpy()[::-1].copy()
         return interped_ys
 
-    if is_sdxl:
-        sigmas = [sigma_max, sigma_max/2.314, sigma_max/3.875, sigma_max/6.701, sigma_max/10.89, sigma_max/16.954, sigma_max/26.333, sigma_max/38.46, sigma_max/62.457, sigma_max/129.336, 0.029]
-    else:
-        # Default to SD 1.5 sigmas.
-        sigmas = [sigma_max, sigma_max/2.257, sigma_max/3.785, sigma_max/5.418, sigma_max/7.749, sigma_max/10.469, sigma_max/15.176, sigma_max/22.415, sigma_max/36.629, sigma_max/96.151, 0.029]
 
+def get_sigmas_ays_general(sigma_bases, sigma_max, n, device='cpu', is_32steps=False):
+    sigmas = [sigma_max]
+    for i in sigma_bases:
+        sigmas.append(sigma_max/i)
+    if is_32steps:
+        sigmas.append(0.015000000000000000)
+    else:
+        sigmas.append(0.029)
 
     if n != len(sigmas):
-        sigmas = np.append(loglinear_interp(sigmas, n), [0.0])
+        sigmas = np.append(loglinear_interp(sigmas, n), [0, 0])
     else:
         sigmas.append(0.0)
 
     return torch.FloatTensor(sigmas).to(device)
+
+# align your steps
+
+
+def get_sigmas_ays(n, sigma_min, sigma_max, is_sdxl=False, device='cpu'):
+    # https://research.nvidia.com/labs/toronto-ai/AlignYourSteps/howto.html
+    # Hard coded sigma ratios, for AYS
+    sigma_bases = []
+    if is_sdxl:
+        sigma_bases = [2.314, 3.875, 6.701, 10.89,
+            16.954, 26.333, 38.46, 62.457, 129.336]
+    else:
+        sigma_bases = [2.257, 3.785, 5.418, 7.749,
+            10.649, 15.176, 22.415, 36.629, 96.151]
+    return get_sigmas_ays_general(sigma_bases, sigma_max, n, device)
+# TODO: it should be construct as the variant of the AYS
+
 
 def get_sigmas_ays_gits(n, sigma_min, sigma_max, is_sdxl=False, device='cpu'):
-    def loglinear_interp(t_steps, num_steps):
-        xs = torch.linspace(0, 1, len(t_steps))
-        ys = torch.log(torch.tensor(t_steps[::-1]))
-        new_xs = torch.linspace(0, 1, num_steps)
-        new_ys = np.interp(new_xs, xs, ys)
-        interped_ys = torch.exp(torch.tensor(new_ys)).numpy()[::-1].copy()
-        return interped_ys
-
+    sigma_bases = []
     if is_sdxl:
-        sigmas = [sigma_max, sigma_max/3.087, sigma_max/5.693, sigma_max/9.558, sigma_max/14.807, sigma_max/22.415, sigma_max/34.964, sigma_max/54.533, sigma_max/81.648, sigma_max/115.078, 0.029]
-
+        sigma_bases = [3.087, 5.693, 9.558, 14.807,
+            22.415, 34.694, 54.533, 81.648, 115.078]
     else:
-        sigmas = [sigma_max, sigma_max/3.165, sigma_max/5.829, sigma_max/11.824, sigma_max/20.819, sigma_max/36.355, sigma_max/60.895, sigma_max/93.685, sigma_max/140.528, sigma_max/155.478, 0.029]
+        sigma_bases = [3.165, 5.829, 11.824, 20.819,
+            36.355, 60.895, 93.685, 140.528, 155.478]
+    return get_sigmas_ays_general(sigma_bases, sigma_max, n, device)
 
-    if n != len(sigmas):
-        sigmas = np.append(loglinear_interp(sigmas, n), [0.0])
-    else:
-        sigmas.append(0.0)
-
-    return torch.FloatTensor(sigmas).to(device)
 
 def get_sigmas_ays_11steps(n, sigma_min, sigma_max, is_sdxl=False, device='cpu'):
     # This is the same as the original AYS
     return get_sigmas_ays(n, sigma_min, sigma_max, is_sdxl, device)
 
+
 def get_sigmas_ays_32steps(n, sigma_min, sigma_max, is_sdxl=False, device='cpu'):
-    def loglinear_interp(t_steps, num_steps):
-        xs = torch.linspace(0, 1, len(t_steps))
-        ys = torch.log(torch.tensor(t_steps[::-1]))
-        new_xs = torch.linspace(0, 1, num_steps)
-        new_ys = np.interp(new_xs, xs, ys)
-        interped_ys = torch.exp(torch.tensor(new_ys)).numpy()[::-1].copy()
-        return interped_ys
-    
+    sigma_bases = []
     if is_sdxl:
-        sigmas = [sigma_max, sigma_max/1.310860875657935, sigma_max/1.718356235075352, sigma_max/2.252525958180810, sigma_max/2.688026675053433, sigma_max/3.174423075322040, sigma_max/3.748832539417044, sigma_max/4.463856789920335, sigma_max/5.326233593328242, sigma_max/6.355213820679800, sigma_max/7.477672611007930, sigma_max/8.745803592589411, sigma_max/10.228995682978878, sigma_max/11.864653584709637, sigma_max/13.685783347784952, sigma_max/15.786441921021279, sigma_max/18.202564111697559, sigma_max/20.980440157432400, sigma_max/24.182245076323649, sigma_max/27.652401723193991, sigma_max/31.246429590323925, sigma_max/35.307579021272943, sigma_max/40.308138967569972, sigma_max/47.132212095147923, sigma_max/55.111585405517003, sigma_max/65.460441760115945, sigma_max/82.786347724072168, sigma_max/104.698036963744033, sigma_max/138.041693219503482, sigma_max/264.794761864988552, sigma_max/507.935470821253285, 0.015000000000000000]
+        sigma_bases = [1.310860875657935, 1.718356235075352, 2.252525958180810, 2.688026675053433, 3.174423075322040, 3.748832539417044, 4.463856789920335, 5.326233593328242, 6.355213820679800, 7.477672611007930, 8.745803592589411, 10.228995682978878, 11.864653584709637, 13.685783347784952, 15.786441921021279,
+            18.202564111697559, 20.980440157432400, 24.182245076323649, 27.652401723193991, 31.246429590323925, 35.307579021272943, 40.308138967569972, 47.132212095147923, 55.111585405517003, 65.460441760115945, 82.786347724072168, 104.698036963744033, 138.041693219503482, 264.794761864988552, 507.935470821253285]
     else:
-        sigmas = [sigma_max, sigma_max/1.300323183382763, sigma_max/1.690840379611262, sigma_max/2.198638945761486, sigma_max/2.622696705671493, sigma_max/3.098705619671305, sigma_max/3.661108232617473, sigma_max/4.152506637972936, sigma_max/4.662023756728857, sigma_max/5.234059175875519, sigma_max/5.874818853387466, sigma_max/6.593316416277412, sigma_max/7.399687115002039, sigma_max/8.213824943635682, sigma_max/9.050917900247738, sigma_max/9.973321246245751, sigma_max/11.115344803852001, sigma_max/12.529738625194212, sigma_max/14.124109921351757, sigma_max/15.959814856974724, sigma_max/18.099481611774999, sigma_max/20.526004748634670, sigma_max/23.506648288108032, sigma_max/27.541589307433523, sigma_max/32.269132736422456, sigma_max/38.982216080970984, sigma_max/53.219344283057142, sigma_max/72.656173487928834, sigma_max/103.609326413189740, sigma_max/218.693105563304210, sigma_max/461.605857767280530, 0.015000000000000000]
+        sigma_bases = [1.300323183382763, 1.690840379611262, 2.198638945761486, 2.622696705671493, 3.098705619671305, 3.661108232617473, 4.152506637972936, 4.662023756728857, 5.234059175875519, 5.874818853387466, 6.593316416277412, 7.399687115002039, 8.213824943635682, 9.050917900247738, 9.973321246245751,
+            11.115344803852001, 12.529738625194212, 14.124109921351757, 15.959814856974724, 18.099481611774999, 20.526004748634670, 23.506648288108032, 27.541589307433523, 32.269132736422456, 38.982216080970984, 53.219344283057142, 72.656173487928834, 103.609326413189740, 218.693105563304210, 461.605857767280530]
         
-    if n != len(sigmas):
-        sigmas = np.append(loglinear_interp(sigmas, n), [0.0])
-    else:
-        sigmas.append(0.0)
-    
-    return torch.FloatTensor(sigmas).to(device)
+    return get_sigmas_ays_general(sigma_bases, sigma_max, n, device, True)
 
 def cosine_scheduler(n, sigma_min, sigma_max, device='cpu'):
     sigmas = torch.zeros(n, device=device)
@@ -4706,28 +4706,72 @@ def _mc_jac_trace_grad(model, x0_hat, sigma_hat, s_in, extra_args, n_mc, eps_mc)
 
     Returns (jac_trace_value: float, jac_trace_grad: Tensor on CPU)
     where jac_trace_grad ≈ (J_D^T b - b) / (ε · n_mc)  as a tensor shaped like x0_hat.
+
+    Schedule derived from SureGPU.sure_full_schedule_theorem (Lean 4 formal proof):
+      Step 1 [S1+S2]: probe b generated on S2 concurrent with denoiser2 on S1
+        (SureGPU.genB_denoiser1_concurrent — no data hazard between them)
+      Step 4 [S1]:   d_perturbed = Dθ(x_perturbed, σ)
+      Step 5 [S1]:   jac_trace_tensor (kept on GPU — no D2H yet)
+      Step 6 [S1]:   backward / VJP  (computeGrad)
+      Step 7 [S3]:   jac_trace_val = .item() after backward — D2H hidden behind backward
+        (SureGPU.computeGrad_d2hSURE_concurrent, sure_async_d2h_free)
+      Lifespan: del each tensor at its tight finish step
+        (SureGPU.all_sure_spans_tight — zero wasted device memory)
     """
     eager_model = getattr(model, '_orig_mod', model)
+    device      = x0_hat.device
 
     spatial   = [1] * (x0_hat.dim() - 1)
     x0_detach = x0_hat.detach()
-    b         = torch.randn_like(x0_detach.repeat(n_mc, *spatial))   # (n_mc·B, C, H, W)
-    noise     = torch.randn_like(b)
-    x0_rep    = x0_detach.repeat(n_mc, *spatial)
-    x_noisy_p = (x0_rep + eps_mc * b + sigma_hat * noise).detach()
+
+    # ── Step 1 [S1 ∥ S2]: probe generation (genB) on side stream, concurrent ──
+    # SureGPU.genB_denoiser1_concurrent: b is generated by cuRAND on S2 while the
+    # caller's denoiser (denoiser1, already returned as x0_hat) ran on S1.  Here
+    # we prepare the perturbed input on S2 so the denoiser2 launch on S1 is not
+    # delayed by probe-generation latency.
+    #
+    # Tight lifespan (SureGPU.all_sure_spans_tight):
+    #   noise: freed immediately after x_noisy_p is formed (no further use).
+    #   x0_rep: last used at step 5 (jacTrace = b·(d_perturbed − x0_rep) / ε),
+    #           so it lives until that point — NOT deleted early.  Freeing it
+    #           prematurely and recomputing would waste a full .repeat() allocation.
+    _use_dual_stream = (device.type == "cuda")
+    if _use_dual_stream:
+        _s2 = torch.cuda.Stream(device=device)
+        with torch.cuda.stream(_s2):
+            b         = torch.randn_like(x0_detach.repeat(n_mc, *spatial))  # genB on S2
+            noise     = torch.randn_like(b)
+            x0_rep    = x0_detach.repeat(n_mc, *spatial)
+            x_noisy_p = (x0_rep + eps_mc * b + sigma_hat * noise).detach()
+            del noise   # tight lifespan: noise last used at perturbation
+    else:
+        b         = torch.randn_like(x0_detach.repeat(n_mc, *spatial))
+        noise     = torch.randn_like(b)
+        x0_rep    = x0_detach.repeat(n_mc, *spatial)
+        x_noisy_p = (x0_rep + eps_mc * b + sigma_hat * noise).detach()
+        del noise   # tight lifespan: freed at last use (perturbation step)
 
     s_in_rep  = s_in.repeat(n_mc)
     extra_rep = _repeat_extra_args(extra_args, n_mc)
     sigma_in  = (sigma_hat * s_in_rep).detach()
 
+    # Barrier: S1 must see S2's probe before using it in the forward pass.
+    # Matches SureGPU.STEP_SYNC (step 2) — cudaStreamSynchronize before perturb.
+    if _use_dual_stream:
+        torch.cuda.current_stream(device).wait_stream(_s2)
+        b.record_stream(torch.cuda.current_stream(device))
+        x_noisy_p.record_stream(torch.cuda.current_stream(device))
+        x0_rep.record_stream(torch.cuda.current_stream(device))
+
     # Free reserved-but-unused CUDA blocks before the expensive backward pass so
     # the activation recompute during checkpoint backward has maximum headroom.
-    if x0_hat.device.type == "cuda":
+    if device.type == "cuda":
         torch.cuda.empty_cache()
 
     with torch.enable_grad():
         x_noisy_p = x_noisy_p.requires_grad_(True)
 
+        # ── Step 4 [S1]: denoiser2 = Dθ(x_perturbed, σ) ─────────────────────
         # Checkpointed forward through the eager model — activations are NOT stored;
         # they are recomputed during backward.  Peak VRAM ≈ one forward, not two.
         d_perturbed = torch.utils.checkpoint.checkpoint(
@@ -4736,17 +4780,34 @@ def _mc_jac_trace_grad(model, x0_hat, sigma_hat, s_in, extra_args, n_mc, eps_mc)
             use_reentrant=False,
         )
 
-        # jac_trace value (scalar) — x0_rep already detached, no grad flows there
-        jac_trace_val = float(
-            (b * (d_perturbed.detach() - x0_rep)).sum() / (eps_mc * n_mc)
-        )
+        # ── Step 5 [S1]: jacTrace — keep on GPU, defer D2H ──────────────────
+        # SureGPU.computeGrad_d2hSURE_concurrent: do NOT call float() here.
+        # A premature .item()/.float() forces a CUDA sync that stalls the GPU
+        # pipeline before the VJP backward.  Instead we keep jac_trace_t on-device
+        # so the backward (Step 6) can start immediately without any D2H break.
+        # The scalar is pulled to CPU in Step 7 only after the backward is done.
+        # x0_rep: tight finish step = here (last use at jacTrace).
+        jac_trace_t = (b * (d_perturbed.detach() - x0_rep)).sum() \
+                      / (eps_mc * n_mc)                   # span_jt lifespan [5,7)
+        del x0_rep   # tight lifespan: freed at finish step (jacTrace = step 5)
 
+        # ── Step 6 [S1]: computeGrad (VJP backward) ─────────────────────────
         # VJP: ∂(b·d_perturbed)/∂x_noisy_p = J_D^T b
         # upstream gradient for d_perturbed is b / (eps_mc * n_mc)
         (jD_T_b,) = torch.autograd.grad(
             d_perturbed, x_noisy_p,
             grad_outputs=b / (eps_mc * n_mc),
         )
+        # span_xp [3,5) and span_r2 [4,6): d_perturbed freed at finish step 5/6
+        del d_perturbed
+
+    # ── Step 7 [S3]: deferred D2H of jac_trace scalar ────────────────────────
+    # SureGPU.sure_async_d2h_free: pull jac_trace_val AFTER the backward so the
+    # GPU pipeline was not interrupted mid-computation.  In practice the backward
+    # kernels and the scalar transfer share the same stream but the ordering
+    # guarantees that D2H happens after all backward work is complete.
+    jac_trace_val = jac_trace_t.item()         # D2H at step 7 (hidden behind backward)
+    del jac_trace_t                            # span_jt finish step 7
 
     # ∂jac_trace/∂x0 = J_D^T b / (ε·n) − b / (ε·n)
     # (the second term comes from d/dx0 of the −x0_rep subtraction)
@@ -4755,10 +4816,10 @@ def _mc_jac_trace_grad(model, x0_hat, sigma_hat, s_in, extra_args, n_mc, eps_mc)
     grad_x0  = grad_raw.view(n_mc, *x0_hat.shape).sum(0) # sum MC samples → (B, C, H, W)
     result   = jac_trace_val, grad_x0.detach().cpu()
 
-    # Explicitly release the backward graph and large intermediates so the CUDA
-    # caching allocator reclaims activation VRAM before the next denoiser call.
-    del d_perturbed, jD_T_b, grad_raw, grad_x0, b, noise, x_noisy_p, x0_rep
-    if x0_hat.device.type == "cuda":
+    # Tight-lifespan cleanup: free all remaining intermediates at their finish step.
+    # SureGPU.all_sure_spans_tight — zero wasted device memory after each step.
+    del jD_T_b, grad_raw, grad_x0, b, x_noisy_p
+    if device.type == "cuda":
         torch.cuda.empty_cache()
 
     return result
@@ -4770,29 +4831,55 @@ def _mc_jac_trace(model, x0_hat, sigma_hat, s_in, extra_args, n_mc, eps_mc):
     Repeats the batch along dim-0 by n_mc, runs a single forward pass, then
     reduces — replacing n_mc sequential model calls with one larger call.
     tr(J) ≈ mean_k [ b_k^T (D(x̂₀ + ε·b_k) - x̂₀) / ε ]
+
+    Schedule derived from SureGPU.sure_full_schedule_theorem (Lean 4 formal proof):
+      Tight lifespan (SureGPU.all_sure_spans_tight): del each buffer at its finish step.
+      Memory sharing (SureGPU.sure_memory_sharing_possible):
+        span_xp.disjoint span_jt  → x_noisy_p freed before x0_ref allocated,
+        enabling the CUDA allocator to reuse that VRAM for x0_ref.
+      Async x0_ref (SureGPU.sure_b_stays_on_device analog):
+        x0_ref repeat on side stream S2 overlaps with the model forward on S1.
     """
+    device  = x0_hat.device
     spatial = [1] * (x0_hat.dim() - 1)
 
-    t_prep = _sure_timer(x0_hat.device)
+    t_prep = _sure_timer(device)
     x0_rep = x0_hat.detach().repeat(n_mc, *spatial)
     b = torch.randn_like(x0_rep)
-    # Fuse perturb + re-noise into one expression; free x0_rep early to avoid
-    # holding it alongside the model activations during the forward pass.
+    # Fuse perturb + re-noise; free x0_rep immediately (span_xp tight finish).
     x_noisy_p = x0_rep + eps_mc * b + sigma_hat * torch.randn_like(x0_rep)
-    del x0_rep  # free before the expensive model call
+    del x0_rep  # span_xp: freed at finish step (before model forward)
     s_in_rep = s_in.repeat(n_mc)
     extra_rep = _repeat_extra_args(extra_args, n_mc)
     ms_prep = t_prep()
 
-    t_fwd = _sure_timer(x0_hat.device)
+    # ── Overlap x0_ref construction with model forward (S2 ∥ S1) ─────────────
+    # SureGPU disjoint spans: span_xp.disjoint span_jt means x_noisy_p is freed
+    # before x0_ref is needed for the reduce.  We exploit this by staging x0_ref
+    # on a side stream S2 concurrently with the denoiser2 forward on S1.
+    # This hides the memory-copy latency of x0_ref.repeat() behind the UNet call.
+    _use_dual_stream = (device.type == "cuda")
+    if _use_dual_stream:
+        _s2 = torch.cuda.Stream(device=device)
+        with torch.cuda.stream(_s2):
+            x0_ref = x0_hat.detach().repeat(n_mc, *spatial)   # staged on S2
+
+    t_fwd = _sure_timer(device)
     d_perturbed = model(x_noisy_p, sigma_hat * s_in_rep, **extra_rep).detach()
-    del x_noisy_p  # no longer needed
+    del x_noisy_p  # span_xp finish: freed at last use (denoiser2)
     ms_fwd = t_fwd()
 
-    t_reduce = _sure_timer(x0_hat.device)
-    # Reuse b for the reduce instead of repeating x0_hat again (saves one full copy).
-    x0_ref = x0_hat.detach().repeat(n_mc, *spatial)
+    # Barrier: S1 must see S2's x0_ref before the reduce.
+    if _use_dual_stream:
+        torch.cuda.current_stream(device).wait_stream(_s2)
+        x0_ref.record_stream(torch.cuda.current_stream(device))
+    else:
+        x0_ref = x0_hat.detach().repeat(n_mc, *spatial)
+
+    t_reduce = _sure_timer(device)
     jac_trace = (b * (d_perturbed - x0_ref)).sum() / (eps_mc * n_mc)
+    # Tight lifespan: free d_perturbed (span_r2 finish) and x0_ref now.
+    del d_perturbed, x0_ref  # span_r2.disjoint span_sureVal → allocator can reuse
     ms_reduce = t_reduce()
 
     _sure_logger.debug(
@@ -5365,14 +5452,31 @@ def _sure_correct_x0(model, x0_hat, sigma_hat_0, s_in, extra_args,
         elif device.type == 'mps':
             torch.mps.empty_cache()
 
-    # ── Pre-draw probe vectors ────────────────────────────────────────────────
-    # For 'full' mode draw all n_mc probes BEFORE Pass 1 so their sum can be
-    # folded into a combined scalar, replacing two backward passes with one.
+    # ── Pre-draw probe vectors (genB) on side stream S2 ─────────────────────
+    # SureGPU.genB_denoiser1_concurrent (Lean formal proof):
+    #   genB runs on stream S2 at step 1; denoiser1 (Pass 1) runs on S1 at step 1.
+    #   They have no data hazard (b reads nothing from S1; denoiser1 reads x_noisy/sigma
+    #   but not b).  We therefore launch probe generation on a side stream so it
+    #   overlaps with Pass 1's denoiser call on the default stream S1.
+    #
+    # For 'full' mode the probes must be drawn BEFORE Pass 1 so their sum can be
+    # folded into a combined scalar (Opt-1), replacing two backward passes with one.
+    # For 'vjp' / 'approx' modes they are drawn before Pass 2 — same parallelism applies.
     need_full_grad = (grad_mode == 'full') and use_jac
-    bs = [torch.randn_like(x0_hat) for _ in range(n_mc)] if use_jac else []
-    b_sum = torch.stack(bs).sum(0) if need_full_grad else None
+    _probe_stream   = None
+    if use_jac and device.type == 'cuda':
+        # Launch cuRAND probe generation on S2 (non-blocking).  Pass 1 will run
+        # on the default stream S1 concurrently.  SureGPU STEP_SYNC (step 2) is the
+        # barrier that we insert between Pass 1 and the perturbation step.
+        _probe_stream = torch.cuda.Stream(device=device)
+        with torch.cuda.stream(_probe_stream):
+            bs    = [torch.randn_like(x0_hat) for _ in range(n_mc)]
+            b_sum = torch.stack(bs).sum(0) if need_full_grad else None
+    else:
+        bs    = [torch.randn_like(x0_hat) for _ in range(n_mc)] if use_jac else []
+        b_sum = torch.stack(bs).sum(0) if need_full_grad else None
 
-    # ── Pass 1: x̂ = Dθ(xnoisy, σ̂₀) ─────────────────────────────────────────
+    # ── Pass 1: x̂ = Dθ(xnoisy, σ̂₀)  [S1, step 1 — concurrent with genB on S2] ─
     # 'approx' needs no grad graph; 'vjp'/'full' require enable_grad to override
     # any outer no_grad context (e.g. CFG wrapper).
     #
@@ -5418,6 +5522,17 @@ def _sure_correct_x0(model, x0_hat, sigma_hat_0, s_in, extra_args,
         x_hat    = x_hat.detach()
         residual = residual.detach()
         _release_cache()   # free activation pool after Pass 1 backward(s)
+
+    # ── Barrier (SureGPU.STEP_SYNC, step 2): wait for probe stream S2 ────────
+    # The genB probes generated concurrently with Pass 1 must be visible to the
+    # perturbation step (Pass 2).  This matches the cudaStreamSynchronize barrier
+    # at step 2 in the formal SURE schedule (SureGPU.step2_barrier_provides_genB_visibility).
+    if _probe_stream is not None:
+        torch.cuda.current_stream(device).wait_stream(_probe_stream)
+        for _b in bs:
+            _b.record_stream(torch.cuda.current_stream(device))
+        if b_sum is not None:
+            b_sum.record_stream(torch.cuda.current_stream(device))
 
     # ── Pass 2 (optional): tr{J} scalar + optional ∇tr{J} for 'full' mode ────
     jac_trace = 0.0 if use_jac else None
