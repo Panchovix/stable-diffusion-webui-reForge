@@ -14,6 +14,7 @@ from tqdm.auto import trange, tqdm
 from ldm_patched.modules import utils
 from ldm_patched.k_diffusion import deis
 from ldm_patched.k_diffusion import sa_solver
+import ldm_patched.modules.model_management as model_management
 import ldm_patched.modules.model_patcher
 import ldm_patched.modules.model_sampling
 import torchdiffeq
@@ -1231,9 +1232,6 @@ def sample_dpmpp_2s_a_sure(model, x, sigmas, extra_args=None, callback=None, dis
         if float(sigma_next) > 0:
             x = x + noise_sampler(sigma, sigma_next) * s_noise * sigma_up
 
-    if x.device.type == "cuda":
-        torch.cuda.empty_cache()
-
     return x
 
 
@@ -1379,9 +1377,6 @@ def sample_dpmpp_2s_a_sure_adaptive(model, x, sigma_min, sigma_max,
         "DPM++2Sa-SURE-Adaptive done: %d accepted / %d rejected  nfe=%d",
         info['n_accept'], info['n_reject'], info['nfe'],
     )
-
-    if x.device.type == "cuda":
-        torch.cuda.empty_cache()
 
     return x
 
@@ -1607,7 +1602,13 @@ def sample_dpmpp_2m_sure(model, x, sigmas, extra_args=None, callback=None, disab
         sure_adam_mode,
     )
 
-    old_denoised = None
+    # ── CPU-swap buffer for old_denoised ─────────────────────────────────────
+    # On LOW/NORMAL VRAM: park the previous step's denoised estimate in pinned
+    # CPU memory while the UNet runs the next step.  It is prefetched back to
+    # GPU just before the 2nd-order multistep correction needs it.
+    # On HIGH_VRAM: _old_buf is a plain tensor — zero overhead.
+    _old_buf   = None                                    # CPUSwapBuffer | Tensor | None
+    _swap_hist = model_management.should_swap_history()
 
     for i in trange(n_steps, disable=disable):
         sigma      = sigmas[i]
@@ -1658,6 +1659,12 @@ def sample_dpmpp_2m_sure(model, x, sigmas, extra_args=None, callback=None, disab
         if callback is not None:
             callback({'x': x, 'i': i, 'sigma': sigma, 'sigma_hat': sigma, 'denoised': denoised})
 
+        # ── Restore old_denoised from CPU swap (if any) ───────────────────────
+        old_denoised = (
+            _old_buf.to_device() if isinstance(_old_buf, model_management.CPUSwapBuffer)
+            else _old_buf
+        )
+
         # ── DPM-Solver++(2M) update ───────────────────────────────────────────
         t, t_next = t_fn(sigma), t_fn(sigma_next)
         h = t_next - t
@@ -1673,10 +1680,13 @@ def sample_dpmpp_2m_sure(model, x, sigmas, extra_args=None, callback=None, disab
             denoised_d = (1 + 1 / (2 * r)) * denoised - (1 / (2 * r)) * old_denoised
             x = sigma_fn(t_next) / sigma_fn(t) * x - (-h).expm1() * denoised_d
 
-        old_denoised = denoised
+        del old_denoised  # release GPU ref; _old_buf is the authoritative owner
 
-    if x.device.type == "cuda":
-        torch.cuda.empty_cache()
+        # ── Swap current denoised to CPU for next step ────────────────────────
+        if _swap_hist and denoised.device.type == 'cuda':
+            _old_buf = model_management.CPUSwapBuffer(denoised)
+        else:
+            _old_buf = denoised
 
     return x
 
@@ -1737,7 +1747,9 @@ def sample_dpmpp_2m_sde_sure(model, x, sigmas, extra_args=None, callback=None, d
         n_steps, preheat, eta, sure_alpha, solver_type, sure_adam_mode,
     )
 
-    old_denoised = None
+    # ── CPU-swap buffer for old_denoised (same pattern as sample_dpmpp_2m_sure) ─
+    _old_buf   = None
+    _swap_hist = model_management.should_swap_history()
     h, h_last = None, None
 
     for i in trange(n_steps, disable=disable):
@@ -1790,6 +1802,12 @@ def sample_dpmpp_2m_sde_sure(model, x, sigmas, extra_args=None, callback=None, d
         if callback is not None:
             callback({'x': x, 'i': i, 'sigma': sigma, 'sigma_hat': sigma, 'denoised': denoised})
 
+        # ── Restore old_denoised from CPU swap (if any) ───────────────────────
+        old_denoised = (
+            _old_buf.to_device() if isinstance(_old_buf, model_management.CPUSwapBuffer)
+            else _old_buf
+        )
+
         # ── DPM-Solver++(2M) SDE update ──────────────────────────────────────
         if float(sigma_next) == 0:
             x = denoised
@@ -1820,11 +1838,14 @@ def sample_dpmpp_2m_sde_sure(model, x, sigmas, extra_args=None, callback=None, d
                 x = x + noise_sampler(sigma, sigma_next) \
                           * sigma_next * (-2 * h * eta).expm1().neg().sqrt() * s_noise
 
-        old_denoised = denoised
+        del old_denoised  # release GPU ref; _old_buf is the authoritative owner
         h_last = h
 
-    if x.device.type == "cuda":
-        torch.cuda.empty_cache()
+        # ── Swap current denoised to CPU for next step ────────────────────────
+        if _swap_hist and denoised.device.type == 'cuda':
+            _old_buf = model_management.CPUSwapBuffer(denoised)
+        else:
+            _old_buf = denoised
 
     return x
 
@@ -2008,7 +2029,16 @@ def sample_dpmpp_3m_sde_sure(model, x, sigmas, extra_args=None, callback=None, d
         n_steps, preheat, eta, sure_alpha, sure_adam_mode,
     )
 
-    denoised_1, denoised_2 = None, None
+    # ── CPU-swap buffers for 3M history tensors ───────────────────────────────
+    # denoised_1 and denoised_2 are only needed at the *start* of the next step
+    # for the 2nd/3rd-order correction.  Park them in pinned CPU memory while
+    # the UNet computes the current denoised estimate.
+    # Rotation at end of loop: _d2_buf ← _d1_buf ← current denoised.
+    # Since _d1_buf is already on CPU after the previous step's swap, assigning
+    # it to _d2_buf costs zero transfers.
+    _d1_buf    = None                                    # CPUSwapBuffer | Tensor | None
+    _d2_buf    = None                                    # CPUSwapBuffer | Tensor | None
+    _swap_hist = model_management.should_swap_history()
     h, h_1, h_2 = None, None, None
 
     for i in trange(n_steps, disable=disable):
@@ -2061,6 +2091,16 @@ def sample_dpmpp_3m_sde_sure(model, x, sigmas, extra_args=None, callback=None, d
         if callback is not None:
             callback({'x': x, 'i': i, 'sigma': sigma, 'sigma_hat': sigma, 'denoised': denoised})
 
+        # ── Restore history tensors from CPU swap (if any) ────────────────────
+        denoised_1 = (
+            _d1_buf.to_device() if isinstance(_d1_buf, model_management.CPUSwapBuffer)
+            else _d1_buf
+        )
+        denoised_2 = (
+            _d2_buf.to_device() if isinstance(_d2_buf, model_management.CPUSwapBuffer)
+            else _d2_buf
+        )
+
         # ── Step 4: DPM-Solver++(3M) SDE update ──────────────────────────────
         if float(sigma_next) == 0:
             x = denoised
@@ -2098,11 +2138,17 @@ def sample_dpmpp_3m_sde_sure(model, x, sigmas, extra_args=None, callback=None, d
                 x = x + noise_sampler(sigma, sigma_next) \
                           * sigma_next * (-2 * h * eta).expm1().neg().sqrt() * s_noise
 
-        denoised_1, denoised_2 = denoised, denoised_1
-        h_1, h_2 = h, h_1
+        del denoised_1, denoised_2  # release GPU refs before swap rotation
 
-    if x.device.type == "cuda":
-        torch.cuda.empty_cache()
+        # ── Rotate history into swap buffers ──────────────────────────────────
+        # New _d2_buf is the old _d1_buf (already on CPU if swap was active).
+        # New _d1_buf is the current denoised, optionally swapped to CPU.
+        _d2_buf = _d1_buf
+        if _swap_hist and denoised.device.type == 'cuda':
+            _d1_buf = model_management.CPUSwapBuffer(denoised)
+        else:
+            _d1_buf = denoised
+        h_1, h_2 = h, h_1
 
     return x
 
@@ -2268,9 +2314,6 @@ def sample_dpmpp_2m_sde_sure_adaptive(model, x, sigma_min, sigma_max,
         "DPM++2M-SDE-SURE-Adaptive done: %d accepted / %d rejected  nfe=%d",
         info['n_accept'], info['n_reject'], info['nfe'],
     )
-
-    if x.device.type == "cuda":
-        torch.cuda.empty_cache()
 
     return x
 
@@ -4688,6 +4731,23 @@ def _repeat_extra_args(extra_args, n):
             repeated[k] = v
     return repeated
 
+def release_cache(device):
+    """Flush the CUDA/MPS allocator pool before a gradient-checkpointed backward.
+
+    Only performs the flush when VRAM is genuinely tight (< 1.5 GiB free).
+    On HIGH/NORMAL VRAM systems the caching allocator reuses freed blocks
+    directly from its own pool — calling empty_cache would only force a
+    round-trip through the driver for no gain.  Gating on should_swap_history()
+    keeps the hot path (high VRAM) a no-op while still giving headroom to the
+    checkpoint backward on memory-constrained cards.
+    """
+    if not model_management.should_swap_history():
+        return
+    if device.type == 'cuda':
+        torch.cuda.empty_cache()
+    elif device.type == 'mps':
+        torch.mps.empty_cache()
+
 @functools.lru_cache
 def _mc_jac_trace_grad(model, x0_hat, sigma_hat, s_in, extra_args, n_mc, eps_mc):
     """MC Jacobian trace + gradient w.r.t. x0_hat in a single eager forward+backward.
@@ -4729,10 +4789,10 @@ def _mc_jac_trace_grad(model, x0_hat, sigma_hat, s_in, extra_args, n_mc, eps_mc)
     extra_rep = _repeat_extra_args(extra_args, n_mc)
     sigma_in  = (sigma_hat * s_in_rep).detach()
 
-    # Free reserved-but-unused CUDA blocks before the expensive backward pass so
-    # the activation recompute during checkpoint backward has maximum headroom.
-    if device.type == "cuda":
-        torch.cuda.empty_cache()
+    # Flush the allocator pool before the expensive backward pass only when VRAM
+    # is genuinely tight.  On HIGH/NORMAL VRAM systems the caching allocator
+    # reuses freed blocks directly — flushing them costs a driver round-trip.
+    release_cache(device)
 
     with torch.enable_grad():
         x_noisy_p = x_noisy_p.requires_grad_(True)
@@ -4784,9 +4844,9 @@ def _mc_jac_trace_grad(model, x0_hat, sigma_hat, s_in, extra_args, n_mc, eps_mc)
 
     # Tight-lifespan cleanup: free all remaining intermediates at their finish step.
     # SureGPU.all_sure_spans_tight — zero wasted device memory after each step.
+    # No empty_cache here: the freed blocks stay in the allocator pool so the
+    # *next* SURE step can reuse them directly without a driver round-trip.
     del jD_T_b, grad_raw, grad_x0, b, x_noisy_p
-    if device.type == "cuda":
-        torch.cuda.empty_cache()
 
     return result
 
@@ -5392,12 +5452,7 @@ def _sure_correct_x0(model, x0_hat, sigma_hat_0, s_in, extra_args,
     # Skip the perturbed UNet forward entirely when the contribution is negligible.
     use_jac = use_jac and (sigma2 > eps_mc)
 
-    def _release_cache():
-        # Return freed activation buffers to the OS/driver so other allocations can use them.
-        if device.type == 'cuda':
-            torch.cuda.empty_cache()
-        elif device.type == 'mps':
-            torch.mps.empty_cache()
+    
 
     # ── Pre-draw probe vectors ────────────────────────────────────────────────
     # For 'full' mode draw all n_mc probes BEFORE Pass 1 so their sum can be
@@ -5415,7 +5470,7 @@ def _sure_correct_x0(model, x0_hat, sigma_hat_0, s_in, extra_args,
     # still sit in the MPS private pool / CUDA caching allocator.  Releasing
     # them here gives back headroom before we store activation graphs.
     if grad_mode != 'approx':
-        _release_cache()
+        release_cache(device)
 
     x_in = x0_hat.detach().requires_grad_(grad_mode != 'approx')
     if grad_mode == 'approx':
@@ -5451,7 +5506,7 @@ def _sure_correct_x0(model, x0_hat, sigma_hat_0, s_in, extra_args,
 
         x_hat    = x_hat.detach()
         residual = residual.detach()
-        _release_cache()   # free activation pool after Pass 1 backward(s)
+        release_cache(device)   # free activation pool after Pass 1 backward(s)
 
     # ── Pass 2 (optional): tr{J} scalar + optional ∇tr{J} for 'full' mode ────
     jac_trace = 0.0 if use_jac else None
@@ -5470,7 +5525,7 @@ def _sure_correct_x0(model, x0_hat, sigma_hat_0, s_in, extra_args,
             if need_full_grad:
                 # Forward through Dθ(x+εb) with grad for VJP.
                 # Flush pool before each grad-enabled perturbed forward.
-                _release_cache()
+                release_cache(device)
                 x_in_pert = x_in_pert.requires_grad_(True)
                 def _model_pert_ckpt(x):
                     return model(x, sigma_p * s_in, **extra_args)
@@ -5482,7 +5537,7 @@ def _sure_correct_x0(model, x0_hat, sigma_hat_0, s_in, extra_args,
                 # Bug-1 fix: use (x_pert_hat − x_hat) so tr{J} matches the paper formula.
                 jac_trace += float((b * (x_pert_hat - x_hat)).sum().detach()) / eps
                 del x_pert_hat
-                _release_cache()
+                release_cache(device)
                 grad_jac_pert_sum = grad_jac_pert_sum + gj_pert
                 del gj_pert
             else:
@@ -5796,7 +5851,14 @@ def _sure_correct_x0_wavelet(model, x0_hat, sigma_hat_0, s_in, extra_args,
         sigma_hat_0, sigma2, eps, float(sigma_p), use_jac, adam_mode, grad_mode,
     )
 
+    # Compute once; reused by the _release_cache closure below.
+    _tight_vram = model_management.should_swap_history()
+
     def _release_cache():
+        # See release_cache() — only flush when VRAM is genuinely tight so the
+        # allocator pool can be reused directly on well-provisioned systems.
+        if not _tight_vram:
+            return
         if x0_hat.device.type == 'cuda':
             torch.cuda.empty_cache()
         elif x0_hat.device.type == 'mps':
@@ -6464,9 +6526,6 @@ def sample_sure(model, x, sigmas, extra_args=None, callback=None, disable=None,
         _csv_file.close()
         _sure_logger.info("SURE approx CSV: closed %s", sure_csv_path)
 
-    if x.device.type == "cuda":
-        torch.cuda.empty_cache()
-
     return x
 
 
@@ -6615,9 +6674,6 @@ def sample_sure_wavelet(model, x, sigmas, extra_args=None, callback=None, disabl
 
     if _csv_fh is not None:
         _csv_fh.close()
-
-    if x.device.type == "cuda":
-        torch.cuda.empty_cache()
 
     return x
 
@@ -7045,9 +7101,6 @@ def sample_sure_wavelet_converge(
             x = x + d * (sigma_down - sigma)
             x = x + sigma_up * noise_sampler(sigma, sigma_next)
 
-    if x.device.type == "cuda":
-        torch.cuda.empty_cache()
-
     return x
 
 
@@ -7411,9 +7464,6 @@ def sample_sure_adaptive(model, x, sigma_min, sigma_max, extra_args=None, callba
         "SURE-Adaptive done: %d accepted / %d rejected  nfe=%d",
         info['n_accept'], info['n_reject'], info['nfe'],
     )
-
-    if x.device.type == "cuda":
-        torch.cuda.empty_cache()
 
     return x
 

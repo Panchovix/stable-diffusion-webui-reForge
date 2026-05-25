@@ -675,16 +675,23 @@ def load_models_gpu(models, memory_required=0, force_patch_weights=False, minimu
                 logging.info(f"Requested to load {x.model.__class__.__name__}")
             models_to_load.append(loaded_model)
 
+    _detached_clones = False
     for loaded_model in models_to_load:
         to_unload = []
         for i in range(len(current_loaded_models)):
             if loaded_model.model.is_clone(current_loaded_models[i].model):
                 to_unload = [i] + to_unload
+        if to_unload:
+            _detached_clones = True
         for i in to_unload:
             current_loaded_models.pop(i).model.detach(unpatch_all=False)
 
-    # Force memory cleanup before loading new models
-    soft_empty_cache(force=True)
+    # Only flush the allocator pool when clones were actually detached.
+    # An unconditional empty_cache here evicts cached blocks that the
+    # upcoming model-load could reuse directly — net loss on every generation
+    # where no clone swap occurred (the common case).
+    if _detached_clones:
+        soft_empty_cache(force=True)
 
     total_memory_required = {}
     for loaded_model in models_to_load:
@@ -1417,6 +1424,76 @@ def soft_empty_cache(force=False):
     elif torch.cuda.is_available():
         torch.cuda.empty_cache()
         torch.cuda.ipc_collect()
+
+
+class CPUSwapBuffer:
+    """Async-offload a CUDA tensor to pinned CPU memory; prefetch back on demand.
+
+    Acts as a per-step 'swap file' for sampler history tensors
+    (``old_denoised``, ``denoised_1``/``denoised_2``, …) that sit idle on the
+    GPU while the UNet processes the *current* step.  On LOW/NORMAL VRAM cards
+    this recovers 1–4 MB per tensor (scales with latent resolution) at near-zero
+    throughput cost because:
+
+    * D→H and H→D copies use DMA; the GPU compute pipeline keeps running.
+    * ``pin_memory()`` gives DMA-able host pages for the fastest possible H2D.
+    * A ``torch.cuda.Event`` serialises the D2H copy so ``to_device()`` can
+      prefetch without a global device sync.
+
+    On HIGH_VRAM machines or non-CUDA devices the class is transparent: the
+    tensor is stored on-device and ``to_device()`` returns it directly.
+
+    Usage::
+
+        buf = CPUSwapBuffer(old_denoised)   # D→H (non-blocking)
+        ...                                 # UNet forward on GPU
+        old_denoised = buf.to_device()      # H→D (non-blocking, returns GPU tensor)
+    """
+    __slots__ = ('_cpu', '_device', '_event')
+
+    def __init__(self, tensor: torch.Tensor, non_blocking: bool = True):
+        self._device = tensor.device
+        if tensor.device.type == 'cuda':
+            # Allocate in CPU pinned memory for DMA-able transfers.
+            self._cpu = tensor.detach().to('cpu', non_blocking=non_blocking).pin_memory()
+            if non_blocking:
+                # Record an event on the copy stream so to_device() can
+                # synchronise before issuing the H2D transfer.
+                self._event = torch.cuda.Event()
+                self._event.record(torch.cuda.current_stream(tensor.device))
+            else:
+                self._event = None
+        else:
+            # MPS / CPU: no-op path — hold the tensor directly.
+            self._cpu   = tensor.detach()
+            self._event = None
+
+    def to_device(self, non_blocking: bool = True) -> torch.Tensor:
+        """Return the tensor on its original device (async H2D for CUDA)."""
+        if self._event is not None:
+            self._event.synchronize()          # ensure D2H copy completed
+        if self._device.type == 'cuda':
+            return self._cpu.to(self._device, non_blocking=non_blocking)
+        return self._cpu
+
+
+def should_swap_history() -> bool:
+    """Return ``True`` when VRAM pressure warrants CPU-swapping sampler history.
+
+    Conservative threshold (1.5 GiB free): only triggers when the next UNet
+    forward would likely exhaust the remaining budget.  Returns ``False`` on
+    HIGH_VRAM machines and non-CUDA devices so there is zero overhead on
+    well-provisioned systems.
+    """
+    global vram_state
+    if vram_state == VRAMState.HIGH_VRAM:
+        return False
+    if not torch.cuda.is_available():
+        return False
+    dev = get_torch_device()
+    if is_device_cpu(dev):
+        return False
+    return get_free_memory(dev) < 1_572_864_000   # 1.5 GiB
 
 def unload_all_models():
     free_memory(1e30, get_torch_device())
