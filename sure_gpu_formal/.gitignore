@@ -1,0 +1,13 @@
+# Lake build artefacts
+.lake/build/
+.lake/packages/
+
+# Lean compiled objects that regenerate on `lake build`
+**/*.olean
+**/*.ilean
+**/*.olean.hash
+**/*.ilean.hash
+**/*.trace
+**/*.c
+**/*.c.hash
+**/*.setup.json
