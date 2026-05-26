@@ -182,11 +182,10 @@ def load_weights_from_ldm(
     mx.eval(mlx_unet.parameters())
 
     if report:
-        # Count loaded parameters by checking which module weights are non-zero
-        n_params = sum(
-            v.size for _, v in mlx_unet.parameters()
-            if hasattr(v, "size")
-        )
+        # mlx_unet.parameters() returns a nested dict; flatten it first.
+        import mlx.utils as mx_utils
+        flat = mx_utils.tree_flatten(mlx_unet.parameters())  # [(path, mx.array), …]
+        n_params = sum(v.size for _, v in flat if hasattr(v, "size"))
         print(
             f"[MLX Pipeline] Weights loaded: {len(pairs)} tensors → "
             f"{n_params / 1e9:.2f}B bfloat16 parameters on Metal"

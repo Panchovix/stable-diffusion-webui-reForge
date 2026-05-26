@@ -96,8 +96,9 @@ class MLXSDXLPipeline:
         self.sd_model = sd_model
 
         # Sigma preconditioning from the loaded model's model_sampling object.
-        # Identical attribute path used by DiffPipeline.
-        self.model_sampling = sd_model.model.model_sampling
+        # Correct path: unet_patcher.model.model_sampling
+        # (same as diff_pipeline/pipeline.py:637 and processing.py:1075)
+        self.model_sampling = unet_patcher.model.model_sampling
 
         # Build and populate the MLX UNet
         log.info("[MLX Pipeline] Constructing SDXL MLX UNet …")
