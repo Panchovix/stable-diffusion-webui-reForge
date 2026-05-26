@@ -58,35 +58,65 @@ def _m2t(a: "mx.array") -> torch.Tensor:
 
 # ── conditioning extraction ─────────────────────────────────────────────────────
 
+def _get_raw_cond_dict(cond_obj: Any) -> Optional[Dict]:
+    """
+    Extract the raw conditioning dict from whatever format KDiffusionSampler
+    stores in ``sampler_extra_args``.
+
+    Two formats are encountered at the sampler level:
+
+    * ``MulticondLearnedConditioning`` (cond):
+        ``.batch[0][0].schedules[0].cond``
+        → dict ``{'crossattn': Tensor[1,S,2048], 'pooled_output': Tensor[1,1280]}``
+
+    * ``list[list[ScheduledPromptConditioning]]`` (uncond):
+        ``[0][0].cond``
+        → same dict format
+
+    Both return a plain-tensor dict — NOT the ``model_conds`` / ``CONDRegular``
+    wrapping used deeper inside ``sampling_function``.
+    """
+    try:
+        from modules.prompt_parser import MulticondLearnedConditioning
+        if isinstance(cond_obj, MulticondLearnedConditioning):
+            raw = cond_obj.batch[0][0].schedules[0].cond
+        elif isinstance(cond_obj, list) and cond_obj and cond_obj[0]:
+            raw = cond_obj[0][0].cond
+        else:
+            return None
+        return raw if isinstance(raw, dict) else None
+    except Exception:
+        return None
+
+
 def _extract_cond_mx(
-    cond_list: List[Dict],
+    cond_obj: Any,
     B: int,
     latent_hw: Tuple[int, int],
 ) -> Tuple["mx.array", "mx.array", "mx.array"]:
     """
     Extract encoder_hidden_states [B, S, 2048], text_embeds [B, 1280],
-    and time_ids [B, 6] as MLX bfloat16 / float32 arrays from an ldm
-    cond-list (output of ``p.get_conds()``).
+    and time_ids [B, 6] as MLX bfloat16 / float32 arrays from the raw
+    conditioning object stored in ``sampler_extra_args``.
 
     Parameters
     ----------
-    cond_list  : list of cond dicts (typically len 1 for a simple prompt)
+    cond_obj   : ``MulticondLearnedConditioning`` or ``list[list[SPC]]``
     B          : batch size (number of samples)
-    latent_hw  : (H, W) of the *latent* in pixels/8 — used to build time_ids
+    latent_hw  : (H, W) of the *latent* — used to build time_ids
     """
     import mlx.core as mx
 
     enc_hs_t = text_embeds_t = None
 
-    if cond_list:
-        mc = cond_list[0].get("model_conds", {})
-        ca = mc.get("crossattn",     None)
-        po = mc.get("pooled_output", None)
+    raw = _get_raw_cond_dict(cond_obj)
+    if raw is not None:
+        ca = raw.get("crossattn",     None)   # Tensor [1, S, 2048]
+        po = raw.get("pooled_output", None)   # Tensor [1, ≥1280]
         if ca is not None:
-            enc_hs_t     = ca.cond.detach().cpu().float()          # [1, S, 2048]
+            enc_hs_t     = ca.detach().cpu().float()
         if po is not None:
-            pooled        = po.cond.detach().cpu().float()          # [1, ≥1280]
-            text_embeds_t = pooled[:, :1280]                        # [1, 1280]
+            text_embeds_t = po.detach().cpu().float()[:, :1280]
 
     enc_hs = (
         _t2m(enc_hs_t.expand(B, -1, -1))
