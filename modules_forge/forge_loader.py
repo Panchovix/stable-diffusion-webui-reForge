@@ -550,6 +550,18 @@ def load_model_for_a1111(timer, checkpoint_info=None, state_dict=None):
 
     diffusers_hijack.maybe_apply_diffusers_hijack(sd_model, forge_objects)
 
+    # ── Apple MLX pipeline (auto-activates on Apple Silicon when mlx installed) ──
+    # Runs after diffusers_hijack so it can register on top with higher priority.
+    # On non-Apple-Silicon hardware this is a fast no-op (platform check only).
+    try:
+        import mlx_pipeline as _mlxp
+        _mlxp.maybe_activate(sd_model, forge_objects)
+    except Exception as _mlx_err:
+        import logging as _logging
+        _logging.getLogger(__name__).debug(
+            "[MLX Pipeline] Skipped: %s", _mlx_err
+        )
+
     sd_model.sd_model_hash = sd_model_hash
     sd_model.sd_model_checkpoint = checkpoint_info.filename
     sd_model.sd_checkpoint_info = checkpoint_info
