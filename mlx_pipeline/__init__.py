@@ -47,6 +47,8 @@ _BANNER = """
 ║          🍎  Apple MLX Pipeline Activated  🍎                       ║
 ║                                                                      ║
 ║  SDXL UNet   → BFloat16 on Apple Silicon Metal via MLX              ║
+║  CLIP L+G    → BFloat16 text encoding on Metal                      ║
+║  VAE Decoder → BFloat16 decoding on Metal                           ║
 ║  Samplers    → Euler / Euler-a / Heun / DPM++ 2M·SDE·3M-SDE        ║
 ║  CFG         → single batched UNet forward (batch=2)                ║
 ║  Conditioning → pre-converted once per generation                   ║
@@ -247,11 +249,25 @@ def maybe_activate(sd_model, forge_objects) -> bool:
         # ── 2. sampler loop hook (eliminates per-step torch↔MLX conversions) ──
         _install_mlx_sampler_hook()
 
+        # ── 3. CLIP text encoders (bfloat16 on Metal) ────────────────────────
+        try:
+            from mlx_pipeline.clip import install_clip_hooks
+            install_clip_hooks(sd_model, forge_objects)
+        except Exception as _clip_exc:
+            log.warning("[MLX Pipeline] CLIP hook skipped: %s", _clip_exc)
+
+        # ── 4. VAE decoder (bfloat16 on Metal) ───────────────────────────────
+        try:
+            from mlx_pipeline.vae import install_vae_hooks
+            install_vae_hooks(sd_model)
+        except Exception as _vae_exc:
+            log.warning("[MLX Pipeline] VAE hook skipped: %s", _vae_exc)
+
         # Keep a reference so the pipeline is not garbage-collected
         sd_model.mlx_pipeline = mlx_pipe
 
         print(_BANNER)
-        log.info("[MLX Pipeline] SDXL registered — Metal bfloat16 + MLX samplers")
+        log.info("[MLX Pipeline] SDXL registered — Metal bfloat16 + MLX samplers + CLIP + VAE")
         return True
 
     except Exception as exc:
