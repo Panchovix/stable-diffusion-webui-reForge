@@ -251,7 +251,10 @@ class MLXCLIPTextEncoder:
             mx.eval(x_normed)
             x_np       = np.array(x_normed.astype(mx.float32))         # [B, T, d]
             raw_pooled = mx.array(x_np[batch_idx, eos_pos])            # [B, d]
-            pooled = (raw_pooled.astype(mx.bfloat16) @ self.tp_w.T)   # [B, d]
+            # tp_w is stored pre-transposed to [in, out] so we multiply directly:
+            # pooled = eos_hidden @ tp_w  (matches SDClipModel convention:
+            # clip_g.text_projection is an nn.Parameter used as x @ param)
+            pooled = (raw_pooled.astype(mx.bfloat16) @ self.tp_w)      # [B, d]
 
         # Convert intermediate and pooled back to torch
         assert intermediate is not None, "intermediate not captured — check layer_idx"
@@ -307,20 +310,25 @@ def _load_layer(sd: dict, prefix: str, d_model: int, n_heads: int,
 
 
 def build_clip_encoder(
-    transformer,           # ldm_patched CLIPTextModel instance
+    transformer,                          # HuggingFace CLIPTextModel instance
     layer_idx: int = -2,
     has_text_projection: bool = True,
     activation = None,
+    text_projection_param: Optional[torch.Tensor] = None,
 ) -> "MLXCLIPTextEncoder":
     """
     Build an MLXCLIPTextEncoder from an ldm_patched CLIPTextModel.
 
     Parameters
     ----------
-    transformer         : CLIPTextModel (ldm_patched)
-    layer_idx           : which layer's output to use as 'z' (default -2 = penultimate)
-    has_text_projection : whether to compute pooled output via text_projection
-    activation          : callable — defaults to quick_gelu
+    transformer            : HuggingFace CLIPTextModel (stored as SDClipModel.transformer)
+    layer_idx              : which layer's output to use as 'z' (default -2 = penultimate)
+    has_text_projection    : whether to compute pooled output
+    activation             : callable — defaults to quick_gelu
+    text_projection_param  : the raw nn.Parameter from SDClipModel (``clip_g.text_projection``).
+                             Shape [d, d].  Used directly as: pooled = eos_hidden @ tp_w.
+                             If None, falls back to ``"text_projection.weight"`` in the
+                             transformer state dict (Linear weight convention → transposed).
     """
     import mlx.core as mx
 
@@ -328,7 +336,6 @@ def build_clip_encoder(
         activation = _quick_gelu
 
     sd = transformer.state_dict()
-    cfg = transformer.text_model.embeddings   # for shapes
 
     d_model   = sd["text_model.embeddings.token_embedding.weight"].shape[1]
     n_layers  = sum(1 for k in sd if k.startswith("text_model.encoder.layers.") and k.endswith(".self_attn.q_proj.weight"))
@@ -341,9 +348,22 @@ def build_clip_encoder(
         for i in range(n_layers)
     ]
 
+    # ── text_projection (for CLIP-G pooled output) ────────────────────────────
+    # The weight is stored as a raw [d, d] parameter on SDClipModel (NOT inside
+    # the transformer).  It is used as:  pooled = eos_hidden @ text_projection
+    # (right-multiply, no transpose).
+    #
+    # Fallback: if "text_projection.weight" exists in the transformer state_dict
+    # (Linear weight convention [out, in]), we transpose it so the same
+    # "pooled = eos_hidden @ tp_w" formula still holds.
     tp_w = None
-    if has_text_projection and "text_projection.weight" in sd:
-        tp_w = _t2m_f32(sd["text_projection.weight"])
+    if has_text_projection:
+        if text_projection_param is not None:
+            # Preferred path: raw nn.Parameter [d, d], used as-is
+            tp_w = _t2m_f32(text_projection_param)
+        elif "text_projection.weight" in sd:
+            # Fallback: Linear weight [out, in] → transpose to [in, out]
+            tp_w = _t2m_f32(sd["text_projection.weight"].t().contiguous())
 
     log.debug(
         "[MLX CLIP] Built encoder: d=%d heads=%d layers=%d ff=%d",
@@ -418,11 +438,18 @@ def install_clip_hooks(sd_model, forge_objects) -> bool:
             has_text_projection= False,   # CLIP-L pooled not used in SDXL
             activation         = _quick_gelu,
         )
+        # text_projection is an nn.Parameter on SDClipModel itself, NOT inside
+        # the transformer.  Pass it directly so build_clip_encoder doesn't try
+        # to find "text_projection.weight" in the HuggingFace CLIPTextModel
+        # state dict (where it does not exist).
+        tp_param = getattr(clip_g, "text_projection", None)
+        tp_data  = tp_param.data if tp_param is not None else None
         mlx_clip_g = build_clip_encoder(
             clip_g.transformer,
-            layer_idx          = clip_g.layer_idx if clip_g.layer_idx is not None else -2,
-            has_text_projection= True,
-            activation         = _gelu,
+            layer_idx              = clip_g.layer_idx if clip_g.layer_idx is not None else -2,
+            has_text_projection    = tp_data is not None,
+            activation             = _gelu,
+            text_projection_param  = tp_data,
         )
 
         # Locate the forge_clip instances in the conditioner
