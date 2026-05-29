@@ -112,3 +112,13 @@ def test_for_nans(x, where):
 
 def first_time_calculation():
     return
+
+def synchornize():
+    # This function act like router to the device sync event
+    if device.type == "cuda":
+        torch.cuda.synchronize()
+    elif has_mps:
+        torch.mps.synchronize()
+    
+    # No match meaning either is CPU or is not needed
+    

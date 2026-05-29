@@ -1414,14 +1414,18 @@ def extended_fp16_support():
 def soft_empty_cache(force=False):
     global cpu_state
     if cpu_state == CPUState.MPS:
+        # Agree the state first
+        torch.mps.synchronize()
         torch.mps.empty_cache()
     elif is_intel_xpu():
+        torch.xpu.synchronize()
         torch.xpu.empty_cache()
     elif is_ascend_npu():
         torch.npu.empty_cache()
     elif is_mlu():
         torch.mlu.empty_cache()
     elif torch.cuda.is_available():
+        torch.cuda.synchronize()
         torch.cuda.empty_cache()
         torch.cuda.ipc_collect()
 

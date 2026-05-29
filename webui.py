@@ -14,7 +14,7 @@ from modules.api.api import Api
 from modules.api.api import Api
 from modules_forge.initialization import initialize_forge
 from modules_forge import main_thread
-
+from modules import devices
 
 startup_timer: timer.Timer = timer.startup_timer
 startup_timer.record("launcher")
@@ -190,15 +190,22 @@ def webui_worker() -> None:
 
         if server_command == "stop":
             print("Stopping server...")
+            # Sync GPU before we close
+            devices.synchornize()
             # If we catch a keyboard interrupt, we want to stop the server and exit.
             shared.demo.close()
+            # Wait for GPU know what is going on
+            devices.synchornize()
             break
 
         # disable auto launch webui in browser for subsequent UI Reload
         os.environ.setdefault('SD_WEBUI_RESTARTING', '1')
 
         print('Restarting UI...')
+        # GPU sync at here to avoid some cases where it got out of sync
+        devices.synchornize()
         shared.demo.close()
+        devices.synchornize()
         time.sleep(0.5)
         startup_timer.reset()
         script_callbacks.app_reload_callback()
