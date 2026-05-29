@@ -384,32 +384,109 @@ def build_clip_encoder(
 
 # ── hook helpers ────────────────────────────────────────────────────────────────
 
-def _make_clip_l_hook(mlx_enc: "MLXCLIPTextEncoder", orig_fn):
-    """Return a drop-in replacement for CLIP_SD_XL_L.encode_with_transformers."""
+def _make_clip_l_hook(
+    mlx_enc: "MLXCLIPTextEncoder",
+    orig_fn,
+    clip_l_model=None,
+):
+    """Return a drop-in replacement for CLIP_SD_XL_L.encode_with_transformers.
+
+    When *clip_l_model* is supplied the hook tracks a cheap weight fingerprint
+    and rebuilds the MLX encoder when the PyTorch CLIP-L weights change (e.g.
+    after a CLIP LoRA is applied via ``patch_model()``).  The rebuild happens
+    at most **once per prompt** — negligible compared to the sampler cost.
+    """
+    from mlx_pipeline.lora import clip_weight_fingerprint
+
+    # Mutable state shared across calls for this hook instance
+    _state = {
+        "enc": mlx_enc,
+        "fp":  clip_weight_fingerprint(clip_l_model.transformer) if clip_l_model is not None else (),
+    }
+
     def _hook(tokens: torch.Tensor) -> torch.Tensor:
         # Textual inversion fallback: any token id >= standard vocab
         if tokens.max().item() >= _CLIP_VOCAB_SIZE:
             log.debug("[MLX CLIP-L] Textual inversion detected, falling back to torch")
             return orig_fn(tokens)
-        z, _ = mlx_enc.encode(tokens)
+
+        # LoRA-change detection: compare weight fingerprint
+        if clip_l_model is not None:
+            current_fp = clip_weight_fingerprint(clip_l_model.transformer)
+            if current_fp != _state["fp"]:
+                log.info("[MLX CLIP-L] Weight change detected (LoRA?), rebuilding …")
+                try:
+                    _state["enc"] = build_clip_encoder(
+                        clip_l_model.transformer,
+                        layer_idx          = clip_l_model.layer_idx if clip_l_model.layer_idx is not None else -2,
+                        has_text_projection= False,
+                        activation         = _quick_gelu,
+                    )
+                    _state["fp"] = current_fp
+                except Exception as _rb_exc:
+                    log.warning("[MLX CLIP-L] Rebuild failed (%s), using torch fallback", _rb_exc)
+                    return orig_fn(tokens)
+
+        z, _ = _state["enc"].encode(tokens)
         # MLX always outputs CPU tensors; move to the same device as the
         # input tokens so downstream ops (emphasis multiply, etc.) don't
         # hit cross-device errors on MPS.
         return z.to(tokens.device)
+
     return _hook
 
 
-def _make_clip_g_hook(mlx_enc: "MLXCLIPTextEncoder", orig_fn):
-    """Return a drop-in replacement for CLIP_SD_XL_G.encode_with_transformers."""
+def _make_clip_g_hook(
+    mlx_enc: "MLXCLIPTextEncoder",
+    orig_fn,
+    clip_g_model=None,
+):
+    """Return a drop-in replacement for CLIP_SD_XL_G.encode_with_transformers.
+
+    When *clip_g_model* is supplied the hook tracks a cheap weight fingerprint
+    (including ``text_projection``) and rebuilds the MLX encoder on change.
+    """
+    from mlx_pipeline.lora import clip_weight_fingerprint
+
+    tp_param = getattr(clip_g_model, "text_projection", None) if clip_g_model is not None else None
+    tp_data  = tp_param.data if tp_param is not None else None
+
+    _state = {
+        "enc": mlx_enc,
+        "fp":  clip_weight_fingerprint(clip_g_model.transformer, tp_data) if clip_g_model is not None else (),
+    }
+
     def _hook(tokens: torch.Tensor) -> torch.Tensor:
         if tokens.max().item() >= _CLIP_VOCAB_SIZE:
             log.debug("[MLX CLIP-G] Textual inversion detected, falling back to torch")
             return orig_fn(tokens)
-        z, pooled = mlx_enc.encode(tokens)
+
+        # LoRA-change detection
+        if clip_g_model is not None:
+            _tp_param = getattr(clip_g_model, "text_projection", None)
+            _tp_data  = _tp_param.data if _tp_param is not None else None
+            current_fp = clip_weight_fingerprint(clip_g_model.transformer, _tp_data)
+            if current_fp != _state["fp"]:
+                log.info("[MLX CLIP-G] Weight change detected (LoRA?), rebuilding …")
+                try:
+                    _state["enc"] = build_clip_encoder(
+                        clip_g_model.transformer,
+                        layer_idx              = clip_g_model.layer_idx if clip_g_model.layer_idx is not None else -2,
+                        has_text_projection    = _tp_data is not None,
+                        activation             = _gelu,
+                        text_projection_param  = _tp_data,
+                    )
+                    _state["fp"] = current_fp
+                except Exception as _rb_exc:
+                    log.warning("[MLX CLIP-G] Rebuild failed (%s), using torch fallback", _rb_exc)
+                    return orig_fn(tokens)
+
+        z, pooled = _state["enc"].encode(tokens)
         z = z.to(tokens.device)
         if pooled is not None:
             z.pooled = pooled.to(tokens.device)
         return z
+
     return _hook
 
 
@@ -465,14 +542,26 @@ def install_clip_hooks(sd_model, forge_objects) -> bool:
             nonlocal n_patched
             if isinstance(obj, fc.CLIP_SD_XL_L):
                 orig = obj.encode_with_transformers.__func__ if hasattr(obj.encode_with_transformers, '__func__') else obj.encode_with_transformers
-                obj.encode_with_transformers = _make_clip_l_hook(mlx_clip_l, lambda t: orig(obj, t))
+                # Pass clip_l_model so the hook can detect LoRA weight changes
+                # and rebuild the MLX encoder automatically.
+                obj.encode_with_transformers = _make_clip_l_hook(
+                    mlx_clip_l,
+                    lambda t: orig(obj, t),
+                    clip_l_model=clip_l,
+                )
                 n_patched += 1
-                log.debug("[MLX CLIP] Patched CLIP_SD_XL_L instance")
+                log.debug("[MLX CLIP] Patched CLIP_SD_XL_L instance (LoRA-aware)")
             elif isinstance(obj, fc.CLIP_SD_XL_G):
                 orig = obj.encode_with_transformers.__func__ if hasattr(obj.encode_with_transformers, '__func__') else obj.encode_with_transformers
-                obj.encode_with_transformers = _make_clip_g_hook(mlx_clip_g, lambda t: orig(obj, t))
+                # Pass clip_g_model so the hook can detect LoRA weight changes
+                # (including text_projection LoRA) and rebuild automatically.
+                obj.encode_with_transformers = _make_clip_g_hook(
+                    mlx_clip_g,
+                    lambda t: orig(obj, t),
+                    clip_g_model=clip_g,
+                )
                 n_patched += 1
-                log.debug("[MLX CLIP] Patched CLIP_SD_XL_G instance")
+                log.debug("[MLX CLIP] Patched CLIP_SD_XL_G instance (LoRA-aware)")
 
         # Walk conditioner embedders
         if hasattr(conditioner, 'embedders'):

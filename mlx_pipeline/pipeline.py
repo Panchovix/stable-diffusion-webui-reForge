@@ -108,6 +108,10 @@ class MLXSDXLPipeline:
         self._mlx_unet = SDXLUNet()
         load_weights_from_ldm(self._mlx_unet, unet_patcher.model, report=True)
 
+        # LoRA / DoRA tracking: signature of the last-applied patch config.
+        # Empty string means "no LoRA" which is the initial state.
+        self._lora_sig: str = ""
+
         log.info("[MLX Pipeline] Ready — using bfloat16 on Metal")
 
     # ── forward pass ─────────────────────────────────────────────────────────
@@ -131,6 +135,22 @@ class MLXSDXLPipeline:
 
         if transformer_options is None:
             transformer_options = {}
+
+        # ── 0. LoRA / DoRA hot-reload (runs at most once per generation) ─────
+        # ``patch_model()`` has already merged LoRA deltas into the PyTorch
+        # diffusion model weights by the time apply_model is first called.
+        # We compare the current patch-set signature against the one used
+        # to build the MLX UNet; if it changed, reload all weights from the
+        # (already-merged) PyTorch model.  Subsequent steps in the same
+        # generation have a matching signature → zero overhead.
+        try:
+            from mlx_pipeline.lora import unet_lora_signature, reload_mlx_unet_weights
+            current_sig = unet_lora_signature(self.unet_patcher)
+            if current_sig != self._lora_sig:
+                reload_mlx_unet_weights(self._mlx_unet, self.unet_patcher)
+                self._lora_sig = current_sig
+        except Exception as _lora_exc:
+            log.warning("[MLX LoRA] LoRA reload skipped: %s", _lora_exc)
 
         sigma = t  # alias (t carries sigma values from k-diffusion)
         device = x.device
