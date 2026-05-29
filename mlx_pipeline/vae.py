@@ -536,7 +536,10 @@ def install_vae_hooks(sd_model) -> bool:
             if kwargs:
                 return _orig_decode(z, **kwargs)
             try:
-                return mlx_decoder.decode(z)
+                out = mlx_decoder.decode(z)
+                # MLX always outputs CPU tensors; restore to the same device
+                # as the input latent so the decoded image stays on MPS/CUDA.
+                return out.to(z.device)
             except Exception as e:
                 log.warning("[MLX VAE] Decoder error: %s — falling back to torch", e,
                             exc_info=True)

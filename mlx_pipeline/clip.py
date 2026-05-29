@@ -372,7 +372,10 @@ def _make_clip_l_hook(mlx_enc: "MLXCLIPTextEncoder", orig_fn):
             log.debug("[MLX CLIP-L] Textual inversion detected, falling back to torch")
             return orig_fn(tokens)
         z, _ = mlx_enc.encode(tokens)
-        return z
+        # MLX always outputs CPU tensors; move to the same device as the
+        # input tokens so downstream ops (emphasis multiply, etc.) don't
+        # hit cross-device errors on MPS.
+        return z.to(tokens.device)
     return _hook
 
 
@@ -383,8 +386,9 @@ def _make_clip_g_hook(mlx_enc: "MLXCLIPTextEncoder", orig_fn):
             log.debug("[MLX CLIP-G] Textual inversion detected, falling back to torch")
             return orig_fn(tokens)
         z, pooled = mlx_enc.encode(tokens)
+        z = z.to(tokens.device)
         if pooled is not None:
-            z.pooled = pooled
+            z.pooled = pooled.to(tokens.device)
         return z
     return _hook
 
