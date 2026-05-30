@@ -108,9 +108,12 @@ class MLXSDXLPipeline:
         self._mlx_unet = SDXLUNet()
         load_weights_from_ldm(self._mlx_unet, unet_patcher.model, report=True)
 
-        # LoRA / DoRA tracking: signature of the last-applied patch config.
-        # Empty string means "no LoRA" which is the initial state.
-        self._lora_sig: str = ""
+        # LoRA / DoRA tracking: stores the ldm_patched patches_uuid (a UUID4
+        # regenerated on every LoRA add/remove/strength change) that was in
+        # effect when the MLX UNet weights were last loaded.
+        # Initialized from the patcher NOW so the first generation does NOT
+        # trigger a spurious reload when LoRA hasn't changed since model load.
+        self._lora_sig: str = str(unet_patcher.patches_uuid)
 
         log.info("[MLX Pipeline] Ready — using bfloat16 on Metal")
 
@@ -136,19 +139,19 @@ class MLXSDXLPipeline:
         if transformer_options is None:
             transformer_options = {}
 
-        # ── 0. LoRA / DoRA hot-reload (runs at most once per generation) ─────
-        # ``patch_model()`` has already merged LoRA deltas into the PyTorch
-        # diffusion model weights by the time apply_model is first called.
-        # We compare the current patch-set signature against the one used
-        # to build the MLX UNet; if it changed, reload all weights from the
-        # (already-merged) PyTorch model.  Subsequent steps in the same
-        # generation have a matching signature → zero overhead.
+        # ── 0. LoRA / DoRA hot-reload (non-MLX-sampler fallback path) ────────
+        # When a non-MLX sampler is used, apply_model IS called; the MLX
+        # sampler hook skips this path.  ldm_patched's patches_uuid is a
+        # UUID4 that is regenerated on every LoRA add/remove/strength change
+        # and is far cheaper to compare than hashing the full patches dict.
+        # patch_weight_to_device() has already merged LoRA into the PyTorch
+        # diffusion_model weights before this wrapper is reached.
         try:
-            from mlx_pipeline.lora import unet_lora_signature, reload_mlx_unet_weights
-            current_sig = unet_lora_signature(self.unet_patcher)
-            if current_sig != self._lora_sig:
+            from mlx_pipeline.lora import reload_mlx_unet_weights
+            _cur_uuid = str(self.unet_patcher.patches_uuid)
+            if _cur_uuid != self._lora_sig:
                 reload_mlx_unet_weights(self._mlx_unet, self.unet_patcher)
-                self._lora_sig = current_sig
+                self._lora_sig = _cur_uuid
         except Exception as _lora_exc:
             log.warning("[MLX LoRA] LoRA reload skipped: %s", _lora_exc)
 

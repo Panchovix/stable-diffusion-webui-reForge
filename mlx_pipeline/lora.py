@@ -46,7 +46,6 @@ Performance
 
 from __future__ import annotations
 
-import hashlib
 import logging
 from typing import Optional, Tuple
 
@@ -55,58 +54,56 @@ log = logging.getLogger(__name__)
 
 # ── UNet LoRA / DoRA ──────────────────────────────────────────────────────────
 
-def unet_lora_signature(unet_patcher) -> str:
-    """Return a hash that changes whenever the active UNet LoRA config changes.
+def unet_lora_sig(unet_patcher) -> str:
+    """Return ``str(patches_uuid)`` — the canonical LoRA-change token.
 
-    Only considers patches whose key starts with ``"diffusion_model."`` —
-    CLIP patches in the same patcher do not affect this hash.
+    ldm_patched regenerates ``patches_uuid`` (a UUID4) atomically on every
+    add_patches / set_model_patch / strength change, making it the cheapest
+    and most reliable change-detection signal available.
 
-    Returns an empty string when no UNet patches are registered (matches the
-    initial state right after model load with no LoRA selected).
+    Callers store this string and compare it on the next generation; a
+    mismatch means LoRA changed and the MLX UNet weights need reloading.
     """
-    patches = getattr(unet_patcher, "patches", {})
-    unet_patches = {
-        k: v for k, v in patches.items()
-        if k.startswith("diffusion_model.")
-    }
-    if not unet_patches:
-        return ""
+    return str(getattr(unet_patcher, "patches_uuid", ""))
 
-    h = hashlib.md5(usedforsecurity=False)
-    for key in sorted(unet_patches):
-        for patch in unet_patches[key]:
-            # patch tuple: (strength, v, strength_model, offset, function)
-            strength = patch[0] if len(patch) > 0 else 1.0
-            sm       = patch[2] if len(patch) > 2 else 1.0
-            try:
-                h.update(f"{key}:{float(strength):.8f}:{float(sm):.8f}\n".encode())
-            except (TypeError, ValueError):
-                h.update(f"{key}:?:?\n".encode())
-    return h.hexdigest()
+
+# Keep the old name as an alias so existing imports keep working.
+unet_lora_signature = unet_lora_sig
 
 
 def reload_mlx_unet_weights(mlx_unet, unet_patcher) -> None:
-    """Re-read all UNet weights from the (LoRA-patched) PyTorch model into MLX.
+    """Re-read all UNet weights from the PyTorch diffusion_model into MLX.
 
-    Called when the LoRA signature changes.  At call time ``patch_model()``
-    has already run, so ``unet_patcher.model.diffusion_model.state_dict()``
-    returns tensors with **all** LoRA / DoRA / LoCon deltas already merged.
-    We simply re-read them through the same conversion pipeline used at init.
+    Must be called **after** ldm_patched's ``load_models_gpu()`` (or
+    equivalent) has already applied the new LoRA/DoRA deltas to the PyTorch
+    model via ``patch_weight_to_device()``.  That function saves original
+    weights to ``patcher.backup`` and writes the merged result back into the
+    live parameter tensors — so ``diffusion_model.state_dict()`` already
+    contains the fully-merged weights when we call this.
 
-    This correctly handles:
-    * LoRA/DoRA added   — reloads merged weights          ✓
-    * LoRA removed      — reloads clean base weights      ✓
-    * Strength changed  — reloads with new merged delta   ✓
-    * Multiple LoRAs    — all deltas already merged by ldm_patched  ✓
+    Timeline in the MLX sampler path
+    ---------------------------------
+    1. User changes LoRA → ``patches_uuid`` regenerated
+    2. ``load_models_gpu()`` → ``patch_weight_to_device()`` for every patched
+       key → PyTorch diffusion_model has merged weights
+    3. ``_patched_sample()`` detects UUID mismatch → calls **this function**
+    4. MLX UNet loaded from merged PyTorch weights → correct for all steps
 
-    The reload takes ~1–2 s on M-series hardware; it happens at most once
-    per generation when the LoRA configuration changes between generations.
+    Handles correctly:
+    * LoRA / DoRA added         → reloads merged weights                 ✓
+    * LoRA removed              → reloads clean base weights             ✓
+    * Strength slider changed   → reloads with new delta                 ✓
+    * Multiple LoRAs stacked    → all deltas already merged by ldm_patched ✓
+    * DoRA (dora_scale)         → handled by ldm_patched's calculate_weight ✓
+
+    Takes ~1–2 s on M-series hardware; runs at most once per generation
+    when the LoRA configuration changes between generations.
     """
     from mlx_pipeline.convert import load_weights_from_ldm
 
-    log.info("[MLX LoRA] UNet LoRA config changed — reloading weights into MLX …")
+    log.info("[MLX LoRA] LoRA/DoRA config changed — reloading MLX UNet weights …")
     load_weights_from_ldm(mlx_unet, unet_patcher.model, report=False)
-    log.info("[MLX LoRA] MLX UNet reloaded (LoRA / DoRA merged).")
+    log.info("[MLX LoRA] MLX UNet reloaded (all LoRA / DoRA deltas merged).")
 
 
 # ── CLIP LoRA fingerprint ─────────────────────────────────────────────────────

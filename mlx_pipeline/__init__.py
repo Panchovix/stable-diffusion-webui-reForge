@@ -144,6 +144,24 @@ def _install_mlx_sampler_hook() -> None:
                 steps, image_conditioning,
             )
 
+        # ── LoRA / DoRA hot-sync (MLX sampler path) ───────────────────────────
+        # When the MLX sampler loop is active, mlx_pipe.apply_model is never
+        # called — MLXCFGDenoiser goes straight to mlx_unet(), bypassing the
+        # LoRA reload that lives in apply_model().
+        #
+        # We must sync here, AFTER load_models_gpu() has already applied the
+        # new LoRA deltas to the PyTorch diffusion_model via
+        # patch_weight_to_device().  ldm_patched tracks this with
+        # unet_patcher.patches_uuid (a UUID4 regenerated on every LoRA change).
+        try:
+            from mlx_pipeline.lora import reload_mlx_unet_weights
+            _current_uuid = str(mlx_pipe.unet_patcher.patches_uuid)
+            if _current_uuid != mlx_pipe._lora_sig:
+                reload_mlx_unet_weights(mlx_pipe._mlx_unet, mlx_pipe.unet_patcher)
+                mlx_pipe._lora_sig = _current_uuid
+        except Exception as _lora_exc:
+            log.warning("[MLX LoRA] Sampler-hook LoRA sync failed: %s", _lora_exc)
+
         # Build MLXCFGDenoiser lazily inside the sample call so it has
         # access to the final sampler_extra_args (set by initialize()).
         # We use a sentinel to detect the first self.func call.
