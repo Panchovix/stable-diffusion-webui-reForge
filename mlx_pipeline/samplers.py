@@ -278,7 +278,18 @@ def sample_dpmpp_sde(
     r: float = 0.5,
     noise_sampler: Optional[Callable] = None,
 ) -> torch.Tensor:
-    """DPM++ SDE sampler (MLX).  Uses i.i.d. Gaussian noise."""
+    """DPM++ SDE sampler (MLX).
+
+    Mirrors ``sample_dpmpp_sde_classic`` from the reference (two ancestral
+    half-steps with a blended denoised estimate).
+
+    Step formula (t = −log σ, h = log(σ/σ_next) > 0):
+        σ_mid = σ · (σ_next/σ)^r                      (midpoint sigma)
+        Step 1:  x₂ = (σ↓₁/σ)·x + (1 − σ↓₁/σ)·D  + σ↑₁·z₁
+        Step 2:  x  = (σ↓₂/σ)·x + (1 − σ↓₂/σ)·D̂  + σ↑₂·z₂
+    where D̂ = (1−fac)·D + fac·D₂  (blended, fac = 1/(2r))
+    and σ↓, σ↑ come from _ancestral_step (same as get_ancestral_step).
+    """
     import mlx.core as mx
 
     n = len(sigmas) - 1
@@ -291,32 +302,36 @@ def sample_dpmpp_sde(
         _callback(callback, i, sigmas[i], x, denoised)
 
         if sigma_next == 0:
-            d  = (x.astype(mx.float32) - denoised.astype(mx.float32)) / sigma
-            x  = (x.astype(mx.float32) + d * (sigma_next - sigma)).astype(mx.bfloat16)
+            # Final step: pure denoising (Euler to 0)
+            x = denoised.astype(mx.bfloat16)
         else:
-            # 2nd-order DPM++ SDE step
-            h         = math.log(sigma_next / sigma)          # negative
-            sigma_mid = sigma * math.exp(r * h)
+            # σ_mid = σ · (σ_next/σ)^r  (midpoint in log-σ space)
+            sigma_mid = sigma * (sigma_next / sigma) ** r
 
-            # Midpoint denoised
-            d1    = (x.astype(mx.float32) - denoised.astype(mx.float32)) / sigma
-            x_mid = (x.astype(mx.float32) + d1 * (sigma_mid - sigma)).astype(mx.bfloat16)
+            # ── Step 1: σ → σ_mid ────────────────────────────────────────
+            sd1, su1 = _ancestral_step(sigma, sigma_mid, eta)
+            ratio1   = sd1 / sigma
+            x2 = (ratio1       * x.astype(mx.float32)
+                  + (1.0 - ratio1) * denoised.astype(mx.float32)).astype(mx.bfloat16)
+            if su1 > 0.0:
+                x2 = (x2.astype(mx.float32) + _randn_like(x) * (su1 * s_noise)).astype(mx.bfloat16)
 
+            # ── Midpoint denoised ────────────────────────────────────────
             sig_mid_mx = mx.array([sigma_mid], dtype=mx.float32)
-            den_mid    = model(x_mid, sig_mid_mx)
-            d2         = (x_mid.astype(mx.float32) - den_mid.astype(mx.float32)) / sigma_mid
+            denoised2  = model(x2, sig_mid_mx)
 
-            # Blend derivative
-            fac    = 1.0 / (2.0 * r)
-            d_blend = (1.0 - fac) * d1 + fac * d2
+            # ── Step 2: σ → σ_next (blended denoised) ───────────────────
+            fac      = 1.0 / (2.0 * r)
+            den_d    = ((1.0 - fac) * denoised.astype(mx.float32)
+                        + fac       * denoised2.astype(mx.float32))
 
-            # Stochastic noise injection
-            noise_var = max(0.0, sigma_next ** 2 - sigma ** 2 * math.exp(2.0 * h * (1.0 - eta)))
-            sigma_n   = math.sqrt(noise_var) * s_noise
+            sd2, su2 = _ancestral_step(sigma, sigma_next, eta)
+            ratio2   = sd2 / sigma
+            x = (ratio2       * x.astype(mx.float32)
+                 + (1.0 - ratio2) * den_d).astype(mx.bfloat16)
+            if su2 > 0.0:
+                x = (x.astype(mx.float32) + _randn_like(x) * (su2 * s_noise)).astype(mx.bfloat16)
 
-            x = (sigma_next / sigma * x.astype(mx.float32)
-                 + (sigma_next - sigma_next / sigma * sigma) * d_blend
-                 + _randn_like(x) * sigma_n).astype(mx.bfloat16)
         mx.eval(x)   # flush graph each step
 
     return _to_torch(x)
@@ -334,10 +349,25 @@ def sample_dpmpp_2m_sde(
     solver_type: str = "midpoint",
     noise_sampler: Optional[Callable] = None,
 ) -> torch.Tensor:
-    """DPM++ 2M SDE sampler (MLX).  Uses i.i.d. Gaussian noise."""
+    """DPM++ 2M SDE sampler (MLX).
+
+    Mirrors the reference ``sample_dpmpp_2m_sde`` with η=1 (default).
+
+    Let  lam = log(σ/σ_next) > 0,  ratio = σ_next/σ < 1,
+         lam_η = lam·(η+1),  r_x = ratio^(η+1) = exp(−lam_η).
+
+    Base update (1st-order Euler-Maruyama):
+        x = r_x·x + (1 − r_x)·D + σ_next·√(1 − ratio^{2η})·z·s_noise
+
+    2nd-order correction when prev denoised D₋₁ is available:
+        midpoint:  x += 0.5·(1 − r_x) / r_prev · (D − D₋₁)
+        heun:      x += (1 − (1−r_x)/lam_η) / r_prev · (D − D₋₁)
+    where r_prev = lam_prev / lam.
+    """
     import mlx.core as mx
 
-    old_denoised: Optional["mx.array"] = None
+    old_denoised:  Optional["mx.array"] = None
+    lam_prev: Optional[float] = None
     n = len(sigmas) - 1
 
     for i in range(n):
@@ -349,39 +379,37 @@ def sample_dpmpp_2m_sde(
         _callback(callback, i, sigmas[i], x, denoised)
 
         if sigma_next == 0:
-            d = (x.astype(mx.float32) - denoised.astype(mx.float32)) / sigma
-            x = (x.astype(mx.float32) + d * (sigma_next - sigma)).astype(mx.bfloat16)
+            x = denoised.astype(mx.bfloat16)
         else:
-            h          = math.log(sigma_next / sigma)          # negative
-            alpha      = math.exp(-h)                          # = sigma / sigma_next  (>1 since h<0)
-            phi_1      = math.expm1(-h)                        # exp(-h) - 1 > 0
-            noise_var  = max(0.0, sigma_next ** 2 - alpha ** 2 * sigma ** 2)
-            sigma_n    = math.sqrt(noise_var) * s_noise
+            ratio   = sigma_next / sigma               # < 1
+            lam     = math.log(sigma / sigma_next)     # > 0  (log(1/ratio))
+            lam_eta = lam * (eta + 1.0)
+            r_x     = ratio ** (eta + 1.0)             # = exp(-lam_eta) < 1
 
-            noise = _randn_like(x) * sigma_n
+            # ── Noise ──────────────────────────────────────────────────────
+            # Reference: σ_next · √(1 − exp(−2·lam·η)) · s_noise
+            noise_scale = sigma_next * math.sqrt(max(0.0, 1.0 - ratio ** (2.0 * eta))) * s_noise
+            noise = _randn_like(x) * noise_scale
 
-            if old_denoised is None:
-                # Euler-Maruyama first step
-                x = (alpha * x.astype(mx.float32)
-                     - phi_1 * denoised.astype(mx.float32)
-                     + noise).astype(mx.bfloat16)
-            else:
+            # ── Base 1st-order update ───────────────────────────────────────
+            x = (r_x           * x.astype(mx.float32)
+                 + (1.0 - r_x) * denoised.astype(mx.float32)
+                 + noise).astype(mx.bfloat16)
+
+            # ── 2nd-order correction ────────────────────────────────────────
+            if old_denoised is not None and lam_prev is not None:
+                r_prev = lam_prev / lam
+                diff   = (denoised.astype(mx.float32) - old_denoised.astype(mx.float32))
                 if solver_type == "heun":
-                    # Heun correction
-                    x = (sigma_next / sigma * x.astype(mx.float32)
-                         + (1 - sigma_next / sigma) * denoised.astype(mx.float32)
-                         + noise).astype(mx.bfloat16)
+                    # phi_heun = 1 − (1 − r_x) / lam_eta
+                    coeff = (1.0 - (1.0 - r_x) / lam_eta) / r_prev
                 else:
-                    # Midpoint 2nd-order (default)
-                    phi_2 = phi_1 / h + 1.0
-                    d_c   = denoised.astype(mx.float32)
-                    d_p   = old_denoised.astype(mx.float32)
-                    x     = (alpha * x.astype(mx.float32)
-                             - phi_1 * d_c
-                             - phi_2 * (d_c - d_p)
-                             + noise).astype(mx.bfloat16)
+                    # midpoint: 0.5 · (1 − r_x) / r_prev
+                    coeff = 0.5 * (1.0 - r_x) / r_prev
+                x = (x.astype(mx.float32) + coeff * diff).astype(mx.bfloat16)
 
         old_denoised = denoised
+        lam_prev     = lam if sigma_next != 0 else lam_prev
         mx.eval(x)   # flush graph each step
 
     return _to_torch(x)
@@ -398,12 +426,35 @@ def sample_dpmpp_3m_sde(
     s_noise: float = 1.,
     noise_sampler: Optional[Callable] = None,
 ) -> torch.Tensor:
-    """DPM++ 3M SDE sampler (MLX).  Uses i.i.d. Gaussian noise."""
+    """DPM++ 3M SDE sampler (MLX).
+
+    Mirrors the reference ``sample_dpmpp_3m_sde``.
+
+    Base update (same as 2M SDE):
+        r_x = ratio^(η+1),  lam_η = log(σ/σ_next)·(η+1)
+        x = r_x·x + (1 − r_x)·D + σ_next·√(1 − ratio^{2η})·z
+
+    Higher-order corrections use denoised-output differences, not score:
+        phi_2 = 1 − (1 − r_x) / lam_η
+        phi_3 = phi_2 / lam_η − 0.5
+
+        2nd-order (D₋₁ available):
+            d = (D − D₋₁) / r0   where r0 = lam₋₁ / lam
+            x += phi_2 · d
+
+        3rd-order (D₋₁, D₋₂ available):
+            d1_0 = (D − D₋₁) / r0,  d1_1 = (D₋₁ − D₋₂) / r1
+            d1   = d1_0 + (d1_0 − d1_1) · r0 / (r0 + r1)
+            d2   = (d1_0 − d1_1) / (r0 + r1)
+            x   += phi_2 · d1 − phi_3 · d2
+    """
     import mlx.core as mx
 
-    # Derivative history  (d_prev1 = one step ago, d_prev2 = two steps ago)
-    d_prev1: Optional["mx.array"] = None
-    d_prev2: Optional["mx.array"] = None
+    # Denoised history (D_prev1 = last step, D_prev2 = two steps ago)
+    D_prev1: Optional["mx.array"] = None
+    D_prev2: Optional["mx.array"] = None
+    lam_1:   Optional[float]      = None   # lam from previous step
+    lam_2:   Optional[float]      = None   # lam from two steps ago
     n = len(sigmas) - 1
 
     for i in range(n):
@@ -414,42 +465,50 @@ def sample_dpmpp_3m_sde(
         denoised = model(x, sig_mx)
         _callback(callback, i, sigmas[i], x, denoised)
 
-        d_cur = (x.astype(mx.float32) - denoised.astype(mx.float32)) / sigma
-
         if sigma_next == 0:
-            x = (x.astype(mx.float32) + d_cur * (sigma_next - sigma)).astype(mx.bfloat16)
+            x = denoised.astype(mx.bfloat16)
         else:
-            h         = math.log(sigma_next / sigma)   # negative
-            alpha     = math.exp(-h)
-            phi_1     = math.expm1(-h)                 # > 0
-            noise_var = max(0.0, sigma_next ** 2 - alpha ** 2 * sigma ** 2)
-            sigma_n   = math.sqrt(noise_var) * s_noise
-            noise     = _randn_like(x) * sigma_n
+            ratio   = sigma_next / sigma
+            lam     = math.log(sigma / sigma_next)     # > 0
+            lam_eta = lam * (eta + 1.0)
+            r_x     = ratio ** (eta + 1.0)             # < 1, attenuates x
 
-            if d_prev1 is None:
-                # 1st-order
-                x = (alpha * x.astype(mx.float32)
-                     - phi_1 * denoised.astype(mx.float32)
-                     + noise).astype(mx.bfloat16)
-            elif d_prev2 is None:
-                # 2nd-order
-                phi_2 = phi_1 / h + 1.0
-                x     = (alpha * x.astype(mx.float32)
-                         - phi_1 * denoised.astype(mx.float32)
-                         - phi_2 * (d_cur - d_prev1)
-                         + noise).astype(mx.bfloat16)
-            else:
-                # 3rd-order
-                phi_2 = phi_1 / h + 1.0
-                phi_3 = phi_2 / h + 0.5
-                x     = (alpha * x.astype(mx.float32)
-                         - phi_1 * denoised.astype(mx.float32)
-                         - phi_2 * (d_cur - d_prev1)
-                         - phi_3 * (d_cur - 2.0 * d_prev1 + d_prev2)
-                         + noise).astype(mx.bfloat16)
+            # ── Noise ──────────────────────────────────────────────────────
+            noise_scale = sigma_next * math.sqrt(max(0.0, 1.0 - ratio ** (2.0 * eta))) * s_noise
+            noise = _randn_like(x) * noise_scale
 
-        d_prev2 = d_prev1
-        d_prev1 = d_cur
+            # ── Base 1st-order update ───────────────────────────────────────
+            x = (r_x           * x.astype(mx.float32)
+                 + (1.0 - r_x) * denoised.astype(mx.float32)
+                 + noise).astype(mx.bfloat16)
+
+            # ── Higher-order corrections using denoised history ─────────────
+            # phi_2 = h_eta.neg().expm1() / h_eta + 1  (reference, h_eta > 0)
+            phi_2 = 1.0 - (1.0 - r_x) / lam_eta       # same thing, cleaner
+            phi_3 = phi_2 / lam_eta - 0.5
+
+            D  = denoised.astype(mx.float32)
+
+            if D_prev1 is not None and lam_1 is not None:
+                r0 = lam_1 / lam
+                if D_prev2 is not None and lam_2 is not None:
+                    # 3rd-order
+                    r1   = lam_2 / lam
+                    d1_0 = (D - D_prev1) / r0
+                    d1_1 = (D_prev1 - D_prev2) / r1
+                    d1   = d1_0 + (d1_0 - d1_1) * r0 / (r0 + r1)
+                    d2   = (d1_0 - d1_1) / (r0 + r1)
+                    x    = (x.astype(mx.float32)
+                            + phi_2 * d1 - phi_3 * d2).astype(mx.bfloat16)
+                else:
+                    # 2nd-order
+                    d  = (D - D_prev1) / r0
+                    x  = (x.astype(mx.float32) + phi_2 * d).astype(mx.bfloat16)
+
+        D_prev2 = D_prev1
+        D_prev1 = denoised.astype(mx.float32)
+        lam_2   = lam_1
+        lam_1   = lam if sigma_next != 0 else lam_1
         mx.eval(x)   # flush graph each step
 
     return _to_torch(x)
