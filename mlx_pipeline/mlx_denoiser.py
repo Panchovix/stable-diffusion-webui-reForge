@@ -215,10 +215,15 @@ class MLXCFGDenoiser:
     def _calc_denoised(
         sigma: "mx.array", model_out: "mx.array", x: "mx.array"
     ) -> "mx.array":
-        """EPS postconditioning: denoised = x - model_out * σ."""
+        """EPS postconditioning: denoised = x - model_out * σ.
+
+        Returns float32 to match the reference (model_base.py line 194:
+        ``model_output = diffusion_model(...).float()``).  The sampler
+        loop and ODE/SDE arithmetic then operate in full float32 precision.
+        """
         import mlx.core as mx
         s = sigma.reshape((-1, 1, 1, 1)).astype(mx.float32)
-        return (x.astype(mx.float32) - model_out.astype(mx.float32) * s).astype(mx.bfloat16)
+        return x.astype(mx.float32) - model_out.astype(mx.float32) * s  # float32
 
     # ── forward ───────────────────────────────────────────────────────────────
 

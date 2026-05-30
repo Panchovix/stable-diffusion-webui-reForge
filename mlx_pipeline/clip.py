@@ -251,10 +251,11 @@ class MLXCLIPTextEncoder:
             # np.array() implicitly evaluates — no explicit mx.eval() needed.
             x_np       = np.array(x_normed.astype(mx.float32))         # [B, T, d]
             raw_pooled = mx.array(x_np[batch_idx, eos_pos])            # [B, d]
-            # tp_w is stored pre-transposed to [in, out] so we multiply directly:
-            # pooled = eos_hidden @ tp_w  (matches SDClipModel convention:
-            # clip_g.text_projection is an nn.Parameter used as x @ param)
-            pooled = (raw_pooled.astype(mx.bfloat16) @ self.tp_w)      # [B, d]
+            # Reference (forge_clip.py line 122):
+            #   pooled_output = pooled_output.float() @ text_projection.float()
+            # Project in float32 to match; self.tp_w is [d_in, d_out].
+            pooled = (raw_pooled.astype(mx.float32)
+                      @ self.tp_w.astype(mx.float32))                   # [B, d] f32
 
         # Convert intermediate and pooled back to torch.
         # np.array() implicitly evaluates the MLX graph — no explicit eval needed.
