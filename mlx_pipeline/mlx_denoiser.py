@@ -251,11 +251,19 @@ class MLXCFGDenoiser:
         }
 
         # Single batched UNet forward — no redundant torch↔MLX conversions
-        out = self._unet(xc_b, ts_b, self._enc_b, added)  # [2B, 4, H, W]
+        out = self._unet(xc_b, ts_b, self._enc_b, added)  # [2B, 4, H, W]  bfloat16
 
         # CFG: uncond + scale*(cond − uncond)
-        out_c, out_u = out[:B], out[B:]
-        cfg_out = out_u + self.cond_scale * (out_c - out_u)
+        #
+        # MUST be computed in float32.  bfloat16 has only 7 mantissa bits
+        # (~0.015 precision near value 2), so differences between cond and
+        # uncond outputs are catastrophically quantised — small guidance
+        # directions are rounded to zero, producing isolated bright spots
+        # ("spots of lights") that become prominent at low CFG scales (≤5)
+        # where the uncond term has a larger relative weight.
+        out_c = out[:B].astype(mx.float32)   # cond   [B, 4, H, W] f32
+        out_u = out[B:].astype(mx.float32)   # uncond [B, 4, H, W] f32
+        cfg_out = out_u + self.cond_scale * (out_c - out_u)  # f32
 
-        # Postconditioning (stays in MLX)
+        # Postconditioning (stays in MLX, _calc_denoised handles f32 input)
         return self._calc_denoised(sigma, cfg_out, x)
