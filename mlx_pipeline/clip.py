@@ -248,7 +248,7 @@ class MLXCLIPTextEncoder:
             batch_idx = np.arange(B)
             # MLX does not yet support numpy-array fancy indices; gather via numpy.
             # x_normed is [B, T, d] — we pick one token per batch element.
-            mx.eval(x_normed)
+            # np.array() implicitly evaluates — no explicit mx.eval() needed.
             x_np       = np.array(x_normed.astype(mx.float32))         # [B, T, d]
             raw_pooled = mx.array(x_np[batch_idx, eos_pos])            # [B, d]
             # tp_w is stored pre-transposed to [in, out] so we multiply directly:
@@ -256,15 +256,14 @@ class MLXCLIPTextEncoder:
             # clip_g.text_projection is an nn.Parameter used as x @ param)
             pooled = (raw_pooled.astype(mx.bfloat16) @ self.tp_w)      # [B, d]
 
-        # Convert intermediate and pooled back to torch
+        # Convert intermediate and pooled back to torch.
+        # np.array() implicitly evaluates the MLX graph — no explicit eval needed.
         assert intermediate is not None, "intermediate not captured — check layer_idx"
-        mx.eval(intermediate)
         z_np = np.array(intermediate.astype(mx.float32))
         z    = torch.from_numpy(z_np.copy()).float()
 
         pooled_t: Optional[torch.Tensor] = None
         if pooled is not None:
-            mx.eval(pooled)
             pooled_t = torch.from_numpy(np.array(pooled.astype(mx.float32)).copy()).float()
 
         return z, pooled_t

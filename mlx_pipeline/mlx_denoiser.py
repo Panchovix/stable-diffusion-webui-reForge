@@ -50,9 +50,11 @@ def _t2m(t: torch.Tensor, dtype=None) -> "mx.array":
 
 
 def _m2t(a: "mx.array") -> torch.Tensor:
-    """MLX → torch float32 CPU."""
+    """MLX → torch float32 CPU.
+
+    np.array() triggers implicit MLX evaluation — no explicit eval needed.
+    """
     import mlx.core as mx
-    mx.eval(a)
     return torch.from_numpy(np.array(a.astype(mx.float32)).copy()).float()
 
 

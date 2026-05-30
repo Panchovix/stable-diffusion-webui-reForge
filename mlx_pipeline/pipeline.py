@@ -22,7 +22,7 @@ Data-flow
         │
         ├── SDXLUNet.__call__()             (Metal bfloat16 forward pass)
         │
-        ├── MLX → torch conversion         (mx.eval, np, torch, back to device)
+        ├── MLX → torch conversion         (np.array implicit eval, back to device)
         │
         └── sigma postconditioning         (model_sampling.calculate_denoised)
 
@@ -73,10 +73,10 @@ def _mlx_to_torch(
 ) -> torch.Tensor:
     """Convert an MLX array to a PyTorch tensor on *device* with *dtype*.
 
-    mx.eval() forces evaluation before we read the data buffer.
+    np.array() implicitly evaluates the MLX compute graph — Metal handles
+    scheduling; no explicit mx.eval() needed here.
     """
     import mlx.core as mx
-    mx.eval(a)
     # bfloat16 MLX arrays are not numpy-compatible directly; cast to fp32 first.
     arr = np.array(a.astype(mx.float32))
     return torch.from_numpy(arr.copy()).to(device=device, dtype=dtype)

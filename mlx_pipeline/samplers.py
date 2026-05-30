@@ -53,9 +53,12 @@ log = logging.getLogger(__name__)
 # ── helpers ────────────────────────────────────────────────────────────────────
 
 def _to_torch(a: "mx.array") -> torch.Tensor:
-    """MLX → CPU torch float32."""
+    """MLX → CPU torch float32.
+
+    np.array() implicitly evaluates the MLX array, so no explicit
+    mx.eval() is needed here — Metal handles it.
+    """
     import mlx.core as mx
-    mx.eval(a)
     return torch.from_numpy(np.array(a.astype(mx.float32)).copy()).float()
 
 
@@ -125,8 +128,8 @@ def sample_euler(
         d = (x.astype(mx.float32) - denoised.astype(mx.float32)) / sigma_hat
         _callback(callback, i, sigmas[i], x, denoised)
         x = (x.astype(mx.float32) + d * (sigma_next - sigma_hat)).astype(mx.bfloat16)
+        mx.eval(x)   # flush graph each step — keeps graph small, lets Metal pipeline
 
-    mx.eval(x)
     return _to_torch(x)
 
 
@@ -162,8 +165,8 @@ def sample_euler_ancestral(
         if sigma_next > 0 and sigma_up > 0:
             noise = _randn_like(x) * s_noise
             x     = (x.astype(mx.float32) + noise * sigma_up).astype(mx.bfloat16)
+        mx.eval(x)   # flush graph each step
 
-    mx.eval(x)
     return _to_torch(x)
 
 
@@ -209,8 +212,8 @@ def sample_heun(
             x           = (x.astype(mx.float32) + d_avg * dt).astype(mx.bfloat16)
         else:
             x = x2
+        mx.eval(x)   # flush graph each step
 
-    mx.eval(x)
     return _to_torch(x)
 
 
@@ -258,8 +261,8 @@ def sample_dpmpp_2m(
 
         old_denoised = denoised
         h_last       = h
+        mx.eval(x)   # flush graph each step
 
-    mx.eval(x)
     return _to_torch(x)
 
 
@@ -314,8 +317,8 @@ def sample_dpmpp_sde(
             x = (sigma_next / sigma * x.astype(mx.float32)
                  + (sigma_next - sigma_next / sigma * sigma) * d_blend
                  + _randn_like(x) * sigma_n).astype(mx.bfloat16)
+        mx.eval(x)   # flush graph each step
 
-    mx.eval(x)
     return _to_torch(x)
 
 
@@ -379,8 +382,8 @@ def sample_dpmpp_2m_sde(
                              + noise).astype(mx.bfloat16)
 
         old_denoised = denoised
+        mx.eval(x)   # flush graph each step
 
-    mx.eval(x)
     return _to_torch(x)
 
 
@@ -447,8 +450,8 @@ def sample_dpmpp_3m_sde(
 
         d_prev2 = d_prev1
         d_prev1 = d_cur
+        mx.eval(x)   # flush graph each step
 
-    mx.eval(x)
     return _to_torch(x)
 
 

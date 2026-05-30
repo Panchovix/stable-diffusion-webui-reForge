@@ -300,7 +300,7 @@ class MLXVAEDecoder:
         x = _silu(x)
         x = self.conv_out(x)
 
-        mx.eval(x)
+        # np.array() implicitly evaluates — no explicit mx.eval() needed.
         # NHWC → NCHW, float32
         out_np = np.array(x.astype(mx.float32)).transpose(0, 3, 1, 2)
         return torch.from_numpy(out_np.copy()).float()
@@ -348,7 +348,7 @@ class MLXVAEEncoder:
         x = self.conv_out(x)
         x = self.quant_conv(x)
 
-        mx.eval(x)
+        # np.array() implicitly evaluates — no explicit mx.eval() needed.
         out_np = np.array(x.astype(mx.float32)).transpose(0, 3, 1, 2)
         return torch.from_numpy(out_np.copy()).float()
 
