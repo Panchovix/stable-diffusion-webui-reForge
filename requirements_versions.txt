@@ -39,7 +39,7 @@ diffusers==0.32.2
 cachetools==5.5.1
 colorama==0.4.6
 huggingface_hub==0.25.0
-timm==1.0.14
+timm==1.0.17
 packaging==26.0
 wheel==0.46.3
 ninja==1.13.0
