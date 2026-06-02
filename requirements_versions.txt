@@ -16,7 +16,7 @@ kornia==0.8.0
 lark==1.2.2
 numpy==1.26.4
 omegaconf==2.2.3
-open-clip-torch==2.30.0
+open-clip-torch==3.3.0
 piexif==1.1.3
 protobuf==3.20.0
 psutil==5.9.5
