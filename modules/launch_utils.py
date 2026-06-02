@@ -402,7 +402,7 @@ def prepare_environment():
 
     xformers_package = os.environ.get('XFORMERS_PACKAGE', '--index-url https://download.pytorch.org/whl/cu128 xformers')
     clip_package = os.environ.get('CLIP_PACKAGE', "https://github.com/openai/CLIP/archive/d50d76daa670286dd6cacf3bcd80b5e4823fc8e1.zip")
-    openclip_package = os.environ.get('OPENCLIP_PACKAGE', "https://github.com/mlfoundations/open_clip/archive/bb6e834e9c70d9c27d0dc3ecedeebeaeb1ffad6b.zip")
+    openclip_package = os.environ.get('OPENCLIP_PACKAGE', "open_clip_torch>=2.24.0")
 
     assets_repo = os.environ.get('ASSETS_REPO', "https://github.com/AUTOMATIC1111/stable-diffusion-webui-assets.git")
     stable_diffusion_repo = os.environ.get('STABLE_DIFFUSION_REPO', "https://github.com/joypaul162/Stability-AI-stablediffusion.git")
@@ -1015,7 +1015,7 @@ def prepare_environment() -> None:
 
     xformers_package: str = os.environ.get('XFORMERS_PACKAGE', '--index-url https://download.pytorch.org/whl/cu128 xformers')
     clip_package: str = os.environ.get('CLIP_PACKAGE', "https://github.com/openai/CLIP/archive/d50d76daa670286dd6cacf3bcd80b5e4823fc8e1.zip")
-    openclip_package: str = os.environ.get('OPENCLIP_PACKAGE', "https://github.com/mlfoundations/open_clip/archive/bb6e834e9c70d9c27d0dc3ecedeebeaeb1ffad6b.zip")
+    openclip_package: str = os.environ.get('OPENCLIP_PACKAGE', "open_clip_torch>=2.24.0")
 
     assets_repo: str = os.environ.get('ASSETS_REPO', "https://github.com/AUTOMATIC1111/stable-diffusion-webui-assets.git")
     stable_diffusion_repo: str = os.environ.get('STABLE_DIFFUSION_REPO', "https://github.com/joypaul162/Stability-AI-stablediffusion.git")
