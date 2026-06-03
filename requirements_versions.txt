@@ -15,7 +15,7 @@ inflection==0.5.1
 jsonmerge==1.9.2
 kornia==0.8.0
 lark==1.2.2
-numpy==1.26.4
+numpy==2.2.6  # 2.0+ required by scikit-image 0.25.1 and blendmodes==2025; torch 2.11.0 supports numpy 2.x
 omegaconf==2.2.3
 open-clip-torch==3.3.0
 piexif==1.1.3
