@@ -2,7 +2,7 @@ setuptools==69.5.1  # temp fix for compatibility with some old packages
 GitPython==3.1.32
 pillow==12.2.0
 accelerate==1.13.0
-blendmodes==2024.1.1
+blendmodes==2025  # 2024.1.1 capped pillow<11; 2025 requires pillow>=10.4.0 with no upper bound
 clean-fid==0.1.35
 diskcache==5.6.3
 einops==0.8.0
