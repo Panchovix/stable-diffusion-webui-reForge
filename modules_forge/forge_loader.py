@@ -550,26 +550,33 @@ def load_model_for_a1111(timer, checkpoint_info=None, state_dict=None):
     # ── Apple MLX pipeline (auto-activates on Apple Silicon when mlx installed) ──
     # Runs after diffusers_hijack so it can register on top with higher priority.
     # On non-Apple-Silicon hardware this is a fast no-op (platform check only).
+    _mlx_reason = None
     try:
         import mlx_pipeline as _mlxp
-        _mlxp.maybe_activate(sd_model, forge_objects)
+        _mlx_activated = _mlxp.maybe_activate(sd_model, forge_objects)
+        if not _mlx_activated and _mlxp.is_apple_silicon():
+            # maybe_activate returned False on Apple Silicon — mlx not installed
+            # or Metal unavailable.  Surface this so the user knows they are on
+            # the slower MPS fallback path.
+            _mlx_reason = "mlx not installed or Metal unavailable"
     except Exception as _mlx_err:
         import logging as _logging
         _logging.getLogger(__name__).debug(
             "[MLX Pipeline] Skipped: %s", _mlx_err
         )
-        # Warn the user when we are on Apple Silicon but MLX failed — they will
-        # get MPS (Metal Performance Shaders) instead, which is slower and may
-        # have device-placement issues.  Telling them why helps them fix it.
+        _mlx_reason = str(_mlx_err)
+
+    if _mlx_reason is not None:
         try:
             from modules.devices import has_mps
             if has_mps():
+                _reason_line = _mlx_reason[:54]
                 print(
                     "\n"
                     "╔══════════════════════════════════════════════════════════════╗\n"
                     "║  WARNING: MLX pipeline unavailable — falling back to MPS     ║\n"
                     "║                                                              ║\n"
-                    f"║  Reason: {str(_mlx_err)[:54]:<54}║\n"
+                    f"║  Reason: {_reason_line:<54}║\n"
                     "║                                                              ║\n"
                     "║  MLX is much faster on Apple Silicon.  To enable it run:     ║\n"
                     "║    source venv/bin/activate && pip install mlx               ║\n"
