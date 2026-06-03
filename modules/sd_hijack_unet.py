@@ -1,10 +1,8 @@
 import torch
-from packaging import version
 from einops import repeat
 import math
 
 from modules import devices
-from modules.sd_hijack_utils import CondFunc
 
 
 class TorchHijackForUnet:

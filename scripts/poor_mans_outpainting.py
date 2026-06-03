@@ -92,8 +92,8 @@ class Script(scripts.Script):
         work_latent_mask = []
         work_results = []
 
-        for (y, h, row), (_, _, row_mask), (_, _, row_latent_mask) in zip(grid.tiles, grid_mask.tiles, grid_latent_mask.tiles):
-            for tiledata, tiledata_mask, tiledata_latent_mask in zip(row, row_mask, row_latent_mask):
+        for (y, h, row), (_, _, row_mask), (_, _, row_latent_mask) in zip(grid.tiles, grid_mask.tiles, grid_latent_mask.tiles, strict=False):
+            for tiledata, tiledata_mask, tiledata_latent_mask in zip(row, row_mask, row_latent_mask, strict=False):
                 x, w = tiledata[0:2]
 
                 if x >= left and x+w <= img.width - right and y >= up and y+h <= img.height - down:

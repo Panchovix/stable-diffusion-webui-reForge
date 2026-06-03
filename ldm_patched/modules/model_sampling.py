@@ -68,7 +68,7 @@ class CONST:
     def inverse_noise_scaling(self, sigma, latent):
         sigma = sigma.view(sigma.shape[:1] + (1,) * (latent.ndim - 1))
         return latent / (1.0 - sigma)
-    
+
 class X0(EPS):
     def calculate_denoised(self, sigma, model_output, model_input):
         return model_output
@@ -76,7 +76,7 @@ class X0(EPS):
 class IMG_TO_IMG(X0):
     def calculate_input(self, sigma, noise):
         return noise
-    
+
 class COSMOS_RFLOW:
     def calculate_input(self, sigma, noise):
         sigma = (sigma / (sigma + 1))

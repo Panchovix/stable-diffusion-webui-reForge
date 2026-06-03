@@ -2,7 +2,7 @@ import os
 import re
 from functools import lru_cache
 from modules import modelloader, devices, errors
-from modules.shared import cmd_opts, hf_endpoint
+from modules.shared import hf_endpoint
 import modules.shared as shared
 from modules.upscaler import Upscaler, UpscalerData
 from modules.upscaler_utils import upscale_with_model

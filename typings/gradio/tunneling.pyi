@@ -18,16 +18,16 @@ BINARY_PATH = ...
 class Tunnel:
     def __init__(self, remote_host, remote_port, local_host, local_port, share_token) -> None:
         ...
-    
+
     @staticmethod
     def download_binary(): # -> None:
         ...
-    
+
     def start_tunnel(self) -> str:
         ...
-    
+
     def kill(self): # -> None:
         ...
-    
+
 
 

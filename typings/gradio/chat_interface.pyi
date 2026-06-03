@@ -53,6 +53,6 @@ class ChatInterface(Blocks):
             autofocus: If True, autofocuses to the textbox when the page loads.
         """
         ...
-    
+
 
 

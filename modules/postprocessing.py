@@ -3,7 +3,6 @@ import os
 from PIL import Image
 
 from modules import shared, images, devices, scripts, scripts_postprocessing, ui_common, infotext_utils
-import modules.shared as shared
 
 
 def run_postprocessing(extras_mode, image, image_folder, input_dir, output_dir, show_extras_results, *args, save_output: bool = True):

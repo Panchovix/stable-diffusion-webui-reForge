@@ -31,13 +31,13 @@ class HTML(Changeable, IOComponent, StringSerializable):
             elem_classes: An optional list of strings that are assigned as the classes of this component in the HTML DOM. Can be used for targeting CSS styles.
         """
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         ...
-    
+
     @staticmethod
     def update(value: Any | Literal[_Keywords.NO_VALUE] | None = ..., label: str | None = ..., show_label: bool | None = ..., visible: bool | None = ...): # -> dict[str, Any]:
         ...
-    
+
 
 

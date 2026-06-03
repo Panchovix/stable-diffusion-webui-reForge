@@ -37,23 +37,23 @@ class Checkbox(FormComponent, Changeable, Inputable, Selectable, IOComponent, Bo
             elem_classes: An optional list of strings that are assigned as the classes of this component in the HTML DOM. Can be used for targeting CSS styles.
         """
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         ...
-    
+
     @staticmethod
     def update(value: bool | Literal[_Keywords.NO_VALUE] | None = ..., label: str | None = ..., info: str | None = ..., show_label: bool | None = ..., container: bool | None = ..., scale: int | None = ..., min_width: int | None = ..., interactive: bool | None = ..., visible: bool | None = ...): # -> dict[str, Any]:
         ...
-    
+
     def get_interpretation_neighbors(self, x): # -> tuple[list[bool], dict[Any, Any]]:
         ...
-    
+
     def get_interpretation_scores(self, x, neighbors, scores, **kwargs): # -> tuple[float, None] | tuple[None, float]:
         """
         Returns:
             The first value represents the interpretation score if the input is False, and the second if the input is True.
         """
         ...
-    
+
 
 

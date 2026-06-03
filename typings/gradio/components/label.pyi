@@ -37,10 +37,10 @@ class Label(Changeable, Selectable, IOComponent, JSONSerializable):
             color: The background color of the label (either a valid css color name or hexadecimal string).
         """
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         ...
-    
+
     def postprocess(self, y: dict[str, float] | str | float | None) -> dict | None:
         """
         Parameters:
@@ -49,16 +49,16 @@ class Label(Changeable, Selectable, IOComponent, JSONSerializable):
             Object with key 'label' representing primary label, and key 'confidences' representing a list of label-confidence pairs
         """
         ...
-    
+
     @staticmethod
     def update(value: dict[str, float] | str | float | Literal[_Keywords.NO_VALUE] | None = ..., label: str | None = ..., show_label: bool | None = ..., container: bool | None = ..., scale: int | None = ..., min_width: int | None = ..., visible: bool | None = ..., color: str | Literal[_Keywords.NO_VALUE] | None = ...): # -> dict[str, Any]:
         ...
-    
+
     def style(self, *, container: bool | None = ...): # -> Self:
         """
         This method is deprecated. Please set these arguments in the constructor instead.
         """
         ...
-    
+
 
 

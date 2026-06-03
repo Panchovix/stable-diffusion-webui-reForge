@@ -1,6 +1,5 @@
 import math
 
-from einops import rearrange, repeat
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -185,10 +184,10 @@ class CrossAttention2d(ConditionedModule):
 _kernels = {
     'linear':
         [1 / 8, 3 / 8, 3 / 8, 1 / 8],
-    'cubic': 
+    'cubic':
         [-0.01171875, -0.03515625, 0.11328125, 0.43359375,
         0.43359375, 0.11328125, -0.03515625, -0.01171875],
-    'lanczos3': 
+    'lanczos3':
         [0.003689131001010537, 0.015056144446134567, -0.03399861603975296,
         -0.066637322306633, 0.13550527393817902, 0.44638532400131226,
         0.44638532400131226, 0.13550527393817902, -0.066637322306633,

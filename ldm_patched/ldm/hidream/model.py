@@ -799,4 +799,3 @@ class HiDreamImageTransformer2DModel(nn.Module):
         output = self.final_layer(hidden_states, adaln_input)
         output = self.unpatchify(output, img_sizes)
         return -output[:, :, :h, :w]
-    

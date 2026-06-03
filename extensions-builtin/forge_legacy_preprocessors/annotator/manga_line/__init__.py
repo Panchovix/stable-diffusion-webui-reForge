@@ -142,7 +142,7 @@ class _upsampling_residual_block(nn.Module):
         layers = []
         for i in range(repetitions):
             l = None
-            if i == 0: 
+            if i == 0:
                 l = _u_basic_block(in_filters=in_filters, nb_filters=nb_filters)#(input)
             else:
                 l = basic_block(in_filters=nb_filters, nb_filters=nb_filters)#(input)
@@ -163,7 +163,7 @@ class res_skip(nn.Module):
         self.block2 = _residual_block(in_filters=48, nb_filters=96, repetitions=5)#(block1)
         self.block3 = _residual_block(in_filters=96, nb_filters=192, repetitions=7)#(block2)
         self.block4 = _residual_block(in_filters=192, nb_filters=384, repetitions=12)#(block3)
-        
+
         self.block5 = _upsampling_residual_block(in_filters=384, nb_filters=192, repetitions=7)#(block4)
         self.res1 = _shortcut(in_filters=192, nb_filters=192)#(block3, block5, subsample=(1,1))
 
@@ -245,4 +245,4 @@ class MangaLineExtration:
             line = 255 - line.cpu().numpy()[0, 0]
             return line.clip(0, 255).astype(np.uint8)
 
-    
+

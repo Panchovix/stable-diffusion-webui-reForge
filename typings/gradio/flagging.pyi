@@ -25,7 +25,7 @@ class FlaggingCallback(ABC):
         flagging_dir: A string, typically containing the path to the directory where the flagging file should be storied (provided as an argument to Interface.__init__()).
         """
         ...
-    
+
     @abstractmethod
     def flag(self, flag_data: list[Any], flag_option: str = ..., username: str | None = ...) -> int:
         """
@@ -40,7 +40,7 @@ class FlaggingCallback(ABC):
         (int) The total number of samples that have been flagged.
         """
         ...
-    
+
 
 
 @document()
@@ -58,13 +58,13 @@ class SimpleCSVLogger(FlaggingCallback):
     """
     def __init__(self) -> None:
         ...
-    
+
     def setup(self, components: list[IOComponent], flagging_dir: str | Path): # -> None:
         ...
-    
+
     def flag(self, flag_data: list[Any], flag_option: str = ..., username: str | None = ...) -> int:
         ...
-    
+
 
 
 @document()
@@ -82,13 +82,13 @@ class CSVLogger(FlaggingCallback):
     """
     def __init__(self) -> None:
         ...
-    
+
     def setup(self, components: list[IOComponent], flagging_dir: str | Path): # -> None:
         ...
-    
+
     def flag(self, flag_data: list[Any], flag_option: str = ..., username: str | None = ...) -> int:
         ...
-    
+
 
 
 @document()
@@ -116,7 +116,7 @@ class HuggingFaceDatasetSaver(FlaggingCallback):
             separate_dirs: If True, each flagged item will be saved in a separate directory. This makes the flagging more robust to concurrent editing, but may be less convenient to use.
         """
         ...
-    
+
     def setup(self, components: list[IOComponent], flagging_dir: str): # -> None:
         """
         Params:
@@ -124,16 +124,16 @@ class HuggingFaceDatasetSaver(FlaggingCallback):
         updated, and pushed from.
         """
         ...
-    
+
     def flag(self, flag_data: list[Any], flag_option: str = ..., username: str | None = ...) -> int:
         ...
-    
+
 
 
 class HuggingFaceDatasetJSONSaver(HuggingFaceDatasetSaver):
     def __init__(self, hf_token: str, dataset_name: str, organization: str | None = ..., private: bool = ..., info_filename: str = ..., verbose: bool = ...) -> None:
         ...
-    
+
 
 
 class FlagMethod:
@@ -143,12 +143,12 @@ class FlagMethod:
     """
     def __init__(self, flagging_callback: FlaggingCallback, label: str, value: str, visual_feedback: bool = ...) -> None:
         ...
-    
+
     def __call__(self, request: gr.Request, *flag_data): # -> dict[str, Any] | Literal['Error!'] | None:
         ...
-    
+
     def reset(self): # -> dict[str, Any]:
         ...
-    
+
 
 

@@ -26,16 +26,16 @@ class State(IOComponent, SimpleSerializable):
             value: the initial value (of arbitrary type) of the state. The provided argument is deepcopied. If a callable is provided, the function will be called whenever the app loads to set the initial value of the state.
         """
         ...
-    
+
 
 
 class Variable(State):
     """Variable was renamed to State. This class is kept for backwards compatibility."""
     def __init__(self, *args, **kwargs) -> None:
         ...
-    
+
     def get_block_name(self): # -> Literal['state']:
         ...
-    
+
 
 

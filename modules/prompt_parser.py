@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from collections import namedtuple
 import lark
-import math
 
 import logging
 
@@ -498,7 +497,7 @@ def parse_prompt_attention(text):
             curr_text, curr_weight = next_text, next_weight
     merged.append([curr_text, curr_weight])
     logging.debug(merged)
-    
+
     return merged
 
 if __name__ == "__main__":
@@ -506,4 +505,3 @@ if __name__ == "__main__":
     doctest.testmod(optionflags=doctest.NORMALIZE_WHITESPACE)
 else:
     import torch  # doctest faster
-    

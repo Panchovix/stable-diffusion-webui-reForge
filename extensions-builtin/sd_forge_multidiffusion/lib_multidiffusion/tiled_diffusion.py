@@ -120,8 +120,8 @@ class AbstractDiffusion:
         self._init_done = None
 
         # count the step correctly
-        self.step_count = 0         
-        self.inner_loop_count = 0  
+        self.step_count = 0
+        self.inner_loop_count = 0
         self.kdiff_step = -1
 
         # ext. Grid tiling painting (grid bbox)
@@ -165,7 +165,7 @@ class AbstractDiffusion:
         tile_batch_size = self.tile_batch_size
         compression = self.compression
         width = self.width
-        height  = self.height 
+        height  = self.height
         overlap = self.overlap
         self.__init__()
         self.compression = compression
@@ -179,7 +179,8 @@ class AbstractDiffusion:
 
     def repeat_tensor(self, x:Tensor, n:int, concat=False, concat_to=0) -> Tensor:
         ''' repeat the tensor on it's first dim '''
-        if n == 1: return x
+        if n == 1:
+            return x
         B = x.shape[0]
         r_dims = len(x.shape) - 1
         if B == 1:      # batch_size = 1 (not `tile_batch_size`)
@@ -231,7 +232,7 @@ class AbstractDiffusion:
 
     # detached version of above
     @grid_bbox
-    def get_grid_bbox(self, tile_w: int, tile_h: int, overlap: int, tile_bs: int, w: int, h: int, 
+    def get_grid_bbox(self, tile_w: int, tile_h: int, overlap: int, tile_bs: int, w: int, h: int,
                     device: torch.device, get_tile_weights: Callable = lambda: 1.0) -> List[List[BBox]]:
         weights = torch.zeros((1, 1, h, w), device=device, dtype=torch.float32)
         # enable_grid_bbox = True
@@ -266,7 +267,7 @@ class AbstractDiffusion:
     def init_done(self):
         '''
           Call this after all `init_*`, settings are done, now perform:
-            - settings sanity check 
+            - settings sanity check
             - pre-computations, cache init
             - anything thing needed before denoising starts
         '''
@@ -274,8 +275,10 @@ class AbstractDiffusion:
         # if self._init_done is not None: return
         # self._init_done = True
         self.total_bboxes = 0
-        if self.enable_grid_bbox:   self.total_bboxes += self.num_batches
-        if self.enable_custom_bbox: self.total_bboxes += len(self.custom_bboxes)
+        if self.enable_grid_bbox:
+            self.total_bboxes += self.num_batches
+        if self.enable_custom_bbox:
+            self.total_bboxes += len(self.custom_bboxes)
         assert self.total_bboxes > 0, "Nothing to paint! No background to draw and no custom bboxes were provided."
 
         # sampling_steps = _steps
@@ -285,7 +288,8 @@ class AbstractDiffusion:
     def prepare_controlnet_tensors(self, refresh:bool=False, tensor=None):
         ''' Crop the control tensor into tiles and cache them '''
         if not refresh:
-            if self.control_tensor_batch is not None or self.control_params is not None: return
+            if self.control_tensor_batch is not None or self.control_params is not None:
+                return
         tensors = [tensor]
         self.org_control_tensor_batch = tensors
         self.control_tensor_batch = []
@@ -319,7 +323,8 @@ class AbstractDiffusion:
     @controlnet
     def switch_controlnet_tensors(self, batch_id:int, x_batch_size:int, tile_batch_size:int, is_denoise=False):
         # if not self.enable_controlnet: return
-        if self.control_tensor_batch is None: return
+        if self.control_tensor_batch is None:
+            return
         # self.control_params = [0]
 
         # for param_id in range(len(self.control_params)):
@@ -355,7 +360,7 @@ class AbstractDiffusion:
                 self.control_params[tuple_key][param_id].append(None)
 
             # Below is taken from ldm_patched.controlnet.py, but we need to additionally tile the cnets.
-            # if statement: eager eval. first time when cond_hint is None. 
+            # if statement: eager eval. first time when cond_hint is None.
             if self.refresh or control.cond_hint is None or not isinstance(self.control_params[tuple_key][param_id][batch_id], Tensor):
                 if control.cond_hint is not None:
                     del control.cond_hint
@@ -370,8 +375,10 @@ class AbstractDiffusion:
 
                 device = getattr(control, 'device', x_noisy.device)
                 dtype = getattr(control, 'manual_cast_dtype', None)
-                if dtype is None: dtype = getattr(getattr(control, 'control_model', None), 'dtype', None)
-                if dtype is None: dtype = x_noisy.dtype
+                if dtype is None:
+                    dtype = getattr(getattr(control, 'control_model', None), 'dtype', None)
+                if dtype is None:
+                    dtype = x_noisy.dtype
 
                 if isinstance(control, T2IAdapter):
                     width, height = control.scale_image_to(PW, PH)
@@ -470,7 +477,7 @@ def gaussian_weights(tile_w:int, tile_h:int) -> Tensor:
 class CondDict: ...
 
 class MultiDiffusion(AbstractDiffusion):
-    
+
     @torch.inference_mode()
     def __call__(self, model_function: BaseModel.apply_model, args: dict):
         x_in: Tensor = args["input"]
@@ -495,7 +502,7 @@ class MultiDiffusion(AbstractDiffusion):
         # Background sampling (grid bbox)
         if self.draw_background:
             for batch_id, bboxes in enumerate(self.batched_bboxes):
-                if processing_interrupted(): 
+                if processing_interrupted():
                     # self.pbar.close()
                     return x_in
 
@@ -563,7 +570,7 @@ def fibonacci_spacing(x):
     fib = [0, 1]
     while fib[-1] < len(x):
         fib.append(fib[-1] + fib[-2])
-    
+
     used_indices = set()
     for i, val in enumerate(x):
         fib_index = i % len(fib)
@@ -572,11 +579,11 @@ def fibonacci_spacing(x):
             target_index = (target_index + 1) % len(x)
         result[target_index] = val
         used_indices.add(target_index)
-    
+
     return result
 
 def find_nearest(a,b):
-    # Calculate the absolute differences. 
+    # Calculate the absolute differences.
     diff = (a - b).abs()
 
     # Find the indices of the nearest elements
@@ -586,7 +593,7 @@ def find_nearest(a,b):
     return b[nearest_indices]
 
 class SpotDiffusion(AbstractDiffusion):
-    
+
     @torch.inference_mode()
     def __call__(self, model_function: BaseModel.apply_model, args: dict):
         x_in: Tensor = args["input"]
@@ -655,7 +662,7 @@ class SpotDiffusion(AbstractDiffusion):
         # Background sampling (grid bbox)
         if self.draw_background:
             for batch_id, bboxes in enumerate(self.batched_bboxes):
-                if processing_interrupted(): 
+                if processing_interrupted():
                     # self.pbar.close()
                     return x_in
 
@@ -775,7 +782,7 @@ class MixtureOfDiffusers(AbstractDiffusion):
         # Global sampling
         if self.draw_background:
             for batch_id, bboxes in enumerate(self.batched_bboxes):     # batch_id is the `Latent tile batch size`
-                if processing_interrupted(): 
+                if processing_interrupted():
                     # self.pbar.close()
                     return x_in
                 # batching
@@ -806,13 +813,13 @@ class MixtureOfDiffusers(AbstractDiffusion):
                         if v.shape[0] != x_tile.shape[0]:
                             v = repeat_to_batch_size(v, x_tile.shape[0])
                     c_tile[k] = v
-                
+
                 # controlnet
                 # self.switch_controlnet_tensors(batch_id, N, len(bboxes), is_denoise=True)
                 if 'control' in c_in:
                     self.process_controlnet(x_tile, c_in, cond_or_uncond, bboxes, N, batch_id)
                     c_tile['control'] = c_in['control'].get_control_orig(x_tile, t_tile, c_tile, len(cond_or_uncond))
-                
+
                 # stablesr
                 # self.switch_stablesr_tensors(batch_id)
 
@@ -821,7 +828,7 @@ class MixtureOfDiffusers(AbstractDiffusion):
 
                 # de-batching
                 for i, bbox in enumerate(bboxes):
-                    # These weights can be calcluated in advance, but will cost a lot of vram 
+                    # These weights can be calcluated in advance, but will cost a lot of vram
                     # when you have many tiles. So we calculate it here.
                     w = self.tile_weights * self.rescale_factor[bbox.slicer]
                     self.x_buffer[bbox.slicer] += x_tile_out[i*N:(i+1)*N, :, :, :] * w
@@ -857,7 +864,7 @@ class TiledDiffusion():
         for o in s.instances:
             o.impl.reset()
         return ""
-    
+
     def __init__(self) -> None:
         self.__class__.instances.add(self)
 
@@ -868,7 +875,7 @@ class TiledDiffusion():
             self.impl = MultiDiffusion()
         else:
             self.impl = SpotDiffusion()
-        
+
         # if noise_inversion:
         #     get_cache_callback = self.noise_inverse_get_cache
         #     set_cache_callback = None # lambda x0, xt, prompts: self.noise_inverse_set_cache(p, x0, xt, prompts, steps, retouch)
@@ -879,7 +886,7 @@ class TiledDiffusion():
         self.impl.tile_height = tile_height // compression
         self.impl.tile_overlap = tile_overlap // compression
         self.impl.tile_batch_size = tile_batch_size
-        
+
         self.impl.compression = compression
         self.impl.width = tile_width
         self.impl.height  = tile_height

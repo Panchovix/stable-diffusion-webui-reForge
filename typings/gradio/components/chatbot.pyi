@@ -42,17 +42,17 @@ class Chatbot(Changeable, Selectable, IOComponent, JSONSerializable):
             avatar_images: Tuple of two avatar image paths or URLs for user and bot (in that order). Pass None for either the user or bot image to skip. Must be within the working directory of the Gradio app or an external URL.
         """
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         ...
-    
+
     @staticmethod
     def update(value: list[list[str | tuple[str] | tuple[str, str] | None]] | Literal[_Keywords.NO_VALUE] | None = ..., label: str | None = ..., show_label: bool | None = ..., container: bool | None = ..., scale: int | None = ..., min_width: int | None = ..., visible: bool | None = ..., height: int | None = ..., rtl: bool | None = ..., latex_delimiters: list[dict[str, str | bool]] | None = ..., show_share_button: bool | None = ..., show_copy_button: bool | None = ..., avatar_images: tuple[str | Path | None] | None = ...): # -> dict[str, Any]:
         ...
-    
+
     def preprocess(self, y: list[list[str | dict | None] | tuple[str | dict | None, str | dict | None]]) -> list[list[str | tuple[str] | tuple[str, str] | None]]:
         ...
-    
+
     def postprocess(self, y: list[list[str | tuple[str] | tuple[str, str] | None] | tuple]) -> list[list[str | dict | None]]:
         """
         Parameters:
@@ -61,12 +61,12 @@ class Chatbot(Changeable, Selectable, IOComponent, JSONSerializable):
             List of lists representing the message and response. Each message and response will be a string of HTML, or a dictionary with media information. Or None if the message is not to be displayed.
         """
         ...
-    
+
     def style(self, height: int | None = ..., **kwargs): # -> Self:
         """
         This method is deprecated. Please set these arguments in the constructor instead.
         """
         ...
-    
+
 
 

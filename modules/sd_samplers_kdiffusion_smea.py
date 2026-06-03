@@ -1,6 +1,6 @@
 import ldm_patched.k_diffusion.sampling as sampling
 import torch
-from tqdm.auto import trange, tqdm
+from tqdm.auto import trange
 import modules.shared
 
 
@@ -139,7 +139,7 @@ def sample_euler_smea_dy(model, x, sigmas, extra_args=None, callback=None, disab
         if callback is not None:
             callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigma_hat, 'denoised': denoised})
     return x
-                                   
+
 @torch.no_grad()
 def sample_euler_negative(model, x, sigmas, extra_args=None, callback=None, disable=None):
     s_churn = modules.shared.opts.euler_negative_s_churn

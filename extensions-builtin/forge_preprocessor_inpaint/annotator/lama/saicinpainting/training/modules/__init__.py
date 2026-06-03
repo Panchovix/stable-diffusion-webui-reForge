@@ -9,7 +9,7 @@ def make_generator(config, kind, **kwargs):
 
     if kind == 'pix2pixhd_multidilated':
         return MultiDilatedGlobalGenerator(**kwargs)
-    
+
     if kind == 'pix2pixhd_global':
         return GlobalGenerator(**kwargs)
 

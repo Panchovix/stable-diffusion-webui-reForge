@@ -38,17 +38,17 @@ class CheckboxGroup(FormComponent, Changeable, Inputable, Selectable, IOComponen
             elem_classes: An optional list of strings that are assigned as the classes of this component in the HTML DOM. Can be used for targeting CSS styles.
         """
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         ...
-    
+
     def example_inputs(self) -> dict[str, Any]:
         ...
-    
+
     @staticmethod
     def update(value: list[str | int | float] | str | Literal[_Keywords.NO_VALUE] | None = ..., choices: list[str | int | float | tuple[str, str | int | float]] | None = ..., label: str | None = ..., info: str | None = ..., show_label: bool | None = ..., container: bool | None = ..., scale: int | None = ..., min_width: int | None = ..., interactive: bool | None = ..., visible: bool | None = ...): # -> dict[str, Any]:
         ...
-    
+
     def preprocess(self, x: list[str | int | float]) -> list[str | int | float]:
         """
         Parameters:
@@ -57,7 +57,7 @@ class CheckboxGroup(FormComponent, Changeable, Inputable, Selectable, IOComponen
             list of selected choice values as strings or indices within choice list
         """
         ...
-    
+
     def postprocess(self, y: list[str | int | float] | str | int | float | None) -> list[str | int | float]:
         """
         Parameters:
@@ -66,25 +66,25 @@ class CheckboxGroup(FormComponent, Changeable, Inputable, Selectable, IOComponen
             List of selected choices
         """
         ...
-    
+
     def get_interpretation_neighbors(self, x): # -> tuple[list[Any], dict[Any, Any]]:
         ...
-    
+
     def get_interpretation_scores(self, x, neighbors, scores, **kwargs): # -> list[Any]:
         """
         Returns:
             For each tuple in the list, the first value represents the interpretation score if the input is False, and the second if the input is True.
         """
         ...
-    
+
     def style(self, *, item_container: bool | None = ..., container: bool | None = ..., **kwargs): # -> Self:
         """
         This method is deprecated. Please set these arguments in the constructor instead.
         """
         ...
-    
+
     def as_example(self, input_data): # -> list[str | None] | None:
         ...
-    
+
 
 

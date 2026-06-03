@@ -36,17 +36,17 @@ class Model3D(Changeable, Uploadable, Editable, Clearable, IOComponent, FileSeri
             elem_classes: An optional list of strings that are assigned as the classes of this component in the HTML DOM. Can be used for targeting CSS styles.
         """
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         ...
-    
+
     def example_inputs(self) -> dict[str, Any]:
         ...
-    
+
     @staticmethod
     def update(value: Any | Literal[_Keywords.NO_VALUE] | None = ..., label: str | None = ..., show_label: bool | None = ..., container: bool | None = ..., scale: int | None = ..., min_width: int | None = ..., visible: bool | None = ...): # -> dict[str, Any]:
         ...
-    
+
     def preprocess(self, x: dict[str, str] | None) -> str | None:
         """
         Parameters:
@@ -55,7 +55,7 @@ class Model3D(Changeable, Uploadable, Editable, Clearable, IOComponent, FileSeri
             string file path to temporary file with the 3D image model
         """
         ...
-    
+
     def postprocess(self, y: str | Path | None) -> dict[str, str] | None:
         """
         Parameters:
@@ -64,9 +64,9 @@ class Model3D(Changeable, Uploadable, Editable, Clearable, IOComponent, FileSeri
             file name mapped to base64 url data
         """
         ...
-    
+
     def as_example(self, input_data: str | None) -> str:
         ...
-    
+
 
 

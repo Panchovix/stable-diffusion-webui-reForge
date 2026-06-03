@@ -23,7 +23,7 @@ class LatentModifierForForge(scripts.Script):
 
     def ui(self, *args, **kwargs):
         with gr.Accordion(open=False, label=self.title()):
-            
+
             with gr.Tab("Sharpness & Detail"):
                 gr.Markdown("""
                     ### Sharpness Control
@@ -35,8 +35,8 @@ class LatentModifierForForge(scripts.Script):
                     sharpness_method = gr.Radio(label='Sharpness Method',
                                             choices=['anisotropic', 'joint-anisotropic', 'gaussian', 'cas'],
                                             value='anisotropic')
-                    affect_uncond = gr.Radio(label='Apply to Unconditional', 
-                                        choices=['None', 'Sharpness'], 
+                    affect_uncond = gr.Radio(label='Apply to Unconditional',
+                                        choices=['None', 'Sharpness'],
                                         value='None',
                                         info="Whether to apply sharpness to the unconditional branch")
 
@@ -49,7 +49,7 @@ class LatentModifierForForge(scripts.Script):
                 with gr.Group(visible=True):
                     tonemap_multiplier = gr.Slider(label='Tonemap Multiplier', minimum=0.0, maximum=100.0, step=0.01, value=0.0)
                     tonemap_method = gr.Radio(label='Tonemap Method',
-                                            choices=['reinhard', 'reinhard_perchannel', 'arctan', 'quantile', 'gated', 
+                                            choices=['reinhard', 'reinhard_perchannel', 'arctan', 'quantile', 'gated',
                                                     'cfg-mimic', 'spatial-norm'],
                                             value='reinhard')
                     tonemap_percentile = gr.Slider(label='Tonemap Percentile', minimum=0.0, maximum=100.0, step=0.005, value=100.0)
@@ -68,7 +68,7 @@ class LatentModifierForForge(scripts.Script):
                                                 value='add')
                     extra_noise_multiplier = gr.Slider(label='Extra Noise Multiplier', minimum=0.0, maximum=100.0, step=0.1, value=0.0)
                     extra_noise_lowpass = gr.Slider(label='Extra Noise Lowpass', minimum=0, maximum=1000, step=1, value=100)
-                    
+
                     gr.Markdown("### CFG Combat & Rescaling\nHandles CFG-related artifacts and drift.")
                     combat_method = gr.Radio(label='Combat Method',
                                         choices=['subtract', 'subtract_channels', 'subtract_median', 'sharpen'],
@@ -82,12 +82,12 @@ class LatentModifierForForge(scripts.Script):
                     gr.Markdown("### Divisive Normalization\nReduces noisy artifacts, especially useful with high sharpness.")
                     divisive_norm_size = gr.Slider(label='Divisive Norm Size', minimum=1, maximum=255, step=1, value=127)
                     divisive_norm_multiplier = gr.Slider(label='Divisive Norm Multiplier', minimum=0.0, maximum=1.0, step=0.01, value=0.0)
-                    
+
                     gr.Markdown("""
                         ### Spectral Modulation
                         Frequency-domain processing to handle oversaturation from high CFG values while preserving median values.
                         """)
-                    spectral_mod_mode = gr.Radio(label='Spectral Mod Mode', 
+                    spectral_mod_mode = gr.Radio(label='Spectral Mod Mode',
                                             choices=['hard_clamp', 'soft_clamp'],
                                             value='hard_clamp')
                     spectral_mod_percentile = gr.Slider(label='Spectral Mod Percentile', minimum=0.0, maximum=50.0, step=0.01, value=5.0)
@@ -100,7 +100,7 @@ class LatentModifierForForge(scripts.Script):
                     dyn_cfg_augmentation = gr.Radio(label='Dyn Cfg Augmentation',
                                                 choices=['None', 'dyncfg-halfcosine', 'dyncfg-halfcosine-mimic'],
                                                 value='None')
-            
+
             self.infotext_fields = [
             PasteField(sharpness_multiplier, "latent_modifier_sharpness_multiplier", api="latent_modifier_sharpness_multiplier"),
             PasteField(sharpness_method, "latent_modifier_sharpness_method", api="latent_modifier_sharpness_method"),
@@ -146,7 +146,7 @@ class LatentModifierForForge(scripts.Script):
 
         # Get XYZ values if present
         xyz = getattr(p, "_latent_modifier_xyz", {})
-        
+
         # Override values with XYZ if present
         if "sharpness_enabled" in xyz:
             sharpness_enabled = xyz["sharpness_enabled"] == "True"
@@ -238,7 +238,7 @@ class LatentModifierForForge(scripts.Script):
 
         # Add parameters to generation info based on what's enabled
         extra_params = {}
-        
+
         if sharpness_enabled:
             extra_params.update({
                 "latent_modifier_sharpness_enabled": True,
@@ -246,7 +246,7 @@ class LatentModifierForForge(scripts.Script):
                 "latent_modifier_sharpness_method": sharpness_method,
                 "latent_modifier_affect_uncond": affect_uncond,
             })
-        
+
         if tone_enabled:
             extra_params.update({
                 "latent_modifier_tone_enabled": True,
@@ -255,7 +255,7 @@ class LatentModifierForForge(scripts.Script):
                 "latent_modifier_tonemap_percentile": tonemap_percentile,
                 "latent_modifier_contrast_multiplier": contrast_multiplier,
             })
-        
+
         if noise_enabled:
             extra_params.update({
                 "latent_modifier_noise_enabled": True,
@@ -267,7 +267,7 @@ class LatentModifierForForge(scripts.Script):
                 "latent_modifier_extra_noise_multiplier": extra_noise_multiplier,
                 "latent_modifier_extra_noise_lowpass": extra_noise_lowpass,
             })
-        
+
         if advanced_enabled:
             extra_params.update({
                 "latent_modifier_advanced_enabled": True,
@@ -277,7 +277,7 @@ class LatentModifierForForge(scripts.Script):
                 "latent_modifier_spectral_mod_percentile": spectral_mod_percentile,
                 "latent_modifier_spectral_mod_multiplier": spectral_mod_multiplier,
             })
-        
+
         if dynamic_enabled:
             extra_params.update({
                 "latent_modifier_dynamic_enabled": True,
@@ -298,7 +298,7 @@ def make_axis_on_xyz_grid():
         if script.script_class.__module__ == "xyz_grid.py":
             xyz_grid = script.module
             break
-    
+
     if xyz_grid is None:
         return
 
@@ -327,7 +327,7 @@ def make_axis_on_xyz_grid():
             partial(set_value, field="affect_uncond"),
             choices=lambda: ['None', 'Sharpness']
         ),
-        
+
         # Tone & Contrast
         xyz_grid.AxisOption(
             "(Latent) Tone Enabled",
@@ -356,7 +356,7 @@ def make_axis_on_xyz_grid():
             float,
             partial(set_value, field="contrast_multiplier"),
         ),
-        
+
         # Noise & Combat
         xyz_grid.AxisOption(
             "(Latent) Noise Enabled",
@@ -402,7 +402,7 @@ def make_axis_on_xyz_grid():
             float,
             partial(set_value, field="rescale_cfg_phi"),
         ),
-        
+
         # Advanced Processing
         xyz_grid.AxisOption(
             "(Latent) Advanced Enabled",
@@ -436,7 +436,7 @@ def make_axis_on_xyz_grid():
             float,
             partial(set_value, field="spectral_mod_multiplier"),
         ),
-        
+
         # Dynamic CFG
         xyz_grid.AxisOption(
             "(Latent) Dynamic Enabled",

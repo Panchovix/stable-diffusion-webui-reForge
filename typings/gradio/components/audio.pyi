@@ -46,17 +46,17 @@ class Audio(Changeable, Clearable, Playable, Recordable, Streamable, StreamableO
             show_edit_button: If True, will show an edit icon in the corner of the component that allows user to edit the audio. If False, icon does not appear. Default is True.
         """
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         ...
-    
+
     def example_inputs(self) -> dict[str, Any]:
         ...
-    
+
     @staticmethod
     def update(value: Any | Literal[_Keywords.NO_VALUE] | None = ..., source: Literal["upload", "microphone"] | None = ..., label: str | None = ..., show_label: bool | None = ..., container: bool | None = ..., scale: int | None = ..., min_width: int | None = ..., interactive: bool | None = ..., visible: bool | None = ..., autoplay: bool | None = ..., show_download_button: bool | None = ..., show_share_button: bool | None = ..., show_edit_button: bool | None = ...): # -> dict[str, Any]:
         ...
-    
+
     def preprocess(self, x: dict[str, Any] | None) -> tuple[int, np.ndarray] | str | None:
         """
         Parameters:
@@ -65,7 +65,7 @@ class Audio(Changeable, Clearable, Playable, Recordable, Streamable, StreamableO
             audio in requested format
         """
         ...
-    
+
     def set_interpret_parameters(self, segments: int = ...): # -> Self:
         """
         Calculates interpretation score of audio subsections by splitting the audio into subsections, then using a "leave one out" method to calculate the score of each subsection by removing the subsection and measuring the delta of the output value.
@@ -73,13 +73,13 @@ class Audio(Changeable, Clearable, Playable, Recordable, Streamable, StreamableO
             segments: Number of interpretation segments to split audio into.
         """
         ...
-    
+
     def tokenize(self, x): # -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[Any]]:
         ...
-    
+
     def get_masked_inputs(self, tokens, binary_mask_matrix): # -> list[Any]:
         ...
-    
+
     def postprocess(self, y: tuple[int, np.ndarray] | str | Path | bytes | None) -> str | dict | bytes | None:
         """
         Parameters:
@@ -88,15 +88,15 @@ class Audio(Changeable, Clearable, Playable, Recordable, Streamable, StreamableO
             base64 url data
         """
         ...
-    
+
     def stream_output(self, y, output_id: str, first_chunk: bool): # -> tuple[None, dict[str, Any]] | tuple[bytes, dict[str, Any]] | tuple[bytes | Any, dict[str, Any]]:
         ...
-    
+
     def check_streamable(self): # -> None:
         ...
-    
+
     def as_example(self, input_data: str | None) -> str:
         ...
-    
+
 
 

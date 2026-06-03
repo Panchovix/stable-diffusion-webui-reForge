@@ -379,7 +379,7 @@ class ForgeAttnProcessor:
         self.block_name = block_name
         self.block_idx = block_idx
         self.transformer_idx = transformer_idx
-        
+
 
     def __call__(
         self,
@@ -395,8 +395,6 @@ class ForgeAttnProcessor:
             transformer_options = {}
         transformer_patches = transformer_options.get("patches", {})
         transformer_patches_replace = transformer_options.get("patches_replace", {})
-        clip_attn_norm: bool = transformer_options.get("clip_attn_norm", False)
-
         # extra_options mirrors ldm's convention so patch fns get the same dict
         extra_options = {
             "block": (self.block_name, self.block_idx),
@@ -1418,7 +1416,7 @@ class DiffPipeline():
                 adapter_name=adapter_name,
                 low_cpu_mem_usage=False,
             )
-            
+
 
             self._active_adapters.append((adapter_name, adapter_strength or 1.0))
 
@@ -1902,8 +1900,8 @@ class DiffPipeline():
             pipeline = diff_pipeline.get_pipeline()
             pipeline.enable_xformers_memory_efficient_attention()
             # or: pipeline.enable_flash_attn_2(), torch.compile(pipeline), etc.
-            
-        To future developer: DON'T DELETE THIS! 
+
+        To future developer: DON'T DELETE THIS!
         UNTIL I FIND A WAY PROPERLY LABEL WHAT THE HECK THE HF NET TYPE IS
         """
         return self._hf_unet
@@ -1928,8 +1926,8 @@ class DiffPipeline():
         Or subclass ``DiffPipeline`` and override this method directly.
         """
         #EXPERIEMENT: TaylorSeer Cache
-        
-        
+
+
         pass  # no-op by default
 
     # ------------------------------------------------------------------

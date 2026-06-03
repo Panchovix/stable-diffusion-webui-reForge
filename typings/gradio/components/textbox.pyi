@@ -46,14 +46,14 @@ class Textbox(FormComponent, Changeable, Inputable, Selectable, Submittable, Foc
             show_copy_button: If True, includes a copy button to copy the text in the textbox. Only applies if show_label is True.
         """
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         ...
-    
+
     @staticmethod
     def update(value: str | Literal[_Keywords.NO_VALUE] | None = ..., lines: int | None = ..., max_lines: int | None = ..., placeholder: str | None = ..., label: str | None = ..., info: str | None = ..., show_label: bool | None = ..., container: bool | None = ..., scale: int | None = ..., min_width: int | None = ..., visible: bool | None = ..., interactive: bool | None = ..., type: Literal["text", "password", "email"] | None = ..., text_align: Literal["left", "right"] | None = ..., rtl: bool | None = ..., show_copy_button: bool | None = ..., autofocus: bool | None = ...): # -> dict[str, Any]:
         ...
-    
+
     def preprocess(self, x: str | None) -> str | None:
         """
         Preprocesses input (converts it to a string) before passing it to the function.
@@ -63,7 +63,7 @@ class Textbox(FormComponent, Changeable, Inputable, Selectable, Submittable, Foc
             text
         """
         ...
-    
+
     def postprocess(self, y: str | None) -> str | None:
         """
         Postproccess the function output y by converting it to a str before passing it to the frontend.
@@ -73,7 +73,7 @@ class Textbox(FormComponent, Changeable, Inputable, Selectable, Submittable, Foc
             text
         """
         ...
-    
+
     def set_interpret_parameters(self, separator: str = ..., replacement: str | None = ...): # -> Self:
         """
         Calculates interpretation score of characters in input by splitting input into tokens, then using a "leave one out" method to calculate the score of each token by removing each token and measuring the delta of the output value.
@@ -82,31 +82,31 @@ class Textbox(FormComponent, Changeable, Inputable, Selectable, Submittable, Foc
             replacement: In the "leave one out" step, the text that the token should be replaced with. If None, the token is removed altogether.
         """
         ...
-    
+
     def tokenize(self, x: str) -> tuple[list[str], list[str], None]:
         """
         Tokenizes an input string by dividing into "words" delimited by self.interpretation_separator
         """
         ...
-    
+
     def get_masked_inputs(self, tokens: list[str], binary_mask_matrix: list[list[int]]) -> list[str]:
         """
         Constructs partially-masked sentences for SHAP interpretation
         """
         ...
-    
+
     def get_interpretation_scores(self, x, neighbors, scores: list[float], tokens: list[str], masks=..., **kwargs) -> list[tuple[str, float]]:
         """
         Returns:
             Each tuple set represents a set of characters and their corresponding interpretation score.
         """
         ...
-    
+
     def style(self, *, show_copy_button: bool | None = ..., container: bool | None = ..., **kwargs): # -> Self:
         """
         This method is deprecated. Please set these arguments in the constructor instead.
         """
         ...
-    
+
 
 

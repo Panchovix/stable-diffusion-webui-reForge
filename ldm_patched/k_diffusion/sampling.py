@@ -11,7 +11,6 @@ from torch import nn
 import torchsde
 from tqdm.auto import trange, tqdm
 
-from ldm_patched.modules import utils
 from ldm_patched.k_diffusion import deis
 from ldm_patched.k_diffusion import sa_solver
 import ldm_patched.modules.model_management as model_management
@@ -20,7 +19,7 @@ import ldm_patched.modules.model_sampling
 import torchdiffeq
 import modules.shared
 from torch import no_grad, FloatTensor
-from typing import Protocol, Optional, Dict, Any, TypedDict, NamedTuple, List
+from typing import Protocol, Optional, Dict, Any, TypedDict, NamedTuple
 from itertools import pairwise
 from ldm_patched.modules.model_sampling import CONST
 import modules.shared as shared
@@ -128,7 +127,7 @@ def get_sigmas_ays_32steps(n, sigma_min, sigma_max, is_sdxl=False, device='cpu')
     else:
         sigma_bases = [1.300323183382763, 1.690840379611262, 2.198638945761486, 2.622696705671493, 3.098705619671305, 3.661108232617473, 4.152506637972936, 4.662023756728857, 5.234059175875519, 5.874818853387466, 6.593316416277412, 7.399687115002039, 8.213824943635682, 9.050917900247738, 9.973321246245751,
             11.115344803852001, 12.529738625194212, 14.124109921351757, 15.959814856974724, 18.099481611774999, 20.526004748634670, 23.506648288108032, 27.541589307433523, 32.269132736422456, 38.982216080970984, 53.219344283057142, 72.656173487928834, 103.609326413189740, 218.693105563304210, 461.605857767280530]
-        
+
     return get_sigmas_ays_general(sigma_bases, sigma_max, n, device, True)
 
 def cosine_scheduler(n, sigma_min, sigma_max, device='cpu'):
@@ -183,7 +182,7 @@ def get_sigmas_karras_dynamic(n, sigma_min, sigma_max, device='cpu'):
     max_inv_rho = sigma_max ** (1 / rho)
     sigmas = torch.zeros_like(ramp)
     for i in range(n):
-        sigmas[i] = (max_inv_rho + ramp[i] * (min_inv_rho - max_inv_rho)) ** (math.cos(i*math.tau/n)*2+rho) 
+        sigmas[i] = (max_inv_rho + ramp[i] * (min_inv_rho - max_inv_rho)) ** (math.cos(i*math.tau/n)*2+rho)
     return torch.cat([sigmas, sigmas.new_zeros([1])])
 
 def get_sigmas_sinusoidal_sf(n, sigma_min, sigma_max, sf=3.5, device='cpu'):
@@ -456,7 +455,7 @@ class BrownianTreeNoiseSampler:
     def __call__(self, sigma, sigma_next):
         t0, t1 = self.transform(torch.as_tensor(sigma)), self.transform(torch.as_tensor(sigma_next))
         return self.tree(t0, t1) / (t1 - t0).abs().sqrt()
-    
+
 def sigma_to_half_log_snr(sigma, model_sampling):
     """Convert sigma to half-logSNR log(alpha_t / sigma_t)."""
     if isinstance(model_sampling, ldm_patched.modules.model_sampling.CONST):
@@ -659,11 +658,11 @@ def sample_euler_a2_edm(model, x, sigmas, extra_args=None, callback=None, disabl
 
 @torch.no_grad()
 def sample_dpmpp_2s_ancestral_cfg_pp(model, x, sigmas, extra_args=None, callback=None, disable=None, eta=1., s_noise=1., noise_sampler=None):
-    
+
     """Ancestral sampling with DPM-Solver++(2S) second-order steps."""
     extra_args = {} if extra_args is None else extra_args
     noise_sampler = default_noise_sampler(x) if noise_sampler is None else noise_sampler
-    
+
     temp = [0]
     def post_cfg_function(args):
         temp[0] = args["uncond_denoised"]
@@ -998,8 +997,8 @@ class DPMSolver(nn.Module):
 
         return x
 
-    def dpm_solver_adaptive(self, x, t_start, t_end, order=3, rtol=0.05, atol=0.0078, h_init=0.05, 
-                       pcoeff=0., icoeff=1., dcoeff=0., accept_safety=0.81, eta=0., 
+    def dpm_solver_adaptive(self, x, t_start, t_end, order=3, rtol=0.05, atol=0.0078, h_init=0.05,
+                       pcoeff=0., icoeff=1., dcoeff=0., accept_safety=0.81, eta=0.,
                        s_noise=None, noise_sampler=None):
         s_noise = modules.shared.opts.dpm_adaptive_s_noise if s_noise is None else s_noise
         noise_sampler = default_noise_sampler(x, seed=self.extra_args.get("seed", None)) if noise_sampler is None else noise_sampler
@@ -1438,7 +1437,7 @@ def sample_dpmpp_sde_classic(model, x, sigmas, extra_args=None, callback=None, d
     eta = modules.shared.opts.dpmpp_sde_og_eta
     s_noise = modules.shared.opts.dpmpp_sde_og_s_noise
     r = modules.shared.opts.dpmpp_sde_og_r
-    
+
     sigma_min, sigma_max = sigmas[sigmas > 0].min(), sigmas.max()
     seed = extra_args.get("seed", None)
     noise_sampler = BrownianTreeNoiseSampler(x, sigma_min, sigma_max, seed=seed, cpu=True) if noise_sampler is None else noise_sampler
@@ -1446,7 +1445,7 @@ def sample_dpmpp_sde_classic(model, x, sigmas, extra_args=None, callback=None, d
     s_in = x.new_ones([x.shape[0]])
     sigma_fn = lambda t: t.neg().exp()
     t_fn = lambda sigma: sigma.log().neg()
-    
+
     for i in trange(len(sigmas) - 1, disable=disable):
         denoised = model(x, sigmas[i] * s_in, **extra_args)
         if callback is not None:
@@ -1482,7 +1481,7 @@ def sample_dpmpp_sde(model, x, sigmas, extra_args=None, callback=None, disable=N
     eta = modules.shared.opts.dpmpp_sde_og_eta
     s_noise = modules.shared.opts.dpmpp_sde_og_s_noise
     r = modules.shared.opts.dpmpp_sde_og_r
-    
+
     sigma_min, sigma_max = sigmas[sigmas > 0].min(), sigmas.max()
     seed = extra_args.get("seed", None)
     noise_sampler = BrownianTreeNoiseSampler(x, sigma_min, sigma_max, seed=seed, cpu=True) if noise_sampler is None else noise_sampler
@@ -1492,7 +1491,7 @@ def sample_dpmpp_sde(model, x, sigmas, extra_args=None, callback=None, disable=N
     sigma_fn = partial(half_log_snr_to_sigma, model_sampling=model_sampling)
     lambda_fn = partial(sigma_to_half_log_snr, model_sampling=model_sampling)
     sigmas = offset_first_sigma_for_snr(sigmas, model_sampling)
-    
+
     for i in trange(len(sigmas) - 1, disable=disable):
         denoised = model(x, sigmas[i] * s_in, **extra_args)
         if callback is not None:
@@ -1541,7 +1540,7 @@ def sample_dpmpp_2m(model, x, sigmas, extra_args=None, callback=None, disable=No
     sigma_fn = lambda t: t.neg().exp()
     t_fn = lambda sigma: sigma.log().neg()
     old_denoised = None
-    
+
     for i in trange(len(sigmas) - 1, disable=disable):
         denoised = model(x, sigmas[i] * s_in, **extra_args)
         if callback is not None:
@@ -1856,7 +1855,7 @@ def sample_dpmpp_2m_sde(model, x, sigmas, extra_args=None, callback=None, disabl
     eta = modules.shared.opts.dpmpp_2m_sde_og_eta
     s_noise = modules.shared.opts.dpmpp_2m_sde_og_s_noise
     solver_type = modules.shared.opts.dpmpp_2m_sde_og_solver_type
-    
+
     if len(sigmas) <= 1:
         return x
 
@@ -1911,7 +1910,7 @@ def sample_dpmpp_3m_sde(model, x, sigmas, extra_args=None, callback=None, disabl
     """DPM-Solver++(3M) SDE."""
     eta = modules.shared.opts.dpmpp_3m_sde_og_eta
     s_noise = modules.shared.opts.dpmpp_3m_sde_og_s_noise
-    
+
     if len(sigmas) <= 1:
         return x
 
@@ -2407,7 +2406,7 @@ def sample_heunpp2(model, x, sigmas, extra_args=None, callback=None, disable=Non
     s_tmin = modules.shared.opts.heunpp2_s_tmin
     s_noise = modules.shared.opts.heunpp2_s_noise
     s_tmax = float('inf')
-    
+
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
     s_end = sigmas[-1]
@@ -2456,7 +2455,7 @@ def sample_heunpp2(model, x, sigmas, extra_args=None, callback=None, disable=Non
 #under Apache 2 license
 def sample_ipndm(model, x, sigmas, extra_args=None, callback=None, disable=None):
     max_order = modules.shared.opts.ipndm_max_order
-    
+
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
     x_next = x
@@ -2492,7 +2491,7 @@ def sample_ipndm(model, x, sigmas, extra_args=None, callback=None, disable=None)
 #under Apache 2 license
 def sample_ipndm_v(model, x, sigmas, extra_args=None, callback=None, disable=None):
     max_order = modules.shared.opts.ipndm_v_max_order
-    
+
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
     x_next = x
@@ -2553,7 +2552,7 @@ def sample_ipndm_v(model, x, sigmas, extra_args=None, callback=None, disable=Non
 def sample_deis(model, x, sigmas, extra_args=None, callback=None, disable=None):
     max_order = modules.shared.opts.deis_max_order
     deis_mode = modules.shared.opts.deis_mode
-    
+
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
     x_next = x
@@ -2710,7 +2709,7 @@ def sample_dpmpp_2s_ancestral_cfg_pp_dyn(model, x, sigmas, extra_args=None, call
     extra_args = {} if extra_args is None else extra_args
     seed = extra_args.get("seed", None)
     noise_sampler = default_noise_sampler(x, seed=seed) if noise_sampler is None else noise_sampler
-    
+
     temp = [0]
     def post_cfg_function(args):
         temp[0] = args["uncond_denoised"]
@@ -2757,7 +2756,7 @@ def sample_dpmpp_2s_ancestral_cfg_pp_intern(model, x, sigmas, extra_args=None, c
     extra_args = {} if extra_args is None else extra_args
     seed = extra_args.get("seed", None)
     noise_sampler = default_noise_sampler(x, seed=seed) if noise_sampler is None else noise_sampler
-    
+
     temp = [0]
     def post_cfg_function(args):
         temp[0] = args["uncond_denoised"]
@@ -2805,7 +2804,7 @@ def sample_dpmpp_2s_ancestral_cfg_pp_intern(model, x, sigmas, extra_args=None, c
             r = 1 / 2
             h = t_next - t
             s = t + r * h
-            mergefactor = min(math.sqrt(i/(len(sigmas) - 2)), 1) 
+            mergefactor = min(math.sqrt(i/(len(sigmas) - 2)), 1)
             print(mergefactor)
             #merge up_den with x
             if mergefactor == 1:
@@ -2819,8 +2818,8 @@ def sample_dpmpp_2s_ancestral_cfg_pp_intern(model, x, sigmas, extra_args=None, c
                 print(up_den.max(), large_denoised.max())
                 up_temp = nn.functional.interpolate(temp[0], scale_factor=2, mode='area')
                 x_2 = (sigma_fn(s) / sigma_fn(t)) * (x + (up_den - up_temp)) - (-h * r).expm1() * up_den
-            
-            
+
+
             denoised_2 = model(x_2, sigma_fn(s) * s_in, **extra_args)
             x = (sigma_fn(t_next) / sigma_fn(t)) * (x + (up_den - temp[0])) - (-h).expm1() * denoised_2
             large_denoised = denoised_2
@@ -2841,7 +2840,7 @@ def sample_dpmpp_2m_cfg_pp(model, x, sigmas, extra_args=None, callback=None, dis
         nonlocal uncond_denoised
         uncond_denoised = args["uncond_denoised"]
         return args["denoised"]
-    
+
     model_options = extra_args.get("model_options", {}).copy()
     extra_args["model_options"] = ldm_patched.modules.model_patcher.set_model_options_post_cfg_function(model_options, post_cfg_function, disable_cfg1_optimization=True)
     for i in trange(len(sigmas) - 1, disable=disable):
@@ -2866,22 +2865,22 @@ def sample_dpmpp_sde_cfg_pp(model, x, sigmas, extra_args=None, callback=None, di
     eta = modules.shared.opts.dpmpp_sde_cfg_pp_eta
     s_noise = modules.shared.opts.dpmpp_sde_cfg_pp_s_noise
     r = modules.shared.opts.dpmpp_sde_cfg_pp_r
-    
+
     if len(sigmas) <= 1:
         return x
 
     sigma_min, sigma_max = sigmas[sigmas > 0].min(), sigmas.max()
     noise_sampler = BrownianTreeNoiseSampler(x, sigma_min, sigma_max, seed=extra_args.get("seed", None), cpu=True) if noise_sampler is None else noise_sampler
     extra_args = {} if extra_args is None else extra_args
-    
+
     temp = [0]
     def post_cfg_function(args):
         temp[0] = args["uncond_denoised"]
         return args["denoised"]
-    
+
     model_options = extra_args.get("model_options", {}).copy()
     extra_args["model_options"] = ldm_patched.modules.model_patcher.set_model_options_post_cfg_function(model_options, post_cfg_function, disable_cfg1_optimization=True)
-    
+
     s_in = x.new_ones([x.shape[0]])
     sigma_fn = lambda t: t.neg().exp()
     t_fn = lambda sigma: sigma.log().neg()
@@ -2890,7 +2889,7 @@ def sample_dpmpp_sde_cfg_pp(model, x, sigmas, extra_args=None, callback=None, di
         denoised = model(x, sigmas[i] * s_in, **extra_args)
         if callback is not None:
             callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
-        
+
         if sigmas[i + 1] == 0:
             # Euler method
             d = to_d(x, sigmas[i], temp[0])
@@ -3489,7 +3488,7 @@ def sample_dpmpp_2m_dy_cfg_pp(
     """DPM-Solver++(2M) with dynamic thresholding and CFG++."""
     s_noise = modules.shared.opts.dpmpp_2m_dy_cfg_pp_s_noise if s_noise is None else s_noise
     s_dy_pow = modules.shared.opts.dpmpp_2m_dy_cfg_pp_s_dy_pow if s_dy_pow is None else s_dy_pow
-    s_extra_steps = modules.shared.opts.dpmpp_2m_dy_cfg_pp_s_extra_steps if s_extra_steps is None else s_extra_steps    
+    s_extra_steps = modules.shared.opts.dpmpp_2m_dy_cfg_pp_s_extra_steps if s_extra_steps is None else s_extra_steps
     """DPM-Solver++(2M)."""
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
@@ -3636,7 +3635,7 @@ def sample_clyb_4m_sde_momentumized(model, x, sigmas, extra_args=None, callback=
         if callback is not None:
             callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
 
-    return 
+    return
 
 class DenoiserModel(Protocol):
   def __call__(self, x: FloatTensor, t: FloatTensor, *args, **kwargs) -> FloatTensor: ...
@@ -3771,7 +3770,7 @@ def _de_second_order(
     a2_1=a2_1,
     b1=b1,
     b2=b2,
-  )  
+  )
 
 def _refined_exp_sosu_step(
   model: DenoiserModel,
@@ -3816,7 +3815,7 @@ def _refined_exp_sosu_step(
   # I will use float to indicate any variables which are scalars.
   h: float = lam_next - lam
   a2_1, b1, b2 = _de_second_order(h=h, c2=c2, simple_phi_calc=simple_phi_calc)
-  
+
   denoised: FloatTensor = model(x, sigma.repeat(x.size(0)), **extra_args)
   # if pbar is not None:
     # pbar.update(0.5)
@@ -3837,7 +3836,7 @@ def _refined_exp_sosu_step(
   vel = diff
 
   x_next: FloatTensor = math.exp(-h)*x + diff
-  
+
   return StepOutput(
     x_next=x_next,
     denoised=denoised,
@@ -3845,7 +3844,7 @@ def _refined_exp_sosu_step(
     vel=vel,
     vel_2=vel_2,
   )
-  
+
 
 @no_grad()
 def sample_refined_exp_s(
@@ -3950,17 +3949,17 @@ def sample_res_solver(model, x, sigmas, extra_args=None, callback=None, disable=
 
 @torch.no_grad()
 def sample_Kohaku_LoNyu_Yog(
-    model, 
-    x, 
-    sigmas, 
-    extra_args=None, 
-    callback=None, 
-    disable=None, 
-    s_churn=None, 
+    model,
+    x,
+    sigmas,
+    extra_args=None,
+    callback=None,
+    disable=None,
+    s_churn=None,
     s_tmin=None,
-    s_tmax=float('inf'), 
-    s_noise=None, 
-    noise_sampler=None, 
+    s_tmax=float('inf'),
+    s_noise=None,
+    noise_sampler=None,
     eta=None
 ):
     """Kohaku_LoNyu_Yog sampler with configurable parameters"""
@@ -4001,17 +4000,17 @@ def sample_Kohaku_LoNyu_Yog(
 
 @torch.no_grad()
 def sample_kohaku_lonyu_yog_cfg_pp(
-    model, 
-    x, 
-    sigmas, 
-    extra_args=None, 
-    callback=None, 
-    disable=None, 
-    s_churn=None, 
+    model,
+    x,
+    sigmas,
+    extra_args=None,
+    callback=None,
+    disable=None,
+    s_churn=None,
     s_tmin=None,
-    s_tmax=float('inf'), 
-    s_noise=None, 
-    noise_sampler=None, 
+    s_tmax=float('inf'),
+    s_noise=None,
+    noise_sampler=None,
     eta=None
 ):
     """Kohaku_LoNyu_Yog sampler with CFG++ implementation"""
@@ -4031,31 +4030,31 @@ def sample_kohaku_lonyu_yog_cfg_pp(
     def post_cfg_function(args):
         temp[0] = args["uncond_denoised"]
         return args["denoised"]
-    
+
     model_options = extra_args.get("model_options", {}).copy()
     extra_args["model_options"] = ldm_patched.modules.model_patcher.set_model_options_post_cfg_function(
         model_options, post_cfg_function, disable_cfg1_optimization=True
     )
-    
+
     s_in = x.new_ones([x.shape[0]])
-    
+
     for i in trange(len(sigmas) - 1, disable=disable):
         gamma = min(s_churn / (len(sigmas) - 1), 2 ** 0.5 - 1) if s_tmin <= sigmas[i] <= s_tmax else 0.
         eps = torch.randn_like(x) * s_noise
         sigma_hat = sigmas[i] * (gamma + 1)
         if gamma > 0:
             x = x + eps * (sigma_hat ** 2 - sigmas[i] ** 2) ** 0.5
-            
+
         denoised = model(x, sigma_hat * s_in, **extra_args)
         d = to_d(x, sigma_hat, temp[0])  # Use uncond_denoised from CFG++
-        
+
         sigma_down, sigma_up = get_ancestral_step(sigmas[i], sigmas[i + 1], eta=eta)
-        
+
         if callback is not None:
             callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigma_hat, 'denoised': denoised})
-            
+
         dt = sigma_down - sigmas[i]
-        
+
         if i <= (len(sigmas) - 1) / 2:
             x2 = -x
             denoised2 = model(x2, sigma_hat * s_in, **extra_args)
@@ -4068,12 +4067,12 @@ def sample_kohaku_lonyu_yog_cfg_pp(
             x = x + noise_sampler(sigmas[i], sigmas[i + 1]) * s_noise * sigma_up
         else:
             x = x + d * dt
-            
+
     return x
 
 def sample_custom(model, x, sigmas, extra_args=None, callback=None, disable=None):
     """Custom sampler that uses configurations from shared options"""
-    
+
     # Get sampler parameters from shared options
     sampler_name = modules.shared.opts.custom_sampler_name
     eta = modules.shared.opts.custom_sampler_eta
@@ -5452,7 +5451,7 @@ def _sure_correct_x0(model, x0_hat, sigma_hat_0, s_in, extra_args,
     # Skip the perturbed UNet forward entirely when the contribution is negligible.
     use_jac = use_jac and (sigma2 > eps_mc)
 
-    
+
 
     # ── Pre-draw probe vectors ────────────────────────────────────────────────
     # For 'full' mode draw all n_mc probes BEFORE Pass 1 so their sum can be

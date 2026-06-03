@@ -11,7 +11,7 @@ class ThemeAsset:
     version: semver.Version = ...
     def __post_init__(self): # -> None:
         ...
-    
+
 
 
 def get_theme_assets(space_info: huggingface_hub.hf_api.SpaceInfo) -> list[ThemeAsset]:

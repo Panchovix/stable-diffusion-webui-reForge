@@ -231,7 +231,7 @@ class StableDiffusionProcessing:
     dynamic_clip_skip_schedule: list | None = field(default=None, init=False)
     dynamic_clip_skip_sets: dict | None = field(default=None, init=False)
 
-    
+
     def __post_init__(self) -> None:
         if self.sampler_index is not None:
             print("sampler_index argument for StableDiffusionProcessing does not do anything; use sampler_name", file=sys.stderr)

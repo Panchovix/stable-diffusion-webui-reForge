@@ -9,6 +9,6 @@ from gradio.components.base import Component
 class StatusTracker(Component, SimpleSerializable):
     def __init__(self, **kwargs) -> None:
         ...
-    
+
 
 

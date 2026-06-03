@@ -3,7 +3,6 @@ import cv2
 import numpy as np
 import torch
 import math
-import functools
 
 from dataclasses import dataclass
 from transformers.models.clip.modeling_clip import CLIPVisionModelOutput
@@ -58,13 +57,13 @@ model_canny = None
 
 
 def canny(img, res=512, thr_a=100, thr_b=200, **kwargs):
-    l, h = thr_a, thr_b
+    low, h = thr_a, thr_b
     img, remove_pad = resize_image_with_pad(img, res)
     global model_canny
     if model_canny is None:
         from annotator.canny import apply_canny
         model_canny = apply_canny
-    result = model_canny(img, l, h)
+    result = model_canny(img, low, h)
     return remove_pad(result), True
 
 
@@ -774,10 +773,10 @@ class InsightFaceModel:
         img = HWC3(img)
         faces = self.model.get(img)
         if not faces:
-            raise Exception(f"Insightface: No face found in image {i}.")
+            raise Exception(f"Insightface: No face found in image {img}.")
         if len(faces) > 1:
             print("Insightface: More than one face is detected in the image. "
-                        f"Only the first one will be used {i}.")
+                        f"Only the first one will be used {img}.")
         return torch.from_numpy(faces[0].normed_embedding).unsqueeze(0), False
 
     def run_model_instant_id(
@@ -793,7 +792,9 @@ class InsightFaceModel:
             - res: Resolution used to resize image.
             - return_keypoints: Whether to return keypoints image or face embedding.
         """
-        def draw_kps(img: np.ndarray, kps, color_list=[(255,0,0), (0,255,0), (0,0,255), (255,255,0), (255,0,255)]):
+        def draw_kps(img: np.ndarray, kps, color_list=None):
+            if color_list is None:
+                color_list = [(255,0,0), (0,255,0), (0,0,255), (255,255,0), (255,0,255)]
             stickwidth = 4
             limbSeq = np.array([[0, 2], [1, 2], [3, 2], [4, 2]])
             kps = np.array(kps)
@@ -827,10 +828,10 @@ class InsightFaceModel:
         img, remove_pad = resize_image_with_pad(img, res)
         face_info = self.model.get(img)
         if not face_info:
-            raise Exception(f"Insightface: No face found in image.")
+            raise Exception("Insightface: No face found in image.")
         if len(face_info) > 1:
             print("Insightface: More than one face is detected in the image. "
-                  f"Only the biggest one will be used.")
+                  "Only the biggest one will be used.")
         # only use the maximum face
         face_info = sorted(face_info, key=lambda x:(x['bbox'][2]-x['bbox'][0])*x['bbox'][3]-x['bbox'][1])[-1]
         if return_keypoints:

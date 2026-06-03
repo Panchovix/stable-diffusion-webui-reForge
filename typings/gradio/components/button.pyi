@@ -34,19 +34,19 @@ class Button(Clickable, IOComponent, StringSerializable):
             min_width: minimum pixel width, will wrap if not sufficient screen space to satisfy this value. If a certain scale value results in this Component being narrower than min_width, the min_width parameter will be respected first.
         """
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         ...
-    
+
     @staticmethod
     def update(value: str | Literal[_Keywords.NO_VALUE] | None = ..., variant: Literal["primary", "secondary", "stop"] | None = ..., size: Literal["sm", "lg"] | None = ..., icon: str | None = ..., link: str | None = ..., visible: bool | None = ..., interactive: bool | None = ..., scale: int | None = ..., min_width: int | None = ...): # -> dict[str, Any]:
         ...
-    
+
     def style(self, *, full_width: bool | None = ..., size: Literal["sm", "lg"] | None = ..., **kwargs): # -> Self:
         """
         This method is deprecated. Please set these arguments in the constructor instead.
         """
         ...
-    
+
 
 

@@ -86,7 +86,6 @@ def load_state_from_resource(model, resource: str):
     elif resource.startswith('local::'):
         path = resource.split('local::')[1]
         return load_wts(model, path)
-        
+
     else:
         raise ValueError("Invalid resource type, only url:: and local:: are supported")
-    

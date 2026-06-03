@@ -76,7 +76,7 @@ class COCOeval:
         self._paramsEval = {}               # parameters for evaluation
         self.stats = []                     # result summarization
         self.ious = {}                      # ious between all gts and dts
-        if not cocoGt is None:
+        if cocoGt is not None:
             self.params.imgIds = sorted(cocoGt.getImgIds())
             self.params.catIds = sorted(cocoGt.getCatIds())
 
@@ -127,7 +127,7 @@ class COCOeval:
         print('Running per image evaluation...')
         p = self.params
         # add backward compatibility if useSegm is specified in params
-        if not p.useSegm is None:
+        if p.useSegm is not None:
             p.iouType = 'segm' if p.useSegm == 1 else 'bbox'
             print('useSegm (deprecated) is not None. Running {} evaluation'.format(p.iouType))
         print('Evaluate annotation type *{}*'.format(p.iouType))
@@ -356,7 +356,7 @@ class COCOeval:
                 Na = a0*I0
                 for m, maxDet in enumerate(m_list):
                     E = [self.evalImgs[Nk + Na + i] for i in i_list]
-                    E = [e for e in E if not e is None]
+                    E = [e for e in E if e is not None]
                     if len(E) == 0:
                         continue
                     dtScores = np.concatenate([e['dtScores'][0:maxDet] for e in E])

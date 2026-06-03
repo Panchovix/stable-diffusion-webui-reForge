@@ -124,7 +124,7 @@ def register_path_hijack(predicate: Callable, loader: Callable) -> None:
 def unregister_path_hijack(loader: Callable) -> None:
     """Remove a previously registered path hijack by its loader function."""
     global _PATH_HIJACK_REGISTRY
-    _PATH_HIJACK_REGISTRY = [(p, l) for p, l in _PATH_HIJACK_REGISTRY if l is not loader]
+    _PATH_HIJACK_REGISTRY = [(p, ldr) for p, ldr in _PATH_HIJACK_REGISTRY if ldr is not loader]
 
 
 def maybe_apply_path_hijack(checkpoint_info) -> Optional[Any]:
@@ -142,7 +142,7 @@ def maybe_apply_path_hijack(checkpoint_info) -> Optional[Any]:
     import sys
     from modules.shared import cmd_opts
 
-    print(f"[DEBUG maybe_apply_path_hijack] module id={id(sys.modules[__name__])}, registry has {len(_PATH_HIJACK_REGISTRY)} entries: {[l.__name__ for _, l in _PATH_HIJACK_REGISTRY]}")
+    print(f"[DEBUG maybe_apply_path_hijack] module id={id(sys.modules[__name__])}, registry has {len(_PATH_HIJACK_REGISTRY)} entries: {[ldr.__name__ for _, ldr in _PATH_HIJACK_REGISTRY]}")
 
     if not getattr(cmd_opts, 'forge_diffusers_pipeline', False):
         # Flag not set — path hijack is inactive; use normal ldm loading.
@@ -377,8 +377,10 @@ def dummy_sdxl_hijack(checkpoint_info) -> Any:
         if "v_pred" in _st_keys:
             _unet_cfg   = getattr(pipe.unet,      "config", None)
             _sched_cfg  = getattr(getattr(pipe, "scheduler", None), "config", None)
-            if _unet_cfg  is not None: _unet_cfg.prediction_type  = "v_prediction"
-            if _sched_cfg is not None: _sched_cfg.prediction_type = "v_prediction"
+            if _unet_cfg  is not None:
+                _unet_cfg.prediction_type  = "v_prediction"
+            if _sched_cfg is not None:
+                _sched_cfg.prediction_type = "v_prediction"
             print("[diffusers path hijack] V-prediction detected from 'v_pred' key — "
                   "patched unet.config and scheduler.config")
             if "ztsnr" in _st_keys:
@@ -528,8 +530,10 @@ def _legacy_sdxl_fallback(sd_model, forge_objects) -> None:
     def _diff_apply_model_wrapper(
         executor, x, t,
         c_concat=None, c_crossattn=None,
-        control=None, transformer_options={}, **kwargs
+        control=None, transformer_options=None, **kwargs
     ):
+        if transformer_options is None:
+            transformer_options = {}
         return _dp.apply_model(
             x, t,
             c_concat=c_concat, c_crossattn=c_crossattn,

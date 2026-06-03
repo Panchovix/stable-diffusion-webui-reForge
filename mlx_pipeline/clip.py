@@ -32,7 +32,7 @@ detected (any token id ≥ 49408).
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Optional, Tuple
+from typing import TYPE_CHECKING, Optional, Tuple
 
 import numpy as np
 import torch
@@ -330,7 +330,6 @@ def build_clip_encoder(
                              If None, falls back to ``"text_projection.weight"`` in the
                              transformer state dict (Linear weight convention → transposed).
     """
-    import mlx.core as mx
 
     if activation is None:
         activation = _quick_gelu

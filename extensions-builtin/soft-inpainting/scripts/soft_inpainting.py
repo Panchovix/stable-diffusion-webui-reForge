@@ -4,8 +4,6 @@ import math
 from modules.ui_components import InputAccordion
 import modules.scripts as scripts
 
-from concurrent.futures import ThreadPoolExecutor
-from scipy.ndimage import convolve
 from joblib import Parallel, delayed, cpu_count
 
 
@@ -153,7 +151,7 @@ def apply_adaptive_masks(
 
     masks_for_overlay = []
 
-    for i, (distance_map, overlay_image) in enumerate(zip(latent_distance, overlay_images)):
+    for i, (distance_map, overlay_image) in enumerate(zip(latent_distance, overlay_images, strict=False)):
         converted_mask = distance_map.float().cpu().numpy()
         converted_mask = weighted_histogram_filter(converted_mask, kernel, kernel_center,
                                                    percentile_min=0.9, percentile_max=1, min_width=1)

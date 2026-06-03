@@ -46,7 +46,7 @@ class PatchTransformerEncoder(nn.Module):
 
         self.embedding_convPxP = nn.Conv2d(in_channels, embedding_dim,
                                            kernel_size=patch_size, stride=patch_size, padding=0)
-        
+
     def positional_encoding_1d(self, sequence_length, batch_size, embedding_dim, device='cpu'):
         """Generate positional encodings
 
@@ -66,7 +66,7 @@ class PatchTransformerEncoder(nn.Module):
         pos_encoding = torch.cat([torch.sin(pos_encoding), torch.cos(pos_encoding)], dim=1)
         pos_encoding = pos_encoding.unsqueeze(1).repeat(1, batch_size, 1)
         return pos_encoding
-        
+
 
     def forward(self, x):
         """Forward pass
@@ -82,7 +82,7 @@ class PatchTransformerEncoder(nn.Module):
         if self.use_class_token:
             # extra special token at start ?
             embeddings = nn.functional.pad(embeddings, (1, 0))
-        
+
         # change to S,N,E format required by transformer
         embeddings = embeddings.permute(2, 0, 1)
         S, N, E = embeddings.shape

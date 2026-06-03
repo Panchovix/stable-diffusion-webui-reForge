@@ -36,14 +36,14 @@ class DepthModel(nn.Module):
     def __init__(self):
         super().__init__()
         self.device = 'cpu'
-    
+
     def to(self, device) -> nn.Module:
         self.device = device
         return super().to(device)
-    
+
     def forward(self, x, *args, **kwargs):
         raise NotImplementedError
-    
+
     def _infer(self, x: torch.Tensor):
         """
         Inference interface for the model
@@ -53,7 +53,7 @@ class DepthModel(nn.Module):
             torch.Tensor: output tensor of shape (b, 1, h, w)
         """
         return self(x)['metric_depth']
-    
+
     def _infer_with_pad_aug(self, x: torch.Tensor, pad_input: bool=True, fh: float=3, fw: float=3, upsampling_mode: str='bicubic', padding_mode="reflect", **kwargs) -> torch.Tensor:
         """
         Inference interface for the model with padding augmentation
@@ -83,7 +83,7 @@ class DepthModel(nn.Module):
             padding = [pad_w, pad_w]
             if pad_h > 0:
                 padding += [pad_h, pad_h]
-            
+
             x = F.pad(x, padding, mode=padding_mode, **kwargs)
         out = self._infer(x)
         if out.shape[-2:] != x.shape[-2:]:
@@ -95,7 +95,7 @@ class DepthModel(nn.Module):
             if pad_w > 0:
                 out = out[:, :, :, pad_w:-pad_w]
         return out
-    
+
     def infer_with_flip_aug(self, x, pad_input: bool=True, **kwargs) -> torch.Tensor:
         """
         Inference interface for the model with horizontal flip augmentation
@@ -111,7 +111,7 @@ class DepthModel(nn.Module):
         out_flip = self._infer_with_pad_aug(torch.flip(x, dims=[3]), pad_input=pad_input, **kwargs)
         out = (out + torch.flip(out_flip, dims=[3])) / 2
         return out
-    
+
     def infer(self, x, pad_input: bool=True, with_flip_aug: bool=True, **kwargs) -> torch.Tensor:
         """
         Inference interface for the model
@@ -126,7 +126,7 @@ class DepthModel(nn.Module):
             return self.infer_with_flip_aug(x, pad_input=pad_input, **kwargs)
         else:
             return self._infer_with_pad_aug(x, pad_input=pad_input, **kwargs)
-    
+
     @torch.no_grad()
     def infer_pil(self, pil_img, pad_input: bool=True, with_flip_aug: bool=True, output_type: str="numpy", **kwargs) -> Union[np.ndarray, PIL.Image.Image, torch.Tensor]:
         """
@@ -149,4 +149,3 @@ class DepthModel(nn.Module):
             return out_tensor.squeeze().cpu()
         else:
             raise ValueError(f"output_type {output_type} not supported. Supported values are 'numpy', 'pil' and 'tensor'")
-    

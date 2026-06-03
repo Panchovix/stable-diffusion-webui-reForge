@@ -54,14 +54,14 @@ class Image(Editable, Clearable, Changeable, Streamable, Selectable, Uploadable,
             show_share_button: If True, will show a share icon in the corner of the component that allows user to share outputs to Hugging Face Spaces Discussions. If False, icon does not appear. If set to None (default behavior), then the icon appears if this Gradio app is launched on Spaces, but not otherwise.
         """
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         ...
-    
+
     @staticmethod
     def update(value: Any | Literal[_Keywords.NO_VALUE] | None = ..., height: int | None = ..., width: int | None = ..., label: str | None = ..., show_label: bool | None = ..., show_download_button: bool | None = ..., container: bool | None = ..., scale: int | None = ..., min_width: int | None = ..., interactive: bool | None = ..., visible: bool | None = ..., brush_radius: float | None = ..., brush_color: str | None = ..., mask_opacity: float | None = ..., show_share_button: bool | None = ...): # -> dict[str, Any]:
         ...
-    
+
     def preprocess(self, x: str | dict[str, str]) -> np.ndarray | _Image.Image | str | dict | None:
         """
         Parameters:
@@ -70,7 +70,7 @@ class Image(Editable, Clearable, Changeable, Streamable, Selectable, Uploadable,
             image in requested format, or (if tool == "sketch") a dict of image and mask in requested format
         """
         ...
-    
+
     def postprocess(self, y: np.ndarray | _Image.Image | str | Path | None) -> str | None:
         """
         Parameters:
@@ -79,7 +79,7 @@ class Image(Editable, Clearable, Changeable, Streamable, Selectable, Uploadable,
             base64 url data
         """
         ...
-    
+
     def set_interpret_parameters(self, segments: int = ...): # -> Self:
         """
         Calculates interpretation score of image subsections by splitting the image into subsections, then using a "leave one out" method to calculate the score of each subsection by whiting out the subsection and measuring the delta of the output value.
@@ -87,7 +87,7 @@ class Image(Editable, Clearable, Changeable, Streamable, Selectable, Uploadable,
             segments: Number of interpretation segments to split image into.
         """
         ...
-    
+
     def tokenize(self, x): # -> tuple[list[Any], list[Any], list[Any]]:
         """
         Segments image into tokens, masks, and leave-one-out-tokens
@@ -99,28 +99,28 @@ class Image(Editable, Clearable, Changeable, Streamable, Selectable, Uploadable,
             masks: list of masks, used by the get_interpretation_neighbors() method
         """
         ...
-    
+
     def get_masked_inputs(self, tokens, binary_mask_matrix): # -> list[Any]:
         ...
-    
+
     def get_interpretation_scores(self, x, neighbors, scores, masks, tokens=..., **kwargs) -> list[list[float]]:
         """
         Returns:
             A 2D array representing the interpretation score of each pixel of the image.
         """
         ...
-    
+
     def style(self, *, height: int | None = ..., width: int | None = ..., **kwargs): # -> Self:
         """
         This method is deprecated. Please set these arguments in the constructor instead.
         """
         ...
-    
+
     def check_streamable(self): # -> None:
         ...
-    
+
     def as_example(self, input_data: str | None) -> str:
         ...
-    
+
 
 

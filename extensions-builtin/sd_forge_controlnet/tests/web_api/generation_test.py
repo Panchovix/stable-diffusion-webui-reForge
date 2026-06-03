@@ -92,7 +92,7 @@ def test_save_map(gen_type, save_map):
 @disable_in_cq
 def test_masked_controlnet_txt2img():
     assert APITestTemplate(
-        f"test_masked_controlnet_txt2img",
+        "test_masked_controlnet_txt2img",
         "txt2img",
         payload_overrides={},
         unit_overrides={
@@ -105,7 +105,7 @@ def test_masked_controlnet_txt2img():
 @disable_in_cq
 def test_masked_controlnet_img2img():
     assert APITestTemplate(
-        f"test_masked_controlnet_img2img",
+        "test_masked_controlnet_img2img",
         "img2img",
         payload_overrides={
             "init_images": [girl_img],

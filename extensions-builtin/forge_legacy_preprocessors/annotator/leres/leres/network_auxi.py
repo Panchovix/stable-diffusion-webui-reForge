@@ -23,14 +23,14 @@ class Decoder(nn.Module):
         self.conv = FTB(inchannels=self.inchannels[3], midchannels=self.midchannels[3])
         self.conv1 = nn.Conv2d(in_channels=self.midchannels[3], out_channels=self.midchannels[2], kernel_size=3, padding=1, stride=1, bias=True)
         self.upsample = nn.Upsample(scale_factor=self.upfactors[3], mode='bilinear', align_corners=True)
-        
+
         self.ffm2 = FFM(inchannels=self.inchannels[2], midchannels=self.midchannels[2], outchannels = self.midchannels[2], upfactor=self.upfactors[2])
         self.ffm1 = FFM(inchannels=self.inchannels[1], midchannels=self.midchannels[1], outchannels = self.midchannels[1], upfactor=self.upfactors[1])
         self.ffm0 = FFM(inchannels=self.inchannels[0], midchannels=self.midchannels[0], outchannels = self.midchannels[0], upfactor=self.upfactors[0])
-        
+
         self.outconv = AO(inchannels=self.midchannels[0], outchannels=self.outchannels, upfactor=2)
         self._init_params()
-        
+
     def _init_params(self):
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -48,7 +48,7 @@ class Decoder(nn.Module):
                 init.normal_(m.weight, std=0.01)
                 if m.bias is not None:
                     init.constant_(m.bias, 0)
-                    
+
     def forward(self, features):
         x_32x = self.conv(features[3])  # 1/32
         x_32 = self.conv1(x_32x)

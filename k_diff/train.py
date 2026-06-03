@@ -11,11 +11,11 @@ from pathlib import Path
 
 import accelerate
 import torch
-from torch import nn, optim
+from torch import optim
 from torch import multiprocessing as mp
 from torch.utils import data
 from torchvision import datasets, transforms, utils
-from tqdm.auto import trange, tqdm
+from tqdm.auto import tqdm
 
 import k_diffusion as K
 

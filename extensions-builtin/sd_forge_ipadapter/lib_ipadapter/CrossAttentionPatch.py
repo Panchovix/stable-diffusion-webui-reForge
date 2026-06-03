@@ -32,7 +32,7 @@ class Attn2Replace:
                 out = out + callback(out, q, k, v, extra_options, **device_kwargs[i])
 
         return out.to(dtype=dtype)
-    
+
     def to(self, device, *args, **kwargs):
         if not isinstance(device, torch.device):
             return self
@@ -47,11 +47,11 @@ class Attn2Replace:
             return self
         if self.kwargs[0]["cond"].device == device:
             return self
-        
+
         new_kwargs = []
         for kwargs_dict in self.kwargs:
             new_kwargs.append(kwargs_dict.copy())
-        
+
         for kwargs_dict in new_kwargs:
             for key, value in kwargs_dict.items():
                 if key == "ipadapter":
@@ -64,7 +64,7 @@ class Attn2Replace:
 
 def ipadapter_attention(out, q, k, v, extra_options, module_key='', ipadapter=None, weight=1.0, cond=None, cond_alt=None, uncond=None, weight_type="linear", mask=None, sigma_start=0.0, sigma_end=1.0, unfold_batch=False, embeds_scaling='V only', **kwargs):
     ipadapter = ipadapter.get_multigpu_clone(q.device)
-    
+
     dtype = q.dtype
     cond_or_uncond = extra_options["cond_or_uncond"]
     block_type = extra_options["block"][0]
@@ -170,7 +170,7 @@ def ipadapter_attention(out, q, k, v, extra_options, module_key='', ipadapter=No
             weight = weight.repeat(len(cond_or_uncond), 1, 1) # repeat for cond and uncond
         elif weight == 0:
             return 0
-        
+
         k_cond = ipadapter.ip_layers.to_kvs[k_key](cond).repeat(batch_prompt, 1, 1)
         k_uncond = ipadapter.ip_layers.to_kvs[k_key](uncond).repeat(batch_prompt, 1, 1)
         v_cond = ipadapter.ip_layers.to_kvs[v_key](cond).repeat(batch_prompt, 1, 1)

@@ -47,7 +47,7 @@ class StableCascade_EmptyLatentImage:
         }, {
             "samples": b_latent,
         })
-    
+
 class StableCascade_StageC_VAEEncode:
     def __init__(self, device="cpu"):
         self.device = device

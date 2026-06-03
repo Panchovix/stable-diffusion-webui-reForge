@@ -14,7 +14,7 @@ class TextArea(components.Textbox):
     is_template = ...
     def __init__(self, value: str | Callable | None = ..., *, lines: int = ..., max_lines: int = ..., placeholder: str | None = ..., label: str | None = ..., show_label: bool = ..., interactive: bool | None = ..., visible: bool = ..., elem_id: str | None = ..., **kwargs) -> None:
         ...
-    
+
 
 
 class Webcam(components.Image):
@@ -24,7 +24,7 @@ class Webcam(components.Image):
     is_template = ...
     def __init__(self, value: str | Image | np.ndarray | None = ..., *, shape: tuple[int, int] | None = ..., image_mode: Literal["RGB", "L"] = ..., invert_colors: bool = ..., source: Literal["webcam"] = ..., tool: Literal["editor", "select", "sketch", "color-sketch"] | None = ..., type: Literal["numpy", "pil", "filepath"] = ..., label: str | None = ..., show_label: bool = ..., interactive: bool | None = ..., visible: bool = ..., streaming: bool = ..., elem_id: str | None = ..., mirror_webcam: bool = ..., brush_radius: float | None = ..., brush_color: str = ..., **kwargs) -> None:
         ...
-    
+
 
 
 class Sketchpad(components.Image):
@@ -34,7 +34,7 @@ class Sketchpad(components.Image):
     is_template = ...
     def __init__(self, value: str | Image | np.ndarray | None = ..., *, shape: tuple[int, int] = ..., image_mode: Literal["L"] = ..., invert_colors: bool = ..., source: Literal["canvas"] = ..., tool: Literal["editor", "select", "sketch", "color-sketch"] | None = ..., type: Literal["numpy", "pil", "filepath"] = ..., label: str | None = ..., show_label: bool = ..., interactive: bool | None = ..., visible: bool = ..., streaming: bool = ..., elem_id: str | None = ..., mirror_webcam: bool = ..., brush_radius: float | None = ..., brush_color: str = ..., **kwargs) -> None:
         ...
-    
+
 
 
 class Paint(components.Image):
@@ -44,7 +44,7 @@ class Paint(components.Image):
     is_template = ...
     def __init__(self, value: str | Image | np.ndarray | None = ..., *, shape: tuple[int, int] | None = ..., image_mode: Literal["RGB"] = ..., invert_colors: bool = ..., source: Literal["canvas"] = ..., tool: Literal["color-sketch"] = ..., type: Literal["numpy", "pil", "filepath"] = ..., label: str | None = ..., show_label: bool = ..., interactive: bool | None = ..., visible: bool = ..., streaming: bool = ..., elem_id: str | None = ..., mirror_webcam: bool = ..., brush_radius: float | None = ..., brush_color: str = ..., **kwargs) -> None:
         ...
-    
+
 
 
 class ImageMask(components.Image):
@@ -54,7 +54,7 @@ class ImageMask(components.Image):
     is_template = ...
     def __init__(self, value: str | Image | np.ndarray | None = ..., *, shape: tuple[int, int] | None = ..., image_mode: Literal["RGB", "L"] = ..., invert_colors: bool = ..., source: Literal["upload"] = ..., tool: Literal["sketch"] = ..., type: Literal["numpy", "pil", "filepath"] = ..., label: str | None = ..., show_label: bool = ..., interactive: bool | None = ..., visible: bool = ..., streaming: bool = ..., elem_id: str | None = ..., mirror_webcam: bool = ..., brush_radius: float | None = ..., brush_color: str = ..., **kwargs) -> None:
         ...
-    
+
 
 
 class ImagePaint(components.Image):
@@ -64,7 +64,7 @@ class ImagePaint(components.Image):
     is_template = ...
     def __init__(self, value: str | Image | np.ndarray | None = ..., *, shape: tuple[int, int] | None = ..., image_mode: Literal["RGB", "L"] = ..., invert_colors: bool = ..., source: Literal["upload"] = ..., tool: Literal["color-sketch"] = ..., type: Literal["numpy", "pil", "filepath"] = ..., label: str | None = ..., show_label: bool = ..., interactive: bool | None = ..., visible: bool = ..., streaming: bool = ..., elem_id: str | None = ..., mirror_webcam: bool = ..., brush_radius: float | None = ..., brush_color: str = ..., **kwargs) -> None:
         ...
-    
+
 
 
 class Pil(components.Image):
@@ -74,7 +74,7 @@ class Pil(components.Image):
     is_template = ...
     def __init__(self, value: str | Image | np.ndarray | None = ..., *, shape: tuple[int, int] | None = ..., image_mode: Literal["RGB", "L"] = ..., invert_colors: bool = ..., source: Literal["upload", "webcam", "canvas"] = ..., tool: Literal["editor", "select", "sketch", "color-sketch"] | None = ..., type: Literal["pil"] = ..., label: str | None = ..., show_label: bool = ..., interactive: bool | None = ..., visible: bool = ..., streaming: bool = ..., elem_id: str | None = ..., mirror_webcam: bool = ..., brush_radius: float | None = ..., brush_color: str = ..., **kwargs) -> None:
         ...
-    
+
 
 
 class PlayableVideo(components.Video):
@@ -84,7 +84,7 @@ class PlayableVideo(components.Video):
     is_template = ...
     def __init__(self, value: str | Callable | None = ..., *, format: Literal["mp4"] | None = ..., source: Literal["upload", "webcam"] = ..., label: str | None = ..., show_label: bool = ..., interactive: bool | None = ..., visible: bool = ..., elem_id: str | None = ..., mirror_webcam: bool = ..., include_audio: bool | None = ..., **kwargs) -> None:
         ...
-    
+
 
 
 class Microphone(components.Audio):
@@ -94,7 +94,7 @@ class Microphone(components.Audio):
     is_template = ...
     def __init__(self, value: str | tuple[int, np.ndarray] | Callable | None = ..., *, source: Literal["microphone"] = ..., type: Literal["numpy", "filepath"] = ..., label: str | None = ..., show_label: bool = ..., interactive: bool | None = ..., visible: bool = ..., streaming: bool = ..., elem_id: str | None = ..., **kwargs) -> None:
         ...
-    
+
 
 
 class Files(components.File):
@@ -104,7 +104,7 @@ class Files(components.File):
     is_template = ...
     def __init__(self, value: str | list[str] | Callable | None = ..., *, file_count: Literal["multiple"] = ..., type: Literal["file", "binary"] = ..., label: str | None = ..., show_label: bool = ..., interactive: bool | None = ..., visible: bool = ..., elem_id: str | None = ..., **kwargs) -> None:
         ...
-    
+
 
 
 class Numpy(components.Dataframe):
@@ -114,7 +114,7 @@ class Numpy(components.Dataframe):
     is_template = ...
     def __init__(self, value: list[list[Any]] | Callable | None = ..., *, headers: list[str] | None = ..., row_count: int | tuple[int, str] = ..., col_count: int | tuple[int, str] | None = ..., datatype: str | list[str] = ..., type: Literal["numpy"] = ..., max_rows: int | None = ..., max_cols: int | None = ..., overflow_row_behaviour: Literal["paginate", "show_ends"] = ..., label: str | None = ..., show_label: bool = ..., interactive: bool | None = ..., visible: bool = ..., elem_id: str | None = ..., wrap: bool = ..., **kwargs) -> None:
         ...
-    
+
 
 
 class Matrix(components.Dataframe):
@@ -124,7 +124,7 @@ class Matrix(components.Dataframe):
     is_template = ...
     def __init__(self, value: list[list[Any]] | Callable | None = ..., *, headers: list[str] | None = ..., row_count: int | tuple[int, str] = ..., col_count: int | tuple[int, str] | None = ..., datatype: str | list[str] = ..., type: Literal["array"] = ..., max_rows: int | None = ..., max_cols: int | None = ..., overflow_row_behaviour: Literal["paginate", "show_ends"] = ..., label: str | None = ..., show_label: bool = ..., interactive: bool | None = ..., visible: bool = ..., elem_id: str | None = ..., wrap: bool = ..., **kwargs) -> None:
         ...
-    
+
 
 
 class List(components.Dataframe):
@@ -134,7 +134,7 @@ class List(components.Dataframe):
     is_template = ...
     def __init__(self, value: list[list[Any]] | Callable | None = ..., *, headers: list[str] | None = ..., row_count: int | tuple[int, str] = ..., col_count: Literal[1] = ..., datatype: str | list[str] = ..., type: Literal["array"] = ..., max_rows: int | None = ..., max_cols: int | None = ..., overflow_row_behaviour: Literal["paginate", "show_ends"] = ..., label: str | None = ..., show_label: bool = ..., interactive: bool | None = ..., visible: bool = ..., elem_id: str | None = ..., wrap: bool = ..., **kwargs) -> None:
         ...
-    
+
 
 
 Mic = Microphone

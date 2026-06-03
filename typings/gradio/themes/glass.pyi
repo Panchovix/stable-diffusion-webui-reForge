@@ -9,6 +9,6 @@ from gradio.themes.utils import colors, fonts, sizes
 class Glass(Base):
     def __init__(self, *, primary_hue: colors.Color | str = ..., secondary_hue: colors.Color | str = ..., neutral_hue: colors.Color | str = ..., spacing_size: sizes.Size | str = ..., radius_size: sizes.Size | str = ..., text_size: sizes.Size | str = ..., font: fonts.Font | str | Iterable[fonts.Font | str] = ..., font_mono: fonts.Font | str | Iterable[fonts.Font | str] = ...) -> None:
         ...
-    
+
 
 

@@ -37,14 +37,14 @@ class UploadButton(Clickable, Uploadable, IOComponent, FileSerializable):
             file_types: List of type of files to be uploaded. "file" allows any file to be uploaded, "image" allows only image files to be uploaded, "audio" allows only audio files to be uploaded, "video" allows only video files to be uploaded, "text" allows only text files to be uploaded.
         """
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         ...
-    
+
     @staticmethod
     def update(value: str | list[str] | Literal[_Keywords.NO_VALUE] | None = ..., label: str | None = ..., size: Literal["sm", "lg"] | None = ..., variant: Literal["primary", "secondary", "stop"] | None = ..., interactive: bool | None = ..., visible: bool | None = ..., scale: int | None = ..., min_width: int | None = ...): # -> dict[str, Any]:
         ...
-    
+
     def preprocess(self, x: list[dict[str, Any]] | None) -> (bytes | tempfile._TemporaryFileWrapper | list[bytes | tempfile._TemporaryFileWrapper] | None):
         """
         Parameters:
@@ -53,12 +53,12 @@ class UploadButton(Clickable, Uploadable, IOComponent, FileSerializable):
             File objects in requested format
         """
         ...
-    
+
     def style(self, *, full_width: bool | None = ..., size: Literal["sm", "lg"] | None = ..., **kwargs): # -> Self:
         """
         This method is deprecated. Please set these arguments in the constructor instead.
         """
         ...
-    
+
 
 

@@ -42,7 +42,6 @@ import numpy as np
 import torch
 
 if TYPE_CHECKING:
-    from mlx_pipeline.unet import SDXLUNet
     from modules_forge.unet_patcher import UnetPatcher
 
 log = logging.getLogger(__name__)

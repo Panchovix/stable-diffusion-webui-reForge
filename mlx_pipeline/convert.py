@@ -25,7 +25,7 @@ transformation is needed between stages 2 and the load call.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, List, Tuple
 
 import numpy as np
 
@@ -174,7 +174,6 @@ def load_weights_from_ldm(
     # in the ldm checkpoint) remain at their default dtype (float32).
     # One sweep ensures uniform bfloat16 throughout and preserves MLX's
     # dtype-propagation guarantee (output dtype follows parameter dtype).
-    import mlx.nn as _nn
     mlx_unet.apply(lambda x: x.astype(mx.bfloat16))
 
     # Force evaluation so Metal kernel compilation happens at load time

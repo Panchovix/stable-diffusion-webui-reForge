@@ -11,7 +11,7 @@ class SDXLClipG(sd1_clip.SDClipModel):
         textmodel_json_config = os.path.join(os.path.dirname(os.path.realpath(__file__)), "clip_config_bigg.json")
         model_options = {**model_options, "model_name": "clip_g"}
         super().__init__(device=device, freeze=freeze, layer=layer, layer_idx=layer_idx, textmodel_json_config=textmodel_json_config, dtype=dtype,
-                         special_tokens={"start": 49406, "end": 49407, "pad": 0}, layer_norm_hidden_state=False, 
+                         special_tokens={"start": 49406, "end": 49407, "pad": 0}, layer_norm_hidden_state=False,
                          return_projected_pooled=True, model_options=model_options)
 
     def load_sd(self, sd):
@@ -59,24 +59,24 @@ class SDXLClipModel(torch.nn.Module):
     def encode_token_weights(self, token_weight_pairs):
         token_weight_pairs_g = token_weight_pairs["g"]
         token_weight_pairs_l = token_weight_pairs["l"]
-        
+
         g_out = self.clip_g.encode_token_weights(token_weight_pairs_g)
         l_out = self.clip_l.encode_token_weights(token_weight_pairs_l)
-        
+
         # Handle the case where encode_token_weights returns more than 2 values
         if isinstance(g_out, tuple) and len(g_out) > 2:
             g_out_tensor, g_pooled = g_out[:2]
         else:
             g_out_tensor, g_pooled = g_out
-            
+
         if isinstance(l_out, tuple) and len(l_out) > 2:
             l_out_tensor, l_pooled = l_out[:2]
         else:
             l_out_tensor, l_pooled = l_out
-        
+
         # Ensure the tensors have compatible dimensions before concatenating
         cut_to = min(l_out_tensor.shape[1], g_out_tensor.shape[1])
-        
+
         # Return the concatenated output and the pooled output from g
         return torch.cat([l_out_tensor[:,:cut_to], g_out_tensor[:,:cut_to]], dim=-1), g_pooled
 
@@ -112,4 +112,3 @@ class StableCascadeClipG(sd1_clip.SDClipModel):
 class StableCascadeClipModel(sd1_clip.SD1ClipModel):
     def __init__(self, device="cpu", dtype=None, model_options={}):
         super().__init__(device=device, dtype=dtype, clip_name="g", clip_model=StableCascadeClipG, model_options=model_options)
-        

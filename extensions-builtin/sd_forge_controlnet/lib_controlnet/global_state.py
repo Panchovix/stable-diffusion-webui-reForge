@@ -6,7 +6,7 @@ from modules import shared, sd_models
 from lib_controlnet.enums import StableDiffusionVersion
 from modules_forge.shared import controlnet_dir, supported_preprocessors
 
-from typing import Dict, Tuple, List
+from typing import Tuple, List
 
 CN_MODEL_EXTS = [".pt", ".pth", ".ckpt", ".safetensors", ".bin", ".patch"]
 
@@ -86,7 +86,7 @@ def get_all_preprocessor_names():
 
 def get_all_preprocessor_tags():
     tags = []
-    for k, p in supported_preprocessors.items():
+    for _, p in supported_preprocessors.items():
         tags += p.tags
     tags = list(set(tags))
     tags = sorted(tags)

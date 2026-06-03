@@ -56,13 +56,13 @@ class APGIsNowYourCFGScript(scripts.Script):
                     value=self.apg_norm_thr,
                 )
                 apg_eta = gr.Slider(
-                    label="APG Eta", 
-                    minimum=0.0, 
-                    maximum=2.0, 
-                    step=0.1, 
+                    label="APG Eta",
+                    minimum=0.0,
+                    maximum=2.0,
+                    step=0.1,
                     value=self.apg_eta
                 )
-            
+
             # Guidance Limiter Section
             gr.HTML("<br><p><b>Guidance Limiter Settings</b></p>")
             guidance_limiter_enabled = gr.Checkbox(
@@ -149,7 +149,7 @@ class APGIsNowYourCFGScript(scripts.Script):
         unet = APG_ImYourCFGNow().patch(unet, **patch_params)[0]
 
         p.sd_model.forge_objects.unet = unet
-        
+
         # Only include enabled features in generation params
         args = {}
         if self.apg_enabled:
@@ -166,7 +166,7 @@ class APGIsNowYourCFGScript(scripts.Script):
                 "guidance_sigma_start": self.guidance_sigma_start,
                 "guidance_sigma_end": self.guidance_sigma_end,
             })
-            
+
         p.extra_generation_params.update(args)
         str_args:str = ", ".join([f"{k}:\"{v}\"" for k,v in args.items()])
         logging.debug("WOLOLO: \"APG is now your CFG!\"")

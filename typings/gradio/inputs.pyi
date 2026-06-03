@@ -16,7 +16,7 @@ def warn_inputs_deprecation(): # -> None:
 class Textbox(components.Textbox):
     def __init__(self, lines: int = ..., placeholder: Optional[str] = ..., default: str = ..., numeric: Optional[bool] = ..., type: Optional[str] = ..., label: Optional[str] = ..., optional: bool = ...) -> None:
         ...
-    
+
 
 
 class Number(components.Number):
@@ -32,7 +32,7 @@ class Number(components.Number):
         optional (bool): If True, the interface can be submitted with no value for this component.
         """
         ...
-    
+
 
 
 class Slider(components.Slider):
@@ -51,7 +51,7 @@ class Slider(components.Slider):
         optional (bool): this parameter is ignored.
         """
         ...
-    
+
 
 
 class Checkbox(components.Checkbox):
@@ -67,7 +67,7 @@ class Checkbox(components.Checkbox):
         optional (bool): this parameter is ignored.
         """
         ...
-    
+
 
 
 class CheckboxGroup(components.CheckboxGroup):
@@ -85,7 +85,7 @@ class CheckboxGroup(components.CheckboxGroup):
         optional (bool): this parameter is ignored.
         """
         ...
-    
+
 
 
 class Radio(components.Radio):
@@ -103,7 +103,7 @@ class Radio(components.Radio):
         optional (bool): this parameter is ignored.
         """
         ...
-    
+
 
 
 class Dropdown(components.Dropdown):
@@ -121,7 +121,7 @@ class Dropdown(components.Dropdown):
         optional (bool): this parameter is ignored.
         """
         ...
-    
+
 
 
 class Image(components.Image):
@@ -142,7 +142,7 @@ class Image(components.Image):
         optional (bool): If True, the interface can be submitted with no uploaded image, in which case the input value is None.
         """
         ...
-    
+
 
 
 class Video(components.Video):
@@ -160,7 +160,7 @@ class Video(components.Video):
         optional (bool): If True, the interface can be submitted with no uploaded video, in which case the input value is None.
         """
         ...
-    
+
 
 
 class Audio(components.Audio):
@@ -177,7 +177,7 @@ class Audio(components.Audio):
         optional (bool): If True, the interface can be submitted with no uploaded audio, in which case the input value is None.
         """
         ...
-    
+
 
 
 class File(components.File):
@@ -195,7 +195,7 @@ class File(components.File):
         optional (bool): If True, the interface can be submitted with no uploaded image, in which case the input value is None.
         """
         ...
-    
+
 
 
 class Dataframe(components.Dataframe):
@@ -217,7 +217,7 @@ class Dataframe(components.Dataframe):
         optional (bool): this parameter is ignored.
         """
         ...
-    
+
 
 
 class Timeseries(components.Timeseries):
@@ -234,7 +234,7 @@ class Timeseries(components.Timeseries):
         optional (bool): If True, the interface can be submitted with no uploaded csv file, in which case the input value is None.
         """
         ...
-    
+
 
 
 class State(components.State):
@@ -250,7 +250,7 @@ class State(components.State):
         optional (bool): this parameter is ignored.
         """
         ...
-    
+
 
 
 class Image3D(components.Model3D):
@@ -265,6 +265,6 @@ class Image3D(components.Model3D):
         optional (bool): If True, the interface can be submitted with no uploaded image, in which case the input value is None.
         """
         ...
-    
+
 
 

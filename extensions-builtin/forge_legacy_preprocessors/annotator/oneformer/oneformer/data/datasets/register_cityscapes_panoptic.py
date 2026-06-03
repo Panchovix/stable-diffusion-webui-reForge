@@ -83,10 +83,10 @@ def load_cityscapes_panoptic(image_dir, gt_dir, gt_json, meta):
         gt_json
     ), "Please run `python cityscapesscripts/preparation/createPanopticImgs.py` to generate label files."  # noqa
 
-    
+
     with open(gt_json) as f:
         json_info = json.load(f)
-    
+
     files = get_cityscapes_panoptic_files(image_dir, gt_dir, json_info)
     ret = []
     for image_file, label_file, segments_info in files:

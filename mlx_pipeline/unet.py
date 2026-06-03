@@ -439,7 +439,7 @@ class CrossAttnDownBlock2D(nn.Module):
         encoder_hidden_states: mx.array,
     ) -> Tuple[mx.array, List[mx.array]]:
         skips = []
-        for resnet, attn in zip(self.resnets, self.attentions):
+        for resnet, attn in zip(self.resnets, self.attentions, strict=False):
             x = resnet(x, temb)
             x = attn(x, encoder_hidden_states)
             skips.append(x)
@@ -530,7 +530,7 @@ class CrossAttnUpBlock2D(nn.Module):
         res_hidden_states_tuple: Tuple[mx.array, ...],
     ) -> mx.array:
         for resnet, attn, skip in zip(
-            self.resnets, self.attentions, res_hidden_states_tuple
+            self.resnets, self.attentions, res_hidden_states_tuple, strict=False
         ):
             x = mx.concatenate([x, skip], axis=-1)  # NHWC → concat on C
             x = resnet(x, temb)
@@ -565,7 +565,7 @@ class UpBlock2D(nn.Module):
         temb: mx.array,
         res_hidden_states_tuple: Tuple[mx.array, ...],
     ) -> mx.array:
-        for resnet, skip in zip(self.resnets, res_hidden_states_tuple):
+        for resnet, skip in zip(self.resnets, res_hidden_states_tuple, strict=False):
             x = mx.concatenate([x, skip], axis=-1)
             x = resnet(x, temb)
         if self.upsamplers:
@@ -784,7 +784,7 @@ class SDXLUNet(nn.Module):
         sample = self.mid_block(sample, temb, encoder_hidden_states)
 
         # ── 7. Up path ────────────────────────────────────────────────────────
-        for i, block in enumerate(self.up_blocks):
+        for _, block in enumerate(self.up_blocks):
             # Each up block consumes layers_per_block+1 = 3 skip tensors
             n = len(block.resnets)
             res_samples = tuple(

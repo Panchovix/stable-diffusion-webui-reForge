@@ -1,7 +1,6 @@
 from functools import partial
 import json
 import math
-import warnings
 
 from jsonmerge import merge
 

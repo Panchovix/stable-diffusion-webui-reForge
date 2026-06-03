@@ -2,12 +2,10 @@
 #and modified
 
 import torch
-import torch as th
 import torch.nn as nn
 from typing import Optional
 
 from ldm_patched.ldm.modules.diffusionmodules.util import (
-    zero_module,
     timestep_embedding,
 )
 

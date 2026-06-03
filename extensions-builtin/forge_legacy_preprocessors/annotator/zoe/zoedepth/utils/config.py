@@ -423,7 +423,7 @@ def get_config(model_name, mode='train', dataset=None, **overwrite_kwargs):
     if dataset is not None:
         config['dataset'] = dataset
         config = {**DATASETS_CONFIG[dataset], **config}
-        
+
 
     config['model'] = model_name
     typed_config = {k: infer_type(v) for k, v in config.items()}

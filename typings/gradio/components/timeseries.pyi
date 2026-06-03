@@ -38,14 +38,14 @@ class Timeseries(Changeable, IOComponent, JSONSerializable):
             elem_classes: An optional list of strings that are assigned as the classes of this component in the HTML DOM. Can be used for targeting CSS styles.
         """
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         ...
-    
+
     @staticmethod
     def update(value: Any | Literal[_Keywords.NO_VALUE] | None = ..., colors: list[str] | None = ..., label: str | None = ..., show_label: bool | None = ..., container: bool | None = ..., scale: int | None = ..., min_width: int | None = ..., interactive: bool | None = ..., visible: bool | None = ...): # -> dict[str, Any]:
         ...
-    
+
     def preprocess(self, x: dict | None) -> pd.DataFrame | None:
         """
         Parameters:
@@ -54,7 +54,7 @@ class Timeseries(Changeable, IOComponent, JSONSerializable):
             Dataframe of timeseries data
         """
         ...
-    
+
     def postprocess(self, y: str | pd.DataFrame | None) -> dict | None:
         """
         Parameters:
@@ -63,9 +63,9 @@ class Timeseries(Changeable, IOComponent, JSONSerializable):
             JSON object with key 'headers' for list of header names, 'data' for 2D array of string or numeric data
         """
         ...
-    
+
     def as_example(self, input_data: str | None) -> str:
         ...
-    
+
 
 

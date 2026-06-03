@@ -3,14 +3,13 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import time
+from typing import Any
 
-from fastapi.middleware import Middleware
 
 from modules import timer
 from modules import initialize_util
 from modules import initialize
 from threading import Thread
-from modules.api.api import Api
 from modules.api.api import Api
 from modules_forge.initialization import initialize_forge
 from modules_forge import main_thread
@@ -94,7 +93,7 @@ def warning_if_invalid_install_dir() -> None:
                   For more information see: https://github.com/AUTOMATIC1111/stable-diffusion-webui/issues/13292
                   {"!"*25} Warning {"!"*25}''')
                   """
-            
+
 
 
 def webui_worker() -> None:

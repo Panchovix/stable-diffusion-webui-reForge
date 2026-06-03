@@ -55,13 +55,13 @@ class ScatterPlot(Plot):
             elem_classes: An optional list of strings that are assigned as the classes of this component in the HTML DOM. Can be used for targeting CSS styles.
         """
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         ...
-    
+
     def get_block_name(self) -> str:
         ...
-    
+
     @staticmethod
     def update(value: pd.DataFrame | dict | Literal[_Keywords.NO_VALUE] = ..., x: str | None = ..., y: str | None = ..., color: str | None = ..., size: str | None = ..., shape: str | None = ..., title: str | None = ..., tooltip: list[str] | str | None = ..., x_title: str | None = ..., y_title: str | None = ..., x_label_angle: float | None = ..., y_label_angle: float | None = ..., color_legend_title: str | None = ..., size_legend_title: str | None = ..., shape_legend_title: str | None = ..., color_legend_position: Literal["left", "right", "top", "bottom", "top-left", "top-right", "bottom-left", "bottom-right", "none",] | None = ..., size_legend_position: Literal["left", "right", "top", "bottom", "top-left", "top-right", "bottom-left", "bottom-right", "none",] | None = ..., shape_legend_position: Literal["left", "right", "top", "bottom", "top-left", "top-right", "bottom-left", "bottom-right", "none",] | None = ..., height: int | None = ..., width: int | None = ..., x_lim: list[int | float] | None = ..., y_lim: list[int | float] | None = ..., interactive: bool | None = ..., caption: str | None = ..., label: str | None = ..., show_label: bool | None = ..., container: bool | None = ..., scale: int | None = ..., min_width: int | None = ..., visible: bool | None = ...): # -> dict[str, Any]:
         """Update an existing plot component.
@@ -98,14 +98,14 @@ class ScatterPlot(Plot):
             visible: Whether the plot should be visible.
         """
         ...
-    
+
     @staticmethod
     def create_plot(value: pd.DataFrame, x: str, y: str, color: str | None = ..., size: str | None = ..., shape: str | None = ..., title: str | None = ..., tooltip: list[str] | str | None = ..., x_title: str | None = ..., y_title: str | None = ..., x_label_angle: float | None = ..., y_label_angle: float | None = ..., color_legend_title: str | None = ..., size_legend_title: str | None = ..., shape_legend_title: str | None = ..., color_legend_position: Literal["left", "right", "top", "bottom", "top-left", "top-right", "bottom-left", "bottom-right", "none",] | None = ..., size_legend_position: Literal["left", "right", "top", "bottom", "top-left", "top-right", "bottom-left", "bottom-right", "none",] | None = ..., shape_legend_position: Literal["left", "right", "top", "bottom", "top-left", "top-right", "bottom-left", "bottom-right", "none",] | None = ..., height: int | None = ..., width: int | None = ..., x_lim: list[int | float] | None = ..., y_lim: list[int | float] | None = ..., interactive: bool | None = ...): # -> Chart:
         """Helper for creating the scatter plot."""
         ...
-    
+
     def postprocess(self, y: pd.DataFrame | dict | None) -> dict[str, str] | None:
         ...
-    
+
 
 

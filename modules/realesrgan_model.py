@@ -2,7 +2,6 @@ import os
 from functools import lru_cache
 from modules import modelloader, devices, errors
 import modules.shared as shared
-from modules.shared import cmd_opts
 from modules.upscaler import Upscaler, UpscalerData
 from modules.upscaler_utils import upscale_with_model
 from modules_forge.forge_util import prepare_free_memory

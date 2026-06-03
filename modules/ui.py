@@ -17,7 +17,7 @@ from modules.call_queue import wrap_gradio_gpu_call, wrap_queued_call, wrap_grad
 
 from modules import gradio_extensons  # noqa: F401
 from modules import sd_hijack, sd_models, script_callbacks, ui_extensions, deepbooru, extra_networks, ui_common, ui_postprocessing, progress, ui_loadsave, shared_items, ui_settings, timer, sysinfo, ui_checkpoint_merger, scripts, sd_samplers, sd_schedulers, processing, ui_extra_networks, ui_toprow, launch_utils
-from modules.ui_components import FormGroup, ToolButton, FormHTML, FormRow, FormColumn, InputAccordion, ResizeHandleRow
+from modules.ui_components import FormGroup, ToolButton, FormHTML, FormRow, InputAccordion, ResizeHandleRow
 from modules.paths import script_path
 from modules.ui_common import create_refresh_button
 from modules.ui_gradio_extensions import reload_javascript
@@ -186,7 +186,7 @@ def update_token_counter(text, steps, styles, *, is_positive=True) -> str:
         cond_stage_model = sd_models.model_data.sd_model.cond_stage_model
         assert cond_stage_model is not None
     except Exception:
-        return f"<span class='gr-box gr-text-input'>?/?</span>"
+        return "<span class='gr-box gr-text-input'>?/?</span>"
 
     flat_prompts = reduce(lambda list1, list2: list1+list2, prompt_schedules)
     prompts = [prompt_text for step, prompt_text in flat_prompts]
@@ -282,7 +282,7 @@ def create_ui() -> gr.Blocks:
         extra_tabs.__enter__()
 
         with gr.Tab("Generation", id="txt2img_generation") as txt2img_generation_tab:
-            with ExitStack() as stack: 
+            with ExitStack() as stack:
                 if shared.opts.txt2img_settings_accordion:
                     stack.enter_context(gr.Accordion("Open for Settings", open=False))
                 stack.enter_context(gr.Column(variant='compact', elem_id="txt2img_settings"))
@@ -517,14 +517,14 @@ def create_ui() -> gr.Blocks:
     scripts.scripts_current = scripts.scripts_img2img
     scripts.scripts_img2img.initialize_scripts(is_img2img=True)
 
-    with gr.Blocks(analytics_enabled=False) as img2img_interface: 
+    with gr.Blocks(analytics_enabled=False) as img2img_interface:
         toprow: ui_toprow.Toprow[bool] = ui_toprow.Toprow(is_img2img=True, is_compact=shared.opts.compact_prompt_box)
 
         extra_tabs = gr.Tabs(elem_id="img2img_extra_tabs", elem_classes=["extra-networks"])
         extra_tabs.__enter__()
 
         with gr.Tab("Generation", id="img2img_generation") as img2img_generation_tab:
-            with ExitStack() as stack: 
+            with ExitStack() as stack:
                 if shared.opts.img2img_settings_accordion:
                     stack.enter_context(gr.Accordion("Open for Settings", open=False))
                 stack.enter_context(gr.Column(variant='compact', elem_id="img2img_settings"))
@@ -555,11 +555,11 @@ def create_ui() -> gr.Blocks:
                         with gr.Tabs(elem_id="mode_img2img"):
                             img2img_selected_tab = gr.Number(value=0, visible=False)
 
-                            with gr.TabItem('img2img', id='img2img', elem_id="img2img_img2img_tab") as tab_img2img: 
+                            with gr.TabItem('img2img', id='img2img', elem_id="img2img_img2img_tab") as tab_img2img:
                                 init_img = gr.Image(label="Image for img2img", elem_id="img2img_image", show_label=False, source="upload", interactive=True, type="pil", tool="editor", image_mode="RGBA", height=shared.opts.img2img_editor_height)
                                 add_copy_image_controls('img2img', init_img)
 
-                            with gr.TabItem('Sketch', id='img2img_sketch', elem_id="img2img_img2img_sketch_tab") as tab_sketch: 
+                            with gr.TabItem('Sketch', id='img2img_sketch', elem_id="img2img_img2img_sketch_tab") as tab_sketch:
                                 sketch = gr.Image(label="Image for img2img", elem_id="img2img_sketch", show_label=False, source="upload", interactive=True, type="pil", tool="color-sketch", image_mode="RGB", height=shared.opts.img2img_editor_height, brush_color=shared.opts.img2img_sketch_default_brush_color)
                                 add_copy_image_controls('sketch', sketch)
 
@@ -567,7 +567,7 @@ def create_ui() -> gr.Blocks:
                                 init_img_with_mask = gr.Image(label="Image for inpainting with mask", show_label=False, elem_id="img2maskimg", source="upload", interactive=True, type="pil", tool="sketch", image_mode="RGBA", height=shared.opts.img2img_editor_height, brush_color=shared.opts.img2img_inpaint_mask_brush_color)
                                 add_copy_image_controls('inpaint', init_img_with_mask)
 
-                            with gr.TabItem('Inpaint sketch', id='inpaint_sketch', elem_id="img2img_inpaint_sketch_tab") as tab_inpaint_color: 
+                            with gr.TabItem('Inpaint sketch', id='inpaint_sketch', elem_id="img2img_inpaint_sketch_tab") as tab_inpaint_color:
                                 inpaint_color_sketch = gr.Image(label="Color sketch inpainting", show_label=False, elem_id="inpaint_sketch", source="upload", interactive=True, type="pil", tool="color-sketch", image_mode="RGB", height=shared.opts.img2img_editor_height, brush_color=shared.opts.img2img_inpaint_sketch_default_brush_color)
                                 inpaint_color_sketch_orig = gr.State(None)
                                 add_copy_image_controls('inpaint_sketch', inpaint_color_sketch)
@@ -585,7 +585,7 @@ def create_ui() -> gr.Blocks:
                                 init_img_inpaint = gr.Image(label="Image for img2img", show_label=False, source="upload", interactive=True, type="pil", elem_id="img_inpaint_base")
                                 init_mask_inpaint = gr.Image(label="Mask", source="upload", interactive=True, type="pil", image_mode="RGBA", elem_id="img_inpaint_mask")
 
-                            with gr.TabItem('Batch', id='batch', elem_id="img2img_batch_tab") as tab_batch: 
+                            with gr.TabItem('Batch', id='batch', elem_id="img2img_batch_tab") as tab_batch:
                                 hidden: str = '<br>Disabled when launched with --hide-ui-dir-config.' if shared.cmd_opts.hide_ui_dir_config else ''
                                 gr.HTML(
                                     "<p style='padding-bottom: 1em;' class=\"text-gray-500\">Process images in a directory on the same machine where the server is running." +
@@ -693,7 +693,7 @@ def create_ui() -> gr.Blocks:
                                 batch_size = gr.Slider(minimum=1, maximum=50, step=1, label='Batch size', value=1, elem_id="img2img_batch_size")
 
                     elif category == "override_settings":
-                        with FormRow(elem_id="img2img_override_settings_row") as row: 
+                        with FormRow(elem_id="img2img_override_settings_row") as row:
                             override_settings: gr.Dropdown = create_override_settings_dropdown('img2img', row)
 
                     elif category == "scripts":
@@ -701,7 +701,7 @@ def create_ui() -> gr.Blocks:
                             custom_inputs = scripts.scripts_img2img.setup_ui()
 
                     elif category == "inpaint":
-                        with FormGroup(elem_id="inpaint_controls", visible=False) as inpaint_controls: 
+                        with FormGroup(elem_id="inpaint_controls", visible=False) as inpaint_controls:
                             with FormRow():
                                 mask_blur = gr.Slider(label='Mask blur', minimum=0, maximum=64, step=1, value=4, elem_id="img2img_mask_blur")
                                 mask_alpha = gr.Slider(label="Mask transparency", visible=False, elem_id="img2img_mask_alpha")
@@ -881,7 +881,7 @@ def create_ui() -> gr.Blocks:
     with gr.Blocks(analytics_enabled=False) as extras_interface:
         ui_postprocessing.create_ui()
 
-    with gr.Blocks(analytics_enabled=False) as pnginfo_interface: 
+    with gr.Blocks(analytics_enabled=False) as pnginfo_interface:
         with ResizeHandleRow(equal_height=False):
             with gr.Column(variant='panel'):
                 image = gr.Image(elem_id="pnginfo_image", label="Source", source="upload", interactive=True, type="pil", image_mode="RGBA")
@@ -906,7 +906,7 @@ def create_ui() -> gr.Blocks:
 
     modelmerger_ui = ui_checkpoint_merger.UiCheckpointMerger()
 
-    with gr.Blocks(analytics_enabled=False) as train_interface: 
+    with gr.Blocks(analytics_enabled=False) as train_interface:
         with gr.Row(equal_height=False):
             gr.HTML(value="<p style='margin-bottom: 0.7em'>See <b><a href=\"https://github.com/AUTOMATIC1111/stable-diffusion-webui/wiki/Textual-Inversion\">wiki</a></b> for detailed explanation.</p>")
 
@@ -1141,12 +1141,12 @@ def create_ui() -> gr.Blocks:
     for _interface, label, _ifid in interfaces:
         shared.tab_names.append(label)
 
-    with gr.Blocks(theme=shared.gradio_theme, analytics_enabled=False, title="Stable Diffusion") as demo: 
+    with gr.Blocks(theme=shared.gradio_theme, analytics_enabled=False, title="Stable Diffusion") as demo:
         settings.add_quicksettings()
 
         parameters_copypaste.connect_paste_params_buttons()
 
-        with gr.Tabs(elem_id="tabs") as tabs: 
+        with gr.Tabs(elem_id="tabs") as tabs:
             tab_order: dict[str | float, int] = {k: i for i, k in enumerate(shared.opts.ui_tab_order)}
             sorted_interfaces: list[tuple[Blocks | None, str, str] | tuple[Blocks, str, str]] = sorted(interfaces, key=lambda x: tab_order.get(x[1], 9999))
 

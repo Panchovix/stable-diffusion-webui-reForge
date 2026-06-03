@@ -25,7 +25,6 @@ import sys
 import platform
 import weakref
 import gc
-import logging
 
 class VRAMState(Enum):
     DISABLED = 0    #No vram present: no need to move models to vram
@@ -212,7 +211,7 @@ def get_total_memory(dev=None, torch_total_too=False):
         return (mem_total, mem_total_torch)
     else:
         return mem_total
-    
+
 def mac_version():
     try:
         return tuple(int(n) for n in platform.mac_ver()[0].split("."))
@@ -436,7 +435,7 @@ DISABLE_SMART_MEMORY = args.disable_smart_memory
 if DISABLE_SMART_MEMORY:
     # logging.info("Disabling smart memory management")
     print("Always pin shared GPU memory")
-    
+
 
 def get_torch_device_name(device):
     if hasattr(device, 'type'):
@@ -462,7 +461,7 @@ try:
     device_name = get_torch_device_name(current_device)
     # logging.info("Device: {}".format(device_name))
     print("Device: {}".format(device_name))
-    
+
     # Check if it's an RTX device and provide hints
     if 'rtx' in device_name.lower():
         if not args.pin_shared_memory:
@@ -775,7 +774,7 @@ def cleanup_models_gc():
             if cur.is_dead():
                 print("WARNING, memory leak with model {}. It will be removed from the model list.".format(cur.real_model().__class__.__name__))
                 to_delete.append(i)
-        
+
         if to_delete:
             for i in sorted(to_delete, reverse=True):
                 current_loaded_models.pop(i)
@@ -1383,7 +1382,7 @@ def should_use_bf16(device=None, model_params=0, prioritize_performance=True, ma
 def supports_fp8_compute(device=None):
     if SUPPORT_FP8_OPS:
         return True
-    
+
     if not is_nvidia():
         return False
 
@@ -1535,4 +1534,4 @@ def throw_exception_if_processing_interrupted():
         if interrupt_processing:
             interrupt_processing = False
             raise InterruptProcessingException()
-        
+

@@ -41,9 +41,9 @@ class Error(Exception):
             message: The error message to be displayed to the user.
         """
         ...
-    
+
     def __str__(self) -> str:
         ...
-    
+
 
 

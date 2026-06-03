@@ -39,17 +39,17 @@ class Radio(FormComponent, Selectable, Changeable, Inputable, IOComponent, Strin
             elem_classes: An optional list of strings that are assigned as the classes of this component in the HTML DOM. Can be used for targeting CSS styles.
         """
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         ...
-    
+
     def example_inputs(self) -> dict[str, Any]:
         ...
-    
+
     @staticmethod
     def update(value: str | int | float | Literal[_Keywords.NO_VALUE] | None = ..., choices: list[str | int | float | tuple[str, str | int | float]] | None = ..., label: str | None = ..., info: str | None = ..., show_label: bool | None = ..., container: bool | None = ..., scale: int | None = ..., min_width: int | None = ..., interactive: bool | None = ..., visible: bool | None = ...): # -> dict[str, Any]:
         ...
-    
+
     def preprocess(self, x: str | int | float | None) -> str | int | float | None:
         """
         Parameters:
@@ -58,25 +58,25 @@ class Radio(FormComponent, Selectable, Changeable, Inputable, IOComponent, Strin
             value of the selected choice as string or index within choice list
         """
         ...
-    
+
     def get_interpretation_neighbors(self, x): # -> tuple[list[str | int | float], dict[Any, Any]]:
         ...
-    
+
     def get_interpretation_scores(self, x, neighbors, scores: list[float | None], **kwargs) -> list:
         """
         Returns:
             Each value represents the interpretation score corresponding to each choice.
         """
         ...
-    
+
     def style(self, *, item_container: bool | None = ..., container: bool | None = ..., **kwargs): # -> Self:
         """
         This method is deprecated. Please set these arguments in the constructor instead.
         """
         ...
-    
+
     def as_example(self, input_data): # -> str | None:
         ...
-    
+
 
 

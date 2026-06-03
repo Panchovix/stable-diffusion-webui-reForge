@@ -1,6 +1,4 @@
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from .submodules.encoder import Encoder
 from .submodules.decoder import Decoder

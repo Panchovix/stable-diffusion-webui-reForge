@@ -49,25 +49,25 @@ class Examples:
             batch: If True, then the function should process a batch of inputs, meaning that it should accept a list of input values for each parameter. Used only if cache_examples is True.
         """
         ...
-    
+
     async def create(self) -> None:
         """Caches the examples if self.cache_examples is True and creates the Dataset
         component to hold the examples"""
         ...
-    
+
     async def cache(self) -> None:
         """
         Caches all of the examples so that their predictions can be shown immediately.
         """
         ...
-    
+
     async def load_from_cache(self, example_id: int) -> list[Any]:
         """Loads a particular cached example for the interface.
         Parameters:
             example_id: The id of the example to process (zero-indexed).
         """
         ...
-    
+
 
 
 def merge_generated_values_into_output(components: list[IOComponent], generated_values: list, output: list): # -> list[Any]:
@@ -76,7 +76,7 @@ def merge_generated_values_into_output(components: list[IOComponent], generated_
 class TrackedIterable:
     def __init__(self, iterable: Iterable | None, index: int | None, length: int | None, desc: str | None, unit: str | None, _tqdm=..., progress: float | None = ...) -> None:
         ...
-    
+
 
 
 @document("__call__", "tqdm")
@@ -104,19 +104,19 @@ class Progress(Iterable):
             track_tqdm: If True, the Progress object will track any tqdm.tqdm iterations with the tqdm library in the function.
         """
         ...
-    
+
     def __len__(self): # -> int | None:
         ...
-    
+
     def __iter__(self): # -> Self:
         ...
-    
+
     def __next__(self): # -> Self:
         """
         Updates progress tracker with next item in iterable.
         """
         ...
-    
+
     def __call__(self, progress: float | tuple[int, int | None] | None, desc: str | None = ..., total: int | None = ..., unit: str = ..., _tqdm=...): # -> float | tuple[int, int | None] | None:
         """
         Updates progress tracker with progress and message text.
@@ -127,7 +127,7 @@ class Progress(Iterable):
             unit: unit of iterations.
         """
         ...
-    
+
     def tqdm(self, iterable: Iterable | None, desc: str | None = ..., total: int | None = ..., unit: str = ..., _tqdm=...): # -> Self:
         """
         Attaches progress tracker to iterable, like tqdm.
@@ -138,7 +138,7 @@ class Progress(Iterable):
             unit: unit of iterations.
         """
         ...
-    
+
     def update(self, n=...): # -> None:
         """
         Increases latest iterable with specified number of steps.
@@ -146,13 +146,13 @@ class Progress(Iterable):
             n: number of steps completed.
         """
         ...
-    
+
     def close(self, _tqdm): # -> None:
         """
         Removes iterable with given _tqdm.
         """
         ...
-    
+
 
 
 def create_tracker(root_blocks, event_id, fn, track_tqdm): # -> tuple[Progress, Any] | tuple[Progress, _Wrapped[Callable[..., Any], Any, Callable[..., Any], AsyncGenerator[Any, Any]] | _Wrapped[Callable[..., Any], Any, Callable[..., Any], CoroutineType[Any, Any, Any]] | _Wrapped[Callable[..., Any], Any, Callable[..., Any], Generator[Any, Any, None]] | _Wrapped[Callable[..., Any], Any, Callable[..., Any], Any]]:
@@ -261,7 +261,7 @@ class EventData:
             target: The target object that triggered the event. Can be used to distinguish if multiple components are bound to the same listener.
         """
         ...
-    
+
 
 
 def log_message(message: str, level: Literal["info", "warning"] = ...): # -> None:

@@ -44,7 +44,7 @@ class Interface(Blocks):
         :return: list of all current instances.
         """
         ...
-    
+
     @classmethod
     def load(cls, name: str, src: str | None = ..., api_key: str | None = ..., alias: str | None = ..., **kwargs) -> Blocks:
         """
@@ -61,7 +61,7 @@ class Interface(Blocks):
             a Gradio Interface object for the given model
         """
         ...
-    
+
     @classmethod
     def from_pipeline(cls, pipeline: Pipeline, **kwargs) -> Interface:
         """
@@ -78,7 +78,7 @@ class Interface(Blocks):
             gr.Interface.from_pipeline(pipe).launch()
         """
         ...
-    
+
     def __init__(self, fn: Callable, inputs: str | IOComponent | list[str | IOComponent] | None, outputs: str | IOComponent | list[str | IOComponent] | None, examples: list[Any] | list[list[Any]] | str | None = ..., cache_examples: bool | None = ..., examples_per_page: int = ..., live: bool = ..., interpretation: Callable | str | None = ..., num_shap: float = ..., title: str | None = ..., description: str | None = ..., article: str | None = ..., thumbnail: str | None = ..., theme: Theme | str | None = ..., css: str | None = ..., allow_flagging: str | None = ..., flagging_options: list[str] | list[tuple[str, str]] | None = ..., flagging_dir: str = ..., flagging_callback: FlaggingCallback = ..., analytics_enabled: bool | None = ..., batch: bool = ..., max_batch_size: int = ..., api_name: str | Literal[False] | None = ..., _api_mode: bool = ..., allow_duplication: bool = ..., **kwargs) -> None:
         """
         Parameters:
@@ -108,55 +108,55 @@ class Interface(Blocks):
             allow_duplication: If True, then will show a 'Duplicate Spaces' button on Hugging Face Spaces.
         """
         ...
-    
+
     def render_title_description(self) -> None:
         ...
-    
+
     def render_flag_btns(self) -> list[Button]:
         ...
-    
+
     def render_input_column(self) -> tuple[Button | None, ClearButton | None, Button | None, list[Button] | None, Column, Column | None, list[Interpretation] | None,]:
         ...
-    
+
     def render_output_column(self, submit_btn_in: Button | None) -> tuple[Button | None, ClearButton | None, DuplicateButton, Button | None, list | None, Button | None,]:
         ...
-    
+
     def render_article(self): # -> None:
         ...
-    
+
     def attach_submit_events(self, submit_btn: Button | None, stop_btn: Button | None): # -> None:
         ...
-    
+
     def attach_clear_events(self, clear_btn: ClearButton, input_component_column: Column | None, interpret_component_column: Column | None): # -> None:
         ...
-    
+
     def attach_interpretation_events(self, interpretation_btn: Button | None, interpretation_set: list[Interpretation] | None, input_component_column: Column | None, interpret_component_column: Column | None): # -> None:
         ...
-    
+
     def attach_flagging_events(self, flag_btns: list[Button] | None, clear_btn: ClearButton): # -> None:
         ...
-    
+
     def render_examples(self): # -> None:
         ...
-    
+
     def __str__(self) -> str:
         ...
-    
+
     def __repr__(self): # -> str:
         ...
-    
+
     async def interpret_func(self, *args): # -> list[Any]:
         ...
-    
+
     async def interpret(self, raw_input: list[Any]) -> list[Any]:
         ...
-    
+
     def test_launch(self) -> None:
         """
         Deprecated.
         """
         ...
-    
+
 
 
 @document()
@@ -178,7 +178,7 @@ class TabbedInterface(Blocks):
             a Gradio Tabbed Interface for the given interfaces
         """
         ...
-    
+
 
 
 def close_all(verbose: bool = ...) -> None:

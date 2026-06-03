@@ -11,14 +11,11 @@ environment that has torch installed.
 from __future__ import annotations
 
 import sys
-import types
-from typing import Any
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 
 # ---------------------------------------------------------------------------
@@ -59,8 +56,8 @@ _make_stub("accelerate")
 # `current_stream` on the returned module; setting both to falsy keeps apply_model()
 # on the non-stream branch in tests.
 _stream_stub = sys.modules["modules_forge.stream"]
-setattr(_stream_stub, "using_stream", False)
-setattr(_stream_stub, "current_stream", None)
+_stream_stub.using_stream = False
+_stream_stub.current_stream = None
 
 # Provide a real-ish AttnProcessor2_0 stub so PassthroughAttnProcessor works.
 _attn_proc_mod = sys.modules["diffusers.models.attention_processor"]
@@ -637,7 +634,6 @@ class TestApplyModelConditioningBridge:
         y = torch.zeros(2, 2816)  # should be ignored
 
         captured = {}
-        orig_forward = dp._hf_unet
 
         def capture_forward(**kw):
             captured.update(kw)

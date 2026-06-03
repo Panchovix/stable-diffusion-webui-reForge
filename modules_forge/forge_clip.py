@@ -122,4 +122,3 @@ class CLIP_SD_XL_G(FrozenCLIPEmbedderWithCustomWords):
         pooled_output = pooled_output.float().to(text_projection.device) @ text_projection.float()
         z.pooled = pooled_output
         return z
-    

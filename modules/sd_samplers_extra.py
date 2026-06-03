@@ -105,5 +105,5 @@ def sample_dpmpp_2m_cfgpp(model, x, sigmas, extra_args=None, callback=None, disa
             denoised_d = (1 + 1 / (2 * r)) * denoised - (1 / (2 * r)) * old_noise_uncond
             x = (sigma_fn(t_next) / sigma_fn(t)) * x - (-h).expm1() * denoised_d
         old_denoised = denoised
-        old_noise_uncond = noise_uncond 
+        old_noise_uncond = noise_uncond
     return x

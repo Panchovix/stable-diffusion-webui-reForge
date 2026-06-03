@@ -12,7 +12,6 @@ import html
 import shutil
 import errno
 
-import modules.call_queue
 from modules import extensions, shared, paths, config_states, errors, restart
 from modules.paths_internal import config_states_dir
 from modules.call_queue import wrap_gradio_gpu_call

@@ -40,20 +40,20 @@ class Dropdown(FormComponent, Changeable, Inputable, Selectable, Focusable, IOCo
             elem_classes: An optional list of strings that are assigned as the classes of this component in the HTML DOM. Can be used for targeting CSS styles.
         """
         ...
-    
+
     def api_info(self) -> dict[str, dict | bool]:
         ...
-    
+
     def example_inputs(self) -> dict[str, Any]:
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         ...
-    
+
     @staticmethod
     def update(value: Any | Literal[_Keywords.NO_VALUE] | None = ..., choices: str | list[str] | None = ..., label: str | None = ..., info: str | None = ..., show_label: bool | None = ..., container: bool | None = ..., scale: int | None = ..., min_width: int | None = ..., interactive: bool | None = ..., placeholder: str | None = ..., visible: bool | None = ...): # -> dict[str, Any]:
         ...
-    
+
     def preprocess(self, x: str | list[str]) -> str | int | list[str] | list[int] | None:
         """
         Parameters:
@@ -62,28 +62,28 @@ class Dropdown(FormComponent, Changeable, Inputable, Selectable, Focusable, IOCo
             selected choice(s) as string or index within choice list or list of string or indices
         """
         ...
-    
+
     def set_interpret_parameters(self): # -> Self:
         """
         Calculates interpretation score of each choice by comparing the output against each of the outputs when alternative choices are selected.
         """
         ...
-    
+
     def get_interpretation_neighbors(self, x): # -> tuple[list[str], dict[Any, Any]]:
         ...
-    
+
     def get_interpretation_scores(self, x, neighbors, scores: list[float | None], **kwargs) -> list:
         """
         Returns:
             Each value represents the interpretation score corresponding to each choice.
         """
         ...
-    
+
     def style(self, *, container: bool | None = ..., **kwargs): # -> Self:
         """
         This method is deprecated. Please set these arguments in the constructor instead.
         """
         ...
-    
+
 
 

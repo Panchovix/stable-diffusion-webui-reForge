@@ -26,7 +26,7 @@ class Parallel(gradio.Interface):
             an Interface object comparing the given models
         """
         ...
-    
+
 
 
 @document()
@@ -47,6 +47,6 @@ class Series(gradio.Interface):
             an Interface object connecting the given models
         """
         ...
-    
+
 
 

@@ -35,17 +35,17 @@ class ColorPicker(Changeable, Inputable, Submittable, Focusable, IOComponent, St
             elem_classes: An optional list of strings that are assigned as the classes of this component in the HTML DOM. Can be used for targeting CSS styles.
         """
         ...
-    
+
     def example_inputs(self) -> dict[str, Any]:
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         ...
-    
+
     @staticmethod
     def update(value: str | Literal[_Keywords.NO_VALUE] | None = ..., label: str | None = ..., info: str | None = ..., show_label: bool | None = ..., container: bool | None = ..., scale: int | None = ..., min_width: int | None = ..., visible: bool | None = ..., interactive: bool | None = ...): # -> dict[str, Any]:
         ...
-    
+
     def preprocess(self, x: str | None) -> str | None:
         """
         Any preprocessing needed to be performed on function input.
@@ -55,7 +55,7 @@ class ColorPicker(Changeable, Inputable, Submittable, Focusable, IOComponent, St
             text
         """
         ...
-    
+
     def postprocess(self, y: str | None) -> str | None:
         """
         Any postprocessing needed to be performed on function output.
@@ -65,6 +65,6 @@ class ColorPicker(Changeable, Inputable, Submittable, Focusable, IOComponent, St
             text
         """
         ...
-    
+
 
 

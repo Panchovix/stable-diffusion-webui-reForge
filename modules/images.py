@@ -23,7 +23,6 @@ import hashlib
 
 from modules import sd_samplers, shared, script_callbacks, errors, stealth_infotext
 from modules.paths_internal import roboto_ttf_file
-import modules.shared as shared
 
 LANCZOS = (Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS)
 
@@ -856,7 +855,7 @@ def read_info_from_image(image: Image.Image) -> tuple[str | None, dict]:
                 errors.report("Error parsing NovelAI image generation parameters", exc_info=True)
 
         return geninfo, items
-    
+
     geninfo, items = read_standard()
     if geninfo is None:
         geninfo = stealth_infotext.read_info_from_image_stealth(image)

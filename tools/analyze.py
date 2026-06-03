@@ -15,7 +15,6 @@ import ast
 import sys
 import os
 from pathlib import Path
-from textwrap import indent
 
 
 def load(path: str) -> ast.Module:

@@ -8,7 +8,7 @@ from typing import Iterable
 class FontEncoder(json.JSONEncoder):
     def default(self, obj): # -> dict[str, Any] | Any:
         ...
-    
+
 
 
 def as_font(dct): # -> GoogleFont | Font:
@@ -17,24 +17,24 @@ def as_font(dct): # -> GoogleFont | Font:
 class Font:
     def __init__(self, name: str) -> None:
         ...
-    
+
     def __str__(self) -> str:
         ...
-    
+
     def stylesheet(self) -> str:
         ...
-    
+
     def __eq__(self, other: Font) -> bool:
         ...
-    
+
 
 
 class GoogleFont(Font):
     def __init__(self, name: str, weights: Iterable[int] = ...) -> None:
         ...
-    
+
     def stylesheet(self) -> str:
         ...
-    
+
 
 

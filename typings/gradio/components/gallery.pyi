@@ -45,14 +45,14 @@ class Gallery(IOComponent, GallerySerializable, Selectable):
 
         """
         ...
-    
+
     @staticmethod
     def update(value: Any | Literal[_Keywords.NO_VALUE] | None = ..., label: str | None = ..., show_label: bool | None = ..., container: bool | None = ..., scale: int | None = ..., min_width: int | None = ..., visible: bool | None = ..., columns: int | tuple | None = ..., rows: int | tuple | None = ..., height: int | float | None = ..., preview: bool | None = ..., object_fit: Literal["contain", "cover", "fill", "none", "scale-down"] | None = ..., allow_preview: bool | None = ..., show_share_button: bool | None = ..., show_download_button: bool | None = ...): # -> dict[str, Any]:
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         ...
-    
+
     def postprocess(self, y: list[np.ndarray | _Image.Image | str] | list[tuple[np.ndarray | _Image.Image | str, str]] | None) -> list[str]:
         """
         Parameters:
@@ -61,12 +61,12 @@ class Gallery(IOComponent, GallerySerializable, Selectable):
             list of string file paths to images in temp directory
         """
         ...
-    
+
     def style(self, *, grid: int | tuple | None = ..., columns: int | tuple | None = ..., rows: int | tuple | None = ..., height: str | None = ..., container: bool | None = ..., preview: bool | None = ..., object_fit: str | None = ..., **kwargs): # -> Self:
         """
         This method is deprecated. Please set these arguments in the constructor instead.
         """
         ...
-    
+
 
 

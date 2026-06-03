@@ -1,8 +1,6 @@
 import math
 import torch
-import os
 
-import ldm_patched.modules
 
 
 def extra_options_to_module_prefix(extra_options):
@@ -67,7 +65,7 @@ def load_control_net_lllite_patch(ctrl_sd, cond_image, multiplier, num_steps, st
             start_step=start_step,
             end_step=end_step,
         )
-        info = module.load_state_dict(weights)
+        module.load_state_dict(weights)
         modules[module_name] = module
         if len(modules) == 1:
             module.is_first = True

@@ -18,13 +18,13 @@ def set_cancel_events(block: Block, event_name: str, cancels: None | dict[str, A
 class EventListener(Block):
     def __init__(self: Any) -> None:
         ...
-    
+
 
 
 class Dependency(dict):
     def __init__(self, trigger, key_vals, dep_index) -> None:
         ...
-    
+
 
 
 class EventListenerMethod:
@@ -33,7 +33,7 @@ class EventListenerMethod:
     """
     def __init__(self, trigger: Block, event_name: str, show_progress: Literal["full", "minimal", "hidden"] = ..., callback: Callable | None = ..., trigger_after: int | None = ..., trigger_only_on_success: bool = ...) -> None:
         ...
-    
+
     def __call__(self, fn: Callable | None, inputs: Component | Sequence[Component] | set[Component] | None = ..., outputs: Component | Sequence[Component] | None = ..., api_name: str | None | Literal[False] = ..., status_tracker: None = ..., scroll_to_output: bool = ..., show_progress: Literal["full", "minimal", "hidden"] = ..., queue: bool | None = ..., batch: bool = ..., max_batch_size: int = ..., preprocess: bool = ..., postprocess: bool = ..., cancels: dict[str, Any] | list[dict[str, Any]] | None = ..., every: float | None = ..., _js: str | None = ...) -> Dependency:
         """
         Parameters:
@@ -53,115 +53,115 @@ class EventListenerMethod:
             every: Run this event 'every' number of seconds while the client connection is open. Interpreted in seconds. Queue must be enabled.
         """
         ...
-    
+
 
 
 @document("*change", inherit=True)
 class Changeable(EventListener):
     def __init__(self) -> None:
         ...
-    
+
 
 
 @document("*input", inherit=True)
 class Inputable(EventListener):
     def __init__(self) -> None:
         ...
-    
+
 
 
 @document("*click", inherit=True)
 class Clickable(EventListener):
     def __init__(self) -> None:
         ...
-    
+
 
 
 @document("*submit", inherit=True)
 class Submittable(EventListener):
     def __init__(self) -> None:
         ...
-    
+
 
 
 @document("*edit", inherit=True)
 class Editable(EventListener):
     def __init__(self) -> None:
         ...
-    
+
 
 
 @document("*clear", inherit=True)
 class Clearable(EventListener):
     def __init__(self) -> None:
         ...
-    
+
 
 
 @document("*play", "*pause", "*stop", "*end", inherit=True)
 class Playable(EventListener):
     def __init__(self) -> None:
         ...
-    
+
 
 
 @document("*stream", inherit=True)
 class Streamable(EventListener):
     def __init__(self) -> None:
         ...
-    
+
     def check_streamable(self): # -> None:
         ...
-    
+
 
 
 class StreamableOutput(EventListener):
     def __init__(self) -> None:
         ...
-    
+
     def stream_output(self, y, output_id: str, first_chunk: bool) -> tuple[bytes, Any]:
         ...
-    
+
 
 
 @document("*start_recording", "*stop_recording", inherit=True)
 class Recordable(EventListener):
     def __init__(self) -> None:
         ...
-    
+
 
 
 @document("*focus", "*blur", inherit=True)
 class Focusable(EventListener):
     def __init__(self) -> None:
         ...
-    
+
 
 
 @document("*upload", inherit=True)
 class Uploadable(EventListener):
     def __init__(self) -> None:
         ...
-    
+
 
 
 @document("*release", inherit=True)
 class Releaseable(EventListener):
     def __init__(self) -> None:
         ...
-    
+
 
 
 @document("*select", inherit=True)
 class Selectable(EventListener):
     def __init__(self) -> None:
         ...
-    
+
 
 
 class SelectData(EventData):
     def __init__(self, target: Block | None, data: Any) -> None:
         ...
-    
+
 
 

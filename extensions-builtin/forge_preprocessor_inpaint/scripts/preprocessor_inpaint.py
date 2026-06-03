@@ -7,7 +7,7 @@ import einops
 
 from omegaconf import OmegaConf
 from modules_forge.supported_preprocessor import Preprocessor, PreprocessorParameter
-from modules_forge.forge_util import numpy_to_pytorch, resize_image_with_pad
+from modules_forge.forge_util import resize_image_with_pad
 from modules_forge.shared import preprocessor_dir, add_supported_preprocessor
 from modules.modelloader import load_file_from_url
 from annotator.lama.saicinpainting.training.trainers import load_checkpoint
@@ -141,12 +141,12 @@ class PreprocessorInpaintLama(PreprocessorInpaintOnly):
             image_feed = einops.rearrange(image_feed, 'h w c -> 1 c h w')
             prd_color = self.model_patcher.model(image_feed)[0]
             prd_color = einops.rearrange(prd_color, 'c h w -> h w c')
-            
+
             # Ensure all tensors are on the same device
             device = prd_color.device
             mask = mask.to(device)
             color = color.to(device)
-            
+
             prd_color = prd_color * mask + color * (1 - mask)
             prd_color *= 255.0
             prd_color = prd_color.detach().cpu().numpy().clip(0, 255).astype(np.uint8)
@@ -180,34 +180,34 @@ class PreprocessorInpaintNoobAIXL(Preprocessor):
     def __call__(self, input_image, resolution=512, slider_1=None, slider_2=None, slider_3=None, input_mask=None, **kwargs):
         if input_mask is None:
             return input_image
-            
+
         if not isinstance(input_image, np.ndarray):
             input_image = np.array(input_image)
         if not isinstance(input_mask, np.ndarray):
             input_mask = np.array(input_mask)
-            
+
         mask = input_mask.astype(np.float32) / 255.0
         mask = (mask > 0.5).astype(np.float32)
-            
+
         # Create a copy of the input image
         result = input_image.copy()
-        
+
         # Convert mask to proper shape if needed
         if mask.ndim == 2:
             mask = np.expand_dims(mask, axis=-1)
         if mask.shape[-1] == 1:
             mask = np.repeat(mask, 3, axis=-1)
-            
+
         mask_indices = mask > 0.5
         result[mask_indices] = 0.0
-        
+
         return result
-        
+
     def process_before_every_sampling(self, process, cond, mask, *args, **kwargs):
         mask = mask.round()
         mixed_cond = cond.clone()
         mixed_cond = mixed_cond * (1.0 - mask)
-        
+
         return mixed_cond, None
 
 add_supported_preprocessor(PreprocessorInpaint())

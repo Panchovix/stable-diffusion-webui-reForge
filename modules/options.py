@@ -56,7 +56,7 @@ class OptionInfo:
     def needs_reload_ui(self):
         self.comment_after += " <span class='info'>(requires Reload UI)</span>"
         return self
-    
+
     def encode(self, value):
         if isinstance(value, list) and all(isinstance(x, (int, float)) for x in value):
             return json.dumps(value)
@@ -218,7 +218,7 @@ class Options:
         try:
             with open(filename, "r", encoding="utf8") as file:
                 self.data = json.load(file)
-            
+
             # Parse values
             self.data = {k: self._parse_value(k, v) for k, v in self.data.items()}
         except FileNotFoundError:

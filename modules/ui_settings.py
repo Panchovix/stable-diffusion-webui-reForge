@@ -216,7 +216,7 @@ class UiSettings:
                     return f'{text} in {t.total:.1f}s'
 
                 return handler
-            
+
             def get_max_model_index():
                 # Get maximum valid index, default to 0 if no models loaded
                 return max(0, len(sd_models.model_data.loaded_sd_models) - 1)

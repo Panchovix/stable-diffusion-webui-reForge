@@ -4,7 +4,7 @@ import os
 from ldm_patched.modules import model_management
 from ldm_patched.modules import model_detection
 
-from ldm_patched.modules.sd import VAE, CLIP, load_model_weights
+from ldm_patched.modules.sd import VAE, CLIP
 import ldm_patched.modules.model_patcher
 import ldm_patched.modules.utils
 import ldm_patched.modules.clip_vision
@@ -17,9 +17,8 @@ from modules.sd_models_xl import extend_sdxl
 from ldm.util import instantiate_from_config
 from modules_forge import forge_clip
 from modules_forge.unet_patcher import UnetPatcher
-from diff_pipeline import DiffPipeline
 from diff_pipeline import load_model as diffusers_hijack
-from ldm_patched.modules.model_base import model_sampling, ModelType, SD3
+from ldm_patched.modules.model_base import model_sampling, ModelType
 
 # Auto-register the built-in SDXL path hijack when --forge-diffusers-pipeline is active.
 # This causes sd_models.load_model() to load SDXL checkpoints directly via
@@ -29,9 +28,7 @@ if getattr(cmd_opts, 'forge_diffusers_pipeline', False):
         diffusers_hijack.is_sdxl_checkpoint,
         diffusers_hijack.dummy_sdxl_hijack,
     )
-from ldm_patched.modules.patcher_extension import WrappersMP
 import logging
-import types
 
 import open_clip
 from transformers import CLIPTextModel, CLIPTokenizer
@@ -45,11 +42,11 @@ def maybe_override_text_encoder(forge_objects, checkpoint_info):
         import torch
 
         text_encoder_option = getattr(shared.opts, 'sd_text_encoder', 'Automatic')
-        
+
         # Check if we should use a separate text encoder
         should_use_separate_te = False
         selected_option = None
-        
+
         # If CLIP is None (was skipped during loading), we must load a separate TE
         if forge_objects.clip is None:
             should_use_separate_te = True
@@ -71,7 +68,7 @@ def maybe_override_text_encoder(forge_objects, checkpoint_info):
                     # Check if the selected TE is the same as the checkpoint
                     if checkpoint_info and matching_te.te_info.model_name == checkpoint_info.model_name:
                         # Same model - use checkpoint's built-in TE
-                        print(f"Selected text encoder matches checkpoint model - using checkpoint's built-in text encoder")
+                        print("Selected text encoder matches checkpoint model - using checkpoint's built-in text encoder")
                         return forge_objects
                     else:
                         # Different model - use separate TE
@@ -80,11 +77,11 @@ def maybe_override_text_encoder(forge_objects, checkpoint_info):
                 else:
                     print(f"Warning: Text encoder '{text_encoder_option}' not found, using checkpoint's built-in text encoder")
                     return forge_objects
-        
+
         # If we reach here and should_use_separate_te is False, return original
         if not should_use_separate_te:
             return forge_objects
-            
+
         # Find the text encoder to use if not already selected
         if selected_option is None:
             if text_encoder_option == 'Automatic' and checkpoint_info:
@@ -103,33 +100,33 @@ def maybe_override_text_encoder(forge_objects, checkpoint_info):
                 selected_option = next((x for x in sd_text_encoder.text_encoder_options if x.label == text_encoder_option), None)
                 if selected_option is None:
                     raise RuntimeError(f"Text encoder '{text_encoder_option}' not found and checkpoint CLIP was not loaded")
-        
+
         # Store reference to original CLIP for cleanup
         original_clip = forge_objects.clip
-        
+
         # Load the separate text encoder
         print(f"Loading separate text encoder: {selected_option.label}")
         separate_te = selected_option.create_text_encoder()
         separate_te.option = selected_option  # Add option reference
         separate_te._load_clip_from_checkpoint()  # Force load
-        
+
         # Replace the CLIP in forge_objects
         if separate_te.clip_model is not None:
             print(f"Replacing text encoder with: {selected_option.label}")
             forge_objects.clip = separate_te.clip_model
             # Mark that we've loaded a separate TE to avoid double-loading later
             forge_objects._separate_te_loaded = True
-            
+
             # Update the global text encoder state to match what we loaded
             from modules import sd_text_encoder
             sd_text_encoder.current_text_encoder_option = selected_option
             sd_text_encoder.current_text_encoder = separate_te
             print(f"Updated global TE state to: {selected_option.label}")
-            
+
             # Properly unload the original CLIP model to free VRAM (only if it exists)
             if original_clip is not None and original_clip != separate_te.clip_model:
                 print("Unloading original text encoder to free VRAM")
-                
+
                 # Unload model from VRAM if it has a patcher
                 if hasattr(original_clip, 'patcher'):
                     try:
@@ -141,7 +138,7 @@ def maybe_override_text_encoder(forge_objects, checkpoint_info):
                             original_clip.patcher.to('cpu')
                     except Exception as e:
                         print(f"Warning: Error during original CLIP patcher cleanup: {e}")
-                
+
                 # Clear the conditional stage model
                 if hasattr(original_clip, 'cond_stage_model'):
                     try:
@@ -154,17 +151,17 @@ def maybe_override_text_encoder(forge_objects, checkpoint_info):
                                 del param.data
                     except Exception as e:
                         print(f"Warning: Error during original CLIP model cleanup: {e}")
-                
+
                 # Clear references
                 del original_clip
-                
+
                 # Force garbage collection and CUDA cache cleanup
                 gc.collect()
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
-            
+
         return forge_objects
-        
+
     except Exception as e:
         print(f"Error loading separate text encoder: {e}")
         return forge_objects  # Fall back to original
@@ -286,7 +283,7 @@ def load_state_dict_guess_config(sd, output_vae=True, output_clip=True, output_c
         model.load_model_weights(sd, diffusion_model_prefix)
 
     if output_vae:
-        vae_sd = ldm_patched.modules.utils.state_dict_prefix_replace(sd, {k: "" for k in model_config.vae_key_prefix}, filter_keys=True)
+        vae_sd = ldm_patched.modules.utils.state_dict_prefix_replace(sd, dict.fromkeys(model_config.vae_key_prefix, ""), filter_keys=True)
         vae_sd = model_config.process_vae_state_dict(vae_sd)
         vae = VAE(sd=vae_sd, metadata=metadata)
 
@@ -382,7 +379,7 @@ def load_diffusion_model_state_dict(sd, model_options={}):
     left_over = sd.keys()
     if len(left_over) > 0:
         logging.info("left over keys in diffusion model: {}".format(left_over))
-    
+
     # Return ForgeSD with just the UNet
     model_patcher = UnetPatcher(model, load_device=load_device, offload_device=offload_device)
     return ForgeSD(model_patcher, None, None, None)
@@ -402,7 +399,7 @@ def load_model_for_a1111(timer, checkpoint_info=None, state_dict=None):
     is_sd3 = 'model.diffusion_model.x_embedder.proj.weight' in state_dict
     ztsnr = 'ztsnr' in state_dict
     timer.record("forge solving config")
-    
+
     if not is_sd3:
         a1111_config_filename = find_checkpoint_config(state_dict, checkpoint_info)
         a1111_config = OmegaConf.load(a1111_config_filename)
@@ -415,16 +412,16 @@ def load_model_for_a1111(timer, checkpoint_info=None, state_dict=None):
         with no_clip():
             sd_model = instantiate_from_config(a1111_config.model)
     else:
-        sd_model = torch.nn.Module() 
-    
+        sd_model = torch.nn.Module()
+
     timer.record("forge instantiate config")
-    
+
     # Check if we should skip loading the checkpoint's CLIP to save memory
     should_skip_clip = False
     try:
         from modules import sd_text_encoder, shared
         text_encoder_option = getattr(shared.opts, 'sd_text_encoder', 'Automatic')
-        
+
         # If we're in Automatic mode and there's a matching separate TE, skip loading checkpoint CLIP
         if text_encoder_option == 'Automatic' and checkpoint_info:
             model_name = checkpoint_info.model_name
@@ -441,7 +438,7 @@ def load_model_for_a1111(timer, checkpoint_info=None, state_dict=None):
     except Exception as e:
         print(f"Warning: Error checking text encoder options: {e}")
         should_skip_clip = False
-    
+
     forge_objects = load_checkpoint_guess_config(
         state_dict,
         output_vae=True,
@@ -450,14 +447,14 @@ def load_model_for_a1111(timer, checkpoint_info=None, state_dict=None):
         embedding_directory=cmd_opts.embeddings_dir,
         output_model=True
     )
-    
+
     forge_objects = maybe_override_text_encoder(forge_objects, checkpoint_info)
     sd_model.first_stage_model = forge_objects.vae.first_stage_model
     sd_model.model.diffusion_model = forge_objects.unet.model.diffusion_model
     sd_model.forge_objects = forge_objects
     sd_model.forge_objects_original = forge_objects.shallow_copy()
     sd_model.forge_objects_after_applying_lora = forge_objects.shallow_copy()
-    
+
     # Transfer the separate TE flag to the sd_model
     if hasattr(forge_objects, '_separate_te_loaded'):
         sd_model._separate_te_loaded = True
@@ -467,7 +464,7 @@ def load_model_for_a1111(timer, checkpoint_info=None, state_dict=None):
             forge_objects.unet.compile_model(backend=args.torch_compile_backend)
         timer.record("model compilation complete")
     timer.record("forge load real models")
-    
+
     conditioner = getattr(sd_model, 'conditioner', None)
 
     if conditioner:
@@ -530,7 +527,7 @@ def load_model_for_a1111(timer, checkpoint_info=None, state_dict=None):
 
     if getattr(sd_model, 'parameterization', None) == 'v':
         sd_model.forge_objects.unet.model.model_sampling = model_sampling(sd_model.forge_objects.unet.model.model_config, ModelType.V_PREDICTION)
-    
+
     sd_model.ztsnr = ztsnr
 
     sd_model.is_sd3 = is_sd3
@@ -544,7 +541,7 @@ def load_model_for_a1111(timer, checkpoint_info=None, state_dict=None):
     sd_model.is_sd2 = not sd_model.is_sdxl and not is_sd3 and hasattr(sd_model.cond_stage_model, 'model')
     sd_model.is_sd1 = not sd_model.is_sdxl and not sd_model.is_sd2 and not is_sd3
     sd_model.is_ssd = sd_model.is_sdxl and 'model.diffusion_model.middle_block.1.transformer_blocks.0.attn1.to_q.weight' not in sd_model.state_dict().keys()
-    
+
     if sd_model.is_sdxl:
         extend_sdxl(sd_model)
 

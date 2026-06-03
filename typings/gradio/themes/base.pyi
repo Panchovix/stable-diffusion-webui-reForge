@@ -9,11 +9,11 @@ from gradio.themes.utils import colors, fonts, sizes
 class ThemeClass:
     def __init__(self) -> None:
         ...
-    
+
     def to_dict(self): # -> dict[str, dict[Any, Any]]:
         """Convert the theme into a python dictionary."""
         ...
-    
+
     @classmethod
     def load(cls, path: str) -> ThemeClass:
         """Load a theme from a json file.
@@ -22,7 +22,7 @@ class ThemeClass:
             path: The filepath to read.
         """
         ...
-    
+
     @classmethod
     def from_dict(cls, theme: dict[str, dict[str, str]]) -> ThemeClass:
         """Create a theme instance from a dictionary representation.
@@ -31,7 +31,7 @@ class ThemeClass:
             theme: The dictionary representation of the theme.
         """
         ...
-    
+
     def dump(self, filename: str): # -> None:
         """Write the theme to a json file.
 
@@ -39,7 +39,7 @@ class ThemeClass:
             filename: The path to write the theme too
         """
         ...
-    
+
     @classmethod
     def from_hub(cls, repo_name: str, hf_token: str | None = ...): # -> ThemeClass:
         """Load a theme from the hub.
@@ -51,7 +51,7 @@ class ThemeClass:
             hf_token: HuggingFace Token. Only needed to download private themes.
         """
         ...
-    
+
     def push_to_hub(self, repo_name: str, org_name: str | None = ..., version: str | None = ..., hf_token: str | None = ..., theme_name: str | None = ..., description: str | None = ..., private: bool = ...): # -> str:
         """Upload a theme to the HuggingFace hub.
 
@@ -66,7 +66,7 @@ class ThemeClass:
             description: A long form description to your theme.
         """
         ...
-    
+
 
 
 @document("push_to_hub", "from_hub", "load", "dump", "from_dict", "to_dict")
@@ -84,7 +84,7 @@ class Base(ThemeClass):
             font_mono: The monospace font to use for the theme, applies to code. Pass a string for a system font, or a gradio.themes.font.GoogleFont object to load a font from Google Fonts. Pass a list of fonts for fallbacks.
         """
         ...
-    
+
     def set(self, *, body_background_fill=..., body_background_fill_dark=..., body_text_color=..., body_text_color_dark=..., body_text_size=..., body_text_color_subdued=..., body_text_color_subdued_dark=..., body_text_weight=..., embed_radius=..., background_fill_primary=..., background_fill_primary_dark=..., background_fill_secondary=..., background_fill_secondary_dark=..., border_color_accent=..., border_color_accent_dark=..., border_color_accent_subdued=..., border_color_accent_subdued_dark=..., border_color_primary=..., border_color_primary_dark=..., color_accent=..., color_accent_soft=..., color_accent_soft_dark=..., link_text_color=..., link_text_color_dark=..., link_text_color_active=..., link_text_color_active_dark=..., link_text_color_hover=..., link_text_color_hover_dark=..., link_text_color_visited=..., link_text_color_visited_dark=..., prose_text_size=..., prose_text_weight=..., prose_header_text_weight=..., shadow_drop=..., shadow_drop_lg=..., shadow_inset=..., shadow_spread=..., shadow_spread_dark=..., block_background_fill=..., block_background_fill_dark=..., block_border_color=..., block_border_color_dark=..., block_border_width=..., block_border_width_dark=..., block_info_text_color=..., block_info_text_color_dark=..., block_info_text_size=..., block_info_text_weight=..., block_label_background_fill=..., block_label_background_fill_dark=..., block_label_border_color=..., block_label_border_color_dark=..., block_label_border_width=..., block_label_border_width_dark=..., block_label_shadow=..., block_label_text_color=..., block_label_text_color_dark=..., block_label_margin=..., block_label_padding=..., block_label_radius=..., block_label_right_radius=..., block_label_text_size=..., block_label_text_weight=..., block_padding=..., block_radius=..., block_shadow=..., block_shadow_dark=..., block_title_background_fill=..., block_title_background_fill_dark=..., block_title_border_color=..., block_title_border_color_dark=..., block_title_border_width=..., block_title_border_width_dark=..., block_title_text_color=..., block_title_text_color_dark=..., block_title_padding=..., block_title_radius=..., block_title_text_size=..., block_title_text_weight=..., container_radius=..., form_gap_width=..., layout_gap=..., panel_background_fill=..., panel_background_fill_dark=..., panel_border_color=..., panel_border_color_dark=..., panel_border_width=..., panel_border_width_dark=..., section_header_text_size=..., section_header_text_weight=..., chatbot_code_background_color=..., chatbot_code_background_color_dark=..., checkbox_background_color=..., checkbox_background_color_dark=..., checkbox_background_color_focus=..., checkbox_background_color_focus_dark=..., checkbox_background_color_hover=..., checkbox_background_color_hover_dark=..., checkbox_background_color_selected=..., checkbox_background_color_selected_dark=..., checkbox_border_color=..., checkbox_border_color_dark=..., checkbox_border_color_focus=..., checkbox_border_color_focus_dark=..., checkbox_border_color_hover=..., checkbox_border_color_hover_dark=..., checkbox_border_color_selected=..., checkbox_border_color_selected_dark=..., checkbox_border_radius=..., checkbox_border_width=..., checkbox_border_width_dark=..., checkbox_check=..., radio_circle=..., checkbox_shadow=..., checkbox_label_background_fill=..., checkbox_label_background_fill_dark=..., checkbox_label_background_fill_hover=..., checkbox_label_background_fill_hover_dark=..., checkbox_label_background_fill_selected=..., checkbox_label_background_fill_selected_dark=..., checkbox_label_border_color=..., checkbox_label_border_color_dark=..., checkbox_label_border_color_hover=..., checkbox_label_border_color_hover_dark=..., checkbox_label_border_width=..., checkbox_label_border_width_dark=..., checkbox_label_gap=..., checkbox_label_padding=..., checkbox_label_shadow=..., checkbox_label_text_size=..., checkbox_label_text_weight=..., checkbox_label_text_color=..., checkbox_label_text_color_dark=..., checkbox_label_text_color_selected=..., checkbox_label_text_color_selected_dark=..., error_background_fill=..., error_background_fill_dark=..., error_border_color=..., error_border_color_dark=..., error_border_width=..., error_border_width_dark=..., error_text_color=..., error_text_color_dark=..., error_icon_color=..., error_icon_color_dark=..., input_background_fill=..., input_background_fill_dark=..., input_background_fill_focus=..., input_background_fill_focus_dark=..., input_background_fill_hover=..., input_background_fill_hover_dark=..., input_border_color=..., input_border_color_dark=..., input_border_color_focus=..., input_border_color_focus_dark=..., input_border_color_hover=..., input_border_color_hover_dark=..., input_border_width=..., input_border_width_dark=..., input_padding=..., input_placeholder_color=..., input_placeholder_color_dark=..., input_radius=..., input_shadow=..., input_shadow_dark=..., input_shadow_focus=..., input_shadow_focus_dark=..., input_text_size=..., input_text_weight=..., loader_color=..., loader_color_dark=..., slider_color=..., slider_color_dark=..., stat_background_fill=..., stat_background_fill_dark=..., table_border_color=..., table_border_color_dark=..., table_even_background_fill=..., table_even_background_fill_dark=..., table_odd_background_fill=..., table_odd_background_fill_dark=..., table_radius=..., table_row_focus=..., table_row_focus_dark=..., button_border_width=..., button_border_width_dark=..., button_shadow=..., button_shadow_active=..., button_shadow_hover=..., button_transition=..., button_large_padding=..., button_large_radius=..., button_large_text_size=..., button_large_text_weight=..., button_small_padding=..., button_small_radius=..., button_small_text_size=..., button_small_text_weight=..., button_primary_background_fill=..., button_primary_background_fill_dark=..., button_primary_background_fill_hover=..., button_primary_background_fill_hover_dark=..., button_primary_border_color=..., button_primary_border_color_dark=..., button_primary_border_color_hover=..., button_primary_border_color_hover_dark=..., button_primary_text_color=..., button_primary_text_color_dark=..., button_primary_text_color_hover=..., button_primary_text_color_hover_dark=..., button_secondary_background_fill=..., button_secondary_background_fill_dark=..., button_secondary_background_fill_hover=..., button_secondary_background_fill_hover_dark=..., button_secondary_border_color=..., button_secondary_border_color_dark=..., button_secondary_border_color_hover=..., button_secondary_border_color_hover_dark=..., button_secondary_text_color=..., button_secondary_text_color_dark=..., button_secondary_text_color_hover=..., button_secondary_text_color_hover_dark=..., button_cancel_background_fill=..., button_cancel_background_fill_dark=..., button_cancel_background_fill_hover=..., button_cancel_background_fill_hover_dark=..., button_cancel_border_color=..., button_cancel_border_color_dark=..., button_cancel_border_color_hover=..., button_cancel_border_color_hover_dark=..., button_cancel_text_color=..., button_cancel_text_color_dark=..., button_cancel_text_color_hover=..., button_cancel_text_color_hover_dark=...) -> Base:
         """
         Parameters:
@@ -322,6 +322,6 @@ class Base(ThemeClass):
             button_transition: The transition animation duration of a button between regular, hover, and focused states.
         """
         ...
-    
+
 
 

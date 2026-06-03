@@ -42,23 +42,23 @@ class Slider(FormComponent, Changeable, Inputable, Releaseable, IOComponent, Num
             randomize: If True, the value of the slider when the app loads is taken uniformly at random from the range given by the minimum and maximum.
         """
         ...
-    
+
     def api_info(self) -> dict[str, dict | bool]:
         ...
-    
+
     def example_inputs(self) -> dict[str, Any]:
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         ...
-    
+
     def get_random_value(self): # -> float | Any:
         ...
-    
+
     @staticmethod
     def update(value: float | Literal[_Keywords.NO_VALUE] | None = ..., minimum: float | None = ..., maximum: float | None = ..., step: float | None = ..., label: str | None = ..., info: str | None = ..., show_label: bool | None = ..., container: bool | None = ..., scale: int | None = ..., min_width: int | None = ..., interactive: bool | None = ..., visible: bool | None = ...): # -> dict[str, Any]:
         ...
-    
+
     def postprocess(self, y: float | None) -> float | None:
         """
         Any postprocessing needed to be performed on function output.
@@ -68,7 +68,7 @@ class Slider(FormComponent, Changeable, Inputable, Releaseable, IOComponent, Num
             numeric output or minimum number if None
         """
         ...
-    
+
     def set_interpret_parameters(self, steps: int = ...) -> Slider:
         """
         Calculates interpretation scores of numeric values ranging between the minimum and maximum values of the slider.
@@ -76,15 +76,15 @@ class Slider(FormComponent, Changeable, Inputable, Releaseable, IOComponent, Num
             steps: Number of neighboring values to measure between the minimum and maximum values of the slider range.
         """
         ...
-    
+
     def get_interpretation_neighbors(self, x) -> tuple[object, dict]:
         ...
-    
+
     def style(self, *, container: bool | None = ...): # -> Self:
         """
         This method is deprecated. Please set these arguments in the constructor instead.
         """
         ...
-    
+
 
 

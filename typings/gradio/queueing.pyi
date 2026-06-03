@@ -11,52 +11,52 @@ from gradio.helpers import TrackedIterable
 class Event:
     def __init__(self, websocket: fastapi.WebSocket, session_hash: str, fn_index: int) -> None:
         ...
-    
+
     async def disconnect(self, code: int = ...): # -> None:
         ...
-    
+
 
 
 class Queue:
     def __init__(self, live_updates: bool, concurrency_count: int, update_intervals: float, max_size: int | None, blocks_dependencies: list) -> None:
         ...
-    
+
     async def start(self, ssl_verify=...): # -> None:
         ...
-    
+
     def close(self): # -> None:
         ...
-    
+
     def resume(self): # -> None:
         ...
-    
+
     def set_url(self, url: str): # -> None:
         ...
-    
+
     def set_access_token(self, token: str): # -> None:
         ...
-    
+
     def get_active_worker_count(self) -> int:
         ...
-    
+
     def get_events_in_batch(self) -> tuple[list[Event] | None, bool]:
         ...
-    
+
     async def start_processing(self) -> None:
         ...
-    
+
     async def start_log_and_progress_updates(self) -> None:
         ...
-    
+
     async def send_log_updates_for_event(self, event: Event) -> None:
         ...
-    
+
     def set_progress(self, event_id: str, iterables: list[TrackedIterable] | None): # -> None:
         ...
-    
+
     def log_message(self, event_id: str, log: str, level: Literal["info", "warning"]): # -> None:
         ...
-    
+
     def push(self, event: Event) -> int | None:
         """
         Add event to queue, or return None if Queue is full
@@ -66,16 +66,16 @@ class Queue:
             rank of submitted Event
         """
         ...
-    
+
     async def clean_event(self, event: Event) -> None:
         ...
-    
+
     async def broadcast_live_estimations(self) -> None:
         """
         Runs 2 functions sequentially instead of concurrently. Otherwise dced clients are tried to get deleted twice.
         """
         ...
-    
+
     async def gather_event_data(self, event: Event, receive_timeout=...) -> bool:
         """
         Gather data for the event
@@ -84,16 +84,16 @@ class Queue:
             receive_timeout: how long to wait for data to be received from frontend
         """
         ...
-    
+
     async def notify_clients(self) -> None:
         """
         Notify clients about events statuses in the queue periodically.
         """
         ...
-    
+
     async def broadcast_estimations(self) -> None:
         ...
-    
+
     async def send_estimation(self, event: Event, estimation: Estimation, rank: int) -> Estimation:
         """
         Send estimation about ETA to the client.
@@ -104,7 +104,7 @@ class Queue:
             rank:
         """
         ...
-    
+
     def update_estimation(self, duration: float) -> None:
         """
         Update estimation by last x element's average duration.
@@ -113,27 +113,27 @@ class Queue:
             duration:
         """
         ...
-    
+
     def get_estimation(self) -> Estimation:
         ...
-    
+
     def get_request_params(self, websocket: fastapi.WebSocket) -> dict[str, Any]:
         ...
-    
+
     async def call_prediction(self, events: list[Event], batch: bool): # -> AsyncRequest:
         ...
-    
+
     async def process_events(self, events: list[Event], batch: bool) -> None:
         ...
-    
+
     async def send_message(self, event, data: dict, timeout: float | int = ...) -> bool:
         ...
-    
+
     async def get_message(self, event, timeout=...) -> tuple[PredictBody | None, bool]:
         ...
-    
+
     async def reset_iterators(self, session_hash: str, fn_index: int): # -> None:
         ...
-    
+
 
 

@@ -12,14 +12,14 @@ if TYPE_CHECKING:
 class Interpretable(ABC):
     def __init__(self) -> None:
         ...
-    
+
     def set_interpret_parameters(self): # -> None:
         """
         Set any parameters for interpretation. Properties can be set here to be
         used in get_interpretation_neighbors and get_interpretation_scores.
         """
         ...
-    
+
     def get_interpretation_scores(self, x: Any, neighbors: list[Any] | None, scores: list[float], **kwargs) -> list:
         """
         Arrange the output values from the neighbors into interpretation scores for the interface to render.
@@ -31,7 +31,7 @@ class Interpretable(ABC):
             Arrangement of interpretation scores for interfaces to render.
         """
         ...
-    
+
 
 
 class TokenInterpretable(Interpretable, ABC):
@@ -42,11 +42,11 @@ class TokenInterpretable(Interpretable, ABC):
         a string into words or an image into super-pixels).
         """
         ...
-    
+
     @abstractmethod
     def get_masked_inputs(self, tokens: list, binary_mask_matrix: list[list]) -> list:
         ...
-    
+
 
 
 class NeighborInterpretable(Interpretable, ABC):
@@ -61,7 +61,7 @@ class NeighborInterpretable(Interpretable, ABC):
             interpret_kwargs: Keyword arguments to be passed to get_interpretation_scores
         """
         ...
-    
+
 
 
 async def run_interpret(interface: Interface, raw_input: list): # -> tuple[list[Any], list[Any]] | tuple[list[Any] | Any, list[Any]]:

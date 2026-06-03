@@ -20,13 +20,13 @@ GRADIO_API_SERVER = ...
 class Server(uvicorn.Server):
     def install_signal_handlers(self): # -> None:
         ...
-    
+
     def run_in_thread(self): # -> None:
         ...
-    
+
     def close(self): # -> None:
         ...
-    
+
 
 
 def get_first_available_port(initial: int, final: int) -> int:

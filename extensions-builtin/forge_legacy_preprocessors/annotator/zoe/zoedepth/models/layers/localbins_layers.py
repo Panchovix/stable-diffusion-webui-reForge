@@ -133,7 +133,7 @@ class LinearSplitter(nn.Module):
             nn.Conv2d(mlp_dim, prev_nbins * split_factor, 1, 1, 0),
             nn.ReLU()
         )
-    
+
     def forward(self, x, b_prev, prev_b_embedding=None, interpolate=True, is_for_query=False):
         """
         x : feature block; shape - n, c, h, w
@@ -151,7 +151,7 @@ class LinearSplitter(nn.Module):
         S_normed = S / S.sum(dim=2, keepdim=True)  # fractional splits
 
         b_prev = nn.functional.interpolate(b_prev, (h,w), mode='bilinear', align_corners=True)
-        
+
 
         b_prev = b_prev / b_prev.sum(dim=1, keepdim=True)  # renormalize for gurantees
         # print(b_prev.shape, S_normed.shape)

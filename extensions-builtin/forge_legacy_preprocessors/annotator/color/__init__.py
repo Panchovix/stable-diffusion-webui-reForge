@@ -15,6 +15,6 @@ def apply_color(img, res=512):
     img = cv2_resize_shortest_edge(img, res)
     h, w = img.shape[:2]
 
-    input_img_color = cv2.resize(img, (w//64, h//64), interpolation=cv2.INTER_CUBIC)  
+    input_img_color = cv2.resize(img, (w//64, h//64), interpolation=cv2.INTER_CUBIC)
     input_img_color = cv2.resize(input_img_color, (w, h), interpolation=cv2.INTER_NEAREST)
     return input_img_color

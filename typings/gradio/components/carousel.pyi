@@ -13,6 +13,6 @@ class Carousel(IOComponent, Changeable, SimpleSerializable):
     """
     def __init__(self, *args, **kwargs) -> None:
         ...
-    
+
 
 

@@ -30,7 +30,7 @@ class Markdown(IOComponent, Changeable, StringSerializable):
             elem_classes: An optional list of strings that are assigned as the classes of this component in the HTML DOM. Can be used for targeting CSS styles.
         """
         ...
-    
+
     def postprocess(self, y: str | None) -> str | None:
         """
         Parameters:
@@ -39,16 +39,16 @@ class Markdown(IOComponent, Changeable, StringSerializable):
             HTML rendering of markdown
         """
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         ...
-    
+
     @staticmethod
     def update(value: Any | Literal[_Keywords.NO_VALUE] | None = ..., visible: bool | None = ..., rtl: bool | None = ..., latex_delimiters: list[dict[str, str | bool]] | None = ...): # -> dict[str, Any]:
         ...
-    
+
     def as_example(self, input_data: str | None) -> str:
         ...
-    
+
 
 

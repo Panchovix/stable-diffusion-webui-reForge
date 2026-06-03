@@ -129,13 +129,13 @@ class SyncToAsyncIterator:
     """Treat a synchronous iterator as async one."""
     def __init__(self, iterator, limiter) -> None:
         ...
-    
+
     def __aiter__(self): # -> Self:
         ...
-    
+
     async def __anext__(self):
         ...
-    
+
 
 
 async def async_iteration(iterator):
@@ -174,8 +174,8 @@ class AsyncRequest:
         POST = ...
         PUT = ...
         TRACE = ...
-    
-    
+
+
     def __init__(self, method: Method, url: str, *, validation_model: type[BaseModel] | None = ..., validation_function: Union[Callable, None] = ..., exception_type: type[Exception] = ..., raise_for_status: bool = ..., client: httpx.AsyncClient | None = ..., **kwargs) -> None:
         """
         Initialize the Request instance.
@@ -189,13 +189,13 @@ class AsyncRequest:
             raise_for_status(bool): a flag that determines to raise httpx.Request.raise_for_status() exceptions.
         """
         ...
-    
+
     def __await__(self) -> Generator[None, Any, AsyncRequest]:
         """
         Wrap Request's __await__ magic function to create request calls which are executed in one line.
         """
         ...
-    
+
     def is_valid(self, raise_exceptions: bool = ...) -> bool:
         """
         Check response object's validity+. Raise exceptions if raise_exceptions flag is True.
@@ -205,30 +205,30 @@ class AsyncRequest:
             bool: validity of the data
         """
         ...
-    
+
     def get_validated_data(self): # -> BaseModel | None:
         ...
-    
+
     @property
     def json(self): # -> Any:
         ...
-    
+
     @property
     def exception(self): # -> Exception | None:
         ...
-    
+
     @property
     def has_exception(self): # -> bool:
         ...
-    
+
     @property
     def raise_exceptions(self): # -> None:
         ...
-    
+
     @property
     def status(self): # -> int | None:
         ...
-    
+
 
 
 @contextmanager
@@ -297,19 +297,19 @@ def concurrency_count_warning(queue: Callable[P, T]) -> Callable[P, T]:
 class TupleNoPrint(tuple):
     def __repr__(self): # -> Literal['']:
         ...
-    
+
     def __str__(self) -> str:
         ...
-    
+
 
 
 class MatplotlibBackendMananger:
     def __enter__(self): # -> None:
         ...
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb): # -> None:
         ...
-    
+
 
 
 def tex2svg(formula, *args): # -> str:

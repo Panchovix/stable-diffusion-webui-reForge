@@ -15,6 +15,6 @@ class LogoutButton(Button):
     is_template = ...
     def __init__(self, *, value: str = ..., variant: Literal["primary", "secondary", "stop"] = ..., size: Literal["sm", "lg"] | None = ..., icon: str | None = ..., link: str | None = ..., visible: bool = ..., interactive: bool = ..., elem_id: str | None = ..., elem_classes: list[str] | str | None = ..., scale: int | None = ..., min_width: int | None = ..., **kwargs) -> None:
         ...
-    
+
 
 

@@ -30,14 +30,14 @@ class Row(BlockContext):
             equal_height: If True, makes every child element have equal height
         """
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         ...
-    
+
     @staticmethod
     def update(visible: bool | None = ...): # -> dict[str, Any]:
         ...
-    
+
     def style(self, *, equal_height: bool | None = ..., **kwargs): # -> Self:
         """
         Styles the Row.
@@ -45,7 +45,7 @@ class Row(BlockContext):
             equal_height: If True, makes every child element have equal height
         """
         ...
-    
+
 
 
 @document()
@@ -74,14 +74,14 @@ class Column(BlockContext):
             elem_id: An optional string that is assigned as the id of this component in the HTML DOM. Can be used for targeting CSS styles.
         """
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         ...
-    
+
     @staticmethod
     def update(variant: str | None = ..., visible: bool | None = ...): # -> dict[str, Any]:
         ...
-    
+
 
 
 class Tabs(BlockContext, Changeable, Selectable):
@@ -96,14 +96,14 @@ class Tabs(BlockContext, Changeable, Selectable):
             elem_id: An optional string that is assigned as the id of this component in the HTML DOM. Can be used for targeting CSS styles.
         """
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         ...
-    
+
     @staticmethod
     def update(selected: int | str | None = ...): # -> dict[str, Any]:
         ...
-    
+
 
 
 @document()
@@ -128,16 +128,16 @@ class Tab(BlockContext, Selectable):
             elem_id: An optional string that is assigned as the id of this component in the HTML DOM. Can be used for targeting CSS styles.
         """
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         ...
-    
+
     def get_expected_parent(self) -> type[Tabs]:
         ...
-    
+
     def get_block_name(self): # -> Literal['tabitem']:
         ...
-    
+
 
 
 TabItem = Tab
@@ -158,14 +158,14 @@ class Group(BlockContext):
             elem_id: An optional string that is assigned as the id of this component in the HTML DOM. Can be used for targeting CSS styles.
         """
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         ...
-    
+
     @staticmethod
     def update(visible: bool | None = ...): # -> dict[str, Any]:
         ...
-    
+
 
 
 class Box(BlockContext):
@@ -185,17 +185,17 @@ class Box(BlockContext):
             elem_id: An optional string that is assigned as the id of this component in the HTML DOM. Can be used for targeting CSS styles.
         """
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         ...
-    
+
     @staticmethod
     def update(visible: bool | None = ...): # -> dict[str, Any]:
         ...
-    
+
     def style(self, **kwargs): # -> Self:
         ...
-    
+
 
 
 class Form(BlockContext):
@@ -206,13 +206,13 @@ class Form(BlockContext):
             min_width: minimum pixel width of Column, will wrap if not sufficient screen space to satisfy this value. If a certain scale value results in a column narrower than min_width, the min_width parameter will be respected first.
         """
         ...
-    
+
     def add_child(self, child: Block): # -> None:
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         ...
-    
+
 
 
 @document()
@@ -231,13 +231,13 @@ class Accordion(BlockContext):
             elem_id: An optional string that is assigned as the id of this component in the HTML DOM. Can be used for targeting CSS styles.
         """
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         ...
-    
+
     @staticmethod
     def update(open: bool | None = ..., label: str | None = ..., visible: bool | None = ...): # -> dict[str, Any]:
         ...
-    
+
 
 

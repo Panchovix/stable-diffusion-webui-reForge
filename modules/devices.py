@@ -119,6 +119,6 @@ def synchornize():
         torch.cuda.synchronize()
     elif has_mps:
         torch.mps.synchronize()
-    
+
     # No match meaning either is CPU or is not needed
-    
+

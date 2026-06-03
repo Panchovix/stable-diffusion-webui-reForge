@@ -41,14 +41,14 @@ class Number(FormComponent, Changeable, Inputable, Submittable, Focusable, IOCom
             step: The interval between allowed numbers in the component. Can be used along with optional parameters `minimum` and `maximum` to create a range of legal values starting from `minimum` and incrementing according to this parameter.
         """
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         ...
-    
+
     @staticmethod
     def update(value: float | Literal[_Keywords.NO_VALUE] | None = ..., minimum: float | None = ..., maximum: float | None = ..., step: float = ..., label: str | None = ..., info: str | None = ..., show_label: bool | None = ..., container: bool | None = ..., scale: int | None = ..., min_width: int | None = ..., interactive: bool | None = ..., visible: bool | None = ...): # -> dict[str, Any]:
         ...
-    
+
     def preprocess(self, x: float | None) -> float | None:
         """
         Parameters:
@@ -57,7 +57,7 @@ class Number(FormComponent, Changeable, Inputable, Submittable, Focusable, IOCom
             number representing function input
         """
         ...
-    
+
     def postprocess(self, y: float | None) -> float | None:
         """
         Any postprocessing needed to be performed on function output.
@@ -68,7 +68,7 @@ class Number(FormComponent, Changeable, Inputable, Submittable, Focusable, IOCom
             number representing function output
         """
         ...
-    
+
     def set_interpret_parameters(self, steps: int = ..., delta: float = ..., delta_type: str = ...): # -> Self:
         """
         Calculates interpretation scores of numeric values close to the input number.
@@ -78,16 +78,16 @@ class Number(FormComponent, Changeable, Inputable, Submittable, Focusable, IOCom
             delta_type: "percent" if delta step between nearby values should be a calculated as a percent, or "absolute" if delta should be a constant step change.
         """
         ...
-    
+
     def get_interpretation_neighbors(self, x: float | int) -> tuple[list[float], dict]:
         ...
-    
+
     def get_interpretation_scores(self, x: float, neighbors: list[float], scores: list[float | None], **kwargs) -> list[tuple[float, float | None]]:
         """
         Returns:
             Each tuple set represents a numeric value near the input and its corresponding interpretation score.
         """
         ...
-    
+
 
 

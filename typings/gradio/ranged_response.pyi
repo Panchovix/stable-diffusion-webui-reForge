@@ -14,10 +14,10 @@ class ClosedRange(NamedTuple):
     end: int
     def __len__(self) -> int:
         ...
-    
+
     def __bool__(self) -> bool:
         ...
-    
+
 
 
 class OpenRange(NamedTuple):
@@ -25,28 +25,28 @@ class OpenRange(NamedTuple):
     end: int | None = ...
     def clamp(self, start: int, end: int) -> ClosedRange:
         ...
-    
+
 
 
 class RangedFileResponse(Response):
     chunk_size = ...
     def __init__(self, path: str | os.PathLike, range: OpenRange, headers: dict[str, str] | None = ..., media_type: str | None = ..., filename: str | None = ..., stat_result: os.stat_result | None = ..., method: str | None = ...) -> None:
         ...
-    
+
     def set_range_headers(self, range: ClosedRange) -> None:
         ...
-    
+
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         ...
-    
+
 
 
 class RangedStaticFiles(StaticFiles):
     def file_response(self, full_path: str | os.PathLike, stat_result: os.stat_result, scope: Scope, status_code: int = ...) -> Response:
         ...
-    
+
     def ranged_file_response(self, full_path: str | os.PathLike, stat_result: os.stat_result, scope: Scope) -> Response:
         ...
-    
+
 
 

@@ -7,8 +7,6 @@ smish(x) = x * tanh(softplus(x)) = x * tanh(ln(1 + sigmoid(x)))
 """
 
 # import pytorch
-import torch
-import torch.nn.functional as F
 from torch import nn
 
 # import activation functions

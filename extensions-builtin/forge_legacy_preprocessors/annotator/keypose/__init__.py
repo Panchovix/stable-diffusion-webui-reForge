@@ -143,13 +143,13 @@ pose_link_color = [
 def find_download_model(checkpoint, remote_path):
     modelpath = os.path.join(modeldir, checkpoint)
     old_modelpath = os.path.join(old_modeldir, checkpoint)
-        
+
     if os.path.exists(old_modelpath):
         modelpath = old_modelpath
     elif not os.path.exists(modelpath):
         from modules.modelloader import load_file_from_url
         load_file_from_url(remote_path, model_dir=modeldir)
-        
+
     return modelpath
 
 def apply_keypose(input_image):
@@ -168,13 +168,13 @@ def apply_keypose(input_image):
         image = torch.from_numpy(input_image).float().to(devices.get_device_for("controlnet"))
         image = image / 255.0
         mmdet_results = inference_detector(human_det, image)
-        
+
         # keep the person class bounding boxes.
         person_results = process_mmdet_results(mmdet_results, det_cat_id)
-        
+
         return_heatmap = False
         dataset = pose_model.cfg.data['test']['type']
-        
+
         # e.g. use ('backbone', ) to return backbone feature
         output_layer_names = None
         pose_results, _ = inference_top_down_pose_model(
@@ -188,7 +188,7 @@ def apply_keypose(input_image):
             return_heatmap=return_heatmap,
             outputs=output_layer_names
         )
-        
+
         im_keypose_out = imshow_keypoints(
             image,
             pose_results,

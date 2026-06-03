@@ -694,7 +694,7 @@ def rename_op_input(
 
     if from_producer:
         producer_map = get_producer_map(predict_net_ssa)
-        if not (old_name, version) in producer_map:
+        if (old_name, version) not in producer_map:
             raise NotImplementedError(
                 "Can't find producer, the input {} is probably from"
                 " init_net, this is not supported yet.".format(old_name)
@@ -798,7 +798,7 @@ class DiGraph:
 
     # grab from https://www.geeksforgeeks.org/find-paths-given-source-destination/
     def get_all_paths(self, s, d):
-        visited = {k: False for k in self.vertices}
+        visited = dict.fromkeys(self.vertices, False)
         path = []
         all_paths = []
 

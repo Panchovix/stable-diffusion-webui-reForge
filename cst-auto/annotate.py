@@ -27,9 +27,9 @@ import argparse
 import difflib
 import glob
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Optional, Union
 
 import libcst as cst
 from libcst.codemod import CodemodContext
@@ -698,7 +698,7 @@ class TypeAnnotationTransformer(cst.CSTTransformer):
         # Record import origin for reporting
         origin: Optional[str] = None
         if self.import_tracer is not None:
-            root = type_str.lstrip("type[Type[").split(".")[0].split("[")[0].rstrip("]")
+            root = type_str.lstrip("type[").lstrip("Type[").split(".")[0].split("[")[0].rstrip("]")
             origin = self.import_tracer.origin_of(root)
 
         self.changes.append(ParamChange(func_name, param_name, type_str, import_origin=origin))

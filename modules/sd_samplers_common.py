@@ -4,7 +4,6 @@ import numpy as np
 import torch
 from PIL import Image
 from modules import devices, images, sd_vae_approx, sd_samplers, sd_vae_taesd, shared
-import modules.shared as shared
 from modules_forge.forge_sampler import sampling_prepare, sampling_cleanup
 from modules import extra_networks
 from modules.sd_sampling_backend import get_sampling
@@ -188,7 +187,7 @@ def apply_refiner(cfg_denoiser, x, sigma=None):
         # Ensure sigma is on the same device as cfg_denoiser.inner_model.sigmas
         device = cfg_denoiser.inner_model.sigmas.device
         sigma = sigma.to(device)
-        
+
         try:
             timestep = torch.argmin(torch.abs(cfg_denoiser.inner_model.sigmas - torch.max(sigma)))
         except AttributeError:  # for samplers that don't use sigmas (DDIM) sigma is actually the timestep

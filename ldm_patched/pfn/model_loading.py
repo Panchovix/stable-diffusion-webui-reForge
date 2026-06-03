@@ -22,7 +22,7 @@ class UnsupportedModel(Exception):
 
 
 def load_state_dict(state_dict) -> PyTorchModel:
-    logger.debug(f"Loading state dict into pytorch model arch")
+    logger.debug("Loading state dict into pytorch model arch")
 
     state_dict_keys = list(state_dict.keys())
 

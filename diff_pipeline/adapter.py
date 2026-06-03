@@ -115,7 +115,6 @@ class _FakeCondStageModel:
 
     def get_target_prompt_token_count(self, token_count: int) -> int:
         """Return the next chunk-aligned token ceiling for the counter display."""
-        import math
         return math.ceil(max(token_count, 1) / self.CHUNK_LENGTH) * self.CHUNK_LENGTH
 
     # ---- tokenize --------------------------------------------------------
@@ -627,7 +626,6 @@ def _build_unet_patcher(diffusers_unet, device: torch.device, scheduler=None) ->
     wrappers, memory management) without any shimming.
     """
     from modules_forge.unet_patcher import UnetPatcher
-    import ldm_patched.modules.model_management as model_management
 
     load_device   = device
     offload_device = torch.device("cpu")
@@ -768,7 +766,7 @@ def _encode_prompts(pipe, prompts: list[str]):
     all_hidden = []
     pooled_embeds = None
 
-    for i, (tok, te) in enumerate(zip(tokenizers, text_encoders)):
+    for i, (tok, te) in enumerate(zip(tokenizers, text_encoders, strict=False)):
         is_last = (i == len(tokenizers) - 1)
         hidden, pooled = _encode_prompts_single(pipe, tok, te, prompts, device, is_last)
         all_hidden.append(hidden)

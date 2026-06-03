@@ -25,7 +25,6 @@ import sys
 import numpy as np
 import pandas as pd
 from scipy import stats
-import statsmodels.api as sm
 from statsmodels.formula.api import ols
 from statsmodels.stats.anova import anova_lm
 
@@ -168,8 +167,8 @@ def main() -> None:
     print("SECTION 1 — GOODNESS-OF-FIT (GOF)")
     print(sep)
     print(f"  Candidate distributions : {[n for n,_ in CANDIDATES]}")
-    print(f"  Tests                   : Shapiro-Wilk, KS (MLE-fit), Cramér-von Mises")
-    print(f"  Rejection threshold     : α = 0.05")
+    print("  Tests                   : Shapiro-Wilk, KS (MLE-fit), Cramér-von Mises")
+    print("  Rejection threshold     : α = 0.05")
     print()
 
     gof_summary_rows = []

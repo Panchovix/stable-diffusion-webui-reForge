@@ -20,8 +20,8 @@ if TYPE_CHECKING:
         headers: list[str]
         data: list[list[str | int | bool]]
         ...
-    
-    
+
+
 class _Keywords(Enum):
     NO_VALUE = ...
     FINISHED_ITERATING = ...
@@ -33,37 +33,37 @@ class Component(Block, Serializable):
     """
     def __init__(self, *args, **kwargs) -> None:
         ...
-    
+
     def __str__(self) -> str:
         ...
-    
+
     def __repr__(self): # -> str:
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         """
         :return: a dictionary with context variables for the javascript file associated with the context
         """
         ...
-    
+
     def preprocess(self, x: Any) -> Any:
         """
         Any preprocessing needed to be performed on function input.
         """
         ...
-    
+
     def postprocess(self, y):
         """
         Any postprocessing needed to be performed on function output.
         """
         ...
-    
+
     def style(self, *args, **kwargs): # -> Self:
         """
         This method is deprecated. Please set these arguments in the Components constructor instead.
         """
         ...
-    
+
 
 
 class IOComponent(Component):
@@ -72,75 +72,75 @@ class IOComponent(Component):
     """
     def __init__(self, *, value: Any = ..., label: str | None = ..., info: str | None = ..., show_label: bool | None = ..., container: bool = ..., scale: int | None = ..., min_width: int | None = ..., interactive: bool | None = ..., visible: bool = ..., elem_id: str | None = ..., elem_classes: list[str] | str | None = ..., load_fn: Callable | None = ..., every: float | None = ..., **kwargs) -> None:
         ...
-    
+
     @staticmethod
     def hash_file(file_path: str | Path, chunk_num_blocks: int = ...) -> str:
         ...
-    
+
     @staticmethod
     def hash_url(url: str, chunk_num_blocks: int = ...) -> str:
         ...
-    
+
     @staticmethod
     def hash_bytes(bytes: bytes): # -> str:
         ...
-    
+
     @staticmethod
     def hash_base64(base64_encoding: str, chunk_num_blocks: int = ...) -> str:
         ...
-    
+
     def make_temp_copy_if_needed(self, file_path: str | Path) -> str:
         """Returns a temporary file path for a copy of the given file path if it does
         not already exist. Otherwise returns the path to the existing temp file."""
         ...
-    
+
     async def save_uploaded_file(self, file: UploadFile, upload_dir: str) -> str:
         ...
-    
+
     def download_temp_copy_if_needed(self, url: str) -> str:
         """Downloads a file and makes a temporary file path for a copy if does not already
         exist. Otherwise returns the path to the existing temp file."""
         ...
-    
+
     def base64_to_temp_file_if_needed(self, base64_encoding: str, file_name: str | None = ...) -> str:
         """Converts a base64 encoding to a file and returns the path to the file if
         the file doesn't already exist. Otherwise returns the path to the existing file.
         """
         ...
-    
+
     def pil_to_temp_file(self, img: _Image.Image, dir: str, format=...) -> str:
         ...
-    
+
     def img_array_to_temp_file(self, arr: np.ndarray, dir: str) -> str:
         ...
-    
+
     def audio_to_temp_file(self, data: np.ndarray, sample_rate: int, format: str): # -> str:
         ...
-    
+
     def file_bytes_to_file(self, data: bytes, file_name: str): # -> Path:
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         ...
-    
+
     @staticmethod
     def get_load_fn_and_initial_value(value): # -> tuple[Callable[..., object] | None, object | Any]:
         ...
-    
+
     def attach_load_event(self, callable: Callable, every: float | None): # -> None:
         """Add a load event that runs `callable`, optionally every `every` seconds."""
         ...
-    
+
     def as_example(self, input_data):
         """Return the input data in a way that can be displayed by the examples dataset component in the front-end."""
         ...
-    
+
 
 
 class FormComponent:
     def get_expected_parent(self) -> type[Form] | None:
         ...
-    
+
 
 
 def component(cls_name: str) -> Component:

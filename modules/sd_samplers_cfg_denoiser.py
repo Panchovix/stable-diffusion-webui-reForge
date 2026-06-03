@@ -288,7 +288,7 @@ class CFGDenoiser(torch.nn.Module):
             pass
         else:
             denoised = self.combine_denoised(denoised, cond_composition, uncond, cond_scale * self.cond_scale_miltiplier)
-        
+
         if not self.mask_before_denoising and self.mask is not None:
             denoised = apply_blend(denoised)
         preview = self.sampler.last_latent = denoised
@@ -301,4 +301,4 @@ class CFGDenoiser(torch.nn.Module):
             eps = (x - denoised) / sigma[:, None, None, None]
             return eps
         return denoised.to(device=original_x_device, dtype=original_x_dtype)
-    
+

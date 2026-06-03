@@ -44,7 +44,7 @@ class DynamicThresholdingForForge(scripts.Script):
                     value=False,
                     info="Use simplified settings with only essential controls. Recommended for beginners"
                 )
-            
+
             # Simple mode controls
             with gr.Group(visible=True) as simple_controls:
                 mimic_scale = gr.Slider(
@@ -63,7 +63,7 @@ class DynamicThresholdingForForge(scripts.Script):
                     value=1.0,
                     info="Percentage of strongest signals to consider. Lower values = more aggressive thresholding"
                 )
-            
+
             # Advanced mode controls
             with gr.Group(visible=True) as advanced_controls:
                 mimic_mode = gr.Radio(
@@ -206,4 +206,3 @@ class DynamicThresholdingForForge(scripts.Script):
             ))
 
         return
-    

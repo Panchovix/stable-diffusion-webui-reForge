@@ -132,10 +132,10 @@ class COCOUnifiedNewBaselineDatasetMapper:
             "instance_prob": cfg.INPUT.TASK_PROB.INSTANCE,
         }
         return ret
-    
+
     def _get_semantic_dict(self, pan_seg_gt, image_shape, segments_info, num_class_obj):
         instances = Instances(image_shape)
-        
+
         classes = []
         texts = ["a semantic photo"] * self.num_queries
         masks = []
@@ -165,7 +165,7 @@ class COCOUnifiedNewBaselineDatasetMapper:
                         break
                     texts[num] = f"a photo with a {cls_name}"
                     num += 1
-                    
+
         classes = np.array(classes)
         instances.gt_classes = torch.tensor(classes, dtype=torch.int64)
         if len(masks) == 0:
@@ -180,7 +180,7 @@ class COCOUnifiedNewBaselineDatasetMapper:
             # Placeholder bounding boxes for stuff regions. Note that these are not used during training.
             instances.gt_bboxes = torch.stack([torch.tensor([0., 0., 1., 1.])] * instances.gt_masks.shape[0])
         return instances, texts, label
-    
+
     def _get_instance_dict(self, pan_seg_gt, image_shape, segments_info, num_class_obj):
         instances = Instances(image_shape)
 
@@ -200,7 +200,7 @@ class COCOUnifiedNewBaselineDatasetMapper:
                         masks.append(mask)
                         num_class_obj[cls_name] += 1
                         label[mask] = class_id
-        
+
         num = 0
         for i, cls_name in enumerate(self.class_names):
             if num_class_obj[cls_name] > 0:
@@ -223,7 +223,7 @@ class COCOUnifiedNewBaselineDatasetMapper:
             instances.gt_masks = masks.tensor
             instances.gt_bboxes = masks_to_boxes(instances.gt_masks)
         return instances, texts, label
-    
+
     def _get_panoptic_dict(self, pan_seg_gt, image_shape, segments_info, num_class_obj):
         instances = Instances(image_shape)
 
@@ -242,7 +242,7 @@ class COCOUnifiedNewBaselineDatasetMapper:
                     masks.append(mask)
                     num_class_obj[cls_name] += 1
                     label[mask] = class_id
-        
+
         num = 0
         for i, cls_name in enumerate(self.class_names):
             if num_class_obj[cls_name] > 0:
@@ -281,7 +281,7 @@ class COCOUnifiedNewBaselineDatasetMapper:
         dataset_dict = copy.deepcopy(dataset_dict)  # it will be modified by code below
         image = utils.read_image(dataset_dict["file_name"], format=self.img_format)
         utils.check_image_size(dataset_dict, image)
-        
+
         image, transforms = T.apply_transform_gens(self.tfm_gens, image)
         image_shape = image.shape[:2]  # h, w
 
@@ -302,7 +302,7 @@ class COCOUnifiedNewBaselineDatasetMapper:
             sem_seg_gt = transforms.apply_segmentation(sem_seg_gt)
         else:
             sem_seg_gt = None
-        
+
         if "pan_seg_file_name" in dataset_dict:
             pan_seg_gt = utils.read_image(dataset_dict.pop("pan_seg_file_name"), "RGB")
             segments_info = dataset_dict["segments_info"]

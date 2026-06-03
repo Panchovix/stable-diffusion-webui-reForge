@@ -1,7 +1,6 @@
 from __future__ import annotations
 from enum import Enum
 from typing import List, NamedTuple
-from functools import lru_cache
 
 
 class HiResFixOption(Enum):
@@ -138,7 +137,7 @@ class ControlModelType(Enum):
             }
             or self.is_controlnet
         )
-    
+
 class AutoMachine(Enum):
     """
     Lvmin's algorithm for Attention/AdaIn AutoMachine States.

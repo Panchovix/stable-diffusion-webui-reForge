@@ -98,7 +98,7 @@ class HungarianMatcher(nn.Module):
     while the others are un-matched (and thus treated as non-objects).
     """
 
-    def __init__(self, cost_class: float = 1, cost_mask: float = 1, 
+    def __init__(self, cost_class: float = 1, cost_mask: float = 1,
                     cost_dice: float = 1, num_points: int = 0):
         """Creates the matcher
 
@@ -161,7 +161,7 @@ class HungarianMatcher(nn.Module):
                 cost_mask = batch_sigmoid_ce_loss_jit(out_mask, tgt_mask)
                 # Compute the dice loss betwen masks
                 cost_dice = batch_dice_loss(out_mask, tgt_mask)
-            
+
             # Final cost matrix
             C = (
                 self.cost_mask * cost_mask

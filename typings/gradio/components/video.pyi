@@ -51,14 +51,14 @@ class Video(Changeable, Clearable, Playable, Recordable, Uploadable, IOComponent
             show_share_button: If True, will show a share icon in the corner of the component that allows user to share outputs to Hugging Face Spaces Discussions. If False, icon does not appear. If set to None (default behavior), then the icon appears if this Gradio app is launched on Spaces, but not otherwise.
         """
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         ...
-    
+
     @staticmethod
     def update(value: str | tuple[str, str | None] | Literal[_Keywords.NO_VALUE] | None = ..., source: Literal["upload", "webcam"] | None = ..., height: int | None = ..., width: int | None = ..., label: str | None = ..., show_label: bool | None = ..., container: bool | None = ..., scale: int | None = ..., min_width: int | None = ..., interactive: bool | None = ..., visible: bool | None = ..., autoplay: bool | None = ..., show_share_button: bool | None = ...): # -> dict[str, Any]:
         ...
-    
+
     def preprocess(self, x: tuple[FileData, FileData | None] | FileData | None) -> str | None:
         """
         Parameters:
@@ -67,7 +67,7 @@ class Video(Changeable, Clearable, Playable, Recordable, Uploadable, IOComponent
             A string file path or URL to the preprocessed video. Subtitle file data is ignored.
         """
         ...
-    
+
     def postprocess(self, y: str | Path | tuple[str | Path, str | Path | None] | None) -> tuple[FileData | None, FileData | None] | None:
         """
         Processes a video to ensure that it is in the correct format before returning it to the front end.
@@ -87,12 +87,12 @@ class Video(Changeable, Clearable, Playable, Recordable, Uploadable, IOComponent
             - If both video and subtitle are None, returns None.
         """
         ...
-    
+
     def style(self, *, height: int | None = ..., width: int | None = ..., **kwargs): # -> Self:
         """
         This method is deprecated. Please set these arguments in the constructor instead.
         """
         ...
-    
+
 
 

@@ -38,12 +38,12 @@ def apply_pidinet(input_image, is_safe=False, apply_fliter=False):
         edge = netNetwork(image_pidi)[-1]
         edge = edge.cpu().numpy()
         if apply_fliter:
-            edge = edge > 0.5 
+            edge = edge > 0.5
         if is_safe:
             edge = safe_step(edge)
         edge = (edge * 255.0).clip(0, 255).astype(np.uint8)
-        
-    return edge[0][0] 
+
+    return edge[0][0]
 
 def unload_pid_model():
     global netNetwork

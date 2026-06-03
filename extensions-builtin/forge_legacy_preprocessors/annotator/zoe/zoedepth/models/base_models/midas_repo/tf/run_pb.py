@@ -8,7 +8,7 @@ import argparse
 
 import tensorflow as tf
 
-from transforms import Resize, NormalizeImage, PrepareForNet
+from transforms import Resize, PrepareForNet
 
 def run(input_path, output_path, model_path, model_type="large"):
     """Run MonoDepthNN to compute depth maps.
@@ -46,7 +46,7 @@ def run(input_path, output_path, model_path, model_type="large"):
         graph_def.ParseFromString(f.read())
         tf.import_graph_def(graph_def, name='')
 
-    
+
     model_operations = tf.compat.v1.get_default_graph().get_operations()
     input_node = '0:0'
     output_layer = model_operations[len(model_operations) - 1].name + ':0'
@@ -61,7 +61,7 @@ def run(input_path, output_path, model_path, model_type="large"):
                 resize_method="upper_bound",
                 image_interpolation_method=cv2.INTER_CUBIC,
             )
-    
+
     def compose2(f1, f2):
         return lambda x: f2(f1(x))
 
@@ -92,7 +92,7 @@ def run(input_path, output_path, model_path, model_type="large"):
             prediction, = sess.run(prob_tensor, {input_node: [img_input] })
             prediction = prediction.reshape(net_h, net_w)
             prediction = cv2.resize(prediction, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_CUBIC)
-            
+
             # output
             filename = os.path.join(
                 output_path, os.path.splitext(os.path.basename(img_name))[0]
@@ -109,22 +109,22 @@ def run(input_path, output_path, model_path, model_type="large"):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('-i', '--input_path', 
+    parser.add_argument('-i', '--input_path',
         default='input',
         help='folder with input images'
     )
 
-    parser.add_argument('-o', '--output_path', 
+    parser.add_argument('-o', '--output_path',
         default='output',
         help='folder for output images'
     )
 
-    parser.add_argument('-m', '--model_weights', 
+    parser.add_argument('-m', '--model_weights',
         default='model-f6b98070.pb',
         help='path to the trained weights of model'
     )
 
-    parser.add_argument('-t', '--model_type', 
+    parser.add_argument('-t', '--model_type',
         default='large',
         help='model type: large or small'
     )

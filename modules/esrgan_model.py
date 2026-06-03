@@ -1,4 +1,5 @@
-import os, re
+import os
+import re
 from functools import lru_cache
 from modules import modelloader, devices, errors
 from modules.shared import cmd_opts

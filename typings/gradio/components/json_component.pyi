@@ -33,14 +33,14 @@ class JSON(Changeable, IOComponent, JSONSerializable):
             elem_classes: An optional list of strings that are assigned as the classes of this component in the HTML DOM. Can be used for targeting CSS styles.
         """
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         ...
-    
+
     @staticmethod
     def update(value: Any | Literal[_Keywords.NO_VALUE] | None = ..., label: str | None = ..., show_label: bool | None = ..., container: bool | None = ..., scale: int | None = ..., min_width: int | None = ..., visible: bool | None = ...): # -> dict[str, Any]:
         ...
-    
+
     def postprocess(self, y: dict | list | str | None) -> dict | list | None:
         """
         Parameters:
@@ -49,12 +49,12 @@ class JSON(Changeable, IOComponent, JSONSerializable):
             JSON output in Python list or dict format
         """
         ...
-    
+
     def style(self, *, container: bool | None = ..., **kwargs): # -> Self:
         """
         This method is deprecated. Please set these arguments in the constructor instead.
         """
         ...
-    
+
 
 

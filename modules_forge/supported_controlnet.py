@@ -1,8 +1,7 @@
 import os
 import torch
-from ldm_patched.modules.controlnet import ControlLora, ControlNet, load_t2i_adapter, ControlBase
-from ldm_patched.modules.model_patcher import ModelPatcher
-from ldm_patched.modules import model_management, utils, ops, model_detection
+from ldm_patched.modules.controlnet import ControlLora, ControlNet, load_t2i_adapter
+from ldm_patched.modules import model_management, utils, model_detection
 from ldm_patched.controlnet import cldm
 from ldm_patched.modules.ops import manual_cast
 from modules_forge.controlnet import apply_controlnet_advanced
@@ -168,5 +167,5 @@ class ControlNetPatcher(ControlModelPatcher):
 
     def process_after_running_preprocessors(self, process, params, *args, **kwargs):
         return
-    
+
 add_supported_control_model(ControlNetPatcher)

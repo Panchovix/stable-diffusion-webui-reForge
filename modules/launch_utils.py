@@ -597,33 +597,19 @@ def dump_sysinfo():
 
     return filename
 # this scripts installs necessary requirements and launches main program in webui.py
-from io import TextIOWrapper
 from importlib.machinery import ModuleSpec
-from io import TextIOWrapper
-from io import TextIOWrapper
-from io import TextIOWrapper
-from io import TextIOWrapper
-import logging
 import re
-import subprocess
 import os
 import shutil
 import sys
 import importlib.util
 import importlib.metadata
-import platform
-import json
-import shlex
 from functools import lru_cache
-from typing import Any, NamedTuple
+from typing import Any
 from pathlib import Path
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-from modules import cmd_args, errors
-from modules.paths_internal import script_path, extensions_dir, extensions_builtin_dir
-from modules.timer import startup_timer
+from modules import cmd_args
 from modules import logging_config
-from modules_forge import forge_version
-from modules_forge.config import always_disabled_extensions
 
 
 args, _ = cmd_args.parser.parse_known_args()
@@ -692,7 +678,7 @@ def git_tag_a1111() -> str:
 def git_tag() -> str:
     return 'f' + forge_version.version + '-' + git_tag_a1111()
 
-# FIXME: run expose command injection possibility, command is directly pass on subprocess.run 
+# FIXME: run expose command injection possibility, command is directly pass on subprocess.run
 def run(command, desc: Any | None = None, errdesc: Any | None = None, custom_env: Any | None = None, live: bool = default_command_live) -> str:
     if desc is not None:
         print(desc)
@@ -854,7 +840,7 @@ def list_extensions(settings_file):
     settings = {}
 
     try:
-        with open(settings_file, "r", encoding="utf8") as file: 
+        with open(settings_file, "r", encoding="utf8") as file:
             settings = json.load(file)
     except FileNotFoundError:
         pass
@@ -986,7 +972,7 @@ def ensure_build_dependencies() -> None:
     except Exception:
         # If setuptools check fails, install compatible version
         run_pip("install setuptools==69.5.1", "setuptools")
-        
+
 def prepare_environment() -> None:
     torch_index_url: str = os.environ.get('TORCH_INDEX_URL', "https://download.pytorch.org/whl/cu128")
     torch_command: str = os.environ.get('TORCH_COMMAND', f"pip install torch==2.9.0 torchvision --extra-index-url {torch_index_url}")
@@ -1062,7 +1048,7 @@ def prepare_environment() -> None:
         )
     startup_timer.record("torch GPU test")
 
-    
+
     # Install build dependencies early
     ensure_build_dependencies()
 

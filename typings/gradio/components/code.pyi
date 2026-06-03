@@ -33,16 +33,16 @@ class Code(Changeable, Inputable, IOComponent, StringSerializable):
             elem_classes: An optional list of strings that are assigned as the classes of this component in the HTML DOM. Can be used for targeting CSS styles.
         """
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         ...
-    
+
     def postprocess(self, y): # -> str | None:
         ...
-    
+
     @staticmethod
     def update(value: str | tuple[str] | None | Literal[_Keywords.NO_VALUE] = ..., label: str | None = ..., show_label: bool | None = ..., container: bool | None = ..., scale: int | None = ..., min_width: int | None = ..., visible: bool | None = ..., language: Literal["python", "markdown", "json", "html", "css", "javascript", "typescript", "yaml", "dockerfile", "shell", "r",] | None = ..., interactive: bool | None = ...): # -> dict[str, Any]:
         ...
-    
+
 
 

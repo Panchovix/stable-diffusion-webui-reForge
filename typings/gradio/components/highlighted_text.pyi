@@ -37,14 +37,14 @@ class HighlightedText(Changeable, Selectable, IOComponent, JSONSerializable):
             elem_classes: An optional list of strings that are assigned as the classes of this component in the HTML DOM. Can be used for targeting CSS styles.
         """
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         ...
-    
+
     @staticmethod
     def update(value: list[tuple[str, str | float | None]] | dict | Literal[_Keywords.NO_VALUE] | None = ..., color_map: dict[str, str] | None = ..., show_legend: bool | None = ..., label: str | None = ..., show_label: bool | None = ..., container: bool | None = ..., scale: int | None = ..., min_width: int | None = ..., visible: bool | None = ...): # -> dict[str, Any]:
         ...
-    
+
     def postprocess(self, y: list[tuple[str, str | float | None]] | dict | None) -> list[tuple[str, str | float | None]] | None:
         """
         Parameters:
@@ -53,12 +53,12 @@ class HighlightedText(Changeable, Selectable, IOComponent, JSONSerializable):
             List of (word, category) tuples
         """
         ...
-    
+
     def style(self, *, color_map: dict[str, str] | None = ..., container: bool | None = ..., **kwargs): # -> Self:
         """
         This method is deprecated. Please set these arguments in the constructor instead.
         """
         ...
-    
+
 
 

@@ -16,8 +16,8 @@ if TYPE_CHECKING:
         headers: list[str]
         data: list[list[str | int | bool]]
         ...
-    
-    
+
+
 @document()
 class Dataframe(Changeable, Inputable, Selectable, IOComponent, JSONSerializable):
     """
@@ -54,14 +54,14 @@ class Dataframe(Changeable, Inputable, Selectable, IOComponent, JSONSerializable
             wrap: if True text in table cells will wrap when appropriate, if False the table will scroll horizontally. Defaults to False.
         """
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         ...
-    
+
     @staticmethod
     def update(value: Any | Literal[_Keywords.NO_VALUE] | None = ..., max_rows: int | None = ..., max_cols: str | None = ..., label: str | None = ..., show_label: bool | None = ..., latex_delimiters: list[dict[str, str | bool]] | None = ..., scale: int | None = ..., min_width: int | None = ..., height: int | float | None = ..., interactive: bool | None = ..., visible: bool | None = ...): # -> dict[str, Any]:
         ...
-    
+
     def preprocess(self, x: DataframeData): # -> DataFrame | NDArray[Any] | list[list[str | int | bool]]:
         """
         Parameters:
@@ -70,7 +70,7 @@ class Dataframe(Changeable, Inputable, Selectable, IOComponent, JSONSerializable
             Dataframe in requested format
         """
         ...
-    
+
     def postprocess(self, y: str | pd.DataFrame | np.ndarray | list[list[str | float]] | dict) -> dict:
         """
         Parameters:
@@ -79,9 +79,9 @@ class Dataframe(Changeable, Inputable, Selectable, IOComponent, JSONSerializable
             JSON object with key 'headers' for list of header names, 'data' for 2D array of string or numeric data
         """
         ...
-    
+
     def as_example(self, input_data: pd.DataFrame | np.ndarray | str | None): # -> list[Any] | Any | str:
         ...
-    
+
 
 

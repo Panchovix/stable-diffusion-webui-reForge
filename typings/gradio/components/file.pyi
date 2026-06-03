@@ -39,14 +39,14 @@ class File(Changeable, Selectable, Clearable, Uploadable, IOComponent, FileSeria
             elem_classes: An optional list of strings that are assigned as the classes of this component in the HTML DOM. Can be used for targeting CSS styles.
         """
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         ...
-    
+
     @staticmethod
     def update(value: Any | Literal[_Keywords.NO_VALUE] | None = ..., label: str | None = ..., show_label: bool | None = ..., container: bool | None = ..., scale: int | None = ..., min_width: int | None = ..., height: int | float | None = ..., interactive: bool | None = ..., visible: bool | None = ...): # -> dict[str, Any]:
         ...
-    
+
     def preprocess(self, x: list[dict[str, Any]] | None) -> (bytes | tempfile._TemporaryFileWrapper | list[bytes | tempfile._TemporaryFileWrapper] | None):
         """
         Parameters:
@@ -55,7 +55,7 @@ class File(Changeable, Selectable, Clearable, Uploadable, IOComponent, FileSeria
             File objects in requested format
         """
         ...
-    
+
     def postprocess(self, y: str | list[str] | None) -> dict[str, Any] | list[dict[str, Any]] | None:
         """
         Parameters:
@@ -64,18 +64,18 @@ class File(Changeable, Selectable, Clearable, Uploadable, IOComponent, FileSeria
             JSON object with key 'name' for filename, 'data' for base64 url, and 'size' for filesize in bytes
         """
         ...
-    
+
     def as_example(self, input_data: str | list | None) -> str:
         ...
-    
+
     def api_info(self) -> dict[str, dict | bool]:
         ...
-    
+
     def serialized_info(self): # -> dict[str, str] | dict[str, Any]:
         ...
-    
+
     def example_inputs(self) -> dict[str, Any]:
         ...
-    
+
 
 

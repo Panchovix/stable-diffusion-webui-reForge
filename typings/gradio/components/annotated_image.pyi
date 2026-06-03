@@ -39,14 +39,14 @@ class AnnotatedImage(Selectable, IOComponent, JSONSerializable):
             elem_classes: An optional list of strings that are assigned as the classes of this component in the HTML DOM. Can be used for targeting CSS styles.
         """
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         ...
-    
+
     @staticmethod
     def update(value: tuple[np.ndarray | _Image.Image | str, list[tuple[np.ndarray | tuple[int, int, int, int], str]],] | Literal[_Keywords.NO_VALUE] = ..., show_legend: bool | None = ..., height: int | None = ..., width: int | None = ..., color_map: dict[str, str] | None = ..., label: str | None = ..., show_label: bool | None = ..., container: bool | None = ..., scale: int | None = ..., min_width: int | None = ..., visible: bool | None = ...): # -> dict[str, Any]:
         ...
-    
+
     def postprocess(self, y: tuple[np.ndarray | _Image.Image | str, list[tuple[np.ndarray | tuple[int, int, int, int], str]],]) -> tuple[dict, list[tuple[dict, str]]] | None:
         """
         Parameters:
@@ -55,12 +55,12 @@ class AnnotatedImage(Selectable, IOComponent, JSONSerializable):
             Tuple of base image file and list of subsections, with each subsection a two-part tuple where the first element image path of the mask, and the second element is the label.
         """
         ...
-    
+
     def style(self, *, height: int | None = ..., width: int | None = ..., color_map: dict[str, str] | None = ..., **kwargs): # -> Self:
         """
         This method is deprecated. Please set these arguments in the constructor instead.
         """
         ...
-    
+
 
 

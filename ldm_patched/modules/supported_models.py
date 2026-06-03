@@ -497,7 +497,7 @@ class Stable_Cascade_C(supported_models_base.BASE):
         return state_dict
 
     def process_clip_state_dict(self, state_dict):
-        state_dict = utils.state_dict_prefix_replace(state_dict, {k: "" for k in self.text_encoder_key_prefix}, filter_keys=True)
+        state_dict = utils.state_dict_prefix_replace(state_dict, dict.fromkeys(self.text_encoder_key_prefix, ""), filter_keys=True)
         if "clip_g.text_projection" in state_dict:
             state_dict["clip_g.transformer.text_projection.weight"] = state_dict.pop("clip_g.text_projection").transpose(0, 1)
         return state_dict
@@ -555,7 +555,7 @@ class SDXL_instructpix2pix(SDXL):
 
     def get_model(self, state_dict, prefix="", device=None):
         return model_base.SDXL_instructpix2pix(self, model_type=self.model_type(state_dict, prefix), device=device)
-    
+
 class LotusD(SD20):
     unet_config = {
         "model_channels": 320,
@@ -956,7 +956,7 @@ class CosmosI2V(CosmosT2V):
     def get_model(self, state_dict, prefix="", device=None):
         out = model_base.CosmosVideo(self, image_to_video=True, device=device)
         return out
-    
+
 class CosmosT2IPredict2(supported_models_base.BASE):
     unet_config = {
         "image_model": "cosmos_predict2",
@@ -1071,7 +1071,7 @@ class WAN21_I2V(WAN21_T2V):
     def get_model(self, state_dict, prefix="", device=None):
         out = model_base.WAN21(self, image_to_video=True, device=device)
         return out
-    
+
 class WAN21_FunControl2V(WAN21_T2V):
     unet_config = {
         "image_model": "wan2.1",
@@ -1082,7 +1082,7 @@ class WAN21_FunControl2V(WAN21_T2V):
     def get_model(self, state_dict, prefix="", device=None):
         out = model_base.WAN21(self, image_to_video=False, device=device)
         return out
-    
+
 class WAN21_Camera(WAN21_T2V):
     unet_config = {
         "image_model": "wan2.1",
@@ -1093,7 +1093,7 @@ class WAN21_Camera(WAN21_T2V):
     def get_model(self, state_dict, prefix="", device=None):
         out = model_base.WAN21_Camera(self, image_to_video=False, device=device)
         return out
-    
+
 class WAN21_Vace(WAN21_T2V):
     unet_config = {
         "image_model": "wan2.1",
@@ -1131,7 +1131,7 @@ class Hunyuan3Dv2(supported_models_base.BASE):
     def get_model(self, state_dict, prefix="", device=None):
         out = model_base.Hunyuan3Dv2(self, device=device)
         return out
-    
+
     def clip_target(self, state_dict={}):
         return None
 

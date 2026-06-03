@@ -237,7 +237,7 @@ def DPT_Large(pretrained=True, **kwargs):
         model.load_state_dict(state_dict)
 
     return model
-    
+
 def DPT_Hybrid(pretrained=True, **kwargs):
     """ # This docstring shows up in hub.help()
     MiDaS DPT-Hybrid model for monocular depth estimation
@@ -260,7 +260,7 @@ def DPT_Hybrid(pretrained=True, **kwargs):
         model.load_state_dict(state_dict)
 
     return model
-    
+
 def MiDaS(pretrained=True, **kwargs):
     """ # This docstring shows up in hub.help()
     MiDaS v2.1 model for monocular depth estimation

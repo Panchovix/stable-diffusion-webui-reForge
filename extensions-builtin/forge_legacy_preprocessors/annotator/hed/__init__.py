@@ -11,7 +11,6 @@ import torch
 import numpy as np
 
 from einops import rearrange
-import os
 from modules import devices
 from annotator.annotator_path import models_path
 from annotator.util import safe_step, nms
@@ -91,7 +90,7 @@ def apply_hed(input_image, is_safe=False):
         edge = (edge * 255.0).clip(0, 255).astype(np.uint8)
         return edge
 
-    
+
 def unload_hed_model():
     global netNetwork
     if netNetwork is not None:

@@ -4,7 +4,6 @@ import os
 import gradio as gr
 import torch
 from modules import scripts, shared
-import modules.shared as shared
 from ldm_patched.modules import model_sampling
 from advanced_model_sampling.nodes_model_advanced import (
     ModelSamplingDiscrete, ModelSamplingContinuousEDM, ModelSamplingContinuousV,
@@ -27,19 +26,19 @@ class FlowMatchingDenoiser(torch.nn.Module):
 
         # CRITICAL: Don't cache sigmas here! Always fetch from unet.get_model_object("model_sampling")
         # This allows the denoiser to pick up changes from patching that happens later
-        logging.info(f"[FlowMatchingDenoiser] Created, will use model_sampling from unet_patcher dynamically")
+        logging.info("[FlowMatchingDenoiser] Created, will use model_sampling from unet_patcher dynamically")
         logging.info(f"[FlowMatchingDenoiser] Current sigma range: {self.sigma_min} - {self.sigma_max}")
         logging.info(f"[FlowMatchingDenoiser] Current model_sampling type: {type(self.model_sampling).__name__}")
 
         # CRITICAL: Patch inner_model.model_sampling to use the patched version
         # This ensures noise_scaling and inverse_noise_scaling use correct formulas
         self.inner_model.model_sampling = self.model_sampling
-        logging.info(f"[FlowMatchingDenoiser] Patched inner_model.model_sampling")
+        logging.info("[FlowMatchingDenoiser] Patched inner_model.model_sampling")
 
         # Add compatibility for Comfy samplers that expect model_patcher
         # This allows DPM++ SDE and other advanced samplers to access model_sampling
         self.model_patcher = self.unet
-        logging.info(f"[FlowMatchingDenoiser] Exposed model_patcher for Comfy sampler compatibility")
+        logging.info("[FlowMatchingDenoiser] Exposed model_patcher for Comfy sampler compatibility")
 
     @property
     def model_sampling(self):
@@ -438,17 +437,17 @@ class AdvancedModelSamplingScript(scripts.Script):
 
                 # Create the FlowMatchingDenoiser
                 denoiser = FlowMatchingDenoiser(sd_model, unet_patcher)
-                logging.info(f"[Advanced Sampling] Created FlowMatchingDenoiser")
+                logging.info("[Advanced Sampling] Created FlowMatchingDenoiser")
                 logging.info(f"[Advanced Sampling] Current sigma range: {denoiser.sigma_min} - {denoiser.sigma_max}")
                 logging.info(f"[Advanced Sampling] Current model_sampling type: {type(denoiser.model_sampling).__name__}")
 
                 # Patch the sampler's model_wrap directly
                 # For A1111 KDiffusion samplers
                 if hasattr(p, 'sampler') and hasattr(p.sampler, 'model_wrap_cfg'):
-                    logging.info(f"[Advanced Sampling] Patching A1111 KDiffusion sampler")
+                    logging.info("[Advanced Sampling] Patching A1111 KDiffusion sampler")
                     p.sampler.model_wrap_cfg.model_wrap = denoiser
                     p.sampler.model_wrap = denoiser
-                    logging.info(f"[Advanced Sampling] Replaced model_wrap in A1111 sampler")
+                    logging.info("[Advanced Sampling] Replaced model_wrap in A1111 sampler")
 
                     # CRITICAL: Patch sample_img2img to use CONST noise scaling
                     self._patch_sampler_img2img(p.sampler, denoiser)
@@ -465,16 +464,16 @@ class AdvancedModelSamplingScript(scripts.Script):
                 try:
                     from modules import shared
                     if shared.sd_model is not sd_model:
-                        logging.info(f"[Advanced Sampling] Also patching shared.sd_model.create_denoiser")
+                        logging.info("[Advanced Sampling] Also patching shared.sd_model.create_denoiser")
                         shared.sd_model.create_denoiser = create_flow_denoiser
                 except Exception as e:
                     logging.debug(f"[Advanced Sampling] Could not patch shared.sd_model: {e}")
 
-                logging.info(f"[Advanced Sampling] Successfully patched denoiser")
+                logging.info("[Advanced Sampling] Successfully patched denoiser")
             else:
                 # For non-flow models, we still need to update the sigmas
                 # This ensures the A1111 backend uses the correct sigma range
-                logging.info(f"[Advanced Sampling] Updating model sigmas for non-flow sampling mode")
+                logging.info("[Advanced Sampling] Updating model sigmas for non-flow sampling mode")
 
                 # Update alphas_cumprod to match the patched sigmas
                 # alphas_cumprod = 1 / (sigmas^2 + 1)
@@ -498,18 +497,16 @@ class AdvancedModelSamplingScript(scripts.Script):
             from modules import sd_samplers_common
             import inspect
 
-            # Store the original method
-            original_sample_img2img = sampler.sample_img2img
+            # Store the original method (unused, kept for reference)
+            _ = sampler.sample_img2img
 
             def patched_sample_img2img(p, x, noise, conditioning, unconditional_conditioning, steps=None, image_conditioning=None):
                 """Patched img2img that uses CONST noise scaling for flow models"""
-                logging.info(f"[Advanced Sampling] patched_sample_img2img called")
+                logging.info("[Advanced Sampling] patched_sample_img2img called")
 
                 # Call the original method but intercept the noise addition
                 # We need to monkey-patch the specific line where noise is added
 
-                # Get the unet_patcher
-                unet_patcher = sampler.model_wrap.inner_model.forge_objects.unet
                 from modules_forge.forge_sampler import sampling_prepare
 
                 sampling_prepare(sampler.model_wrap.inner_model.forge_objects.unet, x=x)
@@ -533,7 +530,7 @@ class AdvancedModelSamplingScript(scripts.Script):
                 else:
                     # Fallback to EPS-style
                     xi = x + noise * sigma_sched[0]
-                    logging.warning(f"[Advanced Sampling] Falling back to EPS noise scaling")
+                    logging.warning("[Advanced Sampling] Falling back to EPS noise scaling")
 
                 # Handle extra noise
                 from modules.script_callbacks import ExtraNoiseParams, extra_noise_callback
@@ -585,7 +582,7 @@ class AdvancedModelSamplingScript(scripts.Script):
 
             # Replace the method
             sampler.sample_img2img = patched_sample_img2img
-            logging.info(f"[Advanced Sampling] Successfully patched sample_img2img for CONST noise scaling")
+            logging.info("[Advanced Sampling] Successfully patched sample_img2img for CONST noise scaling")
 
         except Exception as e:
             logging.error(f"[Advanced Sampling] Error patching sample_img2img: {e}", exc_info=True)

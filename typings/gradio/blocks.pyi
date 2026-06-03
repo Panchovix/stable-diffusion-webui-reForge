@@ -19,20 +19,20 @@ BUILT_IN_THEMES: dict[str, Theme] = ...
 class Block:
     def __init__(self, *, render: bool = ..., elem_id: str | None = ..., elem_classes: list[str] | str | None = ..., visible: bool = ..., root_url: str | None = ..., _skip_init_processing: bool = ..., **kwargs) -> None:
         ...
-    
+
     def render(self): # -> IOComponent | Block | Self:
         """
         Adds self into appropriate BlockContext
         """
         ...
-    
+
     def unrender(self): # -> Self:
         """
         Removes self from BlockContext if it has been rendered (otherwise does nothing).
         Removes self from the layout and collection of blocks, but does not delete any event triggers.
         """
         ...
-    
+
     def get_block_name(self) -> str:
         """
         Gets block's class name.
@@ -42,10 +42,10 @@ class Block:
         @return: class name
         """
         ...
-    
+
     def get_expected_parent(self) -> type[BlockContext] | None:
         ...
-    
+
     def set_event_trigger(self, event_name: str, fn: Callable | None, inputs: Component | list[Component] | set[Component] | None, outputs: Component | list[Component] | None, preprocess: bool = ..., postprocess: bool = ..., scroll_to_output: bool = ..., show_progress: str = ..., api_name: str | None | Literal[False] = ..., js: str | None = ..., no_target: bool = ..., queue: bool | None = ..., batch: bool = ..., max_batch_size: int = ..., cancels: list[int] | None = ..., every: float | None = ..., collects_event_data: bool | None = ..., trigger_after: int | None = ..., trigger_only_on_success: bool = ...) -> tuple[dict[str, Any], int]:
         """
         Adds an event to the component's dependencies.
@@ -72,19 +72,19 @@ class Block:
         Returns: dependency information, dependency index
         """
         ...
-    
+
     def get_config(self): # -> dict[str, Any]:
         ...
-    
+
     @staticmethod
     @abstractmethod
     def update(**kwargs) -> dict:
         ...
-    
+
     @classmethod
     def get_specific_update(cls, generic_update: dict[str, Any]) -> dict:
         ...
-    
+
 
 
 class BlockContext(Block):
@@ -95,43 +95,43 @@ class BlockContext(Block):
             render: If False, this will not be included in the Blocks config file at all.
         """
         ...
-    
+
     def add_child(self, child: Block): # -> None:
         ...
-    
+
     def __enter__(self): # -> Self:
         ...
-    
+
     def add(self, child: Block): # -> None:
         ...
-    
+
     def fill_expected_parents(self): # -> None:
         ...
-    
+
     def __exit__(self, exc_type: type[BaseException] | None = ..., *args): # -> None:
         ...
-    
+
     def postprocess(self, y):
         """
         Any postprocessing needed to be performed on a block context.
         """
         ...
-    
+
 
 
 class BlockFunction:
     def __init__(self, fn: Callable | None, inputs: list[Component], outputs: list[Component], preprocess: bool, postprocess: bool, inputs_as_dict: bool, tracks_progress: bool = ...) -> None:
         ...
-    
+
     def spaces_auto_wrap(self): # -> None:
         ...
-    
+
     def __str__(self) -> str:
         ...
-    
+
     def __repr__(self): # -> str:
         ...
-    
+
 
 
 def postprocess_update_dict(block: Block, update_dict: dict, postprocess: bool = ...): # -> dict[Any, Any]:
@@ -210,7 +210,7 @@ class Blocks(BlockContext):
             css: custom css or path to custom css file to apply to entire Blocks
         """
         ...
-    
+
     @classmethod
     def from_config(cls, config: dict, fns: list[Callable], root_url: str) -> Blocks:
         """
@@ -223,25 +223,25 @@ class Blocks(BlockContext):
         root_url: an external url to use as a root URL when serving files for components in the Blocks.
         """
         ...
-    
+
     def __str__(self) -> str:
         ...
-    
+
     def __repr__(self): # -> str:
         ...
-    
+
     @property
     def expects_oauth(self): # -> bool:
         """Return whether the app expects user to authenticate via OAuth."""
         ...
-    
+
     def render(self): # -> Self:
         ...
-    
+
     def is_callable(self, fn_index: int = ...) -> bool:
         """Checks if a particular Blocks function is callable (i.e. not stateful or a generator)."""
         ...
-    
+
     def __call__(self, *inputs, fn_index: int = ..., api_name: str | None = ...): # -> Any:
         """
         Allows Blocks objects to be called as functions. Supply the parameters to the
@@ -254,7 +254,7 @@ class Blocks(BlockContext):
         api_name: The api_name of the dependency to call. Will take precedence over fn_index.
         """
         ...
-    
+
     async def call_function(self, fn_index: int, processed_input: list[Any], iterator: AsyncIterator[Any] | None = ..., requests: routes.Request | list[routes.Request] | None = ..., event_id: str | None = ..., event_data: EventData | None = ...): # -> dict[str, Any]:
         """
         Calls function with given index and preprocessed input, and measures process time.
@@ -267,28 +267,28 @@ class Blocks(BlockContext):
             event_data: data associated with event trigger
         """
         ...
-    
+
     def serialize_data(self, fn_index: int, inputs: list[Any]) -> list[Any]:
         ...
-    
+
     def deserialize_data(self, fn_index: int, outputs: list[Any]) -> list[Any]:
         ...
-    
+
     def validate_inputs(self, fn_index: int, inputs: list[Any]): # -> None:
         ...
-    
+
     def preprocess_data(self, fn_index: int, inputs: list[Any], state: dict[int, Any]): # -> list[Any]:
         ...
-    
+
     def validate_outputs(self, fn_index: int, predictions: Any | list[Any]): # -> None:
         ...
-    
+
     def postprocess_data(self, fn_index: int, predictions: list | dict, state: dict[int, Any]): # -> list[Any]:
         ...
-    
+
     def handle_streaming_outputs(self, fn_index: int, data: list, session_hash: str | None, run: int | None) -> list:
         ...
-    
+
     async def process_api(self, fn_index: int, inputs: list[Any], state: dict[int, Any], request: routes.Request | list[routes.Request] | None = ..., iterators: dict[int, Any] | None = ..., session_hash: str | None = ..., event_id: str | None = ..., event_data: EventData | None = ...) -> dict[str, Any]:
         """
         Processes API calls from the frontend. First preprocesses the data,
@@ -304,22 +304,22 @@ class Blocks(BlockContext):
         Returns: None
         """
         ...
-    
+
     async def create_limiter(self): # -> None:
         ...
-    
+
     def get_config(self): # -> dict[str, str]:
         ...
-    
+
     def get_config_file(self): # -> dict[str, Any]:
         ...
-    
+
     def __enter__(self): # -> Self:
         ...
-    
+
     def __exit__(self, exc_type: type[BaseException] | None = ..., *args): # -> None:
         ...
-    
+
     def load(self: Blocks | None = ..., fn: Callable | None = ..., inputs: list[Component] | None = ..., outputs: list[Component] | None = ..., api_name: str | None | Literal[False] = ..., scroll_to_output: bool = ..., show_progress: str = ..., queue=..., batch: bool = ..., max_batch_size: int = ..., preprocess: bool = ..., postprocess: bool = ..., every: float | None = ..., _js: str | None = ..., *, name: str | None = ..., src: str | None = ..., api_key: str | None = ..., alias: str | None = ..., **kwargs) -> Blocks | dict[str, Any] | None:
         """
         For reverse compatibility reasons, this is both a class method and an instance
@@ -356,11 +356,11 @@ class Blocks(BlockContext):
             demo.launch()
         """
         ...
-    
+
     def clear(self): # -> Self:
         """Resets the layout of the Blocks object."""
         ...
-    
+
     @concurrency_count_warning
     @document()
     def queue(self, concurrency_count: int = ..., status_update_rate: float | Literal["auto"] = ..., client_position_to_load_data: int | None = ..., default_enabled: bool | None = ..., api_open: bool = ..., max_size: int | None = ...): # -> Self:
@@ -385,10 +385,10 @@ class Blocks(BlockContext):
             demo.launch()
         """
         ...
-    
+
     def validate_queue_settings(self): # -> None:
         ...
-    
+
     def launch(self, inline: bool | None = ..., inbrowser: bool = ..., share: bool | None = ..., debug: bool = ..., enable_queue: bool | None = ..., max_threads: int = ..., auth: Callable | tuple[str, str] | list[tuple[str, str]] | None = ..., auth_message: str | None = ..., prevent_thread_lock: bool = ..., show_error: bool = ..., server_name: str | None = ..., server_port: int | None = ..., show_tips: bool = ..., height: int = ..., width: int | str = ..., encrypt: bool | None = ..., favicon_path: str | None = ..., ssl_keyfile: str | None = ..., ssl_certfile: str | None = ..., ssl_keyfile_password: str | None = ..., ssl_verify: bool = ..., quiet: bool = ..., show_api: bool = ..., file_directories: list[str] | None = ..., allowed_paths: list[str] | None = ..., blocked_paths: list[str] | None = ..., root_path: str | None = ..., _frontend: bool = ..., app_kwargs: dict[str, Any] | None = ...) -> tuple[FastAPI, str, str]:
         """
         Launches a simple web server that serves the demo. Can also be used to create a
@@ -443,7 +443,7 @@ class Blocks(BlockContext):
             demo.launch(share=True, auth=("username", "password"))
         """
         ...
-    
+
     def integrate(self, comet_ml=..., wandb: ModuleType | None = ..., mlflow: ModuleType | None = ...) -> None:
         """
         A catch-all method for integrating with other libraries. This method should be run after launch()
@@ -453,27 +453,27 @@ class Blocks(BlockContext):
             mlflow: If the mlflow module  is provided, will integrate with the experiment and appear on ML Flow dashboard
         """
         ...
-    
+
     def close(self, verbose: bool = ...) -> None:
         """
         Closes the Interface that was launched and frees the port.
         """
         ...
-    
+
     def block_thread(self) -> None:
         """Block main thread until interrupted by user."""
         ...
-    
+
     def attach_load_events(self): # -> None:
         """Add a load event for every component whose initial value should be randomized."""
         ...
-    
+
     def startup_events(self): # -> None:
         """Events that should be run when the app containing this block starts up."""
         ...
-    
+
     def queue_enabled_for_fn(self, fn_index: int): # -> bool | None:
         ...
-    
+
 
 

@@ -24,7 +24,7 @@ class ORJSONResponse(JSONResponse):
     media_type = ...
     def render(self, content: Any) -> bytes:
         ...
-    
+
 
 
 def toorjson(value): # -> Markup:
@@ -38,20 +38,20 @@ class App(FastAPI):
     """
     def __init__(self, **kwargs) -> None:
         ...
-    
+
     def configure_app(self, blocks: gradio.Blocks) -> None:
         ...
-    
+
     def get_blocks(self) -> gradio.Blocks:
         ...
-    
+
     def build_proxy_request(self, url_path): # -> Request:
         ...
-    
+
     @staticmethod
     def create_app(blocks: gradio.Blocks, app_kwargs: Dict[str, Any] | None = ...) -> App:
         ...
-    
+
 
 
 def safe_join(directory: str, path: str) -> str:
@@ -72,34 +72,34 @@ class Obj:
     """
     def __init__(self, dict_) -> None:
         ...
-    
+
     def __getitem__(self, item): # -> Any:
         ...
-    
+
     def __setitem__(self, item, value): # -> None:
         ...
-    
+
     def __iter__(self): # -> Generator[tuple[str, dict[str, Any]] | tuple[str, Any], Any, None]:
         ...
-    
+
     def __contains__(self, item) -> bool:
         ...
-    
+
     def keys(self): # -> dict_keys[str, Any]:
         ...
-    
+
     def values(self): # -> dict_values[str, Any]:
         ...
-    
+
     def items(self): # -> dict_items[str, Any]:
         ...
-    
+
     def __str__(self) -> str:
         ...
-    
+
     def __repr__(self) -> str:
         ...
-    
+
 
 
 @document()
@@ -126,13 +126,13 @@ class Request:
             request: A fastapi.Request
         """
         ...
-    
+
     def dict_to_obj(self, d): # -> Any:
         ...
-    
+
     def __getattr__(self, name): # -> Any:
         ...
-    
+
 
 
 @document()

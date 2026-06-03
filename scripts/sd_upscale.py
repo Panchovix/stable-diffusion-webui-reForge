@@ -6,7 +6,6 @@ from PIL import Image
 
 from modules import processing, shared, images, devices
 from modules.processing import Processed
-import modules.shared as shared
 
 
 class Script(scripts.Script):

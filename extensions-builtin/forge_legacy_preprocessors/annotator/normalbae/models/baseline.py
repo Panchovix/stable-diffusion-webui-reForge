@@ -17,9 +17,9 @@ class NNET(nn.Module):
 
         # Bilinearly upsample the output to match the input resolution
         up_out = F.interpolate(out, size=[x.size(2), x.size(3)], mode='bilinear', align_corners=False)
-        
+
         # L2-normalize the first three channels / ensure positive value for concentration parameters (kappa)
-        up_out = norm_normalize(up_out) 
+        up_out = norm_normalize(up_out)
         return up_out
 
     def get_1x_lr_params(self):  # lr/10 learning rate

@@ -1,8 +1,6 @@
-import os
 import re
 from functools import lru_cache
 from modules import modelloader, devices, errors
-from modules.shared import cmd_opts
 import modules.shared as shared
 from modules.upscaler import Upscaler, UpscalerData
 from modules.upscaler_utils import upscale_with_model
@@ -63,4 +61,3 @@ class UpscalerHAT(Upscaler):
         model = modelloader.load_spandrel_model(filename, device=devices.cpu, prefer_half=PREFER_HALF)
         model.to(devices.device_hat)
         return model
-    

@@ -36,7 +36,7 @@ decoder kwargs (3D convolution, etc.).
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
@@ -428,7 +428,7 @@ def build_vae_decoder(first_stage_model) -> MLXVAEDecoder:
     -------
     MLXVAEDecoder ready for use.
     """
-    sd = {k: v for k, v in first_stage_model.state_dict().items()}
+    sd = dict(first_stage_model.state_dict().items())
 
     # Detect architecture from weight shapes
     conv_in_w    = sd["decoder.conv_in.weight"]          # [block_in, z_ch, 3, 3]
@@ -473,7 +473,7 @@ def build_vae_decoder(first_stage_model) -> MLXVAEDecoder:
 
 def build_vae_encoder(first_stage_model) -> MLXVAEEncoder:
     """Build an MLXVAEEncoder from the ldm_patched first_stage_model."""
-    sd = {k: v for k, v in first_stage_model.state_dict().items()}
+    sd = dict(first_stage_model.state_dict().items())
 
     max_down = max(
         int(k.split(".")[2]) for k in sd if k.startswith("encoder.down.")

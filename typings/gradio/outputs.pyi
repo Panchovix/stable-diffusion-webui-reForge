@@ -16,7 +16,7 @@ def warn_outputs_deprecation(): # -> None:
 class Textbox(components.Textbox):
     def __init__(self, type: str = ..., label: Optional[str] = ...) -> None:
         ...
-    
+
 
 
 class Image(components.Image):
@@ -32,7 +32,7 @@ class Image(components.Image):
         label (str): component name in interface.
         """
         ...
-    
+
 
 
 class Video(components.Video):
@@ -47,7 +47,7 @@ class Video(components.Video):
         label (str): component name in interface.
         """
         ...
-    
+
 
 
 class Audio(components.Audio):
@@ -62,7 +62,7 @@ class Audio(components.Audio):
         label (str): component name in interface.
         """
         ...
-    
+
 
 
 class File(components.File):
@@ -76,7 +76,7 @@ class File(components.File):
         label (str): component name in interface.
         """
         ...
-    
+
 
 
 class Dataframe(components.Dataframe):
@@ -95,7 +95,7 @@ class Dataframe(components.Dataframe):
         label (str): component name in interface.
         """
         ...
-    
+
 
 
 class Timeseries(components.Timeseries):
@@ -111,7 +111,7 @@ class Timeseries(components.Timeseries):
         label (str): component name in interface.
         """
         ...
-    
+
 
 
 class State(components.State):
@@ -125,7 +125,7 @@ class State(components.State):
         label (str): component name in interface (not used).
         """
         ...
-    
+
 
 
 class Label(components.Label):
@@ -141,7 +141,7 @@ class Label(components.Label):
         label (str): component name in interface.
         """
         ...
-    
+
 
 
 class KeyValues:
@@ -156,7 +156,7 @@ class KeyValues:
         label (str): component name in interface.
         """
         ...
-    
+
 
 
 class HighlightedText(components.HighlightedText):
@@ -173,7 +173,7 @@ class HighlightedText(components.HighlightedText):
         show_legend (bool): whether to show span categories in a separate legend or inline.
         """
         ...
-    
+
 
 
 class JSON(components.JSON):
@@ -187,7 +187,7 @@ class JSON(components.JSON):
         label (str): component name in interface.
         """
         ...
-    
+
 
 
 class HTML(components.HTML):
@@ -201,7 +201,7 @@ class HTML(components.HTML):
         label (str): component name in interface.
         """
         ...
-    
+
 
 
 class Carousel(components.Carousel):
@@ -215,7 +215,7 @@ class Carousel(components.Carousel):
         label (str): component name in interface.
         """
         ...
-    
+
 
 
 class Chatbot(components.Chatbot):
@@ -229,7 +229,7 @@ class Chatbot(components.Chatbot):
         label (str): component name in interface (not used).
         """
         ...
-    
+
 
 
 class Image3D(components.Model3D):
@@ -244,6 +244,6 @@ class Image3D(components.Model3D):
         optional (bool): If True, the interface can be submitted with no uploaded image, in which case the input value is None.
         """
         ...
-    
+
 
 
