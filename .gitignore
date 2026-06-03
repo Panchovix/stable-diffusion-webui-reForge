@@ -68,3 +68,4 @@ webui-user.sh
 CLAUDE.md
 .claude/settings.local.json
 embeddings
+.obsidian/
