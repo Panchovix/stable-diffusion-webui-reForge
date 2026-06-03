@@ -626,24 +626,38 @@ default_command_live: bool = (os.environ.get('WEBUI_LAUNCH_LIVE_OUTPUT') == "1")
 os.environ.setdefault('GRADIO_ANALYTICS_ENABLED', 'False')
 
 
+def _select_requirements_file() -> str:
+    """Return the appropriate requirements file for the running Python version.
+
+    Python 3.14+ gets its own pinned file so we can track version differences
+    (e.g. scikit-image 0.26, kornia 0.8.3) without drifting the 3.10-3.13 baseline.
+    Falls back to the main file if the version-specific one is absent.
+    """
+    major, minor = sys.version_info.major, sys.version_info.minor
+    if (major, minor) >= (3, 14):
+        candidate = "requirements_versions_py314.txt"
+        if os.path.isfile(os.path.join(script_path, candidate)):
+            return candidate
+    # 3.11–3.13: main requirements (check_python_version warns below 3.11)
+    return "requirements_versions.txt"
+
+
 def check_python_version() -> None:
     is_windows: bool = platform.system() == "Windows"
     major: int = sys.version_info.major
     minor: int = sys.version_info.minor
     micro: int = sys.version_info.micro
 
-    # Only show warning if Python version is < 3.7 or >= 3.14
-    if not (major == 3 and 7 <= minor <= 13):
+    # Supported range: 3.11 – 3.14 (3.14 is the current development target)
+    # 3.10 is excluded: PyWavelets>=1.9.0 requires Python >=3.11.
+    if not (major == 3 and 11 <= minor <= 14):
         errors.print_error_explanation(f"""
 INCOMPATIBLE PYTHON VERSION
 
-This program is tested with 3.10.6 Python, but you have {major}.{minor}.{micro}.
+This program targets Python 3.11–3.14, but you have {major}.{minor}.{micro}.
 If you encounter an error with "RuntimeError: Couldn't install torch." message,
 or any other error regarding unsuccessful package (library) installation,
-please downgrade (or upgrade) to the latest version of 3.10 Python
-and delete current Python and "venv" folder in WebUI's directory.
-
-You can download 3.10 Python from here: https://www.python.org/downloads/release/python-3106/
+please switch to Python 3.11, 3.12, 3.13 or 3.14.
 
 {"Alternatively, use a binary release of WebUI: https://github.com/AUTOMATIC1111/stable-diffusion-webui/releases/tag/v1.0.0-pre" if is_windows else ""}
 
@@ -996,7 +1010,7 @@ def prepare_environment() -> None:
             # See https://intel.github.io/intel-extension-for-pytorch/index.html#installation for details.
             torch_index_url: str = os.environ.get('TORCH_INDEX_URL', "https://pytorch-extension.intel.com/release-whl/stable/xpu/us/")
             torch_command: str = os.environ.get('TORCH_COMMAND', f"pip install torch==2.0.0a0 intel-extension-for-pytorch==2.0.110+gitba7f6c1 --extra-index-url {torch_index_url}")
-    requirements_file: str = os.environ.get('REQS_FILE', "requirements_versions.txt")
+    requirements_file: str = os.environ.get('REQS_FILE', _select_requirements_file())
     requirements_file_for_npu: str = os.environ.get('REQS_FILE_FOR_NPU', "requirements_npu.txt")
 
     xformers_package: str = os.environ.get('XFORMERS_PACKAGE', '--index-url https://download.pytorch.org/whl/cu128 xformers')

@@ -47,7 +47,7 @@ git checkout main
 In the future, the WebUI script will be able to do this for you.
 
 ## Windows(7+)
-You will need a working Python 3.10+ release. Python 3.14 is the current target; 3.11–3.13 also work fine. 
+You will need a working Python 3.11+ release. Python 3.14 is the current target; 3.11–3.13 also work fine. 
 Python can be downloaded from here: 
 Open PowerShell or Command Line Prompt. I recommend using the right-click menu's "Open with Terminal" entry to open it directly in Terminal. If you can't find it, use cd to change directory to repo.
 Now check if you are using NVIDIA GPU. If not, in cmd arg, you add following line.
@@ -64,7 +64,7 @@ Reboot your computer after install, these libs need reboot so Windows understand
 Run webui.bat. Script will handle all initalization for you. 
 
 # Linux
-You will need a working Python 3.10+ release. Python 3.14 is the current target; 3.11–3.13 also work fine. The exact installation depends on your distro; search your distro's documentation for this step. 
+You will need a working Python 3.11+ release. Python 3.14 is the current target; 3.11–3.13 also work fine. The exact installation depends on your distro; search your distro's documentation for this step. 
 Open your distro's terminal and change into repo dictory.
 Now check if you are using NVIDIA GPU. If not, in cmd arg, you add following line.
 ```bash

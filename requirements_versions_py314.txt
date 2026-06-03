@@ -1,9 +1,15 @@
-# Python 3.10 – 3.13 compatible requirements.
-# gradio==3.41.2 imposes two hard ceilings that apply to this entire file:
-#   - numpy < 2  (gradio requires numpy>=1.0,<2.dev0)
-#   - pillow < 11 (gradio requires pillow>=8.0,<11.0)
-# For Python 3.14+, see requirements_versions_py314.txt.
-# Versions here were validated with: uv pip compile --python-version 3.10 --resolution highest
+# Python 3.14+ requirements.
+# Selected automatically by _select_requirements_file() in modules/launch_utils.py.
+# Versions here were validated with: uv pip compile --python-version 3.14 --resolution highest
+#
+# Current constraints vs requirements_versions.txt (3.10–3.13 baseline):
+#   - scikit-image: 0.26.0  (vs 0.25.2 on 3.10–3.13)
+#   - kornia:       0.8.3   (vs 0.8.2)
+#   - ptwt:         1.0.1   (same)
+#
+# gradio==3.41.2 still caps numpy<2 and pillow<11 here.
+# When gradio is eventually upgraded on this branch, remove those two lines
+# and replace numpy/pillow with unconstrained modern versions.
 setuptools==69.5.1  # temp fix for compatibility with some old packages
 GitPython==3.1.32
 pillow==10.4.0
@@ -19,7 +25,7 @@ gradio==3.41.2
 httpcore==0.17.0
 inflection==0.5.1
 jsonmerge==1.9.2
-kornia==0.8.2
+kornia==0.8.3
 lark==1.2.2
 numpy==1.26.4
 omegaconf==2.2.3
@@ -34,7 +40,7 @@ resize-right==0.0.2
 # Stability over security is NOT acceptable here — rc accepted intentionally.
 # Revisit once safetensors 0.8.0 stable is released.
 safetensors==0.8.0rc0
-scikit-image==0.25.2
+scikit-image==0.26.0
 spandrel==0.4.1
 spandrel-extra-arches==0.2.0
 tomesd==0.1.3
