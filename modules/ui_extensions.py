@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 import threading
 import time
@@ -63,24 +64,18 @@ def apply_and_restart(disable_list, update_list, disable_all):
 def save_config_state(name):
     current_config_state = config_states.get_config()
 
-    # Sanitise the user-supplied name to prevent path injection:
-    # 1. basename strips any directory component (prevents ../../ traversal)
-    name = os.path.basename(name or "Config")
-    # 2. Whitelist: keep only word chars, spaces, hyphens and dots
-    name = re.sub(r'[^\w\s\-.]', '_', name)
-    # 3. Hard length cap so the combined path never exceeds FS limits
-    name = name[:64].strip() or "Config"
+    # Sanitise the display name — stored only in JSON content, NEVER in the path.
+    # config_states.list_config_states() reads the display name from JSON
+    # (cs.get("name")), so the filename itself needs no user data at all.
+    safe_name = os.path.basename(name or "Config")
+    safe_name = re.sub(r'[^\w\s\-.]', '_', safe_name)[:64].strip() or "Config"
+    current_config_state["name"] = safe_name
 
-    current_config_state["name"] = name
+    # File path is built entirely from server-generated components so no
+    # user-controlled bytes ever reach the filesystem path (fixes CodeQL
+    # "Uncontrolled data used in path expression").
     timestamp = datetime.now().strftime('%Y_%m_%d-%H_%M_%S')
-    filename = os.path.join(config_states_dir, f"{timestamp}_{name}.json")
-
-    # 4. Containment check — resolve symlinks and confirm the path stays
-    #    inside config_states_dir even after all sanitisation steps.
-    resolved = os.path.realpath(filename)
-    safe_root = os.path.realpath(config_states_dir) + os.sep
-    if not resolved.startswith(safe_root):
-        raise ValueError(f"Unsafe config state path rejected: {filename!r}")
+    filename = os.path.join(config_states_dir, f"{timestamp}_{uuid.uuid4().hex[:8]}.json")
 
     print(f"Saving backup of webui/extension state to {filename}.")
     with open(filename, "w", encoding="utf-8") as f:
