@@ -5,7 +5,9 @@ The postfix "Exp" means: Expedition, Exploration. The repo will target more aggr
 
 # Features
 - SURE SGPS Guidance samplers (a trajectory optimization sampler)
-- Apple MLX support (much faster than MPS)
+- Apple MLX support (much faster than MPS and BP16 model support)
+- DIffuser pipline (proper compile support and wider model support)
+- 
 # Notice of usage of AI
 reForge-Exp uses Claude Code as a coding agent; you may see Claude Code co-author some commits.
 Currently, Claude Code is used to clean up the Forge framework design for better maintainability and to prototype new technology. 
@@ -264,7 +266,7 @@ Since the UI got really cluttered with built it extensions, I have removed some 
 
 # Last "Old" Forge commit (https://github.com/lllyasviel/stable-diffusion-webui-forge/commit/bfee03d8d9415a925616f40ede030fe7a51cbcfd) before forge2.
 
-# Support
+# Support(For OG reForge author)
 
 Some people have been asking how to donate or support the project, and I'm really grateful for that! I did this buymeacoffe link from some suggestions!
 
