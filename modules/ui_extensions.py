@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from concurrent.futures import ThreadPoolExecutor
 import threading
 import time
@@ -29,9 +30,11 @@ def apply_and_restart(disable_list, update_list, disable_all):
 
     disabled = json.loads(disable_list)
     assert type(disabled) == list, f"wrong disable_list data for apply_and_restart: {disable_list}"
+    assert all(isinstance(x, str) for x in disabled), "disable_list elements must be strings"
 
     update = json.loads(update_list)
     assert type(update) == list, f"wrong update_list data for apply_and_restart: {update_list}"
+    assert all(isinstance(x, str) for x in update), "update_list elements must be strings"
 
     if update:
         save_config_state("Backup (pre-update)")
@@ -60,11 +63,25 @@ def apply_and_restart(disable_list, update_list, disable_all):
 def save_config_state(name):
     current_config_state = config_states.get_config()
 
+    # Sanitise the user-supplied name to prevent path injection:
+    # 1. basename strips any directory component (prevents ../../ traversal)
     name = os.path.basename(name or "Config")
+    # 2. Whitelist: keep only word chars, spaces, hyphens and dots
+    name = re.sub(r'[^\w\s\-.]', '_', name)
+    # 3. Hard length cap so the combined path never exceeds FS limits
+    name = name[:64].strip() or "Config"
 
     current_config_state["name"] = name
     timestamp = datetime.now().strftime('%Y_%m_%d-%H_%M_%S')
     filename = os.path.join(config_states_dir, f"{timestamp}_{name}.json")
+
+    # 4. Containment check — resolve symlinks and confirm the path stays
+    #    inside config_states_dir even after all sanitisation steps.
+    resolved = os.path.realpath(filename)
+    safe_root = os.path.realpath(config_states_dir) + os.sep
+    if not resolved.startswith(safe_root):
+        raise ValueError(f"Unsafe config state path rejected: {filename!r}")
+
     print(f"Saving backup of webui/extension state to {filename}.")
     with open(filename, "w", encoding="utf-8") as f:
         json.dump(current_config_state, f, indent=4, ensure_ascii=False)
