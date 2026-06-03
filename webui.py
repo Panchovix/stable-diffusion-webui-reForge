@@ -2,8 +2,25 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import sys
 import time
+import types
 from typing import Any
+
+# pytorch-lightning 2.x removed utilities.distributed; ldm and generative-models
+# repos still import rank_zero_only from the old path.  Shim it before any
+# module that triggers ldm imports is loaded.
+try:
+    import pytorch_lightning.utilities.distributed  # noqa: F401 — already exists, nothing to do
+except ImportError:
+    try:
+        from pytorch_lightning.utilities.rank_zero import rank_zero_only as _rzo
+    except ImportError:
+        from lightning_fabric.utilities.rank_zero import rank_zero_only as _rzo  # type: ignore[no-redef]
+    _compat = types.ModuleType("pytorch_lightning.utilities.distributed")
+    _compat.rank_zero_only = _rzo
+    sys.modules["pytorch_lightning.utilities.distributed"] = _compat
+    del _compat, _rzo
 
 
 from modules import timer

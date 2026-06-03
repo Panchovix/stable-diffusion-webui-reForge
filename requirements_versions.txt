@@ -59,3 +59,5 @@ wheel==0.47.0
 ninja==1.13.0
 PyWavelets==1.9.0
 ptwt==1.0.1
+# This fix after 3.12 audioop is removed
+audioop-lts
