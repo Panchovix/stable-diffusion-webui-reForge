@@ -14,7 +14,8 @@ jobs:
         uses: actions/checkout@v4
       - uses: actions/setup-python@v6
         with:
-          python-version: 3.11
+          python-version: "3.14"
+          allow-prereleases: true
           # NB: there's no cache: pip here since we're not installing anything
           #     from the requirements.txt file(s) in the repository; it's faster
           #     not to have GHA download an (at the time of writing) 4 GB cache

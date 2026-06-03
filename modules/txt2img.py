@@ -122,7 +122,12 @@ def txt2img_function(id_task: str, request: gr.Request, *args):
     if shared.opts.do_not_show_images:
         processed.images = []
 
-    return processed.images + processed.extra_images, generation_info_js, plaintext_to_html(processed.info), plaintext_to_html(processed.comments, classname="comments")
+    output_images = processed.images + processed.extra_images
+    print(f"[DEBUG txt2img] images={len(output_images)} types={[type(i).__name__ for i in output_images[:3]]}")
+    for idx, img in enumerate(output_images[:3]):
+        print(f"[DEBUG txt2img]   [{idx}] type={type(img)} size={getattr(img, 'size', '?')} mode={getattr(img, 'mode', '?')}")
+
+    return output_images, generation_info_js, plaintext_to_html(processed.info), plaintext_to_html(processed.comments, classname="comments")
 
 
 def txt2img_upscale(id_task: str, request: gr.Request, gallery, gallery_index, generation_info, *args):

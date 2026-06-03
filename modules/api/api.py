@@ -216,7 +216,7 @@ class Api:
         self.add_api_route("/sdapi/v1/interrogate", self.interrogateapi, methods=["POST"])
         self.add_api_route("/sdapi/v1/interrupt", self.interruptapi, methods=["POST"])
         self.add_api_route("/sdapi/v1/skip", self.skip, methods=["POST"])
-        self.add_api_route("/sdapi/v1/options", self.get_config, methods=["GET"], response_model=models.OptionsModel)
+        self.add_api_route("/sdapi/v1/options", self.get_config, methods=["GET"], response_model=models._build_options_model())
         self.add_api_route("/sdapi/v1/options", self.set_config, methods=["POST"])
         self.add_api_route("/sdapi/v1/cmd-flags", self.get_cmd_flags, methods=["GET"], response_model=models.FlagsModel)
         self.add_api_route("/sdapi/v1/samplers", self.get_samplers, methods=["GET"], response_model=list[models.SamplerItem])
@@ -371,7 +371,7 @@ class Api:
             return {}
 
         possible_fields = infotext_utils.paste_fields[tabname]["fields"]
-        set_fields = request.model_dump(exclude_unset=True) if hasattr(request, "request") else request.dict(exclude_unset=True)  # pydantic v1/v2 have different names for this
+        set_fields = request.model_dump(exclude_unset=True)
         params = infotext_utils.parse_generation_parameters(request.infotext)
 
         def get_field_value(field, params):
@@ -379,8 +379,8 @@ class Api:
             if value is None:
                 return None
 
-            if field.api in request.__fields__:
-                target_type = request.__fields__[field.api].type_
+            if field.api in request.model_fields:
+                target_type = request.model_fields[field.api].annotation
             else:
                 target_type = type(field.component.value)
 

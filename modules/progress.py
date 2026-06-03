@@ -9,7 +9,7 @@ import modules.shared as shared
 from collections import OrderedDict
 import string
 import random
-from typing import List
+from typing import List, Optional
 
 current_task = None
 pending_tasks = OrderedDict()
@@ -55,7 +55,7 @@ class PendingTasksResponse(BaseModel):
     tasks: List[str] = Field(title="Pending task ids")
 
 class ProgressRequest(BaseModel):
-    id_task: str = Field(default=None, title="Task ID", description="id of the task to get progress for")
+    id_task: Optional[str] = Field(default=None, title="Task ID", description="id of the task to get progress for")
     id_live_preview: int = Field(default=-1, title="Live preview image ID", description="id of last received last preview image")
     live_preview: bool = Field(default=True, title="Include live preview", description="boolean flag indicating whether to include the live preview image")
 
@@ -64,11 +64,11 @@ class ProgressResponse(BaseModel):
     active: bool = Field(title="Whether the task is being worked on right now")
     queued: bool = Field(title="Whether the task is in queue")
     completed: bool = Field(title="Whether the task has already finished")
-    progress: float = Field(default=None, title="Progress", description="The progress with a range of 0 to 1")
-    eta: float = Field(default=None, title="ETA in secs")
-    live_preview: str = Field(default=None, title="Live preview image", description="Current live preview; a data: uri")
-    id_live_preview: int = Field(default=None, title="Live preview image ID", description="Send this together with next request to prevent receiving same image")
-    textinfo: str = Field(default=None, title="Info text", description="Info text used by WebUI.")
+    progress: Optional[float] = Field(default=None, title="Progress", description="The progress with a range of 0 to 1")
+    eta: Optional[float] = Field(default=None, title="ETA in secs")
+    live_preview: Optional[str] = Field(default=None, title="Live preview image", description="Current live preview; a data: uri")
+    id_live_preview: Optional[int] = Field(default=None, title="Live preview image ID", description="Send this together with next request to prevent receiving same image")
+    textinfo: Optional[str] = Field(default=None, title="Info text", description="Info text used by WebUI.")
 
 
 def setup_progress_api(app):
