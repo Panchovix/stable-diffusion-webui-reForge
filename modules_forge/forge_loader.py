@@ -558,6 +558,26 @@ def load_model_for_a1111(timer, checkpoint_info=None, state_dict=None):
         _logging.getLogger(__name__).debug(
             "[MLX Pipeline] Skipped: %s", _mlx_err
         )
+        # Warn the user when we are on Apple Silicon but MLX failed — they will
+        # get MPS (Metal Performance Shaders) instead, which is slower and may
+        # have device-placement issues.  Telling them why helps them fix it.
+        try:
+            from modules.devices import has_mps
+            if has_mps():
+                print(
+                    "\n"
+                    "╔══════════════════════════════════════════════════════════════╗\n"
+                    "║  WARNING: MLX pipeline unavailable — falling back to MPS     ║\n"
+                    "║                                                              ║\n"
+                    f"║  Reason: {str(_mlx_err)[:54]:<54}║\n"
+                    "║                                                              ║\n"
+                    "║  MLX is much faster on Apple Silicon.  To enable it run:     ║\n"
+                    "║    source venv/bin/activate && pip install mlx               ║\n"
+                    "║  then restart the WebUI.                                     ║\n"
+                    "╚══════════════════════════════════════════════════════════════╝\n"
+                )
+        except Exception:
+            pass  # never let the warning itself crash startup
 
     sd_model.sd_model_hash = sd_model_hash
     sd_model.sd_model_checkpoint = checkpoint_info.filename
