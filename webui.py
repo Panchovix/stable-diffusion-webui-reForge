@@ -172,9 +172,6 @@ def webui_worker() -> None:
         with startup_timer.subcategory("app_started_callback"):
             script_callbacks.app_started_callback(shared.demo, app)
 
-        from modules.debug_image_probe import setup_debug_probe
-        setup_debug_probe(app, shared.demo)
-
         timer.startup_record = startup_timer.dump()
         print(f"Startup time: {startup_timer.summary()}.")
 
