@@ -28,7 +28,5 @@ jobs:
           fail-on-severity: high
           # Post findings as PR comments, not commits
           comment-summary-in-pr: always
-          # Warn on unresolved licenses
+          # Block deps with copyleft licenses incompatible with this project
           deny-licenses: GPL-2.0, AGPL-3.0
-          # Allow known-safe licenses
-          allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, Python-2.0, PSF-2.0
