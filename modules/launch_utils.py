@@ -626,6 +626,35 @@ default_command_live: bool = (os.environ.get('WEBUI_LAUNCH_LIVE_OUTPUT') == "1")
 os.environ.setdefault('GRADIO_ANALYTICS_ENABLED', 'False')
 
 
+def _apply_repository_patches() -> None:
+    """Apply in-place compatibility patches to cloned third-party repositories.
+
+    These repos are gitignored so changes can't be committed; this function
+    re-applies them idempotently on every fresh clone.
+    """
+    patches = [
+        (
+            # MPS/CPU device mismatch when concatenating conditioner outputs on
+            # Apple Silicon. Multiple embedders can produce tensors on different
+            # devices; force emb to match the accumulator before torch.cat.
+            os.path.join(script_path, "repositories", "generative-models",
+                         "sgm", "modules", "encoders", "modules.py"),
+            "(output[out_key], emb), self.KEY2CATDIM[out_key]",
+            "(output[out_key], emb.to(output[out_key].device)), self.KEY2CATDIM[out_key]",
+        ),
+    ]
+    for path, old, new in patches:
+        if not os.path.isfile(path):
+            continue
+        with open(path, encoding="utf-8") as fh:
+            content = fh.read()
+        if old not in content:
+            continue  # already patched or not found — skip
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(content.replace(old, new, 1))
+        print(f"[repo-patch] Applied patch to {os.path.relpath(path, script_path)}")
+
+
 def _select_requirements_file() -> str:
     """Return the appropriate requirements file for the running Python version.
 
@@ -1090,6 +1119,7 @@ def prepare_environment() -> None:
     git_clone(k_diffusion_repo, repo_dir('k-diffusion'), "K-diffusion", k_diffusion_commit_hash)
     git_clone(blip_repo, repo_dir('BLIP'), "BLIP", blip_commit_hash)
 
+    _apply_repository_patches()
     startup_timer.record("clone repositores")
 
     if not os.path.isfile(requirements_file):
