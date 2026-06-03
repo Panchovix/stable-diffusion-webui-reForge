@@ -23,7 +23,11 @@ protobuf==7.35.0
 psutil==7.2.2
 pytorch_lightning==2.6.5
 resize-right==0.0.2
-safetensors==0.5.2
+# WARNING: safetensors 0.8.0-rc.0 is a pre-release required by diffusers>=0.38.0 to fix
+# CVE-2026-44513 and CVE-2026-45804 (trust_remote_code bypass + TOCTOU RCE, both high).
+# Stability over security is NOT acceptable here — rc accepted intentionally.
+# Revisit once safetensors 0.8.0 stable is released.
+safetensors==0.8.0rc0
 scikit-image==0.25.1
 spandrel==0.4.1
 spandrel-extra-arches==0.2.0
@@ -36,7 +40,10 @@ httpx==0.24.1
 pillow-avif-plugin==1.4.6 
 albumentations==2.0.8
 pydantic==2.13.4
-diffusers==0.37.1
+# WARNING: 0.38.0 fixes CVE-2026-44513 (trust_remote_code bypass, GHSA-98h9-4798-4q5v)
+# and CVE-2026-45804 (TOCTOU RCE, GHSA-7wx4-6vff-v64p). Both rated high severity.
+# Requires safetensors>=0.8.0-rc.0 (pre-release — see note above).
+diffusers==0.38.0
 cachetools==5.5.1
 colorama==0.4.6
 huggingface_hub==0.36.2
