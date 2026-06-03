@@ -35,6 +35,7 @@ samplers_k_diffusion = [
     ('DPM fast', 'sample_dpm_fast', ['k_dpm_fast'], {"uses_ensd": True}),
     ('DPM adaptive', 'sample_dpm_adaptive', ['k_dpm_ad'], {"uses_ensd": True}),
     ('Restart', sd_samplers_extra.restart_sampler, ['restart'], {'scheduler': 'karras', "second_order": True}),
+    ('Restart SURE', 'sample_sure_restart', ['k_restart_sure'], {'scheduler': 'karras', "second_order": True}),
     ('DC-Solver', 'sample_dc_solver', ['k_dc_solver'], {'scheduler': 'karras'}),
     ('SURE', 'sample_sure', ['k_sure'], {'scheduler': 'karras'}),
     ('SURE Wavelet', 'sample_sure_wavelet', ['k_sure_wavelet'], {'scheduler': 'karras'}),

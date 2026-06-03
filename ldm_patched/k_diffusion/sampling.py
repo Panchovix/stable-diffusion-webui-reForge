@@ -7466,3 +7466,174 @@ def sample_sure_adaptive(model, x, sigma_min, sigma_max, extra_args=None, callba
 
     return x
 
+
+# ---------------------------------------------------------------------------
+# SURE-guided Restart Sampler
+# ---------------------------------------------------------------------------
+# Combines the Restart sampler (arXiv:2301.12503) with SURE trajectory
+# monitoring.  Instead of blindly restarting at fixed sigma thresholds, the
+# SURE residual ratio
+#
+#   r_ratio = sqrt( mean( (x − Dθ(x, σ))² ) ) / σ
+#
+# is computed at each step from the already-available denoised output (zero
+# extra model calls on non-restart steps).  The ratio equals ~1 for a healthy
+# reverse-diffusion trajectory and rises above threshold when the sampler has
+# drifted off-manifold.
+#
+# Mathematical connection to SURE (stop-gradient approximation):
+#   SURE_approx(x, σ) = ‖x − Dθ(x, σ)‖² − n·σ²
+#   SURE_approx / (n·σ²) = r_ratio² − 1
+# So r_ratio > T  ↔  SURE_approx / (n·σ²) > T²−1.
+# This is the normalised, Jacobian-free SURE estimate of the denoising MSE.
+# The Lean theorem `cond4_step_closer` (SURE_verification.lean) guarantees
+# that a positive SURE_approx signals correctable denoising error, making a
+# restart productive rather than wasteful.
+# ---------------------------------------------------------------------------
+
+@torch.no_grad()
+def sample_sure_restart(
+    model, x, sigmas,
+    extra_args=None, callback=None, disable=None,
+    s_noise=1.,
+    sure_threshold=1.5,
+    restart_max_times=2,
+    restart_steps=9,
+    restart_scale=2.0,
+    sure_preheat_steps=3,
+):
+    """SURE-guided restart sampler.
+
+    Uses Heun (2nd-order) steps as the base integrator.  At each step the
+    SURE residual ratio
+
+        r_ratio = residual_rms / σ   where   residual_rms = sqrt(mean((x − Dθ)²))
+
+    is computed for free from the first denoiser call that the Heun step
+    already needs.  When r_ratio > sure_threshold the sampler:
+
+      1. Re-injects Gaussian noise to bring x to
+             σ_restart = min(σ_cur × restart_scale, σ_max)
+      2. Runs restart_steps Heun steps on a Karras sub-schedule from
+         σ_restart back to σ_cur.
+      3. Refreshes the denoised estimate and continues with the main step.
+
+    Restarts are capped at restart_max_times total and are skipped during the
+    first sure_preheat_steps steps where r_ratio is naturally noisy.
+
+    Parameters
+    ----------
+    sure_threshold : float
+        r_ratio above which a restart is triggered (default 1.5).
+        Equivalent to SURE_approx/(n·σ²) > T²−1 = 1.25.
+    restart_max_times : int
+        Total restart budget for the entire trajectory (default 2).
+    restart_steps : int
+        Heun steps in each restart sub-trajectory (default 9).
+    restart_scale : float
+        σ_restart = min(σ_cur × scale, σ_max) (default 2.0).
+    sure_preheat_steps : int
+        Initial steps where the SURE check is skipped (default 3).
+    """
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+    step_id = 0
+    restarts_remaining = restart_max_times
+    n_steps = len(sigmas) - 1
+    sigma_max = float(sigmas[0])
+
+    _sure_logger.info(
+        "SURE-Restart: %d steps  threshold=%.3f  max_restarts=%d  "
+        "restart_steps=%d  restart_scale=%.2f  preheat=%d",
+        n_steps, sure_threshold, restart_max_times,
+        restart_steps, restart_scale, sure_preheat_steps,
+    )
+
+    def heun_step(x, old_sigma, new_sigma, second_order=True):
+        """Inner Heun step used for both the main trajectory and restart sub-steps."""
+        nonlocal step_id
+        denoised = model(x, old_sigma * s_in, **extra_args)
+        d = to_d(x, old_sigma, denoised)
+        if callback is not None:
+            callback({'x': x, 'i': step_id, 'sigma': new_sigma,
+                      'sigma_hat': old_sigma, 'denoised': denoised})
+        dt = new_sigma - old_sigma
+        if float(new_sigma) == 0 or not second_order:
+            x = x + d * dt
+        else:
+            x_2 = x + d * dt
+            denoised_2 = model(x_2, new_sigma * s_in, **extra_args)
+            d_2 = to_d(x_2, new_sigma, denoised_2)
+            x = x + (d + d_2) / 2 * dt
+        step_id += 1
+        return x
+
+    for i in trange(n_steps, disable=disable):
+        sigma_cur  = sigmas[i]
+        sigma_next = sigmas[i + 1]
+        sigma_f    = float(sigma_cur)
+
+        # ── First model eval: shared between SURE check and the main Heun step ─
+        denoised = model(x, sigma_cur * s_in, **extra_args)
+
+        # ── SURE residual ratio ─────────────────────────────────────────────────
+        # r_ratio = residual_rms / σ, computed for free from denoised.
+        # Healthy trajectory: r_ratio ≈ 1 (residual ≈ injected noise).
+        # Deviated trajectory: r_ratio > sure_threshold → restart.
+        r_ratio = 0.0
+        if sigma_f > 0.0:
+            residual_rms = float((x - denoised).pow(2).mean().sqrt())
+            r_ratio = residual_rms / sigma_f
+
+        # ── SURE-guided restart ─────────────────────────────────────────────────
+        if (i >= sure_preheat_steps
+                and r_ratio > sure_threshold
+                and restarts_remaining > 0
+                and float(sigma_next) > 0.0):
+            restarts_remaining -= 1
+            sigma_restart_f = min(sigma_f * restart_scale, sigma_max)
+
+            # Forward diffusion: re-add noise to reach σ_restart.
+            # Δσ² = σ_restart² − σ_cur²  ensures the correct marginal variance.
+            noise_var = sigma_restart_f ** 2 - sigma_f ** 2
+            if noise_var > 0.0:
+                x = x + torch.randn_like(x) * (s_noise * math.sqrt(noise_var))
+
+            # Karras sub-schedule: restart_steps Heun steps from σ_restart → σ_cur.
+            # get_sigmas_karras(n, σ_min, σ_max) returns n+1 values ending with 0.
+            # With n = restart_steps + 1, after [:-1] we have restart_steps + 1
+            # monotone-decreasing values giving restart_steps consecutive pairs.
+            restart_sigmas = get_sigmas_karras(
+                restart_steps + 1, sigma_f, sigma_restart_f, device=x.device,
+            )[:-1]
+
+            for j in range(restart_steps):
+                x = heun_step(x, restart_sigmas[j], restart_sigmas[j + 1])
+
+            # Refresh denoised at σ_cur after the restart sub-trajectory.
+            denoised = model(x, sigma_cur * s_in, **extra_args)
+
+            _sure_logger.info(
+                "[SURE-Restart] step=%d  sigma=%.4f  r_ratio=%.4f  "
+                "restarted_to=%.4f  restarts_left=%d",
+                i, sigma_f, r_ratio, sigma_restart_f, restarts_remaining,
+            )
+
+        # ── Main Heun step using (potentially refreshed) denoised ──────────────
+        d = to_d(x, sigma_cur, denoised)
+        if callback is not None:
+            callback({'x': x, 'i': step_id, 'sigma': sigma_next,
+                      'sigma_hat': sigma_cur, 'denoised': denoised})
+        dt = sigma_next - sigma_cur
+        if float(sigma_next) == 0:
+            x = x + d * dt
+        else:
+            x_2 = x + d * dt
+            denoised_2 = model(x_2, sigma_next * s_in, **extra_args)
+            d_2 = to_d(x_2, sigma_next, denoised_2)
+            x = x + (d + d_2) / 2 * dt
+
+        step_id += 1
+
+    return x
+
