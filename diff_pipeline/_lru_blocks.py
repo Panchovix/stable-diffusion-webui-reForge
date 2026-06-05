@@ -199,23 +199,49 @@ def estimate_capacity(
             headroom_bytes = 1 * 1024 * 1024 * 1024  # 1 GiB fallback
 
     if x_shape is not None:
+        # Account for skip-connection tensors held across the full UNet pass.
+        # At the peak (up_blocks at full resolution) the encoder skip tensors for
+        # all three scales are still live.  Factor of 16 covers skip connections
+        # + residuals + GroupNorm / conv workspace empirically validated on SDXL.
         b, _c, h, w = x_shape
-        headroom_bytes += b * 320 * h * w * 2 * 4
+        headroom_bytes += b * 320 * h * w * 2 * 16
+
+    # Release fragmented cached-but-unused VRAM so mem_get_info returns an
+    # accurate picture.  Safe here because all block tensors were moved to CPU
+    # by the caller before estimate_capacity() is invoked.
+    try:
+        from ldm_patched.modules.model_management import soft_empty_cache
+        soft_empty_cache()
+    except Exception:
+        pass
 
     try:
         stats = torch.cuda.memory_stats(device)
         cuda_free, _ = torch.cuda.mem_get_info(device)
+        # inactive_split_bytes: reserved memory fragmented into chunks too small
+        # for large block allocations — subtract it from usable free.
+        fragmentation = stats.get("inactive_split_bytes.all.current", 0)
         free = int(
             cuda_free
             + stats.get("reserved_bytes.all.current", 0)
             - stats.get("active_bytes.all.current", 0)
+            - fragmentation
+        )
+        log.info(
+            "LRUBlockCache VRAM snapshot: cuda_free=%.0f MB  reserved=%.0f MB  "
+            "active=%.0f MB  fragmented=%.0f MB  effective_free=%.0f MB",
+            cuda_free / (1024 ** 2),
+            stats.get("reserved_bytes.all.current", 0) / (1024 ** 2),
+            stats.get("active_bytes.all.current", 0) / (1024 ** 2),
+            fragmentation / (1024 ** 2),
+            free / (1024 ** 2),
         )
     except Exception:
         free = 0
 
     usable = max(0, free - headroom_bytes)
     log.info(
-        "LRUBlockCache capacity: free_vram=%.0f MB  headroom=%.0f MB  "
+        "LRUBlockCache capacity: effective_free=%.0f MB  headroom=%.0f MB  "
         "usable=%.0f MB",
         free / (1024 ** 2),
         headroom_bytes / (1024 ** 2),
