@@ -69,8 +69,10 @@ def _make_entropy_hook(store: list):
         )
         # sim: (B*heads, N_q, N_k) — compute per-query entropy
         # H[i] = −∑_j A[i,j]·log(A[i,j]+ε)  ∈ [0, log N_k]
+        # Force float32: log(near-zero bf16/fp16) → NaN without this cast
         eps_ent = 1e-8
-        ent = -(sim * (sim + eps_ent).log()).sum(-1)  # (B*heads, N_q)
+        sim_f32 = sim.float()
+        ent = -(sim_f32 * (sim_f32 + eps_ent).log()).sum(-1).clamp(min=0)  # (B*heads, N_q)
 
         orig_shape = extra_options.get("original_shape")  # [B, C, H_lat, W_lat]
         store.append((ent.detach(), heads, orig_shape))
@@ -130,6 +132,21 @@ def _build_attn_capture_options(extra_args: dict, store: list,
             )
 
     return {**extra_args, "model_options": new_opts}
+
+
+def build_capture_model_options(model_options: dict, store: list,
+                                 block_types: str = "all") -> dict:
+    """Public API for guidance nodes: returns a new model_options dict with
+    attn1 entropy-capture hooks injected.  Does not mutate model_options.
+
+    Parameters
+    ----------
+    model_options : model_options dict (from args["model_options"] in post_cfg)
+    store         : mutable list; each hook appends (ent, heads, orig_shape)
+    block_types   : 'all' | 'input' | 'middle' | 'output' | 'mid+out'
+    """
+    return _build_attn_capture_options({"model_options": model_options},
+                                        store, block_types)["model_options"]
 
 
 # ---------------------------------------------------------------------------
@@ -209,7 +226,13 @@ def _aggregate_entropy_map(store: list, latent_shape: tuple,
     U_max  = U_flat.max(dim=1)[0].reshape(B, 1, 1, 1)
     U_norm = (U - U_min) / (U_max - U_min + 1e-8)
 
-    return U_norm.to(dtype=dtype)
+    U_norm = U_norm.to(dtype=dtype)
+
+    if U_norm.isnan().any() or U_norm.isinf().any():
+        _logger.warning("[sure_attn] NaN/Inf in entropy map after normalisation; skipping attention weighting")
+        return None
+
+    return U_norm
 
 
 def _tokens_to_spatial(N: int, H_src: int, W_src: int) -> tuple[int, int]:

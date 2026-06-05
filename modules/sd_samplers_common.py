@@ -375,7 +375,7 @@ class Sampler:
         _SURE_SAMPLERS = {
             'sample_sure', 'sample_sure_wavelet', 'sample_sure_wavelet_auto',
             'sample_sure_wavelet_converge', 'sample_sure_wavelet_auto_converge',
-            'sample_sure_adaptive', 'sample_sure_attention',
+            'sample_sure_adaptive',
             'sample_dpmpp_2m_sure', 'sample_dpmpp_2m_sde_sure',
             'sample_dpmpp_3m_sde_sure', 'sample_dpmpp_2m_sde_sure_adaptive',
             'sample_dpmpp_2s_a_sure', 'sample_dpmpp_2s_a_sure_adaptive',
@@ -450,11 +450,6 @@ class Sampler:
                 extra_params_kwargs['sure_alpha_bo_trials'] = int(getattr(shared.opts, 'sure_alpha_bo_trials', 0))
             if 'sure_alpha_bo_patience' in _sure_sig:
                 extra_params_kwargs['sure_alpha_bo_patience'] = int(getattr(shared.opts, 'sure_alpha_bo_patience', 4))
-            # SURE-AG (Attention-Guided) specific params
-            if 'sure_attn_weight' in _sure_sig:
-                extra_params_kwargs['sure_attn_weight'] = float(getattr(shared.opts, 'sure_attn_weight', 1.0))
-            if 'sure_attn_blocks' in _sure_sig:
-                extra_params_kwargs['sure_attn_blocks'] = getattr(shared.opts, 'sure_attn_blocks', 'all')
             p.extra_generation_params['SURE alpha']         = sure_alpha
             p.extra_generation_params['SURE n_mc']          = sure_n_mc
             p.extra_generation_params['SURE eps']           = sure_eps
@@ -472,12 +467,6 @@ class Sampler:
             if _alpha_bo_trials_val > 0:
                 p.extra_generation_params['SURE alpha_bo_trials']   = _alpha_bo_trials_val
                 p.extra_generation_params['SURE alpha_bo_patience'] = int(getattr(shared.opts, 'sure_alpha_bo_patience', 4))
-            _attn_weight_val = float(getattr(shared.opts, 'sure_attn_weight', 1.0))
-            _attn_blocks_val = getattr(shared.opts, 'sure_attn_blocks', 'all')
-            if 'sure_attn_weight' in _sure_sig and _attn_weight_val != 1.0:
-                p.extra_generation_params['SURE attn_weight'] = _attn_weight_val
-            if 'sure_attn_blocks' in _sure_sig and _attn_blocks_val != 'all':
-                p.extra_generation_params['SURE attn_blocks'] = _attn_blocks_val
 
         if self.funcname == 'sample_dc_solver':
             import inspect as _inspect

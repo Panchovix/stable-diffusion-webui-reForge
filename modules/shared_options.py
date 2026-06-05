@@ -810,11 +810,6 @@ options_templates.update(options_section(('sampler-params', "reForge Sampler Par
     "sure_alpha_bo_trials": OptionInfo(0, "SURE - alpha_bo_trials (BO trials for step size α)", gr.Slider, {"minimum": 0, "maximum": 40, "step": 1}, infotext='SURE alpha_bo_trials').info('Default = 0. For pixel-space samplers: 0 = disabled; >0 activates BO. For Wavelet samplers with adam_mode=bo: 0 = free analytical α* = (r·g)/‖g‖² (closed-form, zero cost); >0 = full Bayesian TPE search warm-started across steps. Each trial evaluates the quadratic SURE proxy — no extra UNet calls. Recommended: 8–16 for BO; 0 for analytical-only.'),
     "sure_alpha_bo_patience": OptionInfo(4, "SURE - alpha_bo_patience (early-stop patience for α BO)", gr.Slider, {"minimum": 2, "maximum": 20, "step": 1}, infotext='SURE alpha_bo_patience').info('Default = 4; stop α BO early after this many consecutive non-improving trials. Lower = faster per-step search; higher = more thorough exploration. Only active when sure_alpha_bo_trials > 0.'),
 
-    # SURE-AG (Attention-Guided) Parameters
-    "sure_attn_group": OptionHTML("<br><h3>SURE-AG (Attention-Guided) Settings</h3>"),
-    "sure_attn_weight": OptionInfo(1.0, "SURE-AG - attn_weight (attention entropy modulation strength)", gr.Slider, {"minimum": 0.0, "maximum": 4.0, "step": 0.1}, infotext='SURE attn_weight').info('Default = 1.0. Controls how strongly attention entropy amplifies the SURE correction in uncertain regions. 0 = same as base SURE (no attention modulation). Lean §3 constrains sure_alpha < 1/(2*(1+attn_weight)) for guaranteed descent.'),
-    "sure_attn_blocks": OptionInfo('all', "SURE-AG - attn_blocks (which UNet blocks to capture)", gr.Radio, {"choices": ['all', 'middle', 'mid+out', 'input', 'output']}, infotext='SURE attn_blocks').info("Default = 'all'. Selects which self-attention blocks contribute to the spatial uncertainty map. 'middle' is fastest (~5 MiB extra VRAM); 'all' is most informative but costs ~50–100 MiB extra per correction step."),
-
     # DC-Solver Parameters
     "dc_solver_group": OptionHTML("<br><h3>DC-Solver Settings</h3>"),
     "dc_solver_order": OptionInfo(2, "DC-Solver - order", gr.Slider, {"minimum": 1, "maximum": 3, "step": 1}, infotext='DC-Solver order').info('Default = 2; multistep predictor-corrector order (1 = Euler/DPM-Solver++(1), 2 = DPM-Solver++(2M) style)'),
