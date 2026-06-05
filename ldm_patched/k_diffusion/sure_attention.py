@@ -101,6 +101,9 @@ def _build_attn_capture_options(extra_args: dict, store: list,
         new_opts["patches_replace"] = {
             k: dict(v) for k, v in new_opts["patches_replace"].items()
         }
+    # set_model_options_patch_replace requires transformer_options to exist
+    if "transformer_options" not in new_opts:
+        new_opts["transformer_options"] = {}
 
     hook_fn = _make_entropy_hook(store)
 
