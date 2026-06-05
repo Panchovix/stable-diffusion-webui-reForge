@@ -1477,12 +1477,12 @@ class DiffPipeline():
 
         self._remove_lora_adapters()
         self._synced_patches_uuid = patches_uuid
-        # LoRA adapter changes structurally modify the UNet (delete_adapter /
-        # load_lora_adapter), so any existing compiled graph and LRU parameter
-        # references are invalid.  Force a recompile / LRU rebuild next step.
+        # LoRA adapter changes invalidate any compiled graph — force recompile.
+        # LRU hooks are NOT reset: PEFT load_lora_adapter / delete_adapter only
+        # adds/removes adapter sub-layers inside the block modules; it never
+        # replaces the DownBlock2D / MidBlock2D / UpBlock2D objects themselves,
+        # so the pre-hooks installed on those objects remain valid.
         self._compiled = False
-        if self._lru_ready:
-            self._reset_lru_offload()
 
         if not patches:
             return
