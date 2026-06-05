@@ -178,8 +178,18 @@ parser.add_argument(
     help="When using --forge-diffusers-pipeline, use infer_auto_device_map to split the UNet "
          "across VRAM and RAM. Blocks that fit in VRAM (Group A) stay on device permanently; "
          "overflow blocks (Group B) load to device on-demand via forward hooks and return to CPU "
-         "immediately after. Each group is compiled regionally with torch.compile. "
+         "immediately after. "
          "Takes precedence over --forge-diffusers-offload and --forge-diffusers-sequential-offload.",
+    default=False,
+)
+parser.add_argument(
+    "--forge-diffusers-compile",
+    action="store_true",
+    help="When using --forge-diffusers-pipeline, compile the HF UNet with torch.compile before "
+         "the first sampling step. On the single-device (no-offload) path this compiles the whole "
+         "UNet; on the --forge-diffusers-auto-offload path it compiles each block individually. "
+         "Compilation adds 1–3 min on the first run but subsequent steps are faster. "
+         "Skipped automatically when UNet dtype is fp16 (narrow exponent range risks NaN).",
     default=False,
 )
 parser.add_argument(

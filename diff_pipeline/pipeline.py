@@ -53,6 +53,7 @@ import torch
 import torch.nn.functional as F
 
 from diff_pipeline._cache import lru_cached
+from diff_pipeline._lru_blocks import LRUBlockCache, estimate_capacity
 
 if TYPE_CHECKING:
     from diffusers.models.unets.unet_2d_condition import UNet2DConditionModel
@@ -649,6 +650,7 @@ class DiffPipeline():
         instance._seq_hooks_installed = False
         instance._compiled = False
         instance._mps_optimized = False
+        instance._compile = getattr(cmd_opts, 'forge_diffusers_compile', False)
         instance._clip_attn_norm = getattr(cmd_opts, 'forge_diffusers_clip_attn_norm', False)
         instance._auto_offload_ready = False
         instance._b_hooks = []
@@ -657,6 +659,9 @@ class DiffPipeline():
         instance._regions_installed = False
         instance._tc_ready = False
         instance._autocast_dtype = None
+        instance._lru_cache = None
+        instance._lru_hooks = []
+        instance._lru_ready = False
 
         instance._hf_unet = hf_unet
         instance._install_attn_processors(hf_unet)
@@ -722,6 +727,7 @@ class DiffPipeline():
         self._seq_hooks_installed: bool = False
         self._compiled: bool = False
         self._mps_optimized: bool = False
+        self._compile: bool = getattr(cmd_opts, 'forge_diffusers_compile', False)
         self._clip_attn_norm: bool = getattr(cmd_opts, 'forge_diffusers_clip_attn_norm', False)
 
         # Auto-offload state — populated lazily on first apply_model() call.
@@ -730,6 +736,11 @@ class DiffPipeline():
         self._b_block_paths: list = []  # Group B block paths (for logging)
         self._vram_at_partition: int = 0  # free bytes (reForge formula) at last partition
         self._regions_installed: bool = False  # True once nested_compile_region / per-block compile has run
+
+        # LRU block cache — used on the default path when VRAM is insufficient.
+        self._lru_cache: Optional[LRUBlockCache] = None
+        self._lru_hooks: list = []
+        self._lru_ready: bool = False  # True once _setup_lru_offload has run
 
         # Tensor Core optimisation state — populated lazily on first apply_model() call.
         self._tc_ready: bool = False
@@ -1175,13 +1186,8 @@ class DiffPipeline():
         for _, _, module in group_a:
             module.to(device=device)
 
-        # --- 5. Compile regions (first partition only) ---
-        # _install_compile_regions wraps each block's forward with
-        # nested_compile_region and compiles the whole UNet once.  On every
-        # subsequent re-partition _regions_installed is already True so
-        # _install_compile_regions is a no-op — only hook positions change,
-        # no recompilation occurs.  MPS is excluded (Metal inductor issues).
-        if device.type != "mps":
+        # --- 5. Per-block compile (first partition only, requires --forge-diffusers-compile) ---
+        if self._compile and device.type != "mps":
             if not self._regions_installed:
                 log.info(
                     "DiffPipeline auto-offload: installing compile regions "
@@ -1193,6 +1199,11 @@ class DiffPipeline():
                     "— skipping recompile (re-partition pass)"
                 )
             self._install_compile_regions()
+        elif not self._compile:
+            log.info(
+                "DiffPipeline auto-offload: per-block compile skipped "
+                "(pass --forge-diffusers-compile to enable)."
+            )
 
         # --- 6. Install load/unload hooks on Group B ---
         # Re-fetch modules after possible compile replacement.
@@ -1260,6 +1271,114 @@ class DiffPipeline():
         self._b_hooks.clear()
         self._b_block_paths.clear()
         self._auto_offload_ready = False
+
+    # ------------------------------------------------------------------
+    # LRU dynamic block loading (default path when VRAM is insufficient)
+    # ------------------------------------------------------------------
+
+    def _should_use_lru(self, device: torch.device) -> bool:
+        """Return True when the whole HF UNet does not fit in available VRAM.
+
+        Uses the same free-memory formula as model_management.get_free_memory():
+        os_free + (allocator_reserved − allocator_active) so that memory held
+        in PyTorch's caching allocator counts as usable.  A 512 MiB headroom is
+        reserved for activations and intermediate tensors during sampling.
+        """
+        if device.type != "cuda":
+            return False
+        try:
+            stats = torch.cuda.memory_stats(device)
+            cuda_free, _ = torch.cuda.mem_get_info(device)
+            free = int(
+                cuda_free
+                + stats.get("reserved_bytes.all.current", 0)
+                - stats.get("active_bytes.all.current", 0)
+            )
+        except Exception:
+            return False
+
+        unet_bytes = sum(
+            p.numel() * p.element_size() for p in self._hf_unet.parameters()
+        )
+        unet_bytes += sum(
+            b.numel() * b.element_size()
+            for b in self._hf_unet.buffers()
+            if b is not None
+        )
+        headroom = 512 * 1024 * 1024
+        needed = unet_bytes + headroom
+        if needed > free:
+            log.info(
+                "DiffPipeline: UNet=%.0f MB + headroom=%.0f MB > free=%.0f MB — "
+                "switching to LRU block loading.",
+                unet_bytes / (1024 ** 2),
+                headroom / (1024 ** 2),
+                free / (1024 ** 2),
+            )
+            return True
+        log.info(
+            "DiffPipeline: UNet=%.0f MB fits in free=%.0f MB — "
+            "whole-model placement.",
+            unet_bytes / (1024 ** 2),
+            free / (1024 ** 2),
+        )
+        return False
+
+    def _setup_lru_offload(self, device: torch.device) -> None:
+        """Set up LRU block loading for the default (no explicit offload flag) path.
+
+        Moves non-block UNet modules (conv_in, time_embedding, add_embedding,
+        conv_norm_out, conv_out) to device permanently — they are small and
+        always needed.  The block-level modules (down_blocks, mid_block,
+        up_blocks) are managed by :class:`LRUBlockCache`; forward pre-hooks
+        activate each block just before it runs.
+
+        Called once on the first ``apply_model()`` when VRAM is insufficient
+        for the full UNet.
+        """
+        block_list = [
+            (path, module)
+            for path, _setter, module in self._iter_unet_blocks()
+        ]
+        block_paths = {path for path, _ in block_list}
+
+        # Move non-block children to device (always resident).
+        for name, child in self._hf_unet.named_children():
+            # named_children() yields only direct children (not nested).
+            # The block-list paths look like "down_blocks.0" so a direct child
+            # named "down_blocks" is the parent ModuleList — skip it.
+            if name in block_paths or any(p.startswith(name + ".") for p in block_paths):
+                continue
+            log.info("DiffPipeline LRU: moving non-block '%s' to %s", name, device)
+            child.to(device=device)
+
+        capacity = estimate_capacity(block_list, device)
+        self._lru_cache = LRUBlockCache(block_list, device, capacity)
+        self._lru_hooks = self._lru_cache.install_hooks()
+        self._lru_ready = True
+
+        n_blocks = len(block_list)
+        log.info(
+            "DiffPipeline: LRU block loading active — %d/%d blocks on-device at once.",
+            capacity,
+            n_blocks,
+        )
+        print(
+            f"\n[DiffPipeline] LRU block loading: {capacity}/{n_blocks} blocks "
+            f"cached on {device} at a time (VRAM-driven).\n"
+        )
+
+    def _reset_lru_offload(self) -> None:
+        """Remove LRU hooks and mark cache as needing re-setup.
+
+        Called when the UNet structure changes (LoRA swap) so that the next
+        ``apply_model()`` rebuilds the cache with fresh parameter references.
+        """
+        for handle in self._lru_hooks:
+            handle.remove()
+        self._lru_hooks.clear()
+        self._lru_cache = None
+        self._lru_ready = False
 
     # ------------------------------------------------------------------
     # Compile-region installation (called once from _setup_auto_offload)
@@ -1359,9 +1478,11 @@ class DiffPipeline():
         self._remove_lora_adapters()
         self._synced_patches_uuid = patches_uuid
         # LoRA adapter changes structurally modify the UNet (delete_adapter /
-        # load_lora_adapter), so any existing compiled graph is invalid.
-        # Force a recompile on the next forward pass.
+        # load_lora_adapter), so any existing compiled graph and LRU parameter
+        # references are invalid.  Force a recompile / LRU rebuild next step.
         self._compiled = False
+        if self._lru_ready:
+            self._reset_lru_offload()
 
         if not patches:
             return
@@ -1626,16 +1747,23 @@ class DiffPipeline():
             if not self._seq_hooks_installed:
                 self._install_sequential_offload_hooks(device)
         else:
-            # Whole-model placement: move to compute device if needed.
-            if next(self._hf_unet.parameters()).device != device:
-                self._hf_unet.to(device=device)
+            # Default path: whole-model on device, or LRU block loading when
+            # VRAM is insufficient (mirrors reForge's dynamic model loading).
+            if self._lru_ready:
+                pass  # hooks handle block activation automatically
+            elif self._should_use_lru(device):
+                self._setup_lru_offload(device)
+            else:
+                # Whole-model placement: move to compute device if needed.
+                if next(self._hf_unet.parameters()).device != device:
+                    self._hf_unet.to(device=device)
 
-            # MPS-specific optimizations — applied once after the UNet lands on device.
-            if device.type == "mps" and not self._mps_optimized:
-                if hasattr(self._hf_unet, "enable_attention_slicing"):
-                    self._hf_unet.enable_attention_slicing()
-                    log.info("DiffPipeline: MPS — enabled attention slicing")
-                self._mps_optimized = True
+                # MPS-specific optimizations — applied once after the UNet lands on device.
+                if device.type == "mps" and not self._mps_optimized:
+                    if hasattr(self._hf_unet, "enable_attention_slicing"):
+                        self._hf_unet.enable_attention_slicing()
+                        log.info("DiffPipeline: MPS — enabled attention slicing")
+                    self._mps_optimized = True
 
 
         # --- 2b. Tensor Core setup (runs once per session) ---
@@ -1729,15 +1857,21 @@ class DiffPipeline():
         # Called after device placement and LoRA sync, before the forward pass.
         self.apply_diffusers_optimization(self._hf_unet)
 
-        # --- 6. Whole-model torch.compile (single-device path only) ---
+        # --- 6. Whole-model torch.compile (single-device path, --forge-diffusers-compile only) ---
         # Compile is safe when the UNet runs in bf16 or fp32 — both have the
         # same fp32 exponent range so inductor kernel fusion cannot overflow.
         # fp16 is excluded: its narrow exponent range (~65504 max) causes
         # silent NaN when inductor fuses ops, as observed with NoobAI XL.
-        # (The VAE NaN fix in load_model.py applies the same reasoning to the
-        # VAE decoder.)  On offload paths the UNet blocks are spread across
-        # devices so whole-model compile does not apply there.
-        if not self._compiled and not self._auto_offload and not self._sequential_offload:
+        # On offload paths blocks are spread across devices so whole-model compile
+        # does not apply. LRU path also excluded (block-level param redirects
+        # invalidate compiled graphs).
+        if (
+            self._compile
+            and not self._compiled
+            and not self._auto_offload
+            and not self._sequential_offload
+            and not self._lru_ready
+        ):
             unet_dtype = next(self._hf_unet.parameters()).dtype
             if unet_dtype == torch.float16:
                 log.info(
