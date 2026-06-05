@@ -509,6 +509,30 @@ class ForgeAttnProcessor:
 
 
 # ---------------------------------------------------------------------------
+# Inference headroom helper shared by _should_use_lru and estimate_capacity
+# ---------------------------------------------------------------------------
+
+def _inference_headroom(x: Optional["torch.Tensor"] = None) -> int:
+    """Return bytes to reserve for activations during inference.
+
+    Base = reForge's minimum_inference_memory() (1 GiB).
+    If the latent tensor *x* is provided we add a resolution-scaled estimate
+    for the largest intermediate feature maps (batch × 320 channels × H × W,
+    fp16 = 2 bytes, counted twice for input + output of each residual block).
+    """
+    try:
+        from ldm_patched.modules.model_management import minimum_inference_memory
+        base = int(minimum_inference_memory())
+    except Exception:
+        base = 1 * 1024 * 1024 * 1024  # 1 GiB fallback
+
+    if x is not None:
+        b, _c, h, w = x.shape
+        base += b * 320 * h * w * 2 * 4  # rough activation estimate
+    return base
+
+
+# ---------------------------------------------------------------------------
 # Standalone auto-offload helper (used by both DiffPipeline and the hijack path)
 # ---------------------------------------------------------------------------
 
@@ -1276,13 +1300,12 @@ class DiffPipeline():
     # LRU dynamic block loading (default path when VRAM is insufficient)
     # ------------------------------------------------------------------
 
-    def _should_use_lru(self, device: torch.device) -> bool:
+    def _should_use_lru(self, device: torch.device, x: Optional["torch.Tensor"] = None) -> bool:
         """Return True when the whole HF UNet does not fit in available VRAM.
 
-        Uses the same free-memory formula as model_management.get_free_memory():
-        os_free + (allocator_reserved − allocator_active) so that memory held
-        in PyTorch's caching allocator counts as usable.  A 512 MiB headroom is
-        reserved for activations and intermediate tensors during sampling.
+        Uses the same free-memory formula as model_management.get_free_memory().
+        Headroom = reForge's minimum_inference_memory() (1 GiB) + a
+        resolution-scaled activation estimate derived from x.shape.
         """
         if device.type != "cuda":
             return False
@@ -1305,7 +1328,7 @@ class DiffPipeline():
             for b in self._hf_unet.buffers()
             if b is not None
         )
-        headroom = 512 * 1024 * 1024
+        headroom = _inference_headroom(x)
         needed = unet_bytes + headroom
         if needed > free:
             log.info(
@@ -1317,14 +1340,15 @@ class DiffPipeline():
             )
             return True
         log.info(
-            "DiffPipeline: UNet=%.0f MB fits in free=%.0f MB — "
+            "DiffPipeline: UNet=%.0f MB fits in free=%.0f MB (headroom=%.0f MB) — "
             "whole-model placement.",
             unet_bytes / (1024 ** 2),
             free / (1024 ** 2),
+            headroom / (1024 ** 2),
         )
         return False
 
-    def _setup_lru_offload(self, device: torch.device) -> None:
+    def _setup_lru_offload(self, device: torch.device, x: Optional["torch.Tensor"] = None) -> None:
         """Set up LRU block loading for the default (no explicit offload flag) path.
 
         Moves non-block UNet modules (conv_in, time_embedding, add_embedding,
@@ -1342,17 +1366,22 @@ class DiffPipeline():
         ]
         block_paths = {path for path, _ in block_list}
 
-        # Move non-block children to device (always resident).
+        # 1. Move non-block children to device (always resident — they are small).
         for name, child in self._hf_unet.named_children():
-            # named_children() yields only direct children (not nested).
-            # The block-list paths look like "down_blocks.0" so a direct child
-            # named "down_blocks" is the parent ModuleList — skip it.
             if name in block_paths or any(p.startswith(name + ".") for p in block_paths):
                 continue
             log.info("DiffPipeline LRU: moving non-block '%s' to %s", name, device)
             child.to(device=device)
 
-        capacity = estimate_capacity(block_list, device)
+        # 2. Move all blocks to CPU BEFORE measuring free VRAM, so the capacity
+        #    estimate reflects memory that is actually available for resident blocks
+        #    (not occupied by blocks that will be managed by the LRU cache anyway).
+        for _, module in block_list:
+            module.to("cpu")
+
+        # 3. Estimate how many blocks fit, now that non-block parts are on device
+        #    and all block parts are on CPU — the most accurate snapshot we can get.
+        capacity = estimate_capacity(block_list, device, x_shape=x.shape if x is not None else None)
         self._lru_cache = LRUBlockCache(block_list, device, capacity)
         self._lru_hooks = self._lru_cache.install_hooks()
         self._lru_ready = True
@@ -1751,8 +1780,8 @@ class DiffPipeline():
             # VRAM is insufficient (mirrors reForge's dynamic model loading).
             if self._lru_ready:
                 pass  # hooks handle block activation automatically
-            elif self._should_use_lru(device):
-                self._setup_lru_offload(device)
+            elif self._should_use_lru(device, x):
+                self._setup_lru_offload(device, x)
             else:
                 # Whole-model placement: move to compute device if needed.
                 if next(self._hf_unet.parameters()).device != device:
