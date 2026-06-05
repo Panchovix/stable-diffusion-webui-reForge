@@ -527,8 +527,12 @@ def _inference_headroom(x: Optional["torch.Tensor"] = None) -> int:
         base = 1 * 1024 * 1024 * 1024  # 1 GiB fallback
 
     if x is not None:
+        # Factor of 16: skip-connection tensors from all encoder blocks are held
+        # in VRAM until consumed by the matching decoder block.  At 1280×1280
+        # (SDXL) this is ~172 MB of skips + ~200 MB of intermediate activations;
+        # factor=16 provides ~524 MB extra on top of the 1 GiB base.
         b, _c, h, w = x.shape
-        base += b * 320 * h * w * 2 * 4  # rough activation estimate
+        base += b * 320 * h * w * 2 * 16
     return base
 
 
@@ -1312,10 +1316,14 @@ class DiffPipeline():
         try:
             stats = torch.cuda.memory_stats(device)
             cuda_free, _ = torch.cuda.mem_get_info(device)
+            # Subtract inactive_split_bytes: fragmented reserved blocks that the
+            # allocator cannot use for large (100s-MB) block allocations.
+            fragmentation = stats.get("inactive_split_bytes.all.current", 0)
             free = int(
                 cuda_free
                 + stats.get("reserved_bytes.all.current", 0)
                 - stats.get("active_bytes.all.current", 0)
+                - fragmentation
             )
         except Exception:
             return False
