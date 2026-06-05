@@ -166,7 +166,8 @@ class LRUBlockCache:
 def estimate_capacity(
     blocks: List[Tuple[str, nn.Module]],
     device: torch.device,
-    headroom_bytes: int = 512 * 1024 * 1024,
+    headroom_bytes: Optional[int] = None,
+    x_shape: Optional[Tuple[int, ...]] = None,
 ) -> int:
     """Return how many blocks from *blocks* fit in available device memory.
 
@@ -180,10 +181,26 @@ def estimate_capacity(
     device:
         Compute device.  Returns ``len(blocks)`` for non-CUDA devices.
     headroom_bytes:
-        Memory to reserve for activations, KV cache, etc.  Default 512 MiB.
+        Memory to reserve for activations, KV cache, etc.  When ``None``
+        (default) the value is derived from reForge's
+        ``minimum_inference_memory()`` (1 GiB).
+    x_shape:
+        Shape of the latent tensor ``(B, C, H, W)`` used to scale the
+        activation headroom estimate.  Pass ``x.shape`` when available.
     """
     if device.type != "cuda":
         return len(blocks)
+
+    if headroom_bytes is None:
+        try:
+            from ldm_patched.modules.model_management import minimum_inference_memory
+            headroom_bytes = int(minimum_inference_memory())
+        except Exception:
+            headroom_bytes = 1 * 1024 * 1024 * 1024  # 1 GiB fallback
+
+    if x_shape is not None:
+        b, _c, h, w = x_shape
+        headroom_bytes += b * 320 * h * w * 2 * 4
 
     try:
         stats = torch.cuda.memory_stats(device)
