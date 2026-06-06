@@ -107,12 +107,26 @@ class LRUBlockCache:
             self._lru.move_to_end(path)
             return
 
+        evict_path = None
         if len(self._lru) >= self._capacity:
             evict_path, _ = self._lru.popitem(last=False)
             self._evict(evict_path)
 
         self._load(path)
         self._lru[path] = None
+
+    def flush_to_cpu(self) -> None:
+        """Evict all resident blocks back to CPU and clear the LRU tracker.
+
+        Called by DiffPipeline's VRAM pressure hook (registered with
+        model_management) so that VAE/CLIP can reclaim GPU memory after
+        the sampling loop ends.  Hooks remain installed; the next forward
+        pass reloads blocks normally via the pre-hook.
+        """
+        for path in list(self._lru.keys()):
+            self._evict(path)
+        self._lru.clear()
+        log.info("LRUBlockCache: flushed all blocks to CPU (VRAM pressure).")
 
     def install_hooks(self) -> List[Any]:
         """Register a forward pre-hook on every managed block.
@@ -157,6 +171,15 @@ class LRUBlockCache:
         """Move block parameters from device → CPU to free VRAM."""
         self._modules[path].to(device="cpu")
         log.debug("LRUBlockCache: evicted '%s' → cpu", path)
+        # Return fragmented cached-but-unused VRAM to the CUDA driver so the
+        # next block allocation (e.g., 94 MB GroupNorm workspace) can succeed.
+        # Without this, PyTorch holds the freed tensors in its own cache as
+        # inactive_split fragments that are too small for contiguous allocations.
+        if self._device.type == "cuda":
+            try:
+                torch.cuda.empty_cache()
+            except Exception:
+                pass
 
 
 # ---------------------------------------------------------------------------
@@ -248,8 +271,12 @@ def estimate_capacity(
         usable / (1024 ** 2),
     )
 
-    # Block size = parameters + buffers (on CPU at this point for LRU path;
-    # numel * element_size is device-independent).
+    # Block size = parameters + buffers + 15% CUDA allocator alignment overhead.
+    # Raw numel*element_size underestimates actual VRAM usage because the CUDA
+    # block allocator pads each tensor to 2 MiB boundaries.  The 1.15x factor
+    # was validated empirically against SDXL down_blocks/mid_block/up_blocks on
+    # a 7.6 GiB GPU: without it capacity is over-estimated and OOM occurs.
+    _CUDA_OVERHEAD = 1.15
     block_sizes: List[Tuple[int, str]] = []
     for path, module in blocks:
         size = sum(p.numel() * p.element_size() for p in module.parameters())
@@ -258,6 +285,7 @@ def estimate_capacity(
             for b in module.buffers()
             if b is not None
         )
+        size = int(size * _CUDA_OVERHEAD)
         block_sizes.append((size, path))
 
     block_sizes.sort(key=lambda x: x[0], reverse=True)

@@ -46,6 +46,7 @@ Known limitations
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from typing import TYPE_CHECKING, Any, Dict, Optional, Union
 
@@ -53,7 +54,7 @@ import torch
 import torch.nn.functional as F
 
 from diff_pipeline._cache import lru_cached
-from diff_pipeline._lru_blocks import LRUBlockCache, estimate_capacity
+from diff_pipeline.vram_allocator import VRAMAllocator
 
 if TYPE_CHECKING:
     from diffusers.models.unets.unet_2d_condition import UNet2DConditionModel
@@ -509,7 +510,7 @@ class ForgeAttnProcessor:
 
 
 # ---------------------------------------------------------------------------
-# Inference headroom helper shared by _should_use_lru and estimate_capacity
+# Inference headroom helper used by _should_use_lru
 # ---------------------------------------------------------------------------
 
 def _inference_headroom(x: Optional["torch.Tensor"] = None) -> int:
@@ -687,9 +688,11 @@ class DiffPipeline():
         instance._regions_installed = False
         instance._tc_ready = False
         instance._autocast_dtype = None
-        instance._lru_cache = None
-        instance._lru_hooks = []
+        instance._vram_allocator = None
+        instance._lru_block_names = []
         instance._lru_ready = False
+        instance._block_paths = set()
+        instance._non_blocks_on_device = False
 
         instance._hf_unet = hf_unet
         instance._install_attn_processors(hf_unet)
@@ -765,10 +768,17 @@ class DiffPipeline():
         self._vram_at_partition: int = 0  # free bytes (reForge formula) at last partition
         self._regions_installed: bool = False  # True once nested_compile_region / per-block compile has run
 
-        # LRU block cache — used on the default path when VRAM is insufficient.
-        self._lru_cache: Optional[LRUBlockCache] = None
-        self._lru_hooks: list = []
+        # VRAMAllocator — used on the default path when VRAM is insufficient.
+        self._vram_allocator: Optional[VRAMAllocator] = None
+        self._lru_block_names: list = []
         self._lru_ready: bool = False  # True once _setup_lru_offload has run
+        # Set of top-level HF UNet child names that are managed as LRU blocks.
+        # Populated by _setup_lru_offload; used by _restore_non_blocks().
+        self._block_paths: set = set()
+        # True while non-block UNet children (conv_in, time_embedding, …) are
+        # resident on the compute device.  Set False by full_unload_to_cpu() so
+        # apply_model() knows to restore them before the next forward pass.
+        self._non_blocks_on_device: bool = False
 
         # Tensor Core optimisation state — populated lazily on first apply_model() call.
         self._tc_ready: bool = False
@@ -1357,13 +1367,14 @@ class DiffPipeline():
         return False
 
     def _setup_lru_offload(self, device: torch.device, x: Optional["torch.Tensor"] = None) -> None:
-        """Set up LRU block loading for the default (no explicit offload flag) path.
+        """Set up VRAMAllocator-based LRU block loading.
 
-        Moves non-block UNet modules (conv_in, time_embedding, add_embedding,
-        conv_norm_out, conv_out) to device permanently — they are small and
-        always needed.  The block-level modules (down_blocks, mid_block,
-        up_blocks) are managed by :class:`LRUBlockCache`; forward pre-hooks
-        activate each block just before it runs.
+        Non-block UNet modules (conv_in, time_embedding, add_embedding,
+        conv_norm_out, conv_out) are moved to device permanently — they are
+        small and always needed.  Block-level modules (down_blocks, mid_block,
+        up_blocks) are registered with :class:`VRAMAllocator`; forward
+        pre-hooks activate each block just before it runs, evicting LRU
+        residents as needed.
 
         Called once on the first ``apply_model()`` when VRAM is insufficient
         for the full UNet.
@@ -1373,49 +1384,136 @@ class DiffPipeline():
             for path, _setter, module in self._iter_unet_blocks()
         ]
         block_paths = {path for path, _ in block_list}
+        self._block_paths = block_paths  # saved for _restore_non_blocks()
 
-        # 1. Move non-block children to device (always resident — they are small).
+        # 1. Move non-block children to device permanently (always resident).
         for name, child in self._hf_unet.named_children():
             if name in block_paths or any(p.startswith(name + ".") for p in block_paths):
                 continue
             log.info("DiffPipeline LRU: moving non-block '%s' to %s", name, device)
             child.to(device=device)
+        self._non_blocks_on_device = True
 
-        # 2. Move all blocks to CPU BEFORE measuring free VRAM, so the capacity
-        #    estimate reflects memory that is actually available for resident blocks
-        #    (not occupied by blocks that will be managed by the LRU cache anyway).
+        # 2. Move all blocks to CPU so they start evicted (allocator will
+        #    load them on demand via forward pre-hooks).
         for _, module in block_list:
             module.to("cpu")
 
-        # 3. Estimate how many blocks fit, now that non-block parts are on device
-        #    and all block parts are on CPU — the most accurate snapshot we can get.
-        capacity = estimate_capacity(block_list, device, x_shape=x.shape if x is not None else None)
-        self._lru_cache = LRUBlockCache(block_list, device, capacity)
-        self._lru_hooks = self._lru_cache.install_hooks()
+        # 3. Evict CLIP and any other tracked models so their VRAM is
+        #    available for UNet blocks during sampling.
+        try:
+            from ldm_patched.modules import model_management as _mm
+            _mm.free_memory(1e30, device)
+        except Exception:
+            pass
+
+        # Sync allocator device-state after the free_memory() call — it may
+        # have silently moved CLIP/VAE blocks to CPU without notifying us.
+        allocator = VRAMAllocator.get(device)
+        allocator.sync_device_state()
+
+        # Pre-evict CLIP blocks so their ~1.6 GB is immediately available
+        # for UNet inference.  Without this, the LRU would burn CLIP during
+        # step 1 (when up_blocks.0 needs 2.6 GB) but by then it has already
+        # evicted smaller UNet blocks (down_blocks.0/1) to close the last gap,
+        # causing needless reloads on every subsequent step.
+        allocator.evict_by_prefix("clip_l.")
+        allocator.evict_by_prefix("clip_g.")
+
+        # 4. Reserve activation headroom BEFORE registering blocks.
+        #    skip-connection tensors from down_blocks stay alive in VRAM while
+        #    up_blocks runs; _inference_headroom() accounts for those plus the
+        #    minimum_inference_memory() baseline.  Subtracting this from
+        #    _effective_free() forces the allocator to evict earlier.
+        headroom = _inference_headroom(x)
+        allocator.reserve("inference_headroom", headroom)
+        self._vram_allocator = allocator
+
+        print(
+            f"[VRAM] LRU setup: inference_headroom reserved = {headroom >> 20} MB  "
+            f"(base=1 GiB + resolution-scaled skip-connection estimate)"
+        )
+
+        # 5. Register every block with the shared VRAMAllocator.
+        for path, module in block_list:
+            name = f"unet.{path}"
+            allocator.register_module(name, module)
+            self._lru_block_names.append(name)
+
         self._lru_ready = True
 
-        n_blocks = len(block_list)
+        # Register a pressure hook so model_management.free_memory() can
+        # evict LRU blocks when needed by other model_management consumers.
+        try:
+            from ldm_patched.modules import model_management as _mm
+            _mm.register_vram_pressure_hook(self.flush_lru_to_cpu)
+        except Exception:
+            pass
+
         log.info(
-            "DiffPipeline: LRU block loading active — %d/%d blocks on-device at once.",
-            capacity,
-            n_blocks,
+            "DiffPipeline: VRAMAllocator LRU active — %d blocks registered on %s "
+            "(headroom=%d MB).",
+            len(block_list), device, headroom >> 20,
         )
-        print(
-            f"\n[DiffPipeline] LRU block loading: {capacity}/{n_blocks} blocks "
-            f"cached on {device} at a time (VRAM-driven).\n"
-        )
+
+    def flush_lru_to_cpu(self, device: Optional[torch.device] = None) -> None:
+        """Evict all LRU-resident UNet blocks back to CPU.
+
+        Called by model_management's VRAM pressure hook when VAE or CLIP
+        needs GPU memory after sampling.  Hooks stay installed so the next
+        ``apply_model()`` reloads blocks normally via the forward pre-hook.
+        Non-block modules (conv_in, time_embedding, …) remain on device.
+        """
+        if self._vram_allocator is not None:
+            self._vram_allocator.evict_by_prefix("unet.")
+
+    def full_unload_to_cpu(self) -> None:
+        """Move the ENTIRE HF UNet to CPU — blocks AND non-block parts.
+
+        Used when the allocator's block eviction alone is insufficient.
+        After this call ``_non_blocks_on_device`` is False; the next
+        ``apply_model()`` automatically restores non-block modules before
+        the forward pass.
+        """
+        if self._vram_allocator is not None:
+            self._vram_allocator.flush_all()
+        self._hf_unet.to("cpu")
+        self._non_blocks_on_device = False
+        log.info("DiffPipeline: full UNet unload to CPU (VAE/CLIP VRAM reclaim).")
+
+    def _restore_non_blocks(self, device: torch.device) -> None:
+        """Move non-block UNet children back to device after full_unload_to_cpu().
+
+        Called automatically by apply_model() when _non_blocks_on_device is False.
+        """
+        for name, child in self._hf_unet.named_children():
+            if name in self._block_paths or any(
+                p.startswith(name + ".") for p in self._block_paths
+            ):
+                continue
+            child.to(device=device)
+        self._non_blocks_on_device = True
+        log.debug("DiffPipeline: non-block modules restored to %s.", device)
 
     def _reset_lru_offload(self) -> None:
-        """Remove LRU hooks and mark cache as needing re-setup.
+        """Unregister all LRU blocks and destroy the allocator references.
 
         Called when the UNet structure changes (LoRA swap) so that the next
-        ``apply_model()`` rebuilds the cache with fresh parameter references.
+        ``apply_model()`` rebuilds with fresh parameter references.
         """
-        for handle in self._lru_hooks:
-            handle.remove()
-        self._lru_hooks.clear()
-        self._lru_cache = None
+        try:
+            from ldm_patched.modules import model_management as _mm
+            _mm.unregister_vram_pressure_hook(self.flush_lru_to_cpu)
+        except Exception:
+            pass
+        if self._vram_allocator is not None:
+            self._vram_allocator.free_reservation("inference_headroom")
+            for name in list(self._lru_block_names):
+                self._vram_allocator.unregister(name)
+        self._lru_block_names.clear()
+        self._vram_allocator = None
         self._lru_ready = False
+        self._non_blocks_on_device = False
 
     # ------------------------------------------------------------------
     # Compile-region installation (called once from _setup_auto_offload)
@@ -1787,7 +1885,11 @@ class DiffPipeline():
             # Default path: whole-model on device, or LRU block loading when
             # VRAM is insufficient (mirrors reForge's dynamic model loading).
             if self._lru_ready:
-                pass  # hooks handle block activation automatically
+                # After full_unload_to_cpu() the non-block parts (conv_in,
+                # time_embedding, …) were moved to CPU.  Restore them before
+                # the forward pass; block activation is handled by the hooks.
+                if not self._non_blocks_on_device:
+                    self._restore_non_blocks(device)
             elif self._should_use_lru(device, x):
                 self._setup_lru_offload(device, x)
             else:
@@ -1841,6 +1943,7 @@ class DiffPipeline():
         # Resolve time_ids ([orig_h, orig_w, crop_top, crop_left, target_h, target_w]):
         #   Priority 1 — adm_time_ids: set by SDXL.extra_conds() (ldm non-hijack path).
         #   Priority 2 — derive from latent shape; correct for standard (uncropped) generation.
+
         if adm_time_ids is not None:
             time_ids = adm_time_ids.to(dtype)
         else:
@@ -2002,13 +2105,26 @@ class DiffPipeline():
                     return _unet_forward()
             return _unet_forward()
 
+        # When LRU is active, wrap the forward pass in tracking_context() so that
+        # large intermediate tensors (skip-connection activations) are tracked via
+        # weakref.  This gives _effective_free() real-time accounting: skip tensors
+        # from the down pass show as reserved VRAM while the up pass evicts/loads
+        # blocks, preventing over-commit.  The static inference_headroom reservation
+        # remains as a floor for when TorchDispatchMode is unavailable.
+        _tracking_ctx = (
+            self._vram_allocator.tracking_context()
+            if self._lru_ready and self._vram_allocator is not None
+            else contextlib.nullcontext()
+        )
+
         if _use_stream:
-            with torch.cuda.stream(_stream_mod.current_stream):
+            with torch.cuda.stream(_stream_mod.current_stream), _tracking_ctx:
                 unet_output = _run_forward()
             # Synchronise so downstream ops on the default stream see the result.
             _stream_mod.current_stream.synchronize()
         else:
-            unet_output = _run_forward()
+            with _tracking_ctx:
+                unet_output = _run_forward()
 
         model_output = unet_output[0].float()
 
