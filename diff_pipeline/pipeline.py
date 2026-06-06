@@ -516,16 +516,26 @@ class ForgeAttnProcessor:
 def _inference_headroom(x: Optional["torch.Tensor"] = None) -> int:
     """Return bytes to reserve for activations during inference.
 
-    Base = reForge's minimum_inference_memory() (1 GiB).
-    If the latent tensor *x* is provided we add a resolution-scaled estimate
-    for the largest intermediate feature maps (batch × 320 channels × H × W,
-    fp16 = 2 bytes, counted twice for input + output of each residual block).
+    Base = reForge's minimum_inference_memory() (~1 GiB), overridable via
+    ``--forge-diffusers-lru-headroom <MB>``.  If the latent tensor *x* is
+    provided we add a resolution-scaled estimate for the largest intermediate
+    feature maps (batch × 320 channels × H × W, fp16 = 2 bytes, counted
+    twice for input + output of each residual block).
     """
     try:
-        from ldm_patched.modules.model_management import minimum_inference_memory
-        base = int(minimum_inference_memory())
+        from modules.shared import cmd_opts
+        override_mb = getattr(cmd_opts, "forge_diffusers_lru_headroom", 0)
     except Exception:
-        base = 1 * 1024 * 1024 * 1024  # 1 GiB fallback
+        override_mb = 0
+
+    if override_mb > 0:
+        base = override_mb * 1024 * 1024
+    else:
+        try:
+            from ldm_patched.modules.model_management import minimum_inference_memory
+            base = int(minimum_inference_memory())
+        except Exception:
+            base = 1 * 1024 * 1024 * 1024  # 1 GiB fallback
 
     if x is not None:
         # Factor of 16: skip-connection tensors from all encoder blocks are held

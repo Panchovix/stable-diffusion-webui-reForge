@@ -193,6 +193,17 @@ parser.add_argument(
     default=False,
 )
 parser.add_argument(
+    "--forge-diffusers-lru-headroom",
+    type=int,
+    default=0,
+    metavar="MB",
+    help="When using --forge-diffusers-pipeline with LRU block loading, override the base "
+         "activation headroom reserved in VRAM (in MB).  A resolution-scaled estimate for "
+         "skip-connection tensors is always added on top.  Lower values allow more UNet blocks "
+         "to stay resident between steps but risk OOM on high-resolution generations.  "
+         "Default: 0 (auto — uses reForge minimum_inference_memory, typically ~1024 MB).",
+)
+parser.add_argument(
     "--forge-diffusers-clip-attn-norm",
     action="store_true",
     help="When using --forge-diffusers-pipeline, apply a functional LayerNorm to CLIP encoder "
