@@ -1127,7 +1127,8 @@ class DiffusersModelAdapter:
         explicitly since model_management may have previously CPU'd them.
         Falls back to tiled encode on OOM.
         """
-        import gc, logging as _log
+        import gc
+        import logging as _log
         _logger = _log.getLogger(__name__)
         allocator = self._ensure_vae_blocks_registered()
         vae = self._pipe.vae
@@ -1241,7 +1242,8 @@ class DiffusersModelAdapter:
         explicitly since model_management may have previously CPU'd them.
         Falls back to tiled decode on OOM.
         """
-        import gc, logging as _log
+        import gc
+        import logging as _log
         _logger = _log.getLogger(__name__)
         allocator = self._ensure_vae_blocks_registered()
         vae = self._pipe.vae

@@ -675,7 +675,6 @@ class VRAMAllocator:
         alloc = self._lru.pop(name, None)
         if alloc is None:
             return
-        size_mb = alloc.size_fn() >> 20
         try:
             alloc.evict_fn()
         except Exception as e:
