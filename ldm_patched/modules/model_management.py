@@ -476,6 +476,22 @@ except:
 
 current_loaded_models = []
 
+# Callbacks invoked by free_memory() after standard model unloading when VRAM
+# is still insufficient.  DiffPipeline registers a callback here so the LRU
+# block cache can be flushed when VAE or CLIP need GPU memory post-sampling.
+_vram_pressure_hooks: list = []
+
+def register_vram_pressure_hook(fn) -> None:
+    """Register *fn(device)* to be called when VRAM is short after model unloads."""
+    if fn not in _vram_pressure_hooks:
+        _vram_pressure_hooks.append(fn)
+
+def unregister_vram_pressure_hook(fn) -> None:
+    try:
+        _vram_pressure_hooks.remove(fn)
+    except ValueError:
+        pass
+
 def module_size(module):
     module_mem = 0
     sd = module.state_dict()
@@ -638,6 +654,21 @@ def free_memory(memory_required, device, keep_loaded=[]):
             mem_free_total, mem_free_torch = get_free_memory(device, torch_free_too=True)
             if mem_free_torch > mem_free_total * 0.25:
                 soft_empty_cache(force=True)
+
+    # If VRAM is still short after standard model unloading, call registered
+    # pressure hooks (e.g. DiffPipeline LRU block eviction).  This lets the
+    # LRU block cache release GPU memory for VAE/CLIP without being tracked in
+    # current_loaded_models.
+    if _vram_pressure_hooks and memory_required > 0:
+        free_mem = get_free_memory(device)
+        if free_mem < memory_required:
+            for hook in list(_vram_pressure_hooks):
+                try:
+                    hook(device)
+                except Exception as _e:
+                    logging.warning("VRAM pressure hook failed: %s", _e)
+            soft_empty_cache(force=True)
+
     return unloaded_models
 
 def enable_ipadapter_layer_cache():

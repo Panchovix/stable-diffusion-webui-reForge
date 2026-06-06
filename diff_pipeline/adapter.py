@@ -965,11 +965,195 @@ class DiffusersModelAdapter:
 
     # ---- ldm-compatible methods -----------------------------------------
 
-    def encode_first_stage(self, x: torch.Tensor) -> Any:
-        """Encode an image batch to latents using the diffusers VAE."""
+    # ------------------------------------------------------------------
+    # VRAM management helpers for VAE encode / decode
+    # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # VAE / CLIP block-level allocator helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _iter_vae_blocks(vae):
+        """Yield (allocator_name, module) for LRU-managed VAE sub-blocks.
+
+        Decoder up_blocks and encoder down_blocks are the large blocks that
+        benefit from on-demand loading.  mid_block (attention + resnets) is
+        also registered.  Tiny conv layers are left as permanent GPU residents.
+        """
+        decoder = getattr(vae, "decoder", None)
+        if decoder is not None:
+            if getattr(decoder, "mid_block", None) is not None:
+                yield "vae.decoder.mid_block", decoder.mid_block
+            for i, blk in enumerate(getattr(decoder, "up_blocks", [])):
+                yield f"vae.decoder.up_blocks.{i}", blk
+        encoder = getattr(vae, "encoder", None)
+        if encoder is not None:
+            if getattr(encoder, "mid_block", None) is not None:
+                yield "vae.encoder.mid_block", encoder.mid_block
+            for i, blk in enumerate(getattr(encoder, "down_blocks", [])):
+                yield f"vae.encoder.down_blocks.{i}", blk
+
+    @staticmethod
+    def _vae_non_blocks_to_device(vae, device):
+        """Move VAE non-block parts (conv layers, quant convs) to *device*.
+
+        These are tiny (<10 MB total) and must be on device during any VAE
+        forward pass.  model_management may have moved them to CPU; this call
+        brings them back before decode/encode.
+        """
+        for attr in ("post_quant_conv", "quant_conv"):
+            sub = getattr(vae, attr, None)
+            if sub is not None:
+                sub.to(device=device)
+        for section in ("decoder", "encoder"):
+            sub = getattr(vae, section, None)
+            if sub is None:
+                continue
+            for attr in ("conv_in", "conv_out", "conv_norm_out", "conv_act"):
+                child = getattr(sub, attr, None)
+                if child is not None:
+                    child.to(device=device)
+
+    @staticmethod
+    def _iter_clip_blocks(text_encoder, prefix: str):
+        """Yield (allocator_name, layer_module) for CLIP transformer layers."""
+        try:
+            layers = text_encoder.text_model.encoder.layers
+        except AttributeError:
+            return
+        for i, layer in enumerate(layers):
+            yield f"{prefix}.layer.{i}", layer
+
+    @staticmethod
+    def _clip_non_blocks_to_device(text_encoder, device):
+        """Move CLIP non-block parts (embeddings, layer norms) to *device*.
+
+        These must be on device before a text encode forward pass.
+        """
+        try:
+            tm = text_encoder.text_model
+            for attr in ("embeddings", "final_layer_norm"):
+                child = getattr(tm, attr, None)
+                if child is not None:
+                    child.to(device=device)
+        except AttributeError:
+            pass
+        tp = getattr(text_encoder, "text_projection", None)
+        if tp is not None:
+            tp.to(device=device)
+
+    def _ensure_vae_blocks_registered(self):
+        """Lazily register VAE decoder/encoder blocks with the VRAMAllocator.
+
+        Returns the VRAMAllocator, or None when the VAE is not on a CUDA device.
+        Each significant sub-block (mid_block, up_blocks, down_blocks) is
+        registered individually so the LRU can evict them independently.
+        Tiny conv layers are kept as permanent GPU residents.
+        """
+        from diff_pipeline.vram_allocator import VRAMAllocator
         vae = self._pipe.vae
-        x = x.to(device=next(vae.parameters()).device, dtype=vae.dtype)
-        dist = vae.encode(x)
+        try:
+            device = next(vae.parameters()).device
+        except StopIteration:
+            return None
+        if device.type != "cuda":
+            return None
+        allocator = VRAMAllocator.get(device)
+        if any(n.startswith("vae.") for n in allocator._registry):
+            return allocator
+        n = 0
+        for name, module in self._iter_vae_blocks(vae):
+            allocator.register_module(name, module)
+            n += 1
+        unet_n = sum(1 for k in allocator._registry if k.startswith("unet."))
+        print(
+            f"[VRAM] VAE: registered {n} blocks | device={device} | "
+            f"unet blocks already in allocator: {unet_n}"
+        )
+        return allocator
+
+    def _ensure_clip_blocks_registered(self, allocator, device):
+        """Lazily register CLIP transformer layers with the VRAMAllocator."""
+        for te_attr, prefix in (("text_encoder", "clip_l"), ("text_encoder_2", "clip_g")):
+            te = getattr(self._pipe, te_attr, None)
+            if te is None:
+                continue
+            if any(k.startswith(f"{prefix}.") for k in allocator._registry):
+                continue
+            n = 0
+            for name, module in self._iter_clip_blocks(te, prefix):
+                allocator.register_module(name, module)
+                n += 1
+            if n:
+                print(f"[VRAM] CLIP '{prefix}': registered {n} transformer layers")
+
+    @staticmethod
+    def _vae_tiled(vae, op, *args, tile_sample_min_size: int = 512, **kwargs):
+        """Run VAE *op* with tiling enabled at *tile_sample_min_size* pixels.
+
+        Forces an explicit small tile size because the diffusers default
+        (tile_latent_min_size=192) may be ≥ the actual latent dimension,
+        in which case the guard in _decode() would skip tiling entirely.
+        512 pixel tiles → 64-latent tiles → ~536 MB intermediate per tile.
+        """
+        _was_tiling = getattr(vae, "use_tiling", False)
+        _prev_tile = getattr(vae, "tile_sample_min_size", tile_sample_min_size)
+        if hasattr(vae, "enable_tiling"):
+            try:
+                vae.enable_tiling(tile_sample_min_size=tile_sample_min_size)
+            except TypeError:
+                # Older diffusers: no parameter — set attributes manually.
+                vae.enable_tiling()
+            # Always override tile sizes in case enable_tiling ignored the arg.
+            if hasattr(vae, "tile_sample_min_size"):
+                vae.tile_sample_min_size = tile_sample_min_size
+            n_blocks = len(getattr(getattr(vae, "config", None), "block_out_channels", [None] * 4))
+            if hasattr(vae, "tile_latent_min_size"):
+                vae.tile_latent_min_size = max(1, tile_sample_min_size // (2 ** (n_blocks - 1)))
+        try:
+            return op(*args, **kwargs)
+        finally:
+            if not _was_tiling and hasattr(vae, "disable_tiling"):
+                vae.disable_tiling()
+            elif hasattr(vae, "tile_sample_min_size"):
+                vae.tile_sample_min_size = _prev_tile
+
+    def encode_first_stage(self, x: torch.Tensor) -> Any:
+        """Encode an image batch to latents using the diffusers VAE.
+
+        Evicts all non-VAE-encoder allocations via ``prepare_for_prefix`` so
+        encoder blocks have maximum VRAM; tiny conv layers are moved to device
+        explicitly since model_management may have previously CPU'd them.
+        Falls back to tiled encode on OOM.
+        """
+        import gc, logging as _log
+        _logger = _log.getLogger(__name__)
+        allocator = self._ensure_vae_blocks_registered()
+        vae = self._pipe.vae
+        try:
+            device = next(vae.parameters()).device
+        except StopIteration:
+            device = torch.device("cpu")
+        if allocator is not None:
+            allocator.prepare_for_prefix("vae.encoder.")
+            self._vae_non_blocks_to_device(vae, device)
+        x = x.to(device=device, dtype=vae.dtype)
+
+        # Nested function: when it returns None the OOM has unwound its entire
+        # call stack, freeing all intermediate activation tensors before retry.
+        def _try_encode():
+            try:
+                return vae.encode(x)
+            except torch.cuda.OutOfMemoryError:
+                return None
+
+        dist = _try_encode()
+        if dist is None:
+            _logger.warning("VAE encode OOM — tiled encode fallback.")
+            gc.collect()
+            torch.cuda.empty_cache()
+            dist = self._vae_tiled(vae, vae.encode, x)
         # diffusers VAE encode() returns an AutoencoderKLOutput with .latent_dist
         return getattr(dist, "latent_dist", dist)
 
@@ -1024,9 +1208,6 @@ class DiffusersModelAdapter:
         The scaling_factor, shift_factor, latents_mean and latents_std are read
         from vae.config so every checkpoint carries its own correct formula.
         """
-        import logging as _log
-        _logger = _log.getLogger(__name__)
-
         cfg = self._pipe.vae.config
         scaling_factor = getattr(cfg, "scaling_factor",  None)
         shift_factor   = getattr(cfg, "shift_factor",    None)
@@ -1038,17 +1219,6 @@ class DiffusersModelAdapter:
                 "DiffusersModelAdapter: vae.config.scaling_factor is missing. "
                 "Cannot unscale latents. Check the loaded checkpoint."
             )
-
-        import torch as _torch
-        nan_in = int(_torch.isnan(z).sum())
-        print(
-            f"[VAE unscale] scaling_factor={scaling_factor:.5f}  "
-            f"shift_factor={f'{shift_factor:.5f}' if shift_factor is not None else 'None'}  "
-            f"has_mean_std={latents_mean is not None}  "
-            f"z.shape={tuple(z.shape)}  z.dtype={z.dtype}  "
-            f"nan_in_z={nan_in}  z_min={float(z[~_torch.isnan(z)].min()) if nan_in < z.numel() else 'all-nan'}  "
-            f"z_max={float(z[~_torch.isnan(z)].max()) if nan_in < z.numel() else 'all-nan'}"
-        )
 
         if latents_mean is not None and latents_std is not None:
             # Per-channel normalisation (Playground 2.5 / CogVideoX style)
@@ -1066,21 +1236,118 @@ class DiffusersModelAdapter:
     def decode_first_stage(self, z: torch.Tensor) -> torch.Tensor:
         """Decode latents to images using the diffusers VAE.
 
-        The VAE dtype is fixed at load time (see dummy_sdxl_hijack in load_model.py)
-        to bf16 or fp32 to avoid fp16 overflow.  No runtime dtype switching is done
-        here so this method is torch.compile / inductor CUDA-graph safe.
+        Evicts all non-VAE-decoder allocations via ``prepare_for_prefix`` so
+        decoder blocks have maximum VRAM; tiny conv layers are moved to device
+        explicitly since model_management may have previously CPU'd them.
+        Falls back to tiled decode on OOM.
         """
+        import gc, logging as _log
+        _logger = _log.getLogger(__name__)
+        allocator = self._ensure_vae_blocks_registered()
         vae = self._pipe.vae
         z = self._vae_unscale(z)
-        device = next(vae.parameters()).device
-        # Cast latents to match the VAE's dtype (bf16 or fp32 after load-time upcast).
+        try:
+            device = next(vae.parameters()).device
+        except StopIteration:
+            device = torch.device("cpu")
+        if allocator is not None:
+            allocator.prepare_for_prefix("vae.decoder.")
+            self._vae_non_blocks_to_device(vae, device)
         z = z.to(device=device, dtype=vae.dtype)
-        decoded = vae.decode(z)
+
+        # For large latents, activations during upsampling exceed available VRAM
+        # even when weights fit.  Skip the wasteful first attempt and go straight
+        # to tiled decode when the peak activation estimate exceeds free CUDA memory.
+        needs_tiling = self._decode_needs_tiling(vae, z, device)
+        if needs_tiling:
+            print(
+                f"[VRAM] decode_first_stage: large latent {list(z.shape)}, "
+                "skipping full decode → tiled directly"
+            )
+            decoded = self._vae_tiled(vae, vae.decode, z)
+        else:
+            # Nested function: when it returns None the OOM has unwound its entire
+            # call stack, freeing all intermediate activation tensors before retry.
+            def _try_decode():
+                try:
+                    return vae.decode(z)
+                except torch.cuda.OutOfMemoryError:
+                    return None
+
+            decoded = _try_decode()
+            if decoded is None:
+                _logger.warning(
+                    "VAE decode OOM — tiled decode fallback (latent %s).", list(z.shape)
+                )
+                gc.collect()
+                torch.cuda.empty_cache()
+                decoded = self._vae_tiled(vae, vae.decode, z)
         return getattr(decoded, "sample", decoded)
 
+    @staticmethod
+    def _decode_needs_tiling(vae, z: torch.Tensor, device: torch.device) -> bool:
+        """Return True when full-latent decode would likely OOM.
+
+        Estimates peak activation memory as the largest intermediate feature map
+        produced by the VAE decoder (the penultimate up_block output at full spatial
+        resolution) and compares against available CUDA memory with a safety margin.
+        """
+        if device.type != "cuda":
+            return False
+        try:
+            free_bytes, _ = torch.cuda.mem_get_info(device)
+        except Exception:
+            return False
+
+        cfg = getattr(vae, "config", None)
+        channels = getattr(cfg, "block_out_channels", [128, 256, 512, 512])
+        n_up = len(channels)
+        # Scale factor: each up_block doubles spatial resolution.
+        scale = 2 ** (n_up - 1)
+        _, _, lh, lw = z.shape
+        # Peak activation: spatial resolution at final up_block × largest channel count.
+        peak_h = lh * scale
+        peak_w = lw * scale
+        peak_ch = max(channels)
+        elem_bytes = z.element_size()
+        # Factor of 4: input + output of the block's largest conv + ResNet intermediate.
+        peak_estimate = peak_h * peak_w * peak_ch * elem_bytes * 4
+        # Weight memory already loaded onto device counts against available VRAM.
+        # Add a 20% margin for PyTorch allocator overhead.
+        threshold = free_bytes * 0.80
+        return peak_estimate > threshold
+
     def get_learned_conditioning(self, prompts: list[str]) -> Any:
-        """Text-encode prompts using the pipeline's text encoders."""
-        return _encode_prompts(self._pipe, prompts)
+        """Text-encode prompts using the pipeline's text encoders.
+
+        UNet LRU blocks (if any) are evicted before encoding so CLIP layers
+        can load on-demand via their forward_pre_hooks.  CLIP blocks are left
+        resident after encoding — the LRU eviction policy will reclaim them
+        naturally when UNet blocks need VRAM during sampling.
+        """
+        from diff_pipeline.vram_allocator import VRAMAllocator
+        allocator = None
+        device = None
+        # Resolve CUDA device from UNet (reliable even if VAE/CLIP are on CPU).
+        for p in self._pipe.unet.parameters():
+            if p.device.type == "cuda":
+                device = p.device
+                break
+        if device is not None:
+            allocator = VRAMAllocator.get(device)
+            self._ensure_clip_blocks_registered(allocator, device)
+            # Evict any resident UNet blocks — they're not needed during text encoding.
+            if any(n.startswith("unet.") for n in allocator._lru):
+                allocator.evict_by_prefix("unet.")
+            # Ensure CLIP non-block parts (embeddings, layer norms) are on device;
+            # model_management may have previously moved them to CPU.
+            for te_attr in ("text_encoder", "text_encoder_2"):
+                te = getattr(self._pipe, te_attr, None)
+                if te is not None:
+                    self._clip_non_blocks_to_device(te, device)
+
+        result = _encode_prompts(self._pipe, prompts)
+        return result
 
     def apply_model(self, x, t, cond, **kwargs):
         """Run the diffusion UNet forward pass.
