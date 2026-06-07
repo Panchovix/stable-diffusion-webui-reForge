@@ -291,8 +291,7 @@ class TemperatureGuard:
             return
         rate = self._kalman.rate if self._kalman.initialized else 0.0
         if predicted is not None and _is_kalman_enabled():
-            from modules import shared as s2
-            h = float(getattr(s2.opts, "gpu_temp_kalman_horizon", 10.0))
+            h = float(getattr(shared.opts, "gpu_temp_kalman_horizon", 10.0))
             print(f"[GPU Temp] {raw:.1f}°C  rate: {rate:+.2f}°C/s  predicted({h:.0f}s): {predicted:.1f}°C")
         else:
             print(f"[GPU Temp] {raw:.1f}°C  rate: {rate:+.2f}°C/s")
@@ -312,7 +311,7 @@ class TemperatureGuard:
 
         raw = self._measure()
         trigger = self._trigger_temp(raw)
-        sleep_temp = float(getattr(shared.opts, "gpu_temp_sleep_temp", 75.0))
+        sleep_temp = float(getattr(shared.opts, "gpu_temp_sleep_temp", 83.0))
 
         if trigger <= sleep_temp:
             _last_call_time = now
@@ -327,7 +326,7 @@ class TemperatureGuard:
         self._log(raw, predicted)
 
         sleep_step = float(getattr(shared.opts, "gpu_temp_sleep_step", 1.0))
-        max_sleep = float(getattr(shared.opts, "gpu_temp_max_sleep", 10.0))
+        max_sleep = float(getattr(shared.opts, "gpu_temp_max_sleep", 60.0))
         wake_temp = float(getattr(shared.opts, "gpu_temp_wake_temp", 75.0))
         call_time = now
 
