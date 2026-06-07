@@ -61,24 +61,40 @@ def _make_entropy_hook(store: list):
     from ldm_patched.contrib.nodes_sag import attention_basic_with_sim
 
     def hook(q, k, v, extra_options, mask=None):
-        heads = extra_options["n_heads"]
+        heads     = extra_options["n_heads"]
+        orig_dtype = q.dtype
 
-        # Always force fp32 for the sim computation: fp16 dot products overflow at
-        # seq=1600 (SDXL middle block), producing inf → one-hot softmax → entropy=0.
-        # attn_precision controls only the similarity computation, not the returned out.
-        out, sim = attention_basic_with_sim(
-            q, k, v, heads=heads, attn_precision=torch.float32, mask=mask
-        )
-        # sim: (B*heads, N_q, N_k) — compute per-query entropy
+        # torch.autocast (fp16/bf16 mode) downcasts fp32 inputs before eligible
+        # ops like einsum/matmul even after an explicit `.float()` call.  At
+        # seq=1600 (SDXL middle block) the fp16 QK dot-products overflow → inf
+        # → one-hot softmax → entropy = 0 every step.  Step outside autocast.
+        device_type = "cuda" if q.is_cuda else "cpu"
+        with torch.autocast(device_type=device_type, enabled=False):
+            out_f32, sim = attention_basic_with_sim(
+                q.float(), k.float(), v.float(),
+                heads=heads, attn_precision=torch.float32, mask=mask,
+            )
+
+        # sim: (B*heads, N_q, N_k) in fp32 — compute per-query entropy
         # H[i] = −∑_j A[i,j]·log(A[i,j]+ε)  ∈ [0, log N_k]
-        # Force float32: log(near-zero bf16/fp16) → NaN without this cast
         eps_ent = 1e-8
-        sim_f32 = sim.float()
-        ent = -(sim_f32 * (sim_f32 + eps_ent).log()).sum(-1).clamp(min=0)  # (B*heads, N_q)
+        ent = -(sim * (sim + eps_ent).log()).sum(-1).clamp(min=0)  # (B*heads, N_q)
+
+        # One-shot diagnostic: print raw sim/entropy stats on the first capture.
+        if not store:
+            sm_max = sim.max(dim=-1)[0]
+            print(
+                f"[SURE-AGWAV-DBG] entropy-hook  sim_row_max mean={float(sm_max.mean()):.4f}"
+                f"  max={float(sm_max.max()):.4f}"
+                f"  ent_mean_raw={float(ent.mean()):.5f}"
+                f"  ent_max_raw={float(ent.max()):.5f}"
+            )
 
         orig_shape = extra_options.get("original_shape")  # [B, C, H_lat, W_lat]
         store.append((ent.detach(), heads, orig_shape))
-        return out
+
+        # Return attention output in the original dtype so the model stays healthy
+        return out_f32.to(orig_dtype)
 
     return hook
 
