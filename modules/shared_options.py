@@ -860,6 +860,61 @@ options_templates.update(options_section(('postprocessing', "Postprocessing", "p
     'postprocessing_existing_caption_action': OptionInfo("Ignore", "Action for existing captions", gr.Radio, {"choices": ["Ignore", "Keep", "Prepend", "Append"]}).info("when generating captions using postprocessing; Ignore = use generated; Keep = use original; Prepend/Append = combine both"),
 }))
 
+def _reinit_gpu_temp_sensor(*_args):
+    from modules import gpu_temperature
+    gpu_temperature.reinitialize()
+
+
+_gpu_temp_sensor_choices = ["NVIDIA - nvidia-smi", "AMD - ROCm-smi", "NVIDIA & AMD - OpenHardwareMonitor"]
+_gpu_temp_plateau_actions = ["warn_and_continue", "abort_generation"]
+
+options_templates.update(options_section(('gpu_temperature', "GPU Temperature Protection", "system"), {
+    "gpu_temp_enable": OptionInfo(False, "Enable GPU temperature protection").info(
+        "pauses generation when the GPU core temperature exceeds the sleep threshold"),
+    "gpu_temp_sensor": OptionInfo(
+        "NVIDIA - nvidia-smi", "Temperature sensor", gr.Radio,
+        {"choices": _gpu_temp_sensor_choices}, _reinit_gpu_temp_sensor,
+    ).info("nvidia-smi: Windows + Linux | ROCm-smi: Linux only | OpenHardwareMonitor: Windows only"),
+    "gpu_temp_device_index": OptionInfo(0, "GPU device index (nvidia-smi)", gr.Number, {"precision": 0}).info(
+        "for multi-GPU systems; 0-based index of the GPU to monitor"),
+    "gpu_temp_ohm_gpu_name": OptionInfo("", "GPU name filter (OpenHardwareMonitor)").info(
+        "substring of the GPU name shown in OpenHardwareMonitor; leave blank to pick the first GPU"),
+    "gpu_temp_print": OptionInfo(True, "Print temperature log while paused"),
+    "gpu_temp_min_interval": OptionInfo(5.0, "Minimum check interval (seconds)", gr.Number).info(
+        "temperature is not re-checked until this many seconds have elapsed since the last check"),
+    "gpu_temp_sleep_step": OptionInfo(1.0, "Poll interval while paused (seconds)", gr.Number).info(
+        "how long to wait between temperature reads during a pause"),
+    "gpu_temp_max_sleep": OptionInfo(60.0, "Maximum pause duration (seconds)", gr.Number).info(
+        "give up waiting and resume after this many seconds; 0 = unlimited"),
+    "gpu_temp_sleep_temp": OptionInfo(83.0, "Sleep threshold (°C)", gr.Slider, {"minimum": 0, "maximum": 125}).info(
+        "generation pauses when the GPU temperature (or its Kalman prediction) exceeds this value"),
+    "gpu_temp_wake_temp": OptionInfo(75.0, "Wake threshold (°C)", gr.Slider, {"minimum": 0, "maximum": 125}).info(
+        "generation resumes once the GPU temperature drops below this value"),
+}))
+
+options_templates.update(options_section(('gpu_temperature', "GPU Temperature — Kalman Prediction", "system"), {
+    "gpu_temp_kalman_enable": OptionInfo(True, "Enable Kalman predictive protection").info(
+        "tracks temperature rate-of-change and pre-emptively pauses before the threshold is hit"),
+    "gpu_temp_kalman_q_pos": OptionInfo(0.1, "Kalman process noise — temperature (q_pos)", gr.Number).info(
+        "how much the true temperature can change unpredictably per second; "
+        "higher → trusts raw readings more, lower → smoother estimate"),
+    "gpu_temp_kalman_q_vel": OptionInfo(0.05, "Kalman process noise — rate (q_vel)", gr.Number).info(
+        "how quickly the heating/cooling rate can shift; "
+        "higher → adapts faster to sudden load changes"),
+    "gpu_temp_kalman_r": OptionInfo(2.0, "Kalman measurement noise (R)", gr.Number).info(
+        "expected sensor noise in °C; higher → smoother but slower to react"),
+    "gpu_temp_kalman_horizon": OptionInfo(10.0, "Prediction horizon (seconds)", gr.Number).info(
+        "if the predicted temperature at this many seconds from now exceeds the sleep threshold, "
+        "generation pauses immediately"),
+    "gpu_temp_plateau_timeout": OptionInfo(30.0, "Thermal plateau timeout (seconds)", gr.Number).info(
+        "if the temperature stays above the wake threshold and is not dropping for this many seconds "
+        "the GPU has saturated its passive heat exchange and the plateau action is triggered; 0 = disabled"),
+    "gpu_temp_plateau_action": OptionInfo(
+        "warn_and_continue", "Thermal plateau action", gr.Radio,
+        {"choices": _gpu_temp_plateau_actions},
+    ).info("warn_and_continue: log a warning and let generation resume; abort_generation: interrupt the current job"),
+}))
+
 options_templates.update(options_section((None, "Hidden options"), {
     "disabled_extensions": OptionInfo([], "Disable these extensions"),
     "disable_all_extensions": OptionInfo("none", "Disable all extensions (preserves the list of disabled extensions)", gr.Radio, {"choices": ["none", "extra", "all"]}),

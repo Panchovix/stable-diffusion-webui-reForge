@@ -137,6 +137,9 @@ def images_tensor_to_samples(image, approximation=None, model=None):
 
 
 def store_latent(decoded):
+    from modules import gpu_temperature
+    gpu_temperature.check()
+
     shared.state.current_latent = decoded
 
     if shared.opts.live_previews_enable and shared.opts.show_progress_every_n_steps > 0 and shared.state.sampling_step % shared.opts.show_progress_every_n_steps == 0:
