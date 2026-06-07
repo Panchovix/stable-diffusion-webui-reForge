@@ -413,11 +413,6 @@ class ForgeAttnSelfProcessor:
             if k not in ("patches", "patches_replace") and k not in extra_options:
                 extra_options[k] = v
 
-        print(
-            f"[SURE-AGWAV-DBG] ForgeAttnSelfProcessor  block={self.block_name}:{self.ldm_idx}:{self.t_idx}"
-            f"  q={tuple(query.shape)}  seq={seq_len}"
-        )
-
         # q/k/v in (B, N, heads*dim_head) — matches attention_basic_with_sim
         hidden_states = hook_fn(query, key, value, extra_options,
                                 mask=attention_mask)

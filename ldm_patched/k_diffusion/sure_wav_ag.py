@@ -76,7 +76,7 @@ from ldm_patched.k_diffusion.sure_attention import (
 _logger = logging.getLogger("sure_wav_ag")
 
 # Set to True to enable verbose print() debug output (easier than setting log levels)
-_DEBUG_PRINT = True
+_DEBUG_PRINT = False
 
 
 def _dbg(*args):

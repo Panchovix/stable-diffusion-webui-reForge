@@ -125,17 +125,9 @@ class SureWaveletAttentionGuidance:
                 alpha, alpha_max, attn_weight,
             )
 
-        print(
-            f"[SURE-AGWAV-DBG] patch()  alpha={alpha:.4f}  alpha_mode={alpha_mode}"
-            f"  alpha_max={alpha_max:.4f}  attn_weight={attn_weight:.2f}"
-            f"  wavelet={wavelet}  level={wavelet_level}  lp_frac={lp_frac:.2f}"
-            f"  fft_scale={fft_scale:.3f}  attn_blocks={attn_blocks}"
-        )
-
         # _step_state persists for the lifetime of this closure = one generation.
         # Reset is triggered inside _wavag_step_alpha when σ jumps (new run).
         _step_state = _make_step_state(alpha)
-        _call_count = [0]  # mutable counter for debug step numbering
 
         def post_cfg_function(args):
             x0_hat        = args["denoised"]
@@ -145,17 +137,8 @@ class SureWaveletAttentionGuidance:
             cond          = args["cond"]
 
             sigma_t = float(sigma.max())
-            _call_count[0] += 1
-            step_n = _call_count[0]
-
-            print(
-                f"[SURE-AGWAV-DBG] step={step_n}  sigma={sigma_t:.5f}"
-                f"  x0_hat={tuple(x0_hat.shape)}"
-                f"  x0_rms={float(x0_hat.pow(2).mean().sqrt()):.4f}"
-            )
 
             if min(x0_hat.shape[2:]) <= 4:
-                print(f"[SURE-AGWAV-DBG] step={step_n}  SKIP (spatial too small)")
                 return x0_hat
 
             # ── Extra forward with attention capture ─────────────────────────
@@ -166,25 +149,11 @@ class SureWaveletAttentionGuidance:
             (sure_x0,) = _samplers.calc_cond_batch(
                 model_inner, [cond], x0_hat, sigma, capture_opts
             )
-            print(f"[SURE-AGWAV-DBG] step={step_n}  attn_layers={len(attn_store)}")
 
             # ── Aggregate entropy map ─────────────────────────────────────────
             U = _aggregate_entropy_map(
                 attn_store, x0_hat.shape, x0_hat.device, x0_hat.dtype
             )
-            if U is not None:
-                entropy_rms  = float(U.pow(2).mean().sqrt())
-                entropy_min  = float(U.min())
-                entropy_max  = float(U.max())
-                entropy_mean = float(U.mean())
-                print(
-                    f"[SURE-AGWAV-DBG] step={step_n}  entropy_rms={entropy_rms:.4f}"
-                    f"  U={tuple(U.shape)}"
-                    f"  min={entropy_min:.4f}  max={entropy_max:.4f}  mean={entropy_mean:.4f}"
-                )
-            else:
-                entropy_rms = 0.0
-                print(f"[SURE-AGWAV-DBG] step={step_n}  entropy U=None")
 
             # ── Wavelet-space correction ──────────────────────────────────────
             try:
@@ -193,8 +162,6 @@ class SureWaveletAttentionGuidance:
 
                 _wav = _pywt.Wavelet(wavelet)
                 residual = (x0_hat - sure_x0).detach()
-                res_rms = float(residual.pow(2).mean().sqrt())
-                print(f"[SURE-AGWAV-DBG] step={step_n}  residual_rms={res_rms:.5f}")
 
                 res_coeffs = ptwt.wavedec2(residual, _wav, level=wavelet_level, mode="reflect")
                 x0_coeffs  = ptwt.wavedec2(x0_hat.detach(), _wav, level=wavelet_level, mode="reflect")
@@ -219,24 +186,16 @@ class SureWaveletAttentionGuidance:
                 grad_coeffs.append(g_a)
                 r_dot_g += float((r_a * g_a).sum())
                 g_sq    += float((g_a * g_a).sum())
-                print(
-                    f"[SURE-AGWAV-DBG] step={step_n}  approx"
-                    f"  shape={tuple(r_a.shape)}"
-                    f"  r_rms={float(r_a.pow(2).mean().sqrt()):.5f}"
-                    f"  g_rms={float(g_a.pow(2).mean().sqrt()):.5f}"
-                )
 
                 # Detail subbands
                 for lvl_idx in range(1, len(res_coeffs)):
                     cH_r, cV_r, cD_r = res_coeffs[lvl_idx]
-                    cH_x, cV_x, cD_x = x0_coeffs[lvl_idx]
                     if lvl_idx > n_correct_detail:
                         grad_coeffs.append((
                             torch.zeros_like(cH_r),
                             torch.zeros_like(cV_r),
                             torch.zeros_like(cD_r),
                         ))
-                        print(f"[SURE-AGWAV-DBG] step={step_n}  detail idx={lvl_idx} SKIPPED")
                         continue
                     if U is not None and attn_weight > 0.0:
                         W_sb = 1.0 + attn_weight * _project_entropy_to_subband(
@@ -247,21 +206,8 @@ class SureWaveletAttentionGuidance:
                     c = approx_coeff * W_sb
                     g_H, g_V, g_D = c * cH_r, c * cV_r, c * cD_r
                     grad_coeffs.append((g_H, g_V, g_D))
-                    band_rdg = float((cH_r * g_H + cV_r * g_V + cD_r * g_D).sum())
-                    band_gsq = float((g_H * g_H + g_V * g_V + g_D * g_D).sum())
-                    r_dot_g += band_rdg
-                    g_sq    += band_gsq
-                    print(
-                        f"[SURE-AGWAV-DBG] step={step_n}  detail idx={lvl_idx}"
-                        f"  shape={tuple(cH_r.shape)}"
-                        f"  rdg={band_rdg:.4f}  gsq={band_gsq:.4f}"
-                    )
-
-                print(
-                    f"[SURE-AGWAV-DBG] step={step_n}  Parseval"
-                    f"  r_dot_g={r_dot_g:.4f}  g_sq={g_sq:.4f}"
-                    f"  state={{'prev_sure': {_step_state['prev_sure']}, 'cur_alpha': {_step_state['cur_alpha']:.5f}}}"
-                )
+                    r_dot_g += float((cH_r * g_H + cV_r * g_V + cD_r * g_D).sum())
+                    g_sq    += float((g_H * g_H + g_V * g_V + g_D * g_D).sum())
 
                 # ── Adaptive alpha ────────────────────────────────────────────
                 alpha_eff = _wavag_step_alpha(
@@ -269,7 +215,6 @@ class SureWaveletAttentionGuidance:
                     r_dot_g, g_sq,
                     alpha_mode, _step_state,
                 )
-                print(f"[SURE-AGWAV-DBG] step={step_n}  alpha_eff={alpha_eff:.5f}")
 
                 # ── Pass 2: apply correction ──────────────────────────────────
                 corrected_coeffs: list = [x0_coeffs[0] - alpha_eff * grad_coeffs[0]]
@@ -287,7 +232,6 @@ class SureWaveletAttentionGuidance:
 
             except ImportError:
                 # Graceful fallback: pixel-space SURE-AG
-                print(f"[SURE-AGWAV-DBG] step={step_n}  ptwt MISSING — pixel fallback")
                 residual = (x0_hat - sure_x0).detach()
                 if U is not None and attn_weight > 0.0:
                     g = approx_coeff * residual * (1.0 + attn_weight * U)
@@ -302,11 +246,12 @@ class SureWaveletAttentionGuidance:
                 )
                 corrected = (x0_hat - alpha_eff * g).detach()
 
-            delta_rms = float((corrected - x0_hat).pow(2).mean().sqrt())
-            print(
-                f"[SURE-AGWAV-DBG] step={step_n}  DONE"
-                f"  delta_rms={delta_rms:.5f}"
-                f"  out_range=[{float(corrected.min()):.3f}, {float(corrected.max()):.3f}]"
+            _logger.debug(
+                "[sure_wav_ag] sigma=%.5f  alpha_eff=%.5f  entropy_rms=%.4f  attn_layers=%d",
+                sigma_t,
+                _step_state["cur_alpha"],
+                float(U.pow(2).mean().sqrt()) if U is not None else 0.0,
+                len(attn_store),
             )
             return corrected
 
