@@ -172,9 +172,19 @@ class SureWaveletAttentionGuidance:
             U = _aggregate_entropy_map(
                 attn_store, x0_hat.shape, x0_hat.device, x0_hat.dtype
             )
-            entropy_rms = float(U.pow(2).mean().sqrt()) if U is not None else 0.0
-            print(f"[SURE-AGWAV-DBG] step={step_n}  entropy_rms={entropy_rms:.4f}"
-                  f"  U={'None' if U is None else str(tuple(U.shape))}")
+            if U is not None:
+                entropy_rms  = float(U.pow(2).mean().sqrt())
+                entropy_min  = float(U.min())
+                entropy_max  = float(U.max())
+                entropy_mean = float(U.mean())
+                print(
+                    f"[SURE-AGWAV-DBG] step={step_n}  entropy_rms={entropy_rms:.4f}"
+                    f"  U={tuple(U.shape)}"
+                    f"  min={entropy_min:.4f}  max={entropy_max:.4f}  mean={entropy_mean:.4f}"
+                )
+            else:
+                entropy_rms = 0.0
+                print(f"[SURE-AGWAV-DBG] step={step_n}  entropy U=None")
 
             # ── Wavelet-space correction ──────────────────────────────────────
             try:

@@ -202,7 +202,20 @@ def _aggregate_entropy_map(store: list, latent_shape: tuple,
             )
             continue
 
-        ent_spatial = ent_b.float().reshape(b_use, 1, h_l, w_l)
+        # Normalise by theoretical max entropy log(N_k) so U ∈ [0,1] absolutely.
+        # Per-image min-max would collapse when attention is spatially uniform
+        # (e.g. high-noise steps where all tokens attend equally → entropy ≈ log(N)
+        # everywhere, U_max − U_min ≈ 0 → divide by ε → all zeros).
+        log_N = math.log(max(N, 2))
+        ent_spatial = ent_b.float().reshape(b_use, 1, h_l, w_l) / log_N
+
+        # Debug: log raw entropy range before normalization
+        _logger.debug(
+            "sure_attention: layer N=%d log_N=%.3f ent_raw min=%.4f max=%.4f mean=%.4f",
+            N, log_N,
+            float(ent_b.min()), float(ent_b.max()), float(ent_b.mean()),
+        )
+
         # Bilinear upsample to full latent resolution
         ent_up = F.interpolate(ent_spatial, (H_lat, W_lat),
                                mode="bilinear", align_corners=False)
@@ -217,16 +230,13 @@ def _aggregate_entropy_map(store: list, latent_shape: tuple,
     if not maps:
         return None
 
-    # Average across all captured layers → (B, 1, H_lat, W_lat)
+    # Average across all captured layers → (B, 1, H_lat, W_lat), values ∈ [0,1]
+    # (each layer was already normalised by its own log(N_k))
     U = torch.stack(maps, dim=0).mean(dim=0)
 
-    # Per-image min–max normalise to [0,1]  (Lean §5: entropy_norm_le_one)
-    U_flat = U.flatten(1)
-    U_min  = U_flat.min(dim=1)[0].reshape(B, 1, 1, 1)
-    U_max  = U_flat.max(dim=1)[0].reshape(B, 1, 1, 1)
-    U_norm = (U - U_min) / (U_max - U_min + 1e-8)
-
-    U_norm = U_norm.to(dtype=dtype)
+    # Clamp to [0,1] — log(N) normalisation should already give this, but floating
+    # point can produce tiny negatives near zero.  (Lean §5: entropy_norm_le_one)
+    U_norm = U.clamp(0.0, 1.0).to(dtype=dtype)
 
     if U_norm.isnan().any() or U_norm.isinf().any():
         _logger.warning("[sure_attn] NaN/Inf in entropy map after normalisation; skipping attention weighting")
