@@ -316,39 +316,130 @@ _UP_ATTN_LDM_IDX: dict = {
 
 
 # ---------------------------------------------------------------------------
-# PassthroughAttnProcessor
+# ForgeAttnSelfProcessor  (replaces PassthroughAttnProcessor)
 # ---------------------------------------------------------------------------
 
-class PassthroughAttnProcessor:
-    """Wraps AttnProcessor2_0 for self-attention (attn1) blocks.
+class ForgeAttnSelfProcessor:
+    """HF attention processor for attn1 (self-attention) blocks.
 
-    Diffusers warns when cross_attention_kwargs keys don't match the processor
-    signature.  By declaring ``transformer_options`` explicitly we silence the
-    warning; the value is forwarded to the inner processor (which ignores it).
+    When ``patches_replace["attn1"]`` carries a hook for this block, it
+    computes Q/K/V explicitly and calls the hook — enabling entropy-capture
+    passes (SURE-AGWAV, SAG-style guidance) on the Diffusers pipeline path.
+
+    Without a hook it delegates to ``AttnProcessor2_0``, identical to the
+    old ``PassthroughAttnProcessor`` behaviour.
+
+    Hook signature (same as ldm_patched attn1 replace):
+        hook(q, k, v, extra_options, mask=None) → out
+        q/k/v:  (B, N, heads*dim_head)  — flat pre-SDPA format
+        out:    (B, N, heads*dim_head)
     """
 
-    def __init__(self):
+    def __init__(self, block_name: str, ldm_idx: int, t_idx: int) -> None:
         from diffusers.models.attention_processor import AttnProcessor2_0
-        self._inner = AttnProcessor2_0()
+        self._inner     = AttnProcessor2_0()
+        self.block_name = block_name
+        self.ldm_idx    = ldm_idx
+        self.t_idx      = t_idx
 
     def __call__(
         self,
         attn,
         hidden_states,
-        encoder_hidden_states=None,
+        encoder_hidden_states=None,  # noqa: ARG002 — self-attn never uses this
         attention_mask=None,
         temb=None,
-        transformer_options=None,  # noqa: ARG002 — declared for diffusers sig check
+        transformer_options=None,
         **kwargs,
     ):
-        return self._inner(
-            attn,
-            hidden_states,
-            encoder_hidden_states=encoder_hidden_states,
-            attention_mask=attention_mask,
-            temb=temb,
-            **kwargs,
+        if transformer_options is None:
+            transformer_options = {}
+
+        patches_replace = transformer_options.get("patches_replace", {})
+        attn1_replace   = patches_replace.get("attn1", {})
+
+        block_tuple = (self.block_name, self.ldm_idx, self.t_idx)
+        block_pair  = (self.block_name, self.ldm_idx)
+        hook_fn = attn1_replace.get(block_tuple) or attn1_replace.get(block_pair)
+
+        if hook_fn is None:
+            return self._inner(
+                attn, hidden_states,
+                encoder_hidden_states=encoder_hidden_states,
+                attention_mask=attention_mask,
+                temb=temb,
+                **kwargs,
+            )
+
+        # ── Hook path: compute Q/K/V explicitly so hook sees full attention ──
+        residual = hidden_states
+
+        if attn.spatial_norm is not None:
+            hidden_states = attn.spatial_norm(hidden_states, temb)
+
+        input_ndim = hidden_states.ndim
+        if input_ndim == 4:
+            batch_size, channel, height, width = hidden_states.shape
+            hidden_states = hidden_states.view(
+                batch_size, channel, height * width
+            ).transpose(1, 2)
+
+        batch_size, seq_len, _ = hidden_states.shape
+
+        if attn.group_norm is not None:
+            hidden_states = attn.group_norm(
+                hidden_states.transpose(1, 2)
+            ).transpose(1, 2)
+
+        # Self-attention: K, V project from the same hidden_states as Q
+        query = attn.to_q(hidden_states)
+        key   = attn.to_k(hidden_states)
+        value = attn.to_v(hidden_states)
+
+        if attention_mask is not None:
+            attention_mask = attn.prepare_attention_mask(
+                attention_mask, seq_len, batch_size
+            )
+
+        extra_options = {
+            "block":          (self.block_name, self.ldm_idx),
+            "block_index":    self.t_idx,
+            "n_heads":        attn.heads,
+            "dim_head":       attn.to_q.out_features // attn.heads,
+            "original_shape": transformer_options.get("original_shape"),
+            "attn_precision": transformer_options.get("attn_precision"),
+        }
+        for k, v in transformer_options.items():
+            if k not in ("patches", "patches_replace") and k not in extra_options:
+                extra_options[k] = v
+
+        print(
+            f"[SURE-AGWAV-DBG] ForgeAttnSelfProcessor  block={self.block_name}:{self.ldm_idx}:{self.t_idx}"
+            f"  q={tuple(query.shape)}  seq={seq_len}"
         )
+
+        # q/k/v in (B, N, heads*dim_head) — matches attention_basic_with_sim
+        hidden_states = hook_fn(query, key, value, extra_options,
+                                mask=attention_mask)
+
+        # Output projection (same path as ForgeAttnProcessor)
+        hidden_states = attn.to_out[0](hidden_states)
+        hidden_states = attn.to_out[1](hidden_states)
+
+        if input_ndim == 4:
+            hidden_states = hidden_states.transpose(-1, -2).reshape(
+                batch_size, channel, height, width
+            )
+
+        if attn.residual_connection:
+            hidden_states = hidden_states + residual
+
+        hidden_states = hidden_states / attn.rescale_output_factor
+        return hidden_states
+
+
+# Keep old name as alias so any external code that references it still works
+PassthroughAttnProcessor = ForgeAttnSelfProcessor
 
 
 # ---------------------------------------------------------------------------
@@ -1045,19 +1136,24 @@ class DiffPipeline():
         return result
 
     def _install_attn_processors(self, hf_unet) -> None:
-        """Install ForgeAttnProcessor on every attn2 and PassthroughAttnProcessor
+        """Install ForgeAttnProcessor on every attn2 and ForgeAttnSelfProcessor
         on every attn1 in the HF UNet.
 
         Both processors declare ``transformer_options`` explicitly in their
         signatures so diffusers does not emit "not expected … will be ignored"
         warnings when cross_attention_kwargs is forwarded from apply_model().
+
+        ForgeAttnSelfProcessor dispatches patches_replace["attn1"] hooks when
+        present (e.g. SURE-AGWAV entropy capture), falling back to AttnProcessor2_0.
         """
         def _install_block_processors(attn_mod, block_name, ldm_idx):
             for t_idx, tb in enumerate(attn_mod.transformer_blocks):
                 tb.attn2.set_processor(
                     ForgeAttnProcessor(block_name, ldm_idx, t_idx)
                 )
-                tb.attn1.set_processor(PassthroughAttnProcessor())
+                tb.attn1.set_processor(
+                    ForgeAttnSelfProcessor(block_name, ldm_idx, t_idx)
+                )
 
         # Down blocks
         for b_idx, down_block in enumerate(hf_unet.down_blocks):
