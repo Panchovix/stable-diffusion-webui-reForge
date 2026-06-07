@@ -80,15 +80,48 @@ def _make_entropy_hook(store: list):
         eps_ent = 1e-8
         ent = -(sim * (sim + eps_ent).log()).sum(-1).clamp(min=0)  # (B*heads, N_q)
 
-        # One-shot diagnostic: print raw sim/entropy stats on the first capture.
+        # One-shot deep diagnostic: print on the first capture of each denoising step.
         if not store:
-            sm_max = sim.max(dim=-1)[0]
+            sm_max  = sim.max(dim=-1)[0]              # (B*H, N_q)
+            row_sum = sim.sum(dim=-1)                 # should be ~1.0 everywhere
+            term    = sim * (sim + eps_ent).log()     # p * log(p+ε)
+            raw_neg = -term.sum(-1)                   # entropy before clamp
             print(
-                f"[SURE-AGWAV-DBG] entropy-hook  sim_row_max mean={float(sm_max.mean()):.4f}"
-                f"  max={float(sm_max.max()):.4f}"
-                f"  ent_mean_raw={float(ent.mean()):.5f}"
-                f"  ent_max_raw={float(ent.max()):.5f}"
+                f"[EDIAG] sim  dtype={sim.dtype}  shape={tuple(sim.shape)}"
+                f"  global_min={float(sim.min()):.2e}"
+                f"  global_max={float(sim.max()):.4f}"
+                f"  global_mean={float(sim.mean()):.2e}"
             )
+            print(
+                f"[EDIAG] row_sum  min={float(row_sum.min()):.6f}"
+                f"  max={float(row_sum.max()):.6f}"
+                f"  mean={float(row_sum.mean()):.6f}"
+            )
+            print(
+                f"[EDIAG] sim_row_max  mean={float(sm_max.mean()):.6f}"
+                f"  max={float(sm_max.max()):.6f}"
+            )
+            print(
+                f"[EDIAG] term=p*log(p+e)  min={float(term.min()):.6f}"
+                f"  max={float(term.max()):.6f}"
+                f"  mean={float(term.mean()):.8f}"
+            )
+            print(
+                f"[EDIAG] raw_neg=-sum(term)  min={float(raw_neg.min()):.6f}"
+                f"  max={float(raw_neg.max()):.6f}"
+                f"  mean={float(raw_neg.mean()):.6f}"
+            )
+            print(
+                f"[EDIAG] ent(after clamp)  mean={float(ent.mean()):.6f}"
+                f"  max={float(ent.max()):.6f}"
+            )
+            # Cross-check with torch.special.entr = -x*log(x) for x>0, 0 for x=0
+            try:
+                entr_check = torch.special.entr(sim).sum(-1)
+                print(f"[EDIAG] cross-check entr()  mean={float(entr_check.mean()):.6f}"
+                      f"  max={float(entr_check.max()):.6f}")
+            except Exception as exc:
+                print(f"[EDIAG] cross-check entr() failed: {exc}")
 
         orig_shape = extra_options.get("original_shape")  # [B, C, H_lat, W_lat]
         store.append((ent.detach(), heads, orig_shape))
