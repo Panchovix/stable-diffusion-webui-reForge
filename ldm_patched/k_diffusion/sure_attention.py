@@ -77,8 +77,11 @@ def _make_entropy_hook(store: list):
 
         # sim: (B*heads, N_q, N_k) in fp32 — compute per-query entropy
         # H[i] = −∑_j A[i,j]·log(A[i,j]+ε)  ∈ [0, log N_k]
+        # IMPORTANT: parenthesise so negation happens BEFORE clamp.
+        #   Wrong: -(sum).clamp(0) → sum≈-6.7 → clamp→0 → negate→0
+        #   Right: (-sum).clamp(0) → negate→+6.7 → clamp→+6.7
         eps_ent = 1e-8
-        ent = -(sim * (sim + eps_ent).log()).sum(-1).clamp(min=0)  # (B*heads, N_q)
+        ent = (-(sim * (sim + eps_ent).log()).sum(-1)).clamp(min=0)  # (B*heads, N_q)
 
         # One-shot deep diagnostic: print on the first capture of each denoising step.
         if not store:
