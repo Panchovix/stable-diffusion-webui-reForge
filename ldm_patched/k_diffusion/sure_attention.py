@@ -62,10 +62,12 @@ def _make_entropy_hook(store: list):
 
     def hook(q, k, v, extra_options, mask=None):
         heads = extra_options["n_heads"]
-        attn_precision = extra_options.get("attn_precision")
 
+        # Always force fp32 for the sim computation: fp16 dot products overflow at
+        # seq=1600 (SDXL middle block), producing inf → one-hot softmax → entropy=0.
+        # attn_precision controls only the similarity computation, not the returned out.
         out, sim = attention_basic_with_sim(
-            q, k, v, heads=heads, attn_precision=attn_precision, mask=mask
+            q, k, v, heads=heads, attn_precision=torch.float32, mask=mask
         )
         # sim: (B*heads, N_q, N_k) — compute per-query entropy
         # H[i] = −∑_j A[i,j]·log(A[i,j]+ε)  ∈ [0, log N_k]
