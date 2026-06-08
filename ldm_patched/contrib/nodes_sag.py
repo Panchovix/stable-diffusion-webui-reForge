@@ -7,8 +7,6 @@ from einops import rearrange, repeat
 from ldm_patched.ldm.modules.attention import optimized_attention
 import ldm_patched.modules.samplers
 
-# from comfy/ldm/modules/attention.py
-# but modified to return attention scores as well as output
 def attention_basic_with_sim(q, k, v, heads, mask=None, attn_precision=None):
     b, _, dim_head = q.shape
     dim_head //= heads
@@ -24,7 +22,6 @@ def attention_basic_with_sim(q, k, v, heads, mask=None, attn_precision=None):
         (q, k, v),
     )
 
-    # force cast to fp32 to avoid overflowing
     if attn_precision == torch.float32:
         sim = einsum('b i d, b j d -> b i j', q.float(), k.float()) * scale
     else:
@@ -38,7 +35,6 @@ def attention_basic_with_sim(q, k, v, heads, mask=None, attn_precision=None):
         mask = repeat(mask, 'b j -> (b h) () j', h=h)
         sim.masked_fill_(~mask, max_neg_value)
 
-    # attention, what we cannot get enough of
     sim = sim.softmax(dim=-1)
 
     out = einsum('b i j, b j d -> b i d', sim.to(v.dtype), v)
@@ -51,11 +47,9 @@ def attention_basic_with_sim(q, k, v, heads, mask=None, attn_precision=None):
     return (out, sim)
 
 def create_blur_map(x0, attn, sigma=3.0, threshold=1.0):
-    # reshape and GAP the attention map
     _, hw1, hw2 = attn.shape
     b, _, lh, lw = x0.shape
     attn = attn.reshape(b, -1, hw1, hw2)
-    # Global Average Pool
     mask = attn.mean(1, keepdim=False).sum(1, keepdim=False) > threshold
 
     total = mask.shape[-1]
@@ -72,13 +66,11 @@ def create_blur_map(x0, attn, sigma=3.0, threshold=1.0):
     x = xx
     y = total // x
 
-    # Reshape
     mask = (
         mask.reshape(b, x, y)
         .unsqueeze(1)
         .type(attn.dtype)
     )
-    # Upsample
     mask = F.interpolate(mask, (lh, lw))
 
     blurred = gaussian_blur_2d(x0, kernel_size=9, sigma=sigma)
@@ -121,19 +113,14 @@ class SelfAttentionGuidance:
 
         attn_scores = None
 
-        # TODO: make this work properly with chunked batches
-        #       currently, we can only save the attn from one UNet call
         def attn_and_record(q, k, v, extra_options):
             nonlocal attn_scores
-            # if uncond, save the attention scores
             heads = extra_options["n_heads"]
             cond_or_uncond = extra_options["cond_or_uncond"]
             b = q.shape[0] // len(cond_or_uncond)
             if 1 in cond_or_uncond:
                 uncond_index = cond_or_uncond.index(1)
-                # do the entire attention operation, but save the attention scores to attn_scores
                 (out, sim) = attention_basic_with_sim(q, k, v, heads=heads, attn_precision=extra_options["attn_precision"])
-                # when using a higher batch size, I BELIEVE the result batch dimension is [uc1, ... ucn, c1, ... cn]
                 n_slices = heads * b
                 attn_scores = sim[n_slices * uncond_index:n_slices * (uncond_index+1)]
                 return out
@@ -154,20 +141,40 @@ class SelfAttentionGuidance:
             sigma = args["sigma"]
             model_options = args["model_options"]
             x = args["input"]
-            if min(cfg_result.shape[2:]) <= 4: #skip when too small to add padding
+
+            if min(cfg_result.shape[2:]) <= 4:
                 return cfg_result
 
-            # create the adversarially blurred image
+            if uncond_pred is None or uncond_attn is None:
+                return cfg_result
+
+            b = cfg_result.shape[0]
+            uncond_pred = uncond_pred[:b]
+            if x.shape[0] > b:
+                x = x[-b:]
+
             degraded = create_blur_map(uncond_pred, uncond_attn, sag_sigma, sag_threshold)
             degraded_noised = degraded + x - uncond_pred
-            # call into the UNet
-            (sag,) = ldm_patched.modules.samplers.calc_cond_batch(model, [uncond], degraded_noised, sigma, model_options)
+
+            # Strip mask from uncond to avoid batch size mismatch in mult computation
+            uncond_sag = []
+            for u in uncond:
+                u_copy = u.copy()
+                u_copy.pop('mask', None)
+                uncond_sag.append(u_copy)
+
+            # Strip model_function_wrapper from model_options.
+            # The wrapper (used by cfg_denoiser for batched cond+uncond) may force
+            # batch=2 output even when only a single sample is passed, causing a
+            # shape mismatch in _calc_cond_batch when accumulating results.
+            sag_model_options = {k: v for k, v in model_options.items()
+                                 if k != 'model_function_wrapper'}
+
+            (sag,) = ldm_patched.modules.samplers.calc_cond_batch(model, [uncond_sag], degraded_noised, sigma, sag_model_options)
             return cfg_result + (degraded - sag) * sag_scale
 
         m.set_model_sampler_post_cfg_function(post_cfg_function, disable_cfg1_optimization=True)
 
-        # from diffusers:
-        # unet.mid_block.attentions[0].transformer_blocks[0].attn1.patch
         m.set_model_attn1_replace(attn_and_record, "middle", 0, 0)
 
         return (m, )

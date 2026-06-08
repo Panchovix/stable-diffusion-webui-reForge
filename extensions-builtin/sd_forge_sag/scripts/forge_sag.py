@@ -34,6 +34,8 @@ class SAGForForge(scripts.Script):
 
         unet = opSelfAttentionGuidance.patch(unet, scale, blur_sigma)[0]
 
+        unet.model_options["disable_cfg1_optimization"] = True
+
         p.sd_model.forge_objects.unet = unet
 
         p.extra_generation_params.update(dict(
