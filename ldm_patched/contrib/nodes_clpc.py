@@ -44,6 +44,21 @@ class CLPCSamplerODE:
                         "in KalmanMatrixDesign.lean + KalmanFilter.lean."
                     ),
                 }),
+                "max_order": ("INT", {
+                    "default": 3, "min": 1, "max": 6,
+                    "tooltip": (
+                        "Maximum predictor order (corrector gets max_order+1 nodes). "
+                        "UniPC-style. Consistent (b-coeffs sum to 1) at ANY order and "
+                        "strictly reduces local error as h→0 — VariableOrderGain.lean "
+                        "(am_b_coeffs_sum_to_one_general, order_gain_ratio_tendsto_zero). "
+                        "Above 3, individual-coefficient boundedness requires "
+                        "use_chebyshev=True (now also gates the corrector)."
+                    ),
+                }),
+                "lower_order_final": ("BOOLEAN", {
+                    "default": True,
+                    "tooltip": "Ramp order down near the last step, like UniPC's lower_order_final.",
+                }),
                 "w_ode":   ("FLOAT", {"default": 1.0, "min": 0.0, "max": 5.0, "step": 0.05,
                                       "tooltip": "ODE embedded-pair error weight."}),
                 "w_ot":    ("FLOAT", {"default": 0.5, "min": 0.0, "max": 5.0, "step": 0.05,
@@ -63,7 +78,7 @@ class CLPCSamplerODE:
     FUNCTION = "get_sampler"
     CATEGORY = "sampling/custom_sampling/samplers"
 
-    def get_sampler(self, predictor, use_chebyshev, use_kalman,
+    def get_sampler(self, predictor, use_chebyshev, use_kalman, max_order, lower_order_final,
                     w_ode, w_ot, w_cfg, atol, rtol,
                     pece_sigma_threshold, max_steps):
         sampler = _samplers.KSAMPLER(
@@ -72,6 +87,8 @@ class CLPCSamplerODE:
                 "predictor": predictor,
                 "use_chebyshev": use_chebyshev,
                 "use_kalman": use_kalman,
+                "max_order": max_order,
+                "lower_order_final": lower_order_final,
                 "w_ode": w_ode, "w_ot": w_ot, "w_sure": 0.0, "w_cfg": w_cfg,
                 "atol": atol, "rtol": rtol,
                 "pece_sigma_threshold": pece_sigma_threshold,
@@ -108,6 +125,18 @@ class CLPCSamplerSDE:
                         "Proved contractive + MMSE-optimal in KalmanMatrixDesign.lean."
                     ),
                 }),
+                "max_order": ("INT", {
+                    "default": 3, "min": 1, "max": 6,
+                    "tooltip": (
+                        "Maximum predictor order (corrector gets max_order+1 nodes). "
+                        "UniPC-style — VariableOrderGain.lean. Above 3, requires "
+                        "use_chebyshev=True for individual-coefficient boundedness."
+                    ),
+                }),
+                "lower_order_final": ("BOOLEAN", {
+                    "default": True,
+                    "tooltip": "Ramp order down near the last step, like UniPC's lower_order_final.",
+                }),
                 "w_ode":   ("FLOAT", {"default": 1.0, "min": 0.0, "max": 5.0, "step": 0.05}),
                 "w_ot":    ("FLOAT", {"default": 0.5, "min": 0.0, "max": 5.0, "step": 0.05}),
                 "w_cfg":   ("FLOAT", {"default": 0.3, "min": 0.0, "max": 5.0, "step": 0.05}),
@@ -127,7 +156,7 @@ class CLPCSamplerSDE:
     FUNCTION = "get_sampler"
     CATEGORY = "sampling/custom_sampling/samplers"
 
-    def get_sampler(self, predictor, use_chebyshev, use_kalman,
+    def get_sampler(self, predictor, use_chebyshev, use_kalman, max_order, lower_order_final,
                     w_ode, w_ot, w_cfg, atol, rtol,
                     tau_eta, s_noise, adaptive_noise,
                     pece_sigma_threshold, max_steps):
@@ -137,6 +166,8 @@ class CLPCSamplerSDE:
                 "predictor": predictor,
                 "use_chebyshev": use_chebyshev,
                 "use_kalman": use_kalman,
+                "max_order": max_order,
+                "lower_order_final": lower_order_final,
                 "w_ode": w_ode, "w_ot": w_ot, "w_sure": 0.0, "w_cfg": w_cfg,
                 "atol": atol, "rtol": rtol,
                 "tau_eta": tau_eta, "s_noise": s_noise, "adaptive_noise": adaptive_noise,

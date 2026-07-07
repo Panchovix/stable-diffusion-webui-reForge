@@ -60,6 +60,25 @@ class CLPCForForge(scripts.Script):
                     ),
                 )
 
+            # ── Order (Priority 4) ─────────────────────────────────────────
+            with gr.Row():
+                max_order = gr.Slider(
+                    label="Max order", minimum=1, maximum=6, step=1, value=3,
+                    info=(
+                        "Maximum predictor order (corrector gets max_order+1 nodes), "
+                        "UniPC-style (Priority 4). Consistent at any order and strictly "
+                        "reduces local error as h→0 — VariableOrderGain.lean "
+                        "(am_b_coeffs_sum_to_one_general, order_gain_ratio_tendsto_zero). "
+                        "Above 3, requires 'Chebyshev node selection' above for "
+                        "individual-coefficient boundedness (now also gates the corrector, "
+                        "not just the predictor)."
+                    ),
+                )
+                lower_order_final = gr.Checkbox(
+                    label="Lower order near end", value=True,
+                    info="Ramp order down near the schedule's last step (UniPC's lower_order_final).",
+                )
+
             # ── Token-space conditional guidance (separate error channel) ──
             with gr.Row():
                 token_kalman_weight = gr.Slider(
@@ -112,12 +131,12 @@ class CLPCForForge(scripts.Script):
             max_steps = gr.Slider(label="Max steps (hard limit)", minimum=10, maximum=5000,
                                   step=10, value=1000)
 
-        return (predictor, use_chebyshev, use_kalman, token_kalman_weight,
+        return (predictor, use_chebyshev, use_kalman, max_order, lower_order_final, token_kalman_weight,
                 w_ode, w_ot, w_cfg, atol, rtol, pece_sigma_threshold,
                 tau_eta, s_noise, adaptive_noise, max_steps)
 
     def process_before_every_sampling(self, p, *script_args, **kwargs):
-        (predictor, use_chebyshev, use_kalman, token_kalman_weight,
+        (predictor, use_chebyshev, use_kalman, max_order, lower_order_final, token_kalman_weight,
          w_ode, w_ot, w_cfg, atol, rtol, pece_sigma_threshold,
          tau_eta, s_noise, adaptive_noise, max_steps) = script_args
 
@@ -129,6 +148,8 @@ class CLPCForForge(scripts.Script):
             "predictor": predictor,
             "use_chebyshev": bool(use_chebyshev),
             "use_kalman": bool(use_kalman),
+            "max_order": int(max_order),
+            "lower_order_final": bool(lower_order_final),
             "token_kalman_weight": float(token_kalman_weight),
             "w_ode": float(w_ode),
             "w_ot": float(w_ot),
@@ -154,6 +175,8 @@ class CLPCForForge(scripts.Script):
             "clpc_predictor": predictor,
             "clpc_chebyshev": use_chebyshev,
             "clpc_kalman": use_kalman,
+            "clpc_max_order": max_order,
+            "clpc_lower_order_final": lower_order_final,
             "clpc_token_kalman_weight": token_kalman_weight,
             "clpc_w_ode": w_ode,
             "clpc_w_ot": w_ot,

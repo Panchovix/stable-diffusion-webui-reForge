@@ -15,7 +15,7 @@ Both use:
   • PIDStepSizeController for adaptive step sizing
   • Composite error norm → monitor (Lean-backed weights)
 
-Three Lean-proved enhancements (see lean_proofs_rfv/THEOREM_BUFFER.md):
+Four Lean-proved enhancements (see lean_proofs_rfv/THEOREM_BUFFER.md):
 
   Priority 1 — Chebyshev node selection (use_chebyshev=True, default):
     When selecting history entries for the Adams predictor, prefer entries whose
@@ -43,6 +43,24 @@ Three Lean-proved enhancements (see lean_proofs_rfv/THEOREM_BUFFER.md):
     confidence carried between steps) that only feeds the informational
     G-score composite, since it can shift abruptly step-to-step in a way
     ode_err's continuous-uncertainty semantics don't.
+
+  Priority 4 — Configurable maximum order (max_order=3, default; UniPC-style):
+    Predictor/corrector order is capped at `min(len(history), max_order)` /
+    `min(len(history)+1, max_order+1)` instead of the previously hardcoded
+    3/4, mirroring UniPC's user-facing `order` parameter. Raising max_order
+    is a valid corrector update at ANY order — the b-coefficients always sum
+    to 1, proved in general (not just for the hand-verified n=2,3 cases) via
+    Mathlib's Lagrange interpolation library in VariableOrderGain.lean
+    (am_b_coeffs_sum_to_one_general) — and strictly reduces local truncation
+    error as h → 0 (order_gain_ratio_tendsto_zero). But partition of unity
+    only bounds the coefficients' SUM, not any individual one: past order 3,
+    individual-coefficient boundedness is only established for Chebyshev-
+    spaced nodes (chebyshev_monic_minimax, already order-general), so
+    use_chebyshev is now also applied to the corrector's history selection
+    when its order exceeds 3, not just the predictor's (see
+    variable_order_needs_chebyshev_beyond_three). `lower_order_final=True`
+    (default) additionally ramps order down near the end of the σ schedule,
+    matching UniPC's own `lower_order_final`.
 
 Predictor modes (lean_proofs_rfv/RFVProofs/AdamsStability.lean):
   "euler"           — order-1 always; b = 1-σ_t/σ_s ∈ (0,1); unconditionally safe.
@@ -329,6 +347,7 @@ def _adams_predict(
     is_flow: bool,
     predictor_mode: str = PREDICTOR_IMPLICIT_ADAMS,
     use_chebyshev: bool = True,
+    max_order: int = 3,
 ) -> torch.Tensor:
     """
     SA-Solver predictor, two modes (formally classified in AdamsStability.lean):
@@ -352,7 +371,7 @@ def _adams_predict(
     """
     h = float(lam_t - lam_s)
     decay = math.exp(-(tau_t ** 2) * h)
-    order = min(len(history), 3)
+    order = min(len(history), max_order)
 
     # ── order-0 guard (shouldn't reach here after seed-push restructure) ────
     if order == 0:
@@ -435,6 +454,8 @@ def _adams_correct(
     tau_t: float,
     cal_state: CLPCCalibrationState,
     pece_sigma_threshold: float,
+    max_order: int = 3,
+    use_chebyshev: bool = True,
 ) -> torch.Tensor:
     """
     Adams-Moulton corrector.  PECE gated by sigma (proved in PECEOrderGain.lean:
@@ -445,7 +466,7 @@ def _adams_correct(
         # High-noise regime: corrector error amplification risk outweighs gain
         return x_pred
 
-    order = min(len(history) + 1, 4)  # corrector can use one extra point
+    order = min(len(history) + 1, max_order + 1)  # corrector can use one extra point
     entries = history.last(order - 1)
 
     # Same Runge-phenomenon guard as _adams_predict: when h_curr >> h_prev,
@@ -460,6 +481,19 @@ def _adams_correct(
         if h_prev_step > 0 and h_curr > MAX_H_RATIO * h_prev_step:
             order = 2
             entries = entries[-1:]  # keep only the most recent history entry
+
+    # Chebyshev node selection, extended to the corrector for order > 3.
+    # am_b_coeffs_sum_to_one_general (VariableOrderGain.lean) proves the AM
+    # b-coefficients sum to 1 at ANY order — but that only bounds their SUM,
+    # not any individual coefficient. The one order-general INDIVIDUAL bound
+    # available (chebyshev_monic_minimax, ChebyshevAdaptive.lean) requires
+    # Chebyshev-spaced nodes; recency-spaced nodes have no such guarantee
+    # beyond order 3 (variable_order_needs_chebyshev_beyond_three). Raising
+    # max_order past 3 without this would reproduce, in the corrector, the
+    # same equally-spaced Runge risk _select_chebyshev_history already
+    # patches in the predictor.
+    if use_chebyshev and order - 1 >= 3 and len(history) > order - 1:
+        entries = _select_chebyshev_history(history, order - 1, float(lam_prev))
 
     # Append current predicted d
     d_curr = denoised_pred
@@ -532,6 +566,10 @@ def _clpc_loop(
     # Lean-proved enhancements
     use_chebyshev: bool,     # Priority 1: Chebyshev node selection
     use_kalman: bool,        # Priority 3: Kalman-gain blend
+    # Priority 4: configurable maximum order (UniPC-style), Chebyshev-gated
+    # for order > 3 — see VariableOrderGain.lean
+    max_order: int,
+    lower_order_final: bool,
     # step-size control
     atol: float,
     rtol: float,
@@ -694,6 +732,17 @@ def _clpc_loop(
 
             tau_t = tau_func(float(sigma_s))
 
+            # Order ramp-down near the end of the schedule (UniPC's
+            # lower_order_final): with `remaining` ODE steps left (including
+            # this one), a predictor/corrector order above `remaining` would
+            # extrapolate past the end of the trajectory it's fitting.
+            # remaining = n - i counts steps [i, n) still to take, INCLUDING
+            # the current one — so remaining=1 on the last real step forces
+            # order down to 1 (Euler/trapezoid), matching UniPC's own
+            # `step_order = min(order, steps + 1 - step)`.
+            remaining = n - i
+            step_max_order = min(max_order, remaining) if lower_order_final else max_order
+
             # ── PREDICT ──────────────────────────────────────────────────────
             _stage("Predict")
             prev_entry = history.latest()
@@ -714,14 +763,14 @@ def _clpc_loop(
                 prev_entry = history.latest()
                 x_pred = _adams_predict(
                     x, history, sigma_s, sigma_t, lam_s, lam_t, tau_t,
-                    cal_state, is_flow, predictor_mode, use_chebyshev,
+                    cal_state, is_flow, predictor_mode, use_chebyshev, step_max_order,
                 )
                 x_euler = None  # no prior embedded-pair baseline on seed step
 
             else:
                 x_pred = _adams_predict(
                     x, history, sigma_s, sigma_t, lam_s, lam_t, tau_t,
-                    cal_state, is_flow, predictor_mode, use_chebyshev,
+                    cal_state, is_flow, predictor_mode, use_chebyshev, step_max_order,
                 )
                 # Euler baseline for embedded pair (zero extra NFE — reuses prev d).
                 # Use SA-Solver order-1 b_coeff (CPU float64) — NOT expm1(h_signed).
@@ -748,6 +797,7 @@ def _clpc_loop(
                 x_pred, denoised_pred, x, history,
                 sigma_s, sigma_t, lam_s, lam_t,
                 tau_t, cal_state, pece_sigma_threshold,
+                step_max_order, use_chebyshev,
             )
 
             # PECE final E: re-evaluate at x_corr so Adams history stays consistent
@@ -930,6 +980,9 @@ def sample_clpc_ode(
     # Lean-proved enhancements
     use_chebyshev: bool = True,   # Priority 1: Chebyshev node selection
     use_kalman: bool = True,      # Priority 3: Kalman-gain blend
+    # Priority 4: configurable maximum order (UniPC-style; VariableOrderGain.lean)
+    max_order: int = 3,
+    lower_order_final: bool = True,
     # error weights
     w_ode: float = 1.0,
     w_ot: float = 0.5,
@@ -954,7 +1007,21 @@ def sample_clpc_ode(
 
     predictor:     "euler" or "implicit_adams" (AdamsStability.lean).
     use_chebyshev: Chebyshev node selection for history points (ChebyshevAdaptive.lean).
+                   REQUIRED for soundness when max_order > 3 — the only
+                   order-general individual-coefficient bound available
+                   (chebyshev_monic_minimax) needs Chebyshev spacing;
+                   partition of unity alone (am_b_coeffs_sum_to_one_general)
+                   bounds only the coefficient SUM (VariableOrderGain.lean).
     use_kalman:    Kalman-gain blend of pred/corr outputs (KalmanMatrixDesign.lean).
+    max_order:     Maximum predictor order (corrector gets one extra point,
+                   i.e. max_order+1 nodes), analogous to UniPC's `order`.
+                   order_gain_ratio_tendsto_zero (VariableOrderGain.lean)
+                   proves each +1 strictly reduces local truncation error as
+                   h → 0; am_b_coeffs_sum_to_one_general proves the corrector
+                   stays a consistent update at any order.
+    lower_order_final: Ramp order down as the schedule nears its last step
+                   (UniPC's `lower_order_final`), so a high order is never
+                   asked to extrapolate past the trajectory's end.
     """
     return _clpc_loop(
         model=model, x=x, sigmas=sigmas,
@@ -964,6 +1031,8 @@ def sample_clpc_ode(
         predictor_mode=predictor,
         use_chebyshev=use_chebyshev,
         use_kalman=use_kalman,
+        max_order=max_order,
+        lower_order_final=lower_order_final,
         atol=atol, rtol=rtol,
         pid_pcoeff=pid_pcoeff, pid_icoeff=pid_icoeff, pid_dcoeff=pid_dcoeff,
         max_steps=max_steps,
@@ -987,6 +1056,9 @@ def sample_clpc_sde(
     # Lean-proved enhancements
     use_chebyshev: bool = True,   # Priority 1: Chebyshev node selection
     use_kalman: bool = True,      # Priority 3: Kalman-gain blend
+    # Priority 4: configurable maximum order (UniPC-style; VariableOrderGain.lean)
+    max_order: int = 3,
+    lower_order_final: bool = True,
     # error weights
     w_ode: float = 1.0,
     w_ot: float = 0.5,
@@ -1017,7 +1089,14 @@ def sample_clpc_sde(
 
     predictor:     "euler" or "implicit_adams" (AdamsStability.lean).
     use_chebyshev: Chebyshev node selection for history points (ChebyshevAdaptive.lean).
+                   REQUIRED for soundness when max_order > 3 — see
+                   VariableOrderGain.lean (sample_clpc_ode's docstring has
+                   the full citation).
     use_kalman:    Kalman-gain blend of pred/corr outputs (KalmanMatrixDesign.lean).
+    max_order:     Maximum predictor order (corrector gets max_order+1 nodes),
+                   analogous to UniPC's `order` (VariableOrderGain.lean).
+    lower_order_final: Ramp order down near the schedule's last step (UniPC's
+                   `lower_order_final`).
     """
     return _clpc_loop(
         model=model, x=x, sigmas=sigmas,
@@ -1027,6 +1106,8 @@ def sample_clpc_sde(
         predictor_mode=predictor,
         use_chebyshev=use_chebyshev,
         use_kalman=use_kalman,
+        max_order=max_order,
+        lower_order_final=lower_order_final,
         atol=atol, rtol=rtol,
         pid_pcoeff=pid_pcoeff, pid_icoeff=pid_icoeff, pid_dcoeff=pid_dcoeff,
         max_steps=max_steps,

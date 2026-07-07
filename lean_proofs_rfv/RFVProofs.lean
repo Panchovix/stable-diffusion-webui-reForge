@@ -24,3 +24,4 @@ import RFVProofs.KLOptimality        -- KL divergence: log ≤ x-1, KL=0 iff equ
 import RFVProofs.ProxySOCvsFull      -- Proxy SOC vs full SOC: same rate, constant overhead only
 import RFVProofs.TokenSubspaceGuidance -- Token-level vanish/leak/bias guidance: subspace projection, 5-factor G-score, zero-extra-NFE cost model
 import RFVProofs.MatrixTreeSoftOwnership -- Matrix-Tree (Koo et al. 2007) soft ownership: marginal partition-of-unity, soft leak generalization, cost model
+import RFVProofs.VariableOrderGain     -- UniPC-style configurable max_order: general n-node AM partition of unity (Mathlib Lagrange), order-general truncation error gain, Chebyshev-gated safety for order > 3

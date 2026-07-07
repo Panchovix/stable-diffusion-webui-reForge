@@ -523,3 +523,61 @@ Full SOC (exact HJB) is unnecessary. The CLPC proxy F converges at the SAME expo
 which diminishes as the proxy quality improves (F → h) or the corrector rate r increases.
 In practice, a faster corrector (larger r) amortises any proxy overhead in 1-2 extra steps.
 
+
+---
+
+## 2026-07-07 — VariableOrderGain.lean: does a UniPC-style configurable `max_order` help CLPC?
+
+### Motivating question
+
+UniPC exposes `order` (1–3) as a user parameter, with `lower_order_final` ramping it
+down near the schedule's end. CLPC instead hardcoded its cap (predictor `min(len(history),3)`,
+corrector `min(len(history)+1,4)`). Does making this a user-configurable `max_order`
+(like UniPC) actually help, and is it safe to raise past the current cap?
+
+### Theorems
+
+| # | Name | Property | sorry? |
+|---|------|----------|--------|
+| 1 | `am_partition_of_unity_general` | `∑ⱼ Lagrange.basis s v j = 1` for ANY finite nonempty node set (Mathlib `Lagrange.sum_basis`) | 0 |
+| 2 | `am_b_coeffs_sum_to_one_general` | Evaluated form: AM corrector b-coefficients sum to 1 at ANY order | 0 |
+| 3 | `order_n_local_truncation_error` | Order-n local error ≤ `C·h^(n+1)/n!` for any n (generalises PECEOrderGain.lean's hardcoded n=1,2) | 0 |
+| 4 | `order_gain_ratio_tendsto_zero` | Order-(n+1)/order-n error ratio → 0 as h→0⁺, for any consecutive n | 0 |
+| 5 | `variable_order_needs_chebyshev_beyond_three` | Synthesis: consistency (1,2) + order-general Chebyshev bound (`chebyshev_monic_minimax`, ChebyshevAdaptive.lean) + order gain (4) | 0 |
+
+**VERDICT: SURVIVES — 5/5 theorems clean (0 sorry), reusing Mathlib's `Lagrange.basis`
+library (`Mathlib.LinearAlgebra.Lagrange`) for the first time in this project.**
+
+### Answer
+
+**Yes, but conditionally.** Two things had to be true for `max_order` to be safely
+user-configurable, and both check out:
+
+1. **Consistency at any order** — the AM corrector's b-coefficients sum to exactly 1
+   regardless of order or node spacing (`am_b_coeffs_sum_to_one_general`, generalising
+   the hand-verified n=2,3 cases in AdamsStability.lean via Mathlib's general Lagrange
+   interpolation library instead of `field_simp; ring` per new order).
+2. **Strict order gain** — raising order from n to n+1 strictly reduces the local
+   truncation error bound as h→0 (`order_gain_ratio_tendsto_zero`), for *any* n, not just
+   the hardcoded 1→2 case PECEOrderGain.lean proved.
+
+**The catch**: partition of unity only bounds the coefficients' SUM, not any individual
+coefficient. The only order-general *individual*-coefficient bound available
+(`chebyshev_monic_minimax`) requires Chebyshev-spaced nodes. Recency-spaced nodes have
+no such guarantee past order 3 (where AdamsStability.lean's hand-proofs stop).
+`_select_chebyshev_history` was already wired into the CLPC *predictor* for exactly this
+reason — but not into the *corrector*. Raising `max_order` past 3 without fixing that gap
+would have reintroduced, in the corrector, the same equally-spaced Runge risk Chebyshev
+selection was built to eliminate in the predictor.
+
+### Code changes landed alongside this proof
+
+- `clpc_sampler.py`: `max_order` (default 3, matching the old hardcoded cap) now threads
+  through `_adams_predict` and `_adams_correct`; `use_chebyshev` now also gates the
+  corrector's history selection when its order exceeds 3.
+- `lower_order_final` (default `True`, UniPC's own default): ramps `max_order` down as
+  remaining schedule steps shrink, so a high order is never asked to extrapolate past
+  the trajectory's end.
+- Exposed on both node UIs (`nodes_clpc.py`'s ComfyUI nodes, `forge_clpc.py`'s WebUI
+  accordion) as `max_order` (slider, 1–6) and `lower_order_final` (checkbox).
+
