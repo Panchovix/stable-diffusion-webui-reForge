@@ -1,0 +1,18 @@
+name = "RFVProofs"
+version = "0.1.0"
+keywords = ["math"]
+defaultTargets = ["RFVProofs"]
+
+[leanOptions]
+pp.unicode.fun = true # pretty-prints `fun a ↦ b`
+relaxedAutoImplicit = false
+weak.linter.mathlibStandardSet = true
+maxSynthPendingDepth = 3
+
+[[require]]
+name = "mathlib"
+scope = "leanprover-community"
+rev = "v4.29.1"
+
+[[lean_lib]]
+name = "RFVProofs"

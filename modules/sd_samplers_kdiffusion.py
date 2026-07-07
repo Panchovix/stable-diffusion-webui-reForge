@@ -49,6 +49,8 @@ samplers_k_diffusion = [
     ('DPM++ 2M SDE SURE Adaptive', 'sample_dpmpp_2m_sde_sure_adaptive', ['k_dpmpp_2m_sde_sure_adaptive'], {}),
     ('DPM++ 2S a SURE', 'sample_dpmpp_2s_a_sure', ['k_dpmpp_2s_a_sure'], {'scheduler': 'karras'}),
     ('DPM++ 2S a SURE Adaptive', 'sample_dpmpp_2s_a_sure_adaptive', ['k_dpmpp_2s_a_sure_adaptive'], {}),
+    ('CLPC ODE', 'sample_clpc_ode', ['clpc_ode'], {}),
+    ('CLPC SDE', 'sample_clpc_sde', ['clpc_sde'], {"brownian_noise": True}),
 ]
 
 additional_samplers = [

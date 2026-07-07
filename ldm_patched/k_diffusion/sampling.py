@@ -7651,3 +7651,42 @@ def sample_sure_attention(model, x, sigmas, extra_args=None, callback=None, disa
         "Enable 'SURE Attention Guidance' in the Extensions accordion instead."
     )
 
+
+# ── CLPC samplers ─────────────────────────────────────────────────────────────
+
+def sample_clpc_ode(model, x, sigmas, extra_args=None, callback=None, disable=None,
+                    predictor="implicit_adams",
+                    use_chebyshev=True, use_kalman=True,
+                    w_ode=1.0, w_ot=0.5, w_sure=0.0, w_cfg=0.3,
+                    atol=1e-4, rtol=1e-3,
+                    pid_pcoeff=0.4, pid_icoeff=0.3, pid_dcoeff=0.0,
+                    max_steps=1000, pece_sigma_threshold=4.0):
+    from ldm_patched.k_diffusion.clpc_sampler import sample_clpc_ode as _impl
+    return _impl(model, x, sigmas, extra_args=extra_args, callback=callback, disable=disable,
+                 predictor=predictor,
+                 use_chebyshev=use_chebyshev, use_kalman=use_kalman,
+                 w_ode=w_ode, w_ot=w_ot, w_sure=w_sure, w_cfg=w_cfg,
+                 atol=atol, rtol=rtol,
+                 pid_pcoeff=pid_pcoeff, pid_icoeff=pid_icoeff, pid_dcoeff=pid_dcoeff,
+                 max_steps=max_steps, pece_sigma_threshold=pece_sigma_threshold)
+
+
+def sample_clpc_sde(model, x, sigmas, extra_args=None, callback=None, disable=None,
+                    predictor="implicit_adams",
+                    use_chebyshev=True, use_kalman=True,
+                    w_ode=1.0, w_ot=0.5, w_sure=0.0, w_cfg=0.3,
+                    atol=1e-4, rtol=1e-3,
+                    pid_pcoeff=0.4, pid_icoeff=0.3, pid_dcoeff=0.0,
+                    max_steps=1000, pece_sigma_threshold=4.0,
+                    tau_eta=1.0, s_noise=1.0, adaptive_noise=True,
+                    noise_sampler=None):
+    from ldm_patched.k_diffusion.clpc_sampler import sample_clpc_sde as _impl
+    return _impl(model, x, sigmas, extra_args=extra_args, callback=callback, disable=disable,
+                 predictor=predictor,
+                 use_chebyshev=use_chebyshev, use_kalman=use_kalman,
+                 w_ode=w_ode, w_ot=w_ot, w_sure=w_sure, w_cfg=w_cfg,
+                 atol=atol, rtol=rtol,
+                 pid_pcoeff=pid_pcoeff, pid_icoeff=pid_icoeff, pid_dcoeff=pid_dcoeff,
+                 max_steps=max_steps, pece_sigma_threshold=pece_sigma_threshold,
+                 tau_eta=tau_eta, s_noise=s_noise, adaptive_noise=adaptive_noise)
+

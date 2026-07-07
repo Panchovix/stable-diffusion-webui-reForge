@@ -2031,6 +2031,19 @@ class DiffPipeline():
 
         if adm_text_embeds is not None:
             text_embeds = adm_text_embeds.to(dtype)
+            # Guard: text_embeds must be exactly 1280-dim (CLIP-G pooled).
+            # If it arrives as the full 2816-dim ADM y (clip_pooled + fourier(time_ids)),
+            # the diffusers UNet's add_embedding would concatenate time_embeds again
+            # (1280+2816+1536 → 4352 crash).  Slice defensively and warn.
+            if text_embeds.shape[-1] != 1280:
+                log.warning(
+                    "[DiffPipeline] adm_text_embeds has wrong last-dim %d (expected 1280). "
+                    "adm_text_embeds.shape=%s  y.shape=%s — slicing to [:, :1280].",
+                    text_embeds.shape[-1],
+                    tuple(adm_text_embeds.shape),
+                    tuple(y.shape) if y is not None else None,
+                )
+                text_embeds = text_embeds[:, :1280]
         elif y is not None:
             text_embeds = y[:, :1280].to(dtype)
         else:

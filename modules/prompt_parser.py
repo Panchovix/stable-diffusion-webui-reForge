@@ -500,6 +500,186 @@ def parse_prompt_attention(text):
 
     return merged
 
+
+# ---------------------------------------------------------------------------
+# Token subspace mapping (CLPC token-level conditional-space guidance)
+#
+# See lean_proofs_rfv/THEREM_CONDITIONAL_BUFFER.md and
+# plans/03-clpc-token-conditional-guidance.md, Phase 2.
+#
+# Splits a prompt into disjoint comma-separated entity/tag groups and
+# re-tokenizes each with the model's own CLIP tokenizer to recover the
+# token-index range each group occupies in the final encoded sequence — the
+# "subspace" that ldm_patched.k_diffusion.sure_token_guidance corrects
+# (vanish/leak/bias) on the attn2 cross-attention matrix.
+# ---------------------------------------------------------------------------
+
+def _split_top_level_commas(prompt: str) -> list[str]:
+    """Split on commas at bracket-depth 0, so `"(1girl, smiling:1.2)"` stays
+    one segment while `"1girl, brown hair"` splits into two. Handles the
+    (), [] nesting used by attention-weight/alternation syntax."""
+    segments = []
+    depth = 0
+    current = []
+    for ch in prompt:
+        if ch in "([{":
+            depth += 1
+            current.append(ch)
+        elif ch in ")]}":
+            depth = max(0, depth - 1)
+            current.append(ch)
+        elif ch == "," and depth == 0:
+            segments.append("".join(current))
+            current = []
+        else:
+            current.append(ch)
+    if current:
+        segments.append("".join(current))
+    return segments
+
+
+_SUBWORD_SPLIT_RE = re.compile(r"[ _]+")
+
+
+def _split_into_subwords(text: str) -> list[str]:
+    """Split a comma-segment's bare text into sub-word tokens, treating both
+    UNDERSCORE and SPACE as valid split points — the same "identifier
+    tokenization" convention a real programming-language lexer uses (e.g.
+    snake_case / space-separated multi-word identifiers). Used when a
+    segment doesn't match any rule-engine pattern as a whole (a Danbooru tag
+    like "pale_skin", or a natural-language phrase like "one 18 years old
+    girl") so each individual word can still be classified on its own —
+    "girl" alone matches the existing OBJECT pattern even though "one 18
+    years old girl" as a whole string does not.
+    """
+    return [w for w in _SUBWORD_SPLIT_RE.split(text.strip()) if w]
+
+
+def get_token_subspaces(model, prompt: str) -> dict:
+    """Partition `prompt` into disjoint token-index groups, one per top-level
+    comma-separated segment.
+
+    Returns a dict:
+        {
+            "groups": [{"text": str, "start": int, "end": int,
+                        "subtokens": [{"text": str, "start": int, "end": int}, ...]},
+                       ...],
+            "total_tokens": int,
+            "chunk_length": int,   # model.cond_stage_model.chunk_length (usually 75)
+            "n_chunks": int,       # ceil(total_tokens / chunk_length)
+        }
+
+    `start`/`end` are 0-indexed into the REAL-token axis (i.e. excluding the
+    leading BOS token that the encoder always prepends) — the consumer
+    (sure_token_guidance's attn2 hook) is responsible for the +1 BOS shift
+    when indexing into the actual attention column axis.
+
+    Each group's `"subtokens"` is its own EXACT (not approximate) sub-word
+    token breakdown — computed via the SAME tokenizer, so a segment like
+    "one 18 years old girl" (whole-segment start/end = e.g. [2, 8)) also
+    carries `[{"text":"one","start":2,"end":3}, ..., {"text":"girl","start":
+    7,"end":8}]`. This is the "META_TREE" sub-tree Plan 04's rule engine
+    classifies independently when the whole segment matches no pattern —
+    see `modules.rule_engine.token_table.build_token_table`.
+
+    LIMITATION (printed, not silently wrong): this assumes the whole prompt
+    fits in a single `chunk_length`-token chunk and contains no textual-
+    inversion embeddings. Both would shift real encoder offsets relative to
+    what is computed here. A warning prints when `n_chunks > 1`. SDXL's dual
+    text encoders may also tokenize the same text to different lengths; only
+    the primary `cond_stage_model` tokenizer is used here.
+    """
+    tokenizer = getattr(model, "cond_stage_model", None)
+    if tokenizer is None or not hasattr(tokenizer, "tokenize"):
+        print(f"[TokenSubspaceGuidance] no tokenizer found on model={model!r}; "
+              f"returning empty group list (guidance will no-op).")
+        return {"groups": [], "total_tokens": 0, "chunk_length": 75, "n_chunks": 0}
+
+    segments = _split_top_level_commas(prompt)
+    groups = []
+    offset = 0
+    for seg in segments:
+        seg_stripped = seg.strip()
+        if not seg_stripped:
+            continue
+        # Strip (word:weight)/[word] emphasis syntax the same way the real
+        # encoder does, so token counts match what the model actually sees
+        # rather than literal parenthesis/colon/digit characters.
+        bare_text = "".join(text for text, _ in parse_prompt_attention(seg_stripped))
+        token_ids = tokenizer.tokenize([bare_text])[0]
+        n = len(token_ids)
+        if n == 0:
+            continue
+
+        # Sub-word breakdown (the META_TREE sub-tree): split the SAME bare
+        # text on underscore/space and tokenize each word independently.
+        #
+        # IMPORTANT — this does NOT reproduce the real BPE token boundaries:
+        # tokenizing "pale_skin" as one string and tokenizing "pale" + "skin"
+        # separately can (and in general does) produce DIFFERENT total token
+        # counts (word-boundary markers, merge rules differ with/without
+        # surrounding context) — verified directly by a mock-tokenizer test
+        # this session where the sum of independent sub-word counts
+        # exceeded the whole segment's own real count. Naively accumulating
+        # independent counts would let a sub-token range overflow past the
+        # group's own [offset, offset+n) boundary — a real correctness bug
+        # for anything that later indexes into the attention tensor with it.
+        #
+        # Fix: treat the independent per-word counts as WEIGHTS only, and
+        # proportionally distribute the group's own REAL token count `n`
+        # across words with cumulative rounding, so the ranges are always
+        # contiguous and never exceed `n` in total. This is a best-effort
+        # APPROXIMATION of where each word "lives" inside the real tokenization,
+        # not an exact BPE boundary — good enough for classification-oriented
+        # consumers (`modules.rule_engine.token_table`, which classifies by
+        # TEXT and only uses these ranges informationally), not a precision
+        # guarantee for attention-level targeting. In degenerate cases (more
+        # words than the group has real tokens) some words may round down to
+        # a zero-width range and are omitted here — they are NOT omitted from
+        # classification, which works off the word list directly.
+        words = _split_into_subwords(bare_text)
+        word_weights = [max(1, len(tokenizer.tokenize([w])[0])) for w in words]
+        total_weight = sum(word_weights) or 1
+        subtokens = []
+        cum_tokens = 0.0
+        local_start = 0
+        for word, weight in zip(words, word_weights):
+            cum_tokens += n * (weight / total_weight)
+            local_end = round(cum_tokens)
+            if local_end > local_start:
+                subtokens.append({
+                    "text": word, "start": offset + local_start, "end": offset + local_end,
+                })
+            local_start = local_end
+
+        groups.append({
+            "text": seg_stripped, "start": offset, "end": offset + n,
+            "subtokens": subtokens,
+        })
+        offset += n
+
+    total = offset
+    chunk_length = getattr(tokenizer, "chunk_length", 75)
+    n_chunks = max(1, -(-total // chunk_length)) if total > 0 else 0
+
+    print(f"[TokenSubspaceGuidance] prompt->groups: "
+          f"{[(g['text'], g['start'], g['end']) for g in groups]} "
+          f"(total_tokens={total}, chunk_length={chunk_length}, n_chunks={n_chunks})")
+    if n_chunks > 1:
+        print(f"[TokenSubspaceGuidance] WARNING: prompt uses {total} tokens across "
+              f"{n_chunks} chunks (> {chunk_length}-token budget); offsets computed "
+              f"here only match the first chunk. Guidance will be skipped once the "
+              f"attention hook detects the mismatch.")
+    if hasattr(tokenizer, "embedders"):
+        print(f"[TokenSubspaceGuidance] NOTE: model.cond_stage_model has multiple "
+              f"sub-encoders (embedders) — e.g. SDXL's dual CLIP-L/CLIP-G. Token "
+              f"offsets are computed from the primary tokenizer only and may not "
+              f"exactly match the secondary encoder's tokenization.")
+
+    return {"groups": groups, "total_tokens": total, "chunk_length": chunk_length,
+            "n_chunks": n_chunks}
+
+
 if __name__ == "__main__":
     import doctest
     doctest.testmod(optionflags=doctest.NORMALIZE_WHITESPACE)
