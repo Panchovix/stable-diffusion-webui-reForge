@@ -70,6 +70,18 @@ class TokenGuidanceConfig:
     # present) are left uncorrected instead of being forced into a cluster —
     # see the confidence-gate note above _apply_token_subspace_corrections.
     leak_min_confidence: float = 0.3
+    # Softmax temperature for ownership assignment (replaces a hard argmax +
+    # leak_min_confidence threshold — see cluster_step_not_lipschitz,
+    # lean_proofs_rfv/RFVProofs/TokenAvoidSOC.lean: the hard version is
+    # provably discontinuous at ownership ties and at the confidence floor,
+    # so leak attenuation for a rival group could flip between 0 and
+    # leak_strength for an arbitrarily small mass change). Lower = closer to
+    # the old hard argmax (sharper, more discontinuous); higher = softer,
+    # more gradual ownership near ties/the confidence floor. Same
+    # illustrative-default caveat as the other constants here — not yet
+    # calibrated against a live model, see plans/03-clpc-token-conditional-
+    # guidance.md's calibration log for how tau_vanish/leak_strength were.
+    leak_ownership_temperature: float = 0.5
     debug: bool = True             # print per-call diagnostics
 
 
@@ -278,15 +290,27 @@ def _apply_token_subspace_corrections(
     # targets). Non-anchor groups inherit their nearest preceding anchor's
     # cluster and are corrected relative to that cluster's ownership.
     #
-    # CONFIDENCE GATE: forcing every query position (including background /
-    # ambiguous pixels where NEITHER entity is really present) into whichever
-    # anchor happens to have marginally more mass dilutes the correction —
-    # real-world testing showed leak_frac staying flat around 0.5 across an
-    # entire run instead of trending down, consistent with roughly half the
-    # image being background rows arbitrarily "protected" as one entity's
-    # turf. Only treat ownership as confident when the winning anchor's own
-    # mass clears `leak_min_confidence * that anchor's fair share`; otherwise
-    # leave the row uncorrected (own_cluster = -1, same as "unclustered").
+    # SOFT OWNERSHIP: a hard argmax-over-anchors plus a hard confidence
+    # threshold (the previous design) is a genuine step function of the
+    # attention masses — cluster_step_not_lipschitz
+    # (lean_proofs_rfv/RFVProofs/TokenAvoidSOC.lean) proves such a construction
+    # is NOT Lipschitz for any constant: an arbitrarily small mass change
+    # near an ownership tie, or near the confidence floor, flips a rival
+    # group's leak attenuation between 0 and full `leak_strength`. Replaced
+    # with a temperature-scaled softmax over anchor masses (normalized by
+    # each anchor's fair share, same motivation the old confidence gate
+    # had) PLUS a "background / no confident owner" option competing in the
+    # SAME softmax, whose logit is `leak_min_confidence` — the identical
+    # value the old hard gate compared against, now a genuine alternative
+    # instead of a discontinuous cutoff. This reproduces both things the
+    # old design got right (background/ambiguous rows stay largely
+    # uncorrected; a clear single-anchor winner gets full ownership) while
+    # making the transition between them continuous — real-world testing
+    # (plans/03-clpc-token-conditional-guidance.md) is what motivated the
+    # original hard gate's existence and threshold value; that calibration
+    # carries over to `leak_min_confidence` unchanged, only the sharpness of
+    # the transition around it is now a separate, tunable knob
+    # (`leak_ownership_temperature`).
     #
     # Plan 04: prefer the rule-engine/Matrix-Tree "intention tree" over the
     # flat keyword heuristic whenever it's available — see
@@ -303,18 +327,33 @@ def _apply_token_subspace_corrections(
     anchor_gis = [gi for gi, c in enumerate(cluster_of) if c == gi]
     if anchor_gis:
         anchor_mass = group_mass[..., anchor_gis]              # (BH, Nq, A)
-        own_anchor = anchor_mass.argmax(dim=-1)                 # (BH, Nq) index into anchor_gis
         anchor_gis_t = torch.tensor(anchor_gis, device=sim.device)
-        own_cluster = anchor_gis_t[own_anchor]                  # (BH, Nq) -> cluster id
-
-        own_conf_mass = anchor_mass.gather(-1, own_anchor.unsqueeze(-1)).squeeze(-1)  # (BH, Nq)
-        anchor_fair_shares = fair_share[anchor_gis_t]                                  # (A,)
-        conf_floor = cfg.leak_min_confidence * anchor_fair_shares[own_anchor]          # (BH, Nq)
-        confident = own_conf_mass > conf_floor                                         # (BH, Nq)
-        own_cluster = torch.where(confident, own_cluster, torch.full_like(own_cluster, -1))
+        anchor_fair_shares = fair_share[anchor_gis_t]                                    # (A,)
+        anchor_ratio = anchor_mass / anchor_fair_shares.clamp(min=1e-8)                  # (BH, Nq, A)
+        null_logit = torch.full_like(anchor_ratio[..., :1], cfg.leak_min_confidence)     # (BH, Nq, 1)
+        temperature = max(cfg.leak_ownership_temperature, 1e-4)
+        logits = torch.cat([anchor_ratio, null_logit], dim=-1) / temperature             # (BH, Nq, A+1)
+        probs = logits.softmax(dim=-1)                                                   # (BH, Nq, A+1)
+        anchor_probs = probs[..., :-1]                                                   # (BH, Nq, A) real-anchor ownership weight; remainder is "no confident owner"
+        cluster_to_anchor_idx = {c: i for i, c in enumerate(anchor_gis)}
+        own_anchor = anchor_probs.argmax(dim=-1)                                         # diagnostics only
+        own_prob = anchor_probs.gather(-1, own_anchor.unsqueeze(-1)).squeeze(-1)         # (BH, Nq) continuous confidence
     else:
-        own_cluster = group_mass.argmax(dim=-1)  # no anchors found; best-effort fallback
-        confident = torch.ones_like(own_cluster, dtype=torch.bool)
+        anchor_probs = None
+        cluster_to_anchor_idx = {}
+        own_prob = torch.zeros(group_mass.shape[:2], device=sim.device, dtype=sim.dtype)  # no anchors: no ownership signal
+
+    def _not_own_weight(c: int) -> torch.Tensor:
+        """Continuous 'this query position confidently belongs to a DIFFERENT
+        cluster than c' weight in [0,1] — the smooth replacement for the old
+        hard `(own_cluster != c) & confident` boolean. Zero both when the
+        position confidently belongs to c itself AND when it's background /
+        no confident owner (matches the old gate's "leave it alone" cases);
+        only rises toward 1 when a DIFFERENT specific anchor wins."""
+        if anchor_probs is None or c not in cluster_to_anchor_idx:
+            return torch.zeros(group_mass.shape[:2], device=sim.device, dtype=sim.dtype)
+        idx_c = cluster_to_anchor_idx[c]
+        return anchor_probs.sum(dim=-1) - anchor_probs[..., idx_c]
 
     corrected = sim.clone()
 
@@ -366,10 +405,8 @@ def _apply_token_subspace_corrections(
         c = cluster_of[gi]
         if c == -1:
             continue
-        not_own_cluster = ((own_cluster != c) & confident).unsqueeze(-1)  # (BH, Nq, 1)
-        corrected[..., s:e] = torch.where(
-            not_own_cluster, corrected[..., s:e] * (1.0 - cfg.leak_strength), corrected[..., s:e],
-        )
+        not_own_weight = _not_own_weight(c).unsqueeze(-1)  # (BH, Nq, 1), in [0,1]
+        corrected[..., s:e] = corrected[..., s:e] * (1.0 - cfg.leak_strength * not_own_weight)
 
     row_sum = corrected.sum(-1, keepdim=True).clamp(min=1e-8)
     corrected = corrected / row_sum
@@ -385,22 +422,24 @@ def _apply_token_subspace_corrections(
         # the token is neglected in the rendered image.
         deficit_mean = (tau_eff - peak_mean).clamp(min=0.0)  # (G,)
         vanishing = [ranges[i][2] for i in range(len(ranges)) if float(deficit_mean[i]) > 0]
-        confident_frac = float(confident.float().mean())
-        # leak_frac[g] = average fraction of CONFIDENTLY-owned rival rows that still
-        # hold >1% of g's mass. Low-confidence (background/ambiguous) rows are
-        # excluded here too, matching what the correction above actually touches —
-        # an earlier version counted every row regardless of confidence, which
-        # kept this pinned near 0.5 even as the correction improved, since ~half
-        # the image is background arbitrarily split between the two entities.
+        confident_frac = float(own_prob.mean())
+        # leak_frac[g] = weighted fraction of rival-owned rows that still hold
+        # >1% of g's mass, weighted continuously by _not_own_weight(c) instead
+        # of a hard confident-and-not-own boolean (see the SOFT OWNERSHIP note
+        # above _apply_token_subspace_corrections's ownership block). Rows
+        # that are background/ambiguous or confidently g's own contribute
+        # ~0 weight either way, same exclusion the old hard gate achieved,
+        # now graded rather than a step at the confidence floor.
         leak_frac = []
         for gi, (s, e, _t) in enumerate(ranges):
             c = cluster_of[gi]
             if c == -1:
                 leak_frac.append(0.0)
                 continue
-            not_own_cluster = (own_cluster != c) & confident
+            not_own_weight = _not_own_weight(c)
             rival_mass = group_mass[..., gi]
-            leaked = ((rival_mass > 0.01) & not_own_cluster).float().sum() / confident.float().sum().clamp(min=1.0)
+            weight_sum = not_own_weight.sum().clamp(min=1e-6)
+            leaked = (not_own_weight * (rival_mass > 0.01).float()).sum() / weight_sum
             leak_frac.append(float(leaked))
 
         vanish_score = float((1.0 - (deficit_mean > 0).float().mean()).clamp(0.0, 1.0))

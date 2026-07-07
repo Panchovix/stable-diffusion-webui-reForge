@@ -581,3 +581,81 @@ selection was built to eliminate in the predictor.
 - Exposed on both node UIs (`nodes_clpc.py`'s ComfyUI nodes, `forge_clpc.py`'s WebUI
   accordion) as `max_order` (slider, 1–6) and `lower_order_final` (checkbox).
 
+
+---
+
+## 2026-07-08 — TokenAvoidSOC.lean: token guidance as an avoid-set SOC constraint
+
+### Motivating question
+
+Prior turn found that CLPC's "token guidance is monitor-only" framing only covers the
+EXPLICIT `token_score`/`token_kalman_weight` channel — the SEPARATE "SURE Token
+Subspace Guidance" extension actively rewrites attention every forward call whenever
+enabled, contaminating `ode_err`/`wav_hf_err` (computed from post-correction tensors).
+This turn asks a more structural question: reframe token guidance as an avoid-set SOC
+problem — `C` = the token-good-set (avoiding vanish/leak/intention-drift), the SOC goal
+is that the LAST sample avoids the bad set `B = ¬C`, the intention tree constrains which
+trajectory is "most likely," and CFG/attention-correction are the search mechanisms for
+it — and checks in Lean whether this reframing actually improves on the current design.
+
+### Theorems
+
+| # | Name | Property | sorry? |
+|---|------|----------|--------|
+| 1 | `factor_ge_of_product_ge` | If `X≤1, a≥0, X·a ≥ 1-δ` then `a ≥ 1-δ` (the mechanical core of #3-#5) | 0 |
+| 2 | `two_factor_product_eq_one_iff` | For `a,b∈[0,1]`: `a·b=1 ↔ a=1∧b=1` | 0 |
+| 3 | `token_score_eq_one_iff_avoids_bad_set` | `vanish·drift·bias=1 ↔` all three perfect — `C` IS the `=1` level set, exactly | 0 |
+| 4 | `gscore5_eq_one_iff_good_sampler_and_good_token_set` | `F5=1 ↔` base target met AND token-good-set `C` hit — the literal "good sampler ⟺ good token set" claim, as a biconditional | 0 |
+| 5 | `terminal_token_score_avoids_bad_set` | Per-factor extraction: if 5-factor badness ≤ `(1-r)ⁿ·V5₀` then `1-P_token` alone is bounded the same way — the terminal sample provably lands in `C` at the SAME proven Lyapunov rate | 0 |
+| 6 | `doob_score_additive3` | `log(p·h_G·h_tree) = log p + log h_G + log h_tree` — 3-way generalisation of DoobSOC's `doob_score_additive` | 0 |
+| 7 | `intention_correction_direction` | Ascending `h_tree` (intention-tree conformity) strictly increases the combined log-density, independent of `p`/`h_G` | 0 |
+| 8 | `token_correction_contamination_bound` | Contamination from evaluating `h_tree` at `x_corr` vs `x_pred` is bounded by `L·d(x_corr,x_pred)`, IF `h_tree` is `L`-Lipschitz | 0 |
+| 9 | `cluster_step_not_lipschitz` | The actual hard-`argmax` ownership vote (`sure_token_guidance.py:306`) is NOT Lipschitz for ANY `L` — concrete counterexample straddling the reassignment threshold | 0 |
+| 10 | `token_avoid_set_soc_reframing_verdict` | Master theorem packaging #4, #5, #7, #9 | 0 |
+
+**VERDICT: SURVIVES — 10/10 theorems clean (0 sorry), full project builds (2636 jobs).**
+
+### Answer
+
+**Yes, with one precisely-located caveat.**
+
+1. **"Good sampler ⟺ good token set" is an exact biconditional**, not just an analogy:
+   `combined_score5 = 1 ↔` the base 4-factor target is met AND `P_token = 1`
+   (`gscore5_eq_one_iff_good_sampler_and_good_token_set`). `C` is not a separate object
+   bolted onto the existing Lyapunov proxy — it IS the `=1` level set of `P_token`.
+
+2. **The SOC goal "the last sample avoids the bad set" is not a new requirement** —
+   it already follows, at the SAME proven Lyapunov rate, from the existing convergence
+   certificate (`terminal_token_score_avoids_bad_set`). This is new: Part 5 of
+   TokenSubspaceGuidance.lean only bounded the PRODUCT's convergence rate; extracting a
+   guarantee for `P_token` alone (i.e. specifically for bad-set avoidance, not just the
+   overall composite) didn't exist before.
+
+3. **"Intention tree as constraint, CFG/attention-correction as search" is a sound
+   instance of the SAME Doob/SOC machinery** already justifying CLPC's own corrector —
+   `doob_score_additive3` shows the combined log-density decomposes into three
+   INDEPENDENT additive terms (base score + G-target correction + intention-tree
+   correction), so running TSG's attention correction alongside CLPC's own
+   predictor/corrector as two separate search procedures is not an ad hoc combination;
+   it is the SOC-optimal decomposition, provided the three terms are evaluated
+   independently.
+
+4. **That independence has an exact failure mode, not just an empirical worry.**
+   `cluster_step_not_lipschitz` proves the actual `own_cluster = argmax(...)` ownership
+   vote in `sure_token_guidance.py` is discontinuous at reassignment boundaries — for
+   ANY proposed Lipschitz constant `L`, there exist arbitrarily close masses whose scores
+   differ by the FULL `|sA-sB|` gap. This is strictly more informative than the prior
+   finding ("TSG's correction can shift abruptly step-to-step, contaminating CLPC's
+   own error metrics"): it now names the exact mechanism (hard `argmax`, not the
+   vanish/leak/bias corrections themselves — Parts 1-3 of TokenSubspaceGuidance.lean
+   already prove those are well-behaved) and the exact fix (replace the hard `argmax`
+   ownership vote with a softmax-weighted one, restoring Lipschitz continuity and making
+   the additive decomposition in (3) rigorous everywhere, not just generically).
+
+### Not implemented
+
+This turn is exploration only — no code changes. The identified fix (soften
+`own_cluster`'s hard `argmax` to a softmax) is a real, concrete, and now formally
+motivated target, but changes `sure_token_guidance.py`'s actual attention-correction
+numerics and needs sign-off before implementing.
+

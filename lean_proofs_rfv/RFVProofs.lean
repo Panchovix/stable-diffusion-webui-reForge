@@ -25,3 +25,4 @@ import RFVProofs.ProxySOCvsFull      -- Proxy SOC vs full SOC: same rate, consta
 import RFVProofs.TokenSubspaceGuidance -- Token-level vanish/leak/bias guidance: subspace projection, 5-factor G-score, zero-extra-NFE cost model
 import RFVProofs.MatrixTreeSoftOwnership -- Matrix-Tree (Koo et al. 2007) soft ownership: marginal partition-of-unity, soft leak generalization, cost model
 import RFVProofs.VariableOrderGain     -- UniPC-style configurable max_order: general n-node AM partition of unity (Mathlib Lagrange), order-general truncation error gain, Chebyshev-gated safety for order > 3
+import RFVProofs.TokenAvoidSOC         -- Token guidance as avoid-set SOC: exact good-sampler/good-token-set biconditional, terminal bad-set-avoidance from existing Lyapunov rate, intention-tree-as-constraint score additivity, non-Lipschitz argmax-ownership failure mode

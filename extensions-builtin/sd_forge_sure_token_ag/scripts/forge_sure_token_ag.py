@@ -76,6 +76,14 @@ class SureTokenSubspaceGuidanceForForge(scripts.Script):
                          "pixels too (dilutes the effect); too high = only corrects the most "
                          "obvious regions.",
                 )
+                leak_ownership_temperature = gr.Slider(
+                    label="Leak Ownership Softness", minimum=0.05, maximum=2.0, step=0.05, value=0.5,
+                    info="Softmax temperature for which entity 'owns' a region (replaces a hard "
+                         "argmax + threshold, which could flip a region's leak correction fully "
+                         "on/off for an infinitesimal attention change near a tie or the "
+                         "confidence floor — see TokenAvoidSOC.lean). Lower = sharper/closer to "
+                         "the old hard cutoff; higher = smoother, more gradual near ties.",
+                )
             with gr.Row():
                 attn_blocks = gr.Radio(
                     label="Attention Blocks",
@@ -86,7 +94,8 @@ class SureTokenSubspaceGuidanceForForge(scripts.Script):
                 debug = gr.Checkbox(label="Debug prints", value=True)
 
         return (enabled, use_intention_tree, tag_presets, tau_vanish, beta_vanish,
-                leak_strength, bias_strength, leak_min_confidence, attn_blocks, debug)
+                leak_strength, bias_strength, leak_min_confidence, leak_ownership_temperature,
+                attn_blocks, debug)
 
     def _run_intention_tree_pipeline(self, p, tag_presets):
         """Returns (final_tokens, groups_info) or (None, groups_info) on any
@@ -122,7 +131,8 @@ class SureTokenSubspaceGuidanceForForge(scripts.Script):
 
     def process_before_every_sampling(self, p, *script_args, **kwargs):
         (enabled, use_intention_tree, tag_presets, tau_vanish, beta_vanish,
-         leak_strength, bias_strength, leak_min_confidence, attn_blocks, debug) = script_args
+         leak_strength, bias_strength, leak_min_confidence, leak_ownership_temperature,
+         attn_blocks, debug) = script_args
 
         if not enabled:
             return
@@ -149,6 +159,7 @@ class SureTokenSubspaceGuidanceForForge(scripts.Script):
             leak_strength=float(leak_strength),
             bias_strength=float(bias_strength),
             leak_min_confidence=float(leak_min_confidence),
+            leak_ownership_temperature=float(leak_ownership_temperature),
             debug=bool(debug),
         )
 
@@ -167,5 +178,6 @@ class SureTokenSubspaceGuidanceForForge(scripts.Script):
             sure_token_ag_leak_strength=leak_strength,
             sure_token_ag_bias_strength=bias_strength,
             sure_token_ag_leak_min_confidence=leak_min_confidence,
+            sure_token_ag_leak_ownership_temperature=leak_ownership_temperature,
             sure_token_ag_attn_blocks=attn_blocks,
         ))
