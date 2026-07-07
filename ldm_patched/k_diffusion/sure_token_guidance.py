@@ -40,6 +40,9 @@ import logging
 from typing import Optional
 
 import torch
+import torch.nn.functional as F
+
+from ldm_patched.k_diffusion.sure_attention import _tokens_to_spatial
 
 _logger = logging.getLogger("sure_token_guidance")
 
@@ -216,6 +219,9 @@ def _apply_token_subspace_corrections(
     diag_store: Optional[list],
     layer_tag: str,
     final_tokens: Optional[list] = None,
+    spatial_store: Optional[list] = None,
+    heads: int = 1,
+    orig_shape: Optional[list] = None,
 ) -> torch.Tensor:
     """sim: (BH, Nq, Nk) post-softmax attention, each row already sums to 1.
 
@@ -229,6 +235,19 @@ def _apply_token_subspace_corrections(
     attribute binding the keyword heuristic cannot. Falls back to the
     keyword heuristic (uniform confidence 1.0) if omitted, e.g. when the
     rule-engine extension isn't enabled or failed for this generation.
+
+    spatial_store, heads, orig_shape: when `spatial_store` is provided, the
+    per-query-position LEAK intensity (the only one of the three corrections
+    that varies across query positions — vanish and bias are applied
+    uniformly across the whole row, see the vanish/bias loops below) is
+    appended as a raw `(leak_intensity, heads, orig_shape)` tuple, mirroring
+    `sure_attention._make_entropy_hook`'s capture convention exactly so
+    `aggregate_token_spatial_map` below can reuse the same
+    tokens-to-spatial-grid + bilinear-upsample recipe
+    (`sure_attention._aggregate_entropy_map`) to bring it into the SAME
+    pixel/latent grid CLPC's own Haar wavelet error already operates on —
+    this is what lets CLPC treat token guidance as a genuine per-pixel
+    signal instead of a single scalar averaged over the whole image.
 
     Returns the corrected (renormalized) sim, or `sim` unchanged if the
     groups don't line up with this layer's actual token axis (safe no-op
@@ -401,15 +420,32 @@ def _apply_token_subspace_corrections(
     #     diagnostic data (see refine_engine.py) for a future, more
     #     carefully calibrated and live-model-verified attempt at actually
     #     using them here.
+    # leak_intensity[bh, q] = actual attention MASS removed at this query
+    # position by the leak correction (L1 change of the row, leak-only —
+    # snapshotted before the loop so the vanish/bias boosts above, which are
+    # uniform across every row and so carry no spatial information, don't
+    # contaminate it). This is a MAGNITUDE, not a confidence: a rival
+    # group's own-cluster confidence can be high (`_not_own_weight` ≈ 1) at
+    # a position where that rival barely has any mass to begin with, in
+    # which case little mass actually moves — using confidence alone here
+    # would report the same "intensity" at that position as at a position
+    # where a rival dominates with real mass. Magnitude is the right
+    # quantity to compare against CLPC's own Haar innovation magnitude,
+    # which is also a perturbation-magnitude concept, not a probability.
+    pre_leak = corrected.clone()
     for gi, (s, e, _text) in enumerate(ranges):
         c = cluster_of[gi]
         if c == -1:
             continue
-        not_own_weight = _not_own_weight(c).unsqueeze(-1)  # (BH, Nq, 1), in [0,1]
-        corrected[..., s:e] = corrected[..., s:e] * (1.0 - cfg.leak_strength * not_own_weight)
+        weight = _not_own_weight(c).unsqueeze(-1)  # (BH, Nq, 1), in [0,1]
+        corrected[..., s:e] = corrected[..., s:e] * (1.0 - cfg.leak_strength * weight)
+    leak_intensity = (corrected - pre_leak).abs().sum(-1)  # (BH, Nq)
 
     row_sum = corrected.sum(-1, keepdim=True).clamp(min=1e-8)
     corrected = corrected / row_sum
+
+    if spatial_store is not None:
+        spatial_store.append((leak_intensity.detach(), heads, orig_shape))
 
     # --- Diagnostics ---
     with torch.no_grad():
@@ -493,7 +529,8 @@ def _apply_token_subspace_corrections(
 
 def _make_token_guidance_hook(groups_info: dict, cfg: TokenGuidanceConfig,
                                diag_store: list, layer_tag: str,
-                               final_tokens: Optional[list] = None):
+                               final_tokens: Optional[list] = None,
+                               spatial_store: Optional[list] = None):
     """Build an attn2-replacement hook. Signature matches the
     patches_replace["attn2"][block] interface used throughout this codebase:
         hook(q, k, v, extra_options, mask=None) -> out
@@ -502,6 +539,12 @@ def _make_token_guidance_hook(groups_info: dict, cfg: TokenGuidanceConfig,
     final_tokens: Plan 04's reconciled intention-tree output (see
     `_apply_token_subspace_corrections`'s docstring); None falls back to the
     keyword heuristic.
+
+    spatial_store: forwarded to `_apply_token_subspace_corrections` — see its
+    docstring. `extra_options["original_shape"]` (the full UNet latent
+    [B,C,H,W]) is populated identically for attn1 AND attn2 hooks by
+    `BasicTransformerBlock.forward` (ldm_patched/ldm/modules/attention.py),
+    the same field `sure_attention.py`'s entropy hook already reads.
     """
     groups = groups_info.get("groups", [])
     n_chunks = groups_info.get("n_chunks", 0)
@@ -509,6 +552,7 @@ def _make_token_guidance_hook(groups_info: dict, cfg: TokenGuidanceConfig,
 
     def hook(q, k, v, extra_options, mask=None):
         heads = extra_options["n_heads"]
+        orig_shape = extra_options.get("original_shape")
         orig_dtype = q.dtype
         b, _n_q, dim_head_full = q.shape
         dim_head = dim_head_full // heads
@@ -539,6 +583,7 @@ def _make_token_guidance_hook(groups_info: dict, cfg: TokenGuidanceConfig,
             corrected = _apply_token_subspace_corrections(
                 sim, groups, n_chunks, chunk_length, cfg, diag_store, layer_tag,
                 final_tokens=final_tokens,
+                spatial_store=spatial_store, heads=heads, orig_shape=orig_shape,
             )
 
             out = torch.einsum("b i j, b j d -> b i d", corrected, vh)
@@ -577,13 +622,19 @@ def patch_model_with_token_guidance(unet, groups_info: dict,
     Returns (patched_unet, diag_store) — `diag_store` accumulates plain-float
     diagnostic dicts across every hook call; callers (e.g. the CLPC sampler)
     should read + clear it once per sampling step via
-    `aggregate_token_guidance_info` below.
+    `aggregate_token_guidance_info` below. A second, raw-tensor store
+    (`token_guidance_spatial_store` in `unet.model_options["transformer_options"]`)
+    accumulates per-position leak-intensity captures for
+    `aggregate_token_spatial_map` to reduce into a pixel/latent-space map —
+    kept separate from `diag_store` since it holds un-reduced tensors, not
+    plain floats.
 
     Clones `unet` first (same convention as SureAttentionGuidance.patch()) so
     the base model object isn't mutated across generations/UI runs.
     """
     unet = unet.clone()
     diag_store: list = []
+    spatial_store: list = []
 
     if final_tokens is not None:
         print(f"[TokenSubspaceGuidance] using Plan 04 intention tree "
@@ -611,11 +662,13 @@ def patch_model_with_token_guidance(unet, groups_info: dict,
         for block_id in ids:
             layer_tag = f"{block_name}{block_id}"
             hook_fn = _make_token_guidance_hook(groups_info, cfg, diag_store, layer_tag,
-                                                 final_tokens=final_tokens)
+                                                 final_tokens=final_tokens,
+                                                 spatial_store=spatial_store)
             unet.set_model_attn2_replace(hook_fn, block_name, block_id)
 
     to = unet.model_options.setdefault("transformer_options", {})
     to["token_guidance_store"] = diag_store
+    to["token_guidance_spatial_store"] = spatial_store
 
     return unet, diag_store
 
@@ -642,3 +695,80 @@ def aggregate_token_guidance_info(store: Optional[list]) -> Optional[dict]:
     }
     print(f"[TokenSubspaceGuidance] step aggregate over {n} attn2 calls: {agg}")
     return agg
+
+
+def aggregate_token_spatial_map(store: Optional[list], latent_shape: tuple,
+                                 device, dtype) -> Optional[torch.Tensor]:
+    """Convert captured `(leak_intensity, heads, orig_shape)` entries (see
+    `_apply_token_subspace_corrections`) into a single spatial map of shape
+    `(B, 1, H_lat, W_lat)` in `[0,1]`, matching `latent_shape` — the SAME
+    pixel/latent grid CLPC's Haar wavelet decomposition of `x_corr - x_pred`
+    already operates on (`clpc_error.compute_haar_subband_errors`).
+
+    Mirrors `sure_attention._aggregate_entropy_map`'s tokens-to-spatial-grid
+    + bilinear-upsample recipe exactly (each attn2 layer's query axis is a
+    flattened, block-downsampled version of the same latent grid; different
+    blocks run at different downsample factors, hence the per-layer resize
+    before averaging). Unlike entropy (query-position UNCERTAINTY, defined
+    everywhere), leak intensity is 0 almost everywhere by construction (most
+    query positions have no rival cluster to attenuate against) — a
+    per-layer MAX rather than mean would let one hot layer dominate the
+    average disproportionately, so layers are averaged the same way
+    `_aggregate_entropy_map` averages entropy, keeping the two spatial-map
+    aggregation conventions consistent for anyone reading both.
+
+    Returns None if the store is empty (guidance disabled, or no attn2 calls
+    captured a spatial signal yet this step).
+    """
+    if not store:
+        return None
+
+    B, _, H_lat, W_lat = latent_shape
+    maps = []
+
+    for leak_intensity, heads, orig_shape in store:
+        BH, N = leak_intensity.shape
+        if heads <= 0 or BH < heads:
+            continue
+
+        b_eff = BH // heads
+        if b_eff > B:
+            b_use = B
+            leak_intensity = leak_intensity[heads * (b_eff - B):]
+        else:
+            b_use = b_eff
+
+        # Average over attention heads → (b_use, N)
+        intensity_b = leak_intensity.reshape(b_use, heads, N).mean(dim=1)
+
+        if orig_shape is not None:
+            H_src, W_src = int(orig_shape[2]), int(orig_shape[3])
+        else:
+            H_src, W_src = H_lat, W_lat
+
+        h_l, w_l = _tokens_to_spatial(N, H_src, W_src)
+        if h_l * w_l != N:
+            continue
+
+        intensity_spatial = intensity_b.float().reshape(b_use, 1, h_l, w_l)
+
+        intensity_up = F.interpolate(intensity_spatial, (H_lat, W_lat),
+                                      mode="bilinear", align_corners=False)
+
+        if b_use < B:
+            pad = intensity_up[-1:].expand(B - b_use, -1, -1, -1)
+            intensity_up = torch.cat([intensity_up, pad], dim=0)
+
+        maps.append(intensity_up.to(device=device))
+
+    if not maps:
+        return None
+
+    M = torch.stack(maps, dim=0).mean(dim=0)
+    M = M.clamp(0.0, 1.0).to(dtype=dtype)
+
+    if M.isnan().any() or M.isinf().any():
+        _logger.warning("[TokenSubspaceGuidance] NaN/Inf in spatial leak map; skipping this step")
+        return None
+
+    return M

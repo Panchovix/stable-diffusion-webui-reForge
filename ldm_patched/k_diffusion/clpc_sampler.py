@@ -15,7 +15,7 @@ Both use:
   • PIDStepSizeController for adaptive step sizing
   • Composite error norm → monitor (Lean-backed weights)
 
-Four Lean-proved enhancements (see lean_proofs_rfv/THEOREM_BUFFER.md):
+Five Lean-proved enhancements (see lean_proofs_rfv/THEOREM_BUFFER.md):
 
   Priority 1 — Chebyshev node selection (use_chebyshev=True, default):
     When selecting history entries for the Adams predictor, prefer entries whose
@@ -61,6 +61,27 @@ Four Lean-proved enhancements (see lean_proofs_rfv/THEOREM_BUFFER.md):
     variable_order_needs_chebyshev_beyond_three). `lower_order_final=True`
     (default) additionally ramps order down near the end of the σ schedule,
     matching UniPC's own `lower_order_final`.
+
+  Priority 5 — Region-mapped token-guidance channel (token_spatial_weight,
+  default 0.3; requires the separate "SURE Token Subspace Guidance"
+  extension to be enabled):
+    TokenAvoidSOC.lean identified token guidance as a genuinely separate
+    SOC channel from CLPC's own ODE/wavelet errors — see
+    cluster_step_not_lipschitz and the follow-up softmax-ownership fix in
+    sure_token_guidance.py. This wires it in for real: TSG's per-query-
+    position LEAK correction magnitude (the one of its three corrections
+    that varies spatially — vanish/bias are applied uniformly across a
+    row) is resampled onto THIS latent's own (H,W) grid via
+    sure_token_guidance.aggregate_token_spatial_map (same tokens-to-
+    spatial-grid + bilinear-upsample recipe sure_attention.py's entropy
+    map already uses), then added directly to the Kalman gain K — NOT
+    mixed into ode_err/wav_hf_err themselves, so Priority 3's pure-
+    numerical-integration semantics for P/R are untouched; this is a
+    genuinely separate, additive channel on the FINAL blend weight only.
+    Distinct from `token_kalman_weight` (Priority 3's monitor-only scalar
+    channel) — see _kalman_blend's `token_spatial_map` docstring for the
+    exact formula and why per-pixel K ∈ [0,1] needs no new Lean proof
+    (DoobSOC.convex_blend_between already holds pointwise for any K).
 
 Predictor modes (lean_proofs_rfv/RFVProofs/AdamsStability.lean):
   "euler"           — order-1 always; b = 1-σ_t/σ_s ∈ (0,1); unconditionally safe.
@@ -191,6 +212,11 @@ def _select_chebyshev_history(history: "CLPCHistory", n_nodes: int, lam_s: float
 #: own scale (both are O(0.01-0.5) relative errors); tune here, not per-call.
 TOKEN_KALMAN_WEIGHT = 0.5
 
+#: Default weight for the SEPARATE, spatially-resolved token-guidance channel
+#: (see _kalman_blend's `token_spatial_map` parameter) — distinct from
+#: TOKEN_KALMAN_WEIGHT above, which scales the (monitor-only) scalar channel.
+TOKEN_SPATIAL_WEIGHT = 0.3
+
 
 def _kalman_blend(
     x_pred: torch.Tensor,
@@ -198,6 +224,8 @@ def _kalman_blend(
     ode_err: float,
     wav_hf_err: float,
     token_err: float = 0.0,
+    token_spatial_map: Optional[torch.Tensor] = None,
+    token_spatial_weight: float = 0.0,
 ) -> torch.Tensor:
     """
     Kalman-gain-weighted blend of predictor and corrector outputs.
@@ -231,6 +259,25 @@ def _kalman_blend(
     now reported as its own independent, un-blended, un-smoothed channel —
     recomputed fresh every step straight from that step's diagnostics,
     with no persistent state carried across steps at all.
+
+    `token_spatial_map` (Optional[(B,1,H,W)], in [0,1]) is a THIRD, separate
+    channel — NOT the same thing as `token_err` above. Where `token_err` is
+    a single scalar averaged over the whole image (hence unusable inside a
+    per-pixel-uniform scalar P/R without exactly the contamination problem
+    that sank the earlier attempt), this is
+    `sure_token_guidance.aggregate_token_spatial_map`'s per-pixel LEAK
+    correction magnitude, already resampled onto the SAME latent grid `x`
+    lives on. It modulates K directly and ADDITIVELY —
+    `K_spatial = clamp(K + token_spatial_weight * map, 0, 1)` — rather than
+    being mixed into `ode_err`/`wav_hf_err` themselves, so those two stay
+    pure numerical-integration signals (unaffected by this channel) exactly
+    as the exclusion above requires; only the FINAL blend weight is
+    perturbed, and only where the map says a real (non-uniform,
+    non-background) token-space correction actually happened. This is sound
+    for any `K_spatial ∈ [0,1]`: `DoobSOC.convex_blend_between` /
+    `kalman_blend_preserves_improvement` (DoobSOC.lean) hold pointwise for
+    ANY per-pixel `K ∈ [0,1]`, so a spatially-varying gain is not a new
+    guarantee to prove — it's the same one applied coordinatewise.
     """
     P = ode_err
     K = P / (P + wav_hf_err + 1e-8)
@@ -239,6 +286,15 @@ def _kalman_blend(
         print(f"[TokenSubspaceGuidance] token/CLIP error channel (separate from Kalman blend): "
               f"token_err={token_err:.4f} (measured fresh this step, not fed into P/K) "
               f"| kalman: ode_err={ode_err:.4f} wav_hf_err={wav_hf_err:.4f} -> P={P:.4f} K={K:.4f}")
+    if token_spatial_map is not None and token_spatial_weight > 0:
+        K_spatial = torch.clamp(
+            K + token_spatial_weight * token_spatial_map.to(device=x_pred.device, dtype=torch.float32),
+            0.0, 1.0,
+        )
+        if _DEBUG:
+            print(f"  [token_spatial: mean={float(token_spatial_map.mean()):.4f} "
+                  f"K_base={K:.4f} K_spatial_mean={float(K_spatial.mean()):.4f}]")
+        return x_pred.float().lerp(x_corr.float(), K_spatial).to(dtype=x_pred.dtype)
     return x_pred.float().lerp(x_corr.float(), K).to(dtype=x_pred.dtype)
 
 
@@ -586,6 +642,10 @@ def _clpc_loop(
     adaptive_noise: bool,
     # Token-space conditional guidance corrector feedback (TokenSubspaceGuidance.lean Part 7)
     token_kalman_weight: float = TOKEN_KALMAN_WEIGHT,
+    # Spatially-resolved token-guidance channel — genuinely affects the
+    # corrector's output (unlike token_kalman_weight above); see
+    # _kalman_blend's `token_spatial_map` docstring.
+    token_spatial_weight: float = TOKEN_SPATIAL_WEIGHT,
 ) -> torch.Tensor:
     """Shared ODE/SDE loop."""
     from ldm_patched.k_diffusion.sampling import PIDStepSizeController
@@ -613,18 +673,26 @@ def _clpc_loop(
     # sure_token_guidance.patch_model_with_token_guidance() patches — so that's
     # the only place attn2's token_guidance_store can actually be found.
     token_guidance_store = _get_live_transformer_options(model).get("token_guidance_store")
+    token_spatial_store = _get_live_transformer_options(model).get("token_guidance_spatial_store")
     if token_guidance_store is not None:
         print(f"[TokenSubspaceGuidance] clpc_sampler: ENABLED — found token_guidance_store on "
               f"this model (len={len(token_guidance_store)} entries so far). P_token feeds the "
               f"G-score every step via a SEPARATE, un-Kalman-blended channel weighted by "
               f"token_kalman_weight={token_kalman_weight} (informational/monitoring only — see "
               f"_kalman_blend's docstring for why this is deliberately NOT folded into the "
-              f"corrector-trust gain).")
+              f"corrector-trust gain's P/R). The attn2 correction is ALSO active regardless of "
+              f"any CLPC weight here (that's not monitor-only — it patches attention directly); "
+              f"its per-pixel LEAK magnitude, resampled onto this latent's grid, DOES modulate "
+              f"the corrector-trust gain directly, weighted by "
+              f"token_spatial_weight={token_spatial_weight} — see _kalman_blend's "
+              f"`token_spatial_map` docstring for why that's a separate, sound mechanism from "
+              f"the scalar channel above.")
     else:
         print(f"[TokenSubspaceGuidance] clpc_sampler: INACTIVE — no token_guidance_store found on "
               f"this model's transformer_options. Enable the 'SURE Token Subspace Guidance' "
               f"extension (separate accordion) to activate the conditional-space G-score channel; "
-              f"this run uses the neutral default (P_token=1.0, token_kalman_weight has no effect).")
+              f"this run uses the neutral default (P_token=1.0, token_kalman_weight/"
+              f"token_spatial_weight have no effect).")
 
     # Convert sigma schedule to lambda
     lambdas = _sigma_to_lambda(sigmas, is_flow)
@@ -825,6 +893,14 @@ def _clpc_loop(
                 token_info = aggregate_token_guidance_info(token_guidance_store)
                 token_guidance_store.clear()  # reset for the next step's accumulation
 
+            token_spatial_map = None
+            if token_spatial_store is not None and token_spatial_weight > 0:
+                from ldm_patched.k_diffusion.sure_token_guidance import aggregate_token_spatial_map
+                token_spatial_map = aggregate_token_spatial_map(
+                    token_spatial_store, tuple(x.shape), x.device, x.dtype,
+                )
+                token_spatial_store.clear()  # reset for the next step's accumulation
+
             err = build_clpc_error(
                 x_adams=x_pred,
                 x_euler=x_euler,
@@ -860,9 +936,17 @@ def _clpc_loop(
             # `token_kalman_weight` now scales its (also purely
             # informational) contribution to the composite G-score display
             # via `weights.token`, not the corrector-trust gain.
+            #
+            # token_spatial_map IS part of this blend (see _kalman_blend's
+            # `token_spatial_map` docstring) — a separate, per-pixel channel
+            # from token_err above, kept out of ode_err/wav_hf themselves.
             token_err = max(0.0, 1.0 - err.token_score)
             if use_kalman:
-                x_out = _kalman_blend(x_pred, x_corr, err.ode, err.wav_hf, token_err)
+                x_out = _kalman_blend(
+                    x_pred, x_corr, err.ode, err.wav_hf, token_err,
+                    token_spatial_map=token_spatial_map,
+                    token_spatial_weight=token_spatial_weight,
+                )
             else:
                 x_out = x_corr
 
@@ -1002,6 +1086,10 @@ def sample_clpc_ode(
     # patched attn2 hooks onto this model — see the ENABLED/INACTIVE log line
     # _clpc_loop prints at the start of every run.
     token_kalman_weight: float = TOKEN_KALMAN_WEIGHT,
+    # Spatially-resolved token-guidance channel (region-mapped to this
+    # latent's pixel grid) — genuinely affects the corrector's blend, unlike
+    # token_kalman_weight above. See _kalman_blend's `token_spatial_map` docstring.
+    token_spatial_weight: float = TOKEN_SPATIAL_WEIGHT,
 ) -> torch.Tensor:
     """CLPC deterministic (ODE) sampler.
 
@@ -1022,6 +1110,11 @@ def sample_clpc_ode(
     lower_order_final: Ramp order down as the schedule nears its last step
                    (UniPC's `lower_order_final`), so a high order is never
                    asked to extrapolate past the trajectory's end.
+    token_spatial_weight: Weight on the region-mapped per-pixel token-guidance
+                   channel inside the Kalman blend gain. Requires use_kalman=True
+                   and the "SURE Token Subspace Guidance" extension enabled.
+                   Distinct from token_kalman_weight (which only affects the
+                   monitoring-only G-score display) — see _kalman_blend.
     """
     return _clpc_loop(
         model=model, x=x, sigmas=sigmas,
@@ -1040,6 +1133,7 @@ def sample_clpc_ode(
         tau_eta=0.0, s_noise=1.0,
         adaptive_noise=False,
         token_kalman_weight=token_kalman_weight,
+        token_spatial_weight=token_spatial_weight,
     )
 
 
@@ -1084,6 +1178,8 @@ def sample_clpc_sde(
     # patched attn2 hooks onto this model — see the ENABLED/INACTIVE log line
     # _clpc_loop prints at the start of every run.
     token_kalman_weight: float = TOKEN_KALMAN_WEIGHT,
+    # Spatially-resolved token-guidance channel — see sample_clpc_ode's docstring.
+    token_spatial_weight: float = TOKEN_SPATIAL_WEIGHT,
 ) -> torch.Tensor:
     """CLPC stochastic (SDE) sampler with optional adaptive noise.
 
@@ -1097,6 +1193,8 @@ def sample_clpc_sde(
                    analogous to UniPC's `order` (VariableOrderGain.lean).
     lower_order_final: Ramp order down near the schedule's last step (UniPC's
                    `lower_order_final`).
+    token_spatial_weight: Region-mapped per-pixel token-guidance channel inside
+                   the Kalman blend gain — see sample_clpc_ode's docstring.
     """
     return _clpc_loop(
         model=model, x=x, sigmas=sigmas,
@@ -1115,4 +1213,5 @@ def sample_clpc_sde(
         tau_eta=tau_eta, s_noise=s_noise,
         adaptive_noise=adaptive_noise,
         token_kalman_weight=token_kalman_weight,
+        token_spatial_weight=token_spatial_weight,
     )

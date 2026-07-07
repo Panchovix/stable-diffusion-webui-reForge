@@ -79,7 +79,7 @@ class CLPCForForge(scripts.Script):
                     info="Ramp order down near the schedule's last step (UniPC's lower_order_final).",
                 )
 
-            # ── Token-space conditional guidance (separate error channel) ──
+            # ── Token-space conditional guidance (separate error channels) ──
             with gr.Row():
                 token_kalman_weight = gr.Slider(
                     label="Token-space error weight (G-score, monitoring only)",
@@ -95,6 +95,19 @@ class CLPCForForge(scripts.Script):
                         "be enabled — this slider has no effect on its own. Check the console "
                         "for a '[TokenSubspaceGuidance] clpc_sampler: ENABLED/INACTIVE' line at "
                         "the start of each generation to confirm wiring."
+                    ),
+                )
+                token_spatial_weight = gr.Slider(
+                    label="Token-space spatial weight (region-mapped, GENUINELY active)",
+                    minimum=0.0, maximum=2.0, step=0.05, value=0.3,
+                    info=(
+                        "Unlike the weight above, this one actually changes the corrector's "
+                        "output: TSG's per-pixel LEAK correction magnitude is resampled onto "
+                        "this latent's own grid (same recipe SURE-AG's entropy map uses) and "
+                        "added directly to the Kalman gain — wherever a genuine leak correction "
+                        "happened, the corrector is trusted more there. Kept OUT of ode_err/"
+                        "wav_hf_err themselves (TokenAvoidSOC.lean's cluster_step_not_lipschitz "
+                        "finding). Also requires 'SURE Token Subspace Guidance' enabled."
                     ),
                 )
 
@@ -131,12 +144,14 @@ class CLPCForForge(scripts.Script):
             max_steps = gr.Slider(label="Max steps (hard limit)", minimum=10, maximum=5000,
                                   step=10, value=1000)
 
-        return (predictor, use_chebyshev, use_kalman, max_order, lower_order_final, token_kalman_weight,
+        return (predictor, use_chebyshev, use_kalman, max_order, lower_order_final,
+                token_kalman_weight, token_spatial_weight,
                 w_ode, w_ot, w_cfg, atol, rtol, pece_sigma_threshold,
                 tau_eta, s_noise, adaptive_noise, max_steps)
 
     def process_before_every_sampling(self, p, *script_args, **kwargs):
-        (predictor, use_chebyshev, use_kalman, max_order, lower_order_final, token_kalman_weight,
+        (predictor, use_chebyshev, use_kalman, max_order, lower_order_final,
+         token_kalman_weight, token_spatial_weight,
          w_ode, w_ot, w_cfg, atol, rtol, pece_sigma_threshold,
          tau_eta, s_noise, adaptive_noise, max_steps) = script_args
 
@@ -151,6 +166,7 @@ class CLPCForForge(scripts.Script):
             "max_order": int(max_order),
             "lower_order_final": bool(lower_order_final),
             "token_kalman_weight": float(token_kalman_weight),
+            "token_spatial_weight": float(token_spatial_weight),
             "w_ode": float(w_ode),
             "w_ot": float(w_ot),
             "w_sure": 0.0,
@@ -178,6 +194,7 @@ class CLPCForForge(scripts.Script):
             "clpc_max_order": max_order,
             "clpc_lower_order_final": lower_order_final,
             "clpc_token_kalman_weight": token_kalman_weight,
+            "clpc_token_spatial_weight": token_spatial_weight,
             "clpc_w_ode": w_ode,
             "clpc_w_ot": w_ot,
             "clpc_w_cfg": w_cfg,

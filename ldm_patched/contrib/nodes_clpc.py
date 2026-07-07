@@ -70,6 +70,16 @@ class CLPCSamplerODE:
                 "pece_sigma_threshold": ("FLOAT", {
                     "default": 4.0, "min": 0.0, "max": 20.0, "step": 0.5,
                     "tooltip": "Disable PECE above this sigma (proved beneficial only at low σ)."}),
+                "token_spatial_weight": ("FLOAT", {
+                    "default": 0.3, "min": 0.0, "max": 2.0, "step": 0.05,
+                    "tooltip": (
+                        "Weight on the region-mapped per-pixel token-guidance channel (leak "
+                        "correction resampled onto this latent's grid) inside the Kalman blend "
+                        "gain. Requires use_kalman=True and the separate 'SURE Token Subspace "
+                        "Guidance' extension enabled. Distinct from the monitor-only G-score "
+                        "channel — see clpc_sampler._kalman_blend's token_spatial_map docstring."
+                    ),
+                }),
                 "max_steps": ("INT", {"default": 1000, "min": 10, "max": 5000}),
             }
         }
@@ -80,7 +90,7 @@ class CLPCSamplerODE:
 
     def get_sampler(self, predictor, use_chebyshev, use_kalman, max_order, lower_order_final,
                     w_ode, w_ot, w_cfg, atol, rtol,
-                    pece_sigma_threshold, max_steps):
+                    pece_sigma_threshold, token_spatial_weight, max_steps):
         sampler = _samplers.KSAMPLER(
             sample_clpc_ode,
             extra_options={
@@ -92,6 +102,7 @@ class CLPCSamplerODE:
                 "w_ode": w_ode, "w_ot": w_ot, "w_sure": 0.0, "w_cfg": w_cfg,
                 "atol": atol, "rtol": rtol,
                 "pece_sigma_threshold": pece_sigma_threshold,
+                "token_spatial_weight": token_spatial_weight,
                 "max_steps": max_steps,
             },
         )
@@ -148,6 +159,14 @@ class CLPCSamplerSDE:
                 "adaptive_noise": ("BOOLEAN", {"default": True,
                                                "tooltip": "Ratchet noise up when ODE error > OT drift."}),
                 "pece_sigma_threshold": ("FLOAT", {"default": 4.0, "min": 0.0, "max": 20.0, "step": 0.5}),
+                "token_spatial_weight": ("FLOAT", {
+                    "default": 0.3, "min": 0.0, "max": 2.0, "step": 0.05,
+                    "tooltip": (
+                        "Region-mapped per-pixel token-guidance channel inside the Kalman blend "
+                        "gain. Requires use_kalman=True and 'SURE Token Subspace Guidance' "
+                        "enabled. Distinct from the monitor-only G-score channel."
+                    ),
+                }),
                 "max_steps": ("INT", {"default": 1000, "min": 10, "max": 5000}),
             }
         }
@@ -159,7 +178,7 @@ class CLPCSamplerSDE:
     def get_sampler(self, predictor, use_chebyshev, use_kalman, max_order, lower_order_final,
                     w_ode, w_ot, w_cfg, atol, rtol,
                     tau_eta, s_noise, adaptive_noise,
-                    pece_sigma_threshold, max_steps):
+                    pece_sigma_threshold, token_spatial_weight, max_steps):
         sampler = _samplers.KSAMPLER(
             sample_clpc_sde,
             extra_options={
@@ -172,6 +191,7 @@ class CLPCSamplerSDE:
                 "atol": atol, "rtol": rtol,
                 "tau_eta": tau_eta, "s_noise": s_noise, "adaptive_noise": adaptive_noise,
                 "pece_sigma_threshold": pece_sigma_threshold,
+                "token_spatial_weight": token_spatial_weight,
                 "max_steps": max_steps,
             },
         )
