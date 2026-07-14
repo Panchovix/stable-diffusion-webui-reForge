@@ -411,8 +411,21 @@ def install_vae_hooks(sd_model) -> bool:
 
         _orig_decode = fst.decode
 
+        # Circuit breaker: a JAX VAE decode failure (of any kind) has been
+        # observed to leave GPU memory in a bad state rather than cleanly
+        # release it — a RESOURCE_EXHAUSTED error from decode_jit() has
+        # shown up followed by torch itself reporting almost no free VRAM
+        # immediately after, even for a tiny subsequent allocation. Retrying
+        # JAX on the next call (or the next tile, or the next generation)
+        # only compounds this. So: on the first failure, disable JAX decode
+        # for the rest of this model's lifetime and use the proven torch
+        # path (including its own battle-tested OOM -> tiled fallback) from
+        # then on, rather than repeatedly re-triggering a path that gets
+        # the GPU into a worse state each time it fails.
+        _state = {"disabled": False}
+
         def _jax_decode(z: torch.Tensor, **kwargs) -> torch.Tensor:
-            if kwargs:
+            if kwargs or _state["disabled"]:
                 return _orig_decode(z, **kwargs)
             try:
                 if should_tile_decode(z.device, tuple(z.shape), elem_bytes=z.element_size()):
@@ -429,7 +442,14 @@ def install_vae_hooks(sd_model) -> bool:
                 out_np = np.asarray(jnp.asarray(out, dtype=jnp.float32))
                 return torch.from_numpy(out_np.copy()).float().to(z.device)
             except Exception as e:
-                log.warning("[JAX VAE] Decoder error: %s - falling back to torch", e, exc_info=True)
+                log.warning(
+                    "[JAX VAE] Decoder error on latent %s: %s - falling back to torch for "
+                    "this call and disabling JAX VAE decode for the rest of this model's "
+                    "session (a JAX decode failure has been observed to leave GPU memory "
+                    "in a bad state; retrying would likely compound it).",
+                    list(z.shape), e, exc_info=True,
+                )
+                _state["disabled"] = True
                 return _orig_decode(z)
 
         fst.decode = _jax_decode
