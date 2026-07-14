@@ -29,6 +29,20 @@ Called from ``modules_forge/forge_loader.py`` after ldm model loading
 completes, gated behind ``cmd_opts.forge_jax_pipeline``. If jax is
 unavailable or activation fails, returns False silently (loud log message)
 and the standard PyTorch pipeline is used.
+
+Environment variables
+----------------------
+Set automatically (unless already set by you): ``CUDA_ROOT``,
+``XLA_PYTHON_CLIENT_PREALLOCATE=false``, ``XLA_FLAGS`` (adds
+``--xla_gpu_strict_conv_algorithm_picker=false``). See
+``_apply_*_workaround``/``_apply_*_default`` below for why.
+
+Opt-in only (NOT set automatically — see ``_apply_vmm_allocator_default``
+for why): ``JAX_PIPELINE_VMM_ALLOCATOR=1`` switches the GPU allocator to
+JAX's experimental CUDA VMM allocator. Confirmed to break CUDA backend
+registration entirely (silent fallback to CPU) against this project's
+pinned jaxlib==0.4.34 — only set this if you've upgraded jaxlib and
+confirmed it works for you.
 """
 
 from __future__ import annotations
@@ -108,28 +122,31 @@ def _apply_vram_preallocation_default() -> None:
 
 
 def _apply_vmm_allocator_default() -> None:
-    """When growing GPU memory on demand (no preallocation) on a CUDA
-    backend, prefer JAX's experimental CUDA VMM allocator over the default
-    BFC allocator.
+    """NOT auto-applied — see ``JAX_PIPELINE_VMM_ALLOCATOR`` below. Kept as
+    an explicit opt-in, not a default.
 
-    JAX's default allocator (BFC — best-fit-with-coalescing) is designed
-    around a large preallocated arena; without one (PREALLOCATE=false —
-    whether set by us above or by the user directly) it has to grow and
-    shrink piecemeal and is exactly the allocator most prone to the
-    "where does this tensor fit" fragmentation that disabling
-    preallocation otherwise reintroduces. The VMM allocator instead uses
-    CUDA's virtual memory management API (cuMemAddressReserve/cuMemMap)
-    for fine-grained reservation, sidestepping most of that fragmentation
-    — this is the tradeoff JAX's own docs describe it for. Experimental,
-    CUDA-only.
+    JAX's experimental ``XLA_PYTHON_CLIENT_ALLOCATOR=vmm`` (CUDA virtual
+    memory management allocator, cuMemAddressReserve/cuMemMap) is the
+    right tool for the fragmentation ``XLA_PYTHON_CLIENT_PREALLOCATE=false``
+    reintroduces — JAX's default BFC allocator is built around one large
+    preallocated arena and fragments piecemeal without it. But this
+    setting's documentation is only current for JAX's main/latest branch;
+    it broke CUDA backend registration entirely (jax.devices() silently
+    fell back to a CPU-only device list, no error surfaced) when tried
+    against this project's pinned jaxlib==0.4.34 — that build most likely
+    predates "vmm" support, and there is no way to detect that in advance
+    or recover within the same process (env vars controlling the XLA
+    client's allocator only take effect before the very first
+    ``import jax`` / client creation; once that's happened, re-importing
+    with a different XLA_PYTHON_CLIENT_ALLOCATOR value has no effect).
 
-    Applies whenever preallocation ends up disabled (by us or by the
-    user), only if the user hasn't already picked an allocator themselves,
-    and only when a CUDA setup is detected — via the nvidia-cuda-nvcc-cu12
-    package (see ``_find_cuda_nvcc_spec``), since jax isn't imported yet
-    at this point and ``jax.default_backend()`` isn't available to ask
-    directly.
+    Because a silent CPU fallback is a much worse failure mode than
+    forgoing this optimization, it is not auto-applied. Set
+    ``JAX_PIPELINE_VMM_ALLOCATOR=1`` yourself (e.g. if you've upgraded to
+    a newer jaxlib you've confirmed supports it) to opt in explicitly.
     """
+    if os.environ.get("JAX_PIPELINE_VMM_ALLOCATOR", "").strip().lower() not in ("1", "true"):
+        return
     preallocate_off = os.environ.get("XLA_PYTHON_CLIENT_PREALLOCATE", "").strip().lower() in ("false", "0")
     if not preallocate_off:
         return
