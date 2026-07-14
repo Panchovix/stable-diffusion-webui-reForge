@@ -1,13 +1,21 @@
 # Optional dependency for --forge-jax-pipeline (see jax_pipeline/).
 # Not installed by default — only needed if you pass --forge-jax-pipeline.
 #
+# jax==0.4.35 / jaxlib==0.4.35 only require numpy>=1.24 (no upper bound), so
+# they're compatible with this project's numpy<2 ceiling (imposed by
+# gradio==3.41.2 / blendmodes — see requirements_versions.txt). The numpy
+# pin below is REQUIRED: without it, pip has no reason to prefer an old
+# numpy and will happily upgrade to the latest 2.x, which then conflicts
+# with gradio/blendmodes/numba already installed.
+#
 # CPU only:
 #   pip install -r requirements_jax.txt
 #
 # NVIDIA CUDA 12:
-#   pip install "jax[cuda12]==0.4.35"
+#   pip install "jax[cuda12]==0.4.35" "numpy>=1.26.4,<2"
 #
 # AMD ROCm / Google TPU: see https://jax.readthedocs.io/en/latest/installation.html
-# for the correct wheel index for your platform.
+# for the correct wheel index for your platform (keep the numpy<2 pin).
+numpy>=1.26.4,<2
 jax==0.4.35
 jaxlib==0.4.35
