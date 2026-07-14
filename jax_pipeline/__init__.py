@@ -24,9 +24,41 @@ and the standard PyTorch pipeline is used.
 
 from __future__ import annotations
 
+import importlib.util
 import logging
+import os
 
 log = logging.getLogger(__name__)
+
+
+def _apply_cuda_nvcc_namespace_package_workaround() -> None:
+    """Work around a jax==0.4.35 import-time crash.
+
+    jax._src.lib._cuda_path() -> _try_cuda_nvcc_import() does
+    ``pathlib.Path(cuda_nvcc.__file__).parent`` to locate the pip-installed
+    ``nvidia-cuda-nvcc-cu12`` package. That package ships as a PEP 420
+    namespace package (no ``__init__.py``), so ``__file__`` is None and the
+    pathlib call raises ``TypeError: argument should be a str or an
+    os.PathLike object ... not 'NoneType'`` — unconditionally, at
+    ``import jax`` time, even for CPU-only use (this is not gated behind
+    actually using the CUDA backend).
+
+    ``_cuda_path()`` checks the ``CUDA_ROOT`` env var FIRST and returns
+    immediately if set, short-circuiting before the buggy code path runs.
+    We locate the same package via ``importlib.util.find_spec`` (safe,
+    since it only reads ``submodule_search_locations``, never touches the
+    missing ``__file__``) and set ``CUDA_ROOT`` ourselves if not already
+    set by the user/launcher.
+    """
+    if os.environ.get("CUDA_ROOT"):
+        return
+    try:
+        spec = importlib.util.find_spec("nvidia.cuda_nvcc")
+    except Exception:
+        return
+    if spec is None or not spec.submodule_search_locations:
+        return
+    os.environ["CUDA_ROOT"] = next(iter(spec.submodule_search_locations))
 
 _BANNER = """
 ╔══════════════════════════════════════════════════════════════════════╗
@@ -41,13 +73,32 @@ _BANNER = """
 """
 
 
-def is_jax_available() -> bool:
-    """Return True if the jax package is importable and reports a usable device."""
+def _jax_probe():
+    """Return (available: bool, reason: str) — reason is empty on success.
+
+    Bare ``except Exception: return False`` hides exactly the information
+    needed to debug a failed activation (jax not installed vs. import
+    succeeding but the CUDA plugin failing to initialize vs. jax.devices()
+    returning no devices), so this is deliberately verbose.
+    """
+    _apply_cuda_nvcc_namespace_package_workaround()
     try:
         import jax
-        return len(jax.devices()) > 0
-    except Exception:
-        return False
+    except Exception as e:
+        return False, f"import jax failed: {e!r}"
+    try:
+        devices = jax.devices()
+    except Exception as e:
+        return False, f"jax.devices() raised: {e!r}"
+    if not devices:
+        return False, "jax.devices() returned no devices"
+    return True, ""
+
+
+def is_jax_available() -> bool:
+    """Return True if the jax package is importable and reports a usable device."""
+    available, _reason = _jax_probe()
+    return available
 
 
 def get_jax_backend() -> str:
@@ -78,11 +129,14 @@ def maybe_activate(sd_model, forge_objects) -> bool:
     if not getattr(sd_model, "is_sdxl", False):
         return False
 
-    if not is_jax_available():
-        log.info(
-            "[JAX Pipeline] --forge-jax-pipeline set but jax is not available. "
+    available, reason = _jax_probe()
+    if not available:
+        msg = (
+            f"[JAX Pipeline] --forge-jax-pipeline set but jax is not usable: {reason}. "
             "Install with: pip install -r requirements_jax.txt"
         )
+        log.warning(msg)
+        print(f"\n{msg}\n")
         return False
 
     try:
