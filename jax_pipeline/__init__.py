@@ -92,6 +92,32 @@ def _apply_vram_preallocation_default() -> None:
     os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
 
+def _apply_xla_conv_autotune_workaround() -> None:
+    """Relax XLA's GPU convolution-algorithm autotuner so it accepts a
+    fallback algorithm instead of failing outright.
+
+    Symptom without this: ``RESOURCE_EXHAUSTED: Out of memory while trying
+    to allocate N bytes`` the first time a convolution runs at a new
+    shape — even though the convolution itself would fit comfortably.
+    XLA's cuDNN autotuner benchmarks several candidate algorithms per
+    (shape, dtype) and needs its own scratch-memory allocation for each
+    candidate; on small-VRAM cards this scratch allocation can itself OOM.
+    This is more likely with XLA_PYTHON_CLIENT_PREALLOCATE=false (see
+    ``_apply_vram_preallocation_default`` above) since there's no large
+    reserved arena to draw the scratch allocation from — exactly the
+    tradeoff that setting buys back some of. XLA's own error message
+    recommends this exact flag.
+
+    Only appends the flag if it isn't already present in XLA_FLAGS,
+    preserving whatever else the user/launcher already set there.
+    """
+    flag = "--xla_gpu_strict_conv_algorithm_picker=false"
+    existing = os.environ.get("XLA_FLAGS", "")
+    if flag in existing:
+        return
+    os.environ["XLA_FLAGS"] = f"{existing} {flag}".strip()
+
+
 _BANNER = """
 ╔══════════════════════════════════════════════════════════════════════╗
 ║           JAX Pipeline Activated                                    ║
@@ -116,6 +142,7 @@ def _jax_probe():
     """
     _apply_cuda_nvcc_namespace_package_workaround()
     _apply_vram_preallocation_default()
+    _apply_xla_conv_autotune_workaround()
     try:
         import jax
     except Exception as e:

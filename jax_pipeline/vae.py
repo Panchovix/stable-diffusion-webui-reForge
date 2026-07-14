@@ -284,18 +284,52 @@ def should_tile_decode(device, latent_shape, elem_bytes: int = 4, threshold_frac
     return peak > free_bytes * threshold_frac
 
 
-def _jax_tile_decode_fn(decode_jit, params):
+def _jax_tile_decode_fn(decode_jit, params, tile_h: int, tile_w: int):
     """Return a decode_fn(tile: torch.Tensor) -> torch.Tensor for
     ldm_patched.modules.utils.tiled_scale to call once per tile.
+
+    Zero-pads every tile up to the FIXED (tile_h, tile_w) latent shape
+    before decoding, and crops the output back down afterward, so every
+    call within one tiled_scale pass reuses the SAME jax.jit-compiled
+    executable.
+
+    Without this, edge tiles (any latent whose H/W isn't an exact multiple
+    of the tile size — the common case) are narrower/shorter than the
+    requested tile size (``tiled_scale_multidim`` truncates via
+    ``.narrow()`` rather than padding), so each distinct edge shape
+    triggers its own fresh XLA compile + cuDNN algorithm autotune. That is
+    slow (autotuning benchmarks several candidate conv algorithms per new
+    shape) and, with ``XLA_PYTHON_CLIENT_PREALLOCATE=false`` (this
+    backend's default — see ``jax_pipeline.__init__``), can itself OOM:
+    autotuning needs its own scratch-memory allocation on top of the real
+    convolution, and there's no large reserved arena to draw it from.
+
+    Padding is safe here: convolutions already implicitly zero-pad at
+    tensor boundaries, so an explicitly zero-padded region beyond the real
+    tile behaves the same, near the real/pad boundary, as the tensor
+    simply ending there — the padded region itself is discarded by the
+    crop and never feeds into ``tiled_scale``'s blend.
     """
     import jax.numpy as jnp
+    import torch.nn.functional as F
 
     def decode_fn(tile: "torch.Tensor") -> "torch.Tensor":
+        _, _, th, tw = tile.shape
+        pad_h = max(0, tile_h - th)
+        pad_w = max(0, tile_w - tw)
+        if pad_h or pad_w:
+            tile = F.pad(tile, (0, pad_w, 0, pad_h))  # zero-pad right/bottom only
+
         z_np = tile.detach().float().cpu().numpy()
         z_jax = jnp.asarray(z_np, dtype=jnp.bfloat16)
         out = decode_jit(params, z_jax)
         out_np = np.asarray(jnp.asarray(out, dtype=jnp.float32))
-        return torch.from_numpy(out_np.copy()).float()
+        out_t = torch.from_numpy(out_np.copy()).float()
+
+        if pad_h or pad_w:
+            out_t = out_t[:, :, : th * 8, : tw * 8]  # crop back to the real tile's output size
+
+        return out_t
 
     return decode_fn
 
@@ -308,15 +342,20 @@ def jax_decode_tiled(
 
     Reuses ``ldm_patched.modules.utils.tiled_scale`` — the same proven
     slice/dispatch/feathered-blend engine ``VAE.decode_tiled_()`` uses —
-    instead of hand-rolling tiling/blending. Every tile shares one
-    jax.jit-compiled executable (fixed tile shape), so this is not
-    "recompile per tile."
+    instead of hand-rolling tiling/blending. Every tile within a given
+    pass is padded to that pass's fixed (tile_h, tile_w) shape (see
+    ``_jax_tile_decode_fn``), so each pass reuses exactly one
+    jax.jit-compiled executable rather than recompiling per distinct edge
+    shape.
 
     Replicates ``decode_tiled_()``'s 3-pass-average-over-aspect-ratios
     trick (this repo has no GroupNorm-sync "real" Tiled VAE, so blending
     result from 3 differently-shaped tile grids is the seam-reduction
     substitute already in use here — kept for consistency with the torch
-    tiled path's established output quality).
+    tiled path's established output quality). This still means 3 distinct
+    compiled shapes total (one per aspect ratio), not 1 — a further
+    speed/robustness trade would be dropping to a single pass, at a small
+    cost to seam quality.
 
     ``tile_x``/``tile_y`` default to ``model_management.VAE_DECODE_TILE_SIZE_X/Y``
     (the same globals the "Never OOM" UI script's sliders write to) so this
@@ -330,11 +369,14 @@ def jax_decode_tiled(
     if tile_y is None:
         tile_y = model_management.VAE_DECODE_TILE_SIZE_Y
 
-    decode_fn = _jax_tile_decode_fn(decode_jit, params)
+    def _pass(tx: int, ty: int) -> "torch.Tensor":
+        decode_fn = _jax_tile_decode_fn(decode_jit, params, tile_h=ty, tile_w=tx)
+        return ldm_utils.tiled_scale(z, decode_fn, tx, ty, overlap, upscale_amount=8, output_device=z.device)
+
     out = (
-        ldm_utils.tiled_scale(z, decode_fn, tile_x // 2, tile_y * 2, overlap, upscale_amount=8, output_device=z.device) +
-        ldm_utils.tiled_scale(z, decode_fn, tile_x * 2, tile_y // 2, overlap, upscale_amount=8, output_device=z.device) +
-        ldm_utils.tiled_scale(z, decode_fn, tile_x, tile_y, overlap, upscale_amount=8, output_device=z.device)
+        _pass(tile_x // 2, tile_y * 2) +
+        _pass(tile_x * 2, tile_y // 2) +
+        _pass(tile_x, tile_y)
     ) / 3.0
     return out
 
