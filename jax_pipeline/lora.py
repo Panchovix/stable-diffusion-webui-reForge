@@ -22,6 +22,10 @@ changed; zero per-step overhead afterward (JAXSDXLPipeline caches
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING, Optional, Tuple
+
+if TYPE_CHECKING:
+    import torch
 
 log = logging.getLogger(__name__)
 
@@ -42,3 +46,51 @@ def reload_jax_unet_weights(pipeline, unet_patcher) -> None:
     params = convert.load_weights_from_ldm(unet_patcher.model, report=False)
     pipeline._params = host_offload.place_params(params, pipeline._device, pipeline.host_offload)
     log.info("[JAX LoRA] JAX UNet weights reloaded (all LoRA / DoRA deltas merged).")
+
+
+# -- CLIP LoRA fingerprint ----------------------------------------------------
+
+def clip_weight_fingerprint(
+    transformer,
+    text_projection: Optional["torch.Tensor"] = None,
+) -> Tuple[float, ...]:
+    """Return a cheap fingerprint of CLIP transformer weights.
+
+    Samples a handful of representative values from the first and last
+    attention projection layers. The fingerprint changes when LoRA (or any
+    other external modification) alters the transformer weights. CLIP has
+    no patches_uuid-style signal exposed to jax_pipeline, so this sampled
+    fingerprint is the change-detection proxy instead (identical approach
+    to mlx_pipeline.lora.clip_weight_fingerprint).
+
+    Parameters
+    ----------
+    transformer       : HuggingFace CLIPTextModel whose weights to sample
+    text_projection    : optional raw nn.Parameter for CLIP-G pooled
+                         projection (``clip_g.text_projection``). Included
+                         in the fingerprint so CLIP-G text_projection LoRA
+                         is detected too.
+
+    Returns
+    -------
+    A short tuple of floats, or an empty tuple on error. An empty tuple is
+    treated as "always rebuild" by the caller - safe but potentially
+    wasteful.
+    """
+    try:
+        layers = transformer.text_model.encoder.layers
+        q0 = layers[0].self_attn.q_proj.weight
+        qN = layers[-1].self_attn.q_proj.weight
+        fp: Tuple[float, ...] = (
+            float(q0[0, 0].item()),
+            float(q0[-1, -1].item()),
+            float(qN[0, 0].item()),
+            float(qN[-1, -1].item()),
+        )
+        if text_projection is not None:
+            tp = text_projection
+            fp = fp + (float(tp[0, 0].item()), float(tp[-1, -1].item()))
+        return fp
+    except Exception as exc:
+        log.debug("[JAX LoRA] clip_weight_fingerprint error: %s", exc)
+        return ()

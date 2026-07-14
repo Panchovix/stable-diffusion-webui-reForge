@@ -1,12 +1,21 @@
 """
 jax_pipeline — JAX JIT SDXL UNet backend.
 
-Opt-in via --forge-jax-pipeline. Replaces only the UNet forward pass
-(apply_model) with a jax.jit-compiled implementation; CLIP, VAE, and the
-sampler loop remain on PyTorch. JAX's tracing model recompiles/caches
-automatically per input shape (no manual guard bookkeeping), and its
-Memories API (pinned_host sharding) can stream UNet weights from host RAM
-to device on demand to relieve VRAM pressure.
+Opt-in via --forge-jax-pipeline. Replaces the UNet forward pass
+(apply_model), CLIP-L/G text encoding, and VAE decode with jax.jit-compiled
+implementations; the sampler loop remains on PyTorch/k-diffusion. Routing
+CLIP+VAE through JAX too (not just the UNet) keeps everything in one XLA
+memory pool instead of two allocators competing for VRAM — PyTorch's
+allocator and JAX's default `XLA_PYTHON_CLIENT_PREALLOCATE` pool fighting
+over the same GPU was the original motivation for porting these. JAX's
+tracing model recompiles/caches automatically per input shape (no manual
+guard bookkeeping), and its Memories API (pinned_host sharding) can stream
+UNet weights from host RAM to device on demand to relieve VRAM pressure
+further.
+
+CLIP and VAE hooks are independent of UNet activation and of each other:
+if either fails to install, that component falls back to PyTorch while the
+others stay on JAX.
 
 Requirements
 ------------
@@ -60,6 +69,29 @@ def _apply_cuda_nvcc_namespace_package_workaround() -> None:
         return
     os.environ["CUDA_ROOT"] = next(iter(spec.submodule_search_locations))
 
+
+def _apply_vram_preallocation_default() -> None:
+    """Default JAX to on-demand GPU memory growth instead of its 75%
+    upfront preallocation.
+
+    Per JAX's own GPU memory docs, XLA preallocates 75% of total GPU memory
+    on first use and never gives it back for the life of the process —
+    fine when JAX owns the whole GPU, but this backend shares the card with
+    PyTorch (other webui components: ControlNet preprocessors, upscalers,
+    extensions, and — if CLIP/VAE hooks fail to install — the CLIP/VAE
+    fallback path itself). On small-VRAM cards (the exact audience for
+    --forge-jax-pipeline's host-offload feature) a permanent 75% land-grab
+    starves everything else.
+
+    Only sets the env var if the user/launcher hasn't already configured
+    JAX's allocator themselves (respects XLA_PYTHON_CLIENT_PREALLOCATE or
+    XLA_PYTHON_CLIENT_MEM_FRACTION if either is already present).
+    """
+    if "XLA_PYTHON_CLIENT_PREALLOCATE" in os.environ or "XLA_PYTHON_CLIENT_MEM_FRACTION" in os.environ:
+        return
+    os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+
+
 _BANNER = """
 ╔══════════════════════════════════════════════════════════════════════╗
 ║           JAX Pipeline Activated                                    ║
@@ -67,7 +99,8 @@ _BANNER = """
 ║  SDXL UNet   → JAX jax.jit compiled forward pass                    ║
 ║  Backend     → {backend:<54}║
 ║  Host offload→ {offload:<54}║
-║  CLIP / VAE  → unchanged (PyTorch)                                   ║
+║  CLIP        → {clip:<54}║
+║  VAE decode  → {vae:<54}║
 ║  Samplers    → unchanged (PyTorch / k-diffusion)                     ║
 ╚══════════════════════════════════════════════════════════════════════╝
 """
@@ -82,6 +115,7 @@ def _jax_probe():
     returning no devices), so this is deliberately verbose.
     """
     _apply_cuda_nvcc_namespace_package_workaround()
+    _apply_vram_preallocation_default()
     try:
         import jax
     except Exception as e:
@@ -171,11 +205,34 @@ def maybe_activate(sd_model, forge_objects) -> bool:
 
         sd_model.jax_pipeline = jax_pipe
 
+        # CLIP and VAE hooks are independent of the UNet wrapper above and of
+        # each other — a failure in either falls back to the standard
+        # PyTorch path for that component only, it does not undo UNet
+        # activation (same pattern as mlx_pipeline).
+        clip_active = False
+        try:
+            from jax_pipeline.clip import install_clip_hooks
+            clip_active = install_clip_hooks(sd_model, forge_objects)
+        except Exception as clip_exc:
+            log.warning("[JAX Pipeline] CLIP hook skipped: %s", clip_exc)
+
+        vae_active = False
+        try:
+            from jax_pipeline.vae import install_vae_hooks
+            vae_active = install_vae_hooks(sd_model)
+        except Exception as vae_exc:
+            log.warning("[JAX Pipeline] VAE hook skipped: %s", vae_exc)
+
         print(_BANNER.format(
             backend=get_jax_backend() or "unknown",
             offload="enabled" if jax_pipe.host_offload else "disabled",
+            clip="active (jax.jit)" if clip_active else "PyTorch (hook failed, see log)",
+            vae="active (jax.jit)" if vae_active else "PyTorch (hook failed, see log)",
         ))
-        log.info("[JAX Pipeline] SDXL UNet registered on backend=%s", get_jax_backend())
+        log.info(
+            "[JAX Pipeline] SDXL UNet registered on backend=%s clip_active=%s vae_active=%s",
+            get_jax_backend(), clip_active, vae_active,
+        )
         return True
 
     except Exception as exc:
