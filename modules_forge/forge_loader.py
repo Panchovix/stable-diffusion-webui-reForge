@@ -586,6 +586,31 @@ def load_model_for_a1111(timer, checkpoint_info=None, state_dict=None):
         except Exception:
             pass  # never let the warning itself crash startup
 
+    # ── JAX pipeline (opt-in via --forge-jax-pipeline) ──────────────────────────
+    # Off by default — unlike MLX (which targets otherwise-unsupported Apple
+    # Silicon hardware), JAX would compete with an already-working CUDA/ROCm
+    # PyTorch path, so it only activates when explicitly requested.
+    if getattr(cmd_opts, 'forge_jax_pipeline', False):
+        try:
+            import jax_pipeline as _jaxp
+            _jax_activated = _jaxp.maybe_activate(sd_model, forge_objects)
+            if not _jax_activated:
+                print(
+                    "\n"
+                    "[JAX Pipeline] --forge-jax-pipeline was set but activation did not "
+                    "succeed (see log above). Falling back to the standard PyTorch pipeline. "
+                    "Install jax with: pip install -r requirements_jax.txt\n"
+                )
+        except Exception as _jax_err:
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                "[JAX Pipeline] Skipped: %s", _jax_err
+            )
+            print(
+                f"\n[JAX Pipeline] --forge-jax-pipeline was set but activation raised "
+                f"({_jax_err}). Falling back to the standard PyTorch pipeline.\n"
+            )
+
     sd_model.sd_model_hash = sd_model_hash
     sd_model.sd_model_checkpoint = checkpoint_info.filename
     sd_model.sd_checkpoint_info = checkpoint_info

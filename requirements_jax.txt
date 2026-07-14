@@ -1,0 +1,13 @@
+# Optional dependency for --forge-jax-pipeline (see jax_pipeline/).
+# Not installed by default — only needed if you pass --forge-jax-pipeline.
+#
+# CPU only:
+#   pip install -r requirements_jax.txt
+#
+# NVIDIA CUDA 12:
+#   pip install "jax[cuda12]==0.4.35"
+#
+# AMD ROCm / Google TPU: see https://jax.readthedocs.io/en/latest/installation.html
+# for the correct wheel index for your platform.
+jax==0.4.35
+jaxlib==0.4.35

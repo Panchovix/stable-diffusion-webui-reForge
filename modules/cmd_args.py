@@ -213,6 +213,15 @@ parser.add_argument(
     default=False,
 )
 parser.add_argument(
+    "--forge-jax-pipeline",
+    action="store_true",
+    help="Enable experimental JAX-JIT UNet backend for SDXL models (opt-in; see jax_pipeline/). "
+         "The UNet forward pass is JIT-compiled via JAX, with weights optionally offloaded to "
+         "pinned host memory (JAX Memories API) to relieve VRAM pressure. CLIP, VAE, and the "
+         "sampler loop remain on PyTorch. Requires the `jax` package (see requirements_jax.txt).",
+    default=False,
+)
+parser.add_argument(
     "--allow-download",
     action="store_true",
     help="Allow huggingface_hub / diffusers / transformers to download files from the internet. "
