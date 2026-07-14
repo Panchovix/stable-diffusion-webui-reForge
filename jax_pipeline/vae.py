@@ -36,13 +36,36 @@ active. Falls back to torch for unusual decoder kwargs (3-D conv / video
 VAE) or on any runtime error. The encoder is intentionally left as torch —
 same rationale as mlx_pipeline: img2img encode runs once per generation and
 needs the reparameterization code path intact.
+
+Tiled decode
+------------
+Large images can exceed available VRAM even though the UNet sampling loop
+fit comfortably (VAE decode activations scale with *pixel*-space size, not
+latent size). Two things make this cheap to handle well:
+
+1. ``should_tile_decode()`` estimates peak decode memory the same way
+   ``diff_pipeline/adapter.py::_decode_needs_tiling`` already does for the
+   diffusers backend (peak activation ~= upsampled_H * upsampled_W *
+   max_channels * elem_bytes * 4, checked against a fraction of currently
+   free VRAM) and decides *before* attempting a decode, instead of
+   reactively catching a CUDA OOM from a doomed full-resolution attempt
+   and retrying (which is what happens by default: this hook's fallback on
+   any exception is the original torch ``decode()``, whose own OOM handler
+   in ``ldm_patched.modules.sd.VAE.decode()`` then retries tiled — that
+   still works, but wastes two full-resolution attempts first).
+2. When tiling is needed, ``jax_decode_tiled()`` reuses
+   ``ldm_patched.modules.utils.tiled_scale`` — the same slice/dispatch/
+   blend engine the torch path already uses — driven by a JAX-backed
+   per-tile decode function, so tiles get the same jax.jit-compiled path
+   as a full decode (and share one compiled executable across tiles, since
+   every tile has the same shape).
 """
 
 from __future__ import annotations
 
 import functools
 import logging
-from typing import TYPE_CHECKING, Dict
+from typing import TYPE_CHECKING, Dict, Tuple
 
 import numpy as np
 import torch
@@ -54,6 +77,10 @@ log = logging.getLogger(__name__)
 
 _NORM_GROUPS = 32
 _NORM_EPS = 1e-6  # VAE GroupNorm eps differs from UNet's 1e-5
+
+# SDXL KL-F8 ddconfig: ch=128, ch_mult=[1,2,4,4] -> per-level channel counts.
+# Matches diff_pipeline/adapter.py's fallback default for the same formula.
+_BLOCK_OUT_CHANNELS: Tuple[int, ...] = (128, 256, 512, 512)
 
 
 # -- conversion ----------------------------------------------------------------
@@ -217,6 +244,101 @@ def make_decode_jit(num_up: int, num_res: int):
     return jax.jit(fn)
 
 
+# -- VRAM estimation / tiled decode ---------------------------------------------
+
+def estimate_decode_peak_bytes(
+    latent_shape,
+    elem_bytes: int,
+    block_out_channels: Tuple[int, ...] = _BLOCK_OUT_CHANNELS,
+) -> int:
+    """Rough peak-activation estimate for a full-resolution VAE decode.
+
+    Same formula as ``diff_pipeline/adapter.py::DiffusersModelAdapter.
+    _decode_needs_tiling`` (this repo's other backend already validated
+    this heuristic in production): the largest intermediate tensor in the
+    decoder is roughly the final upsampled spatial size at the widest
+    channel count, times 4 (accounts for input + output of the block's
+    largest conv/resnet intermediate).
+    """
+    _, _, lh, lw = latent_shape
+    n_up = len(block_out_channels)
+    scale = 2 ** (n_up - 1)  # each up level doubles spatial resolution
+    peak_h = lh * scale
+    peak_w = lw * scale
+    peak_ch = max(block_out_channels)
+    return peak_h * peak_w * peak_ch * elem_bytes * 4
+
+
+def should_tile_decode(device, latent_shape, elem_bytes: int = 4, threshold_frac: float = 0.8) -> bool:
+    """Decide, before attempting a decode, whether it should go straight to
+    tiled decoding rather than risk (and waste time on) a doomed
+    full-resolution attempt.
+    """
+    try:
+        from ldm_patched.modules import model_management
+        free_bytes = model_management.get_free_memory(device)
+    except Exception:
+        return False
+
+    peak = estimate_decode_peak_bytes(latent_shape, elem_bytes)
+    return peak > free_bytes * threshold_frac
+
+
+def _jax_tile_decode_fn(decode_jit, params):
+    """Return a decode_fn(tile: torch.Tensor) -> torch.Tensor for
+    ldm_patched.modules.utils.tiled_scale to call once per tile.
+    """
+    import jax.numpy as jnp
+
+    def decode_fn(tile: "torch.Tensor") -> "torch.Tensor":
+        z_np = tile.detach().float().cpu().numpy()
+        z_jax = jnp.asarray(z_np, dtype=jnp.bfloat16)
+        out = decode_jit(params, z_jax)
+        out_np = np.asarray(jnp.asarray(out, dtype=jnp.float32))
+        return torch.from_numpy(out_np.copy()).float()
+
+    return decode_fn
+
+
+def jax_decode_tiled(
+    decode_jit, params, z: "torch.Tensor",
+    tile_x: int = None, tile_y: int = None, overlap: int = 16,
+) -> "torch.Tensor":
+    """Tiled VAE decode driven entirely by JAX per tile.
+
+    Reuses ``ldm_patched.modules.utils.tiled_scale`` — the same proven
+    slice/dispatch/feathered-blend engine ``VAE.decode_tiled_()`` uses —
+    instead of hand-rolling tiling/blending. Every tile shares one
+    jax.jit-compiled executable (fixed tile shape), so this is not
+    "recompile per tile."
+
+    Replicates ``decode_tiled_()``'s 3-pass-average-over-aspect-ratios
+    trick (this repo has no GroupNorm-sync "real" Tiled VAE, so blending
+    result from 3 differently-shaped tile grids is the seam-reduction
+    substitute already in use here — kept for consistency with the torch
+    tiled path's established output quality).
+
+    ``tile_x``/``tile_y`` default to ``model_management.VAE_DECODE_TILE_SIZE_X/Y``
+    (the same globals the "Never OOM" UI script's sliders write to) so this
+    respects whatever the user has already configured there.
+    """
+    from ldm_patched.modules import model_management
+    from ldm_patched.modules import utils as ldm_utils
+
+    if tile_x is None:
+        tile_x = model_management.VAE_DECODE_TILE_SIZE_X
+    if tile_y is None:
+        tile_y = model_management.VAE_DECODE_TILE_SIZE_Y
+
+    decode_fn = _jax_tile_decode_fn(decode_jit, params)
+    out = (
+        ldm_utils.tiled_scale(z, decode_fn, tile_x // 2, tile_y * 2, overlap, upscale_amount=8, output_device=z.device) +
+        ldm_utils.tiled_scale(z, decode_fn, tile_x * 2, tile_y // 2, overlap, upscale_amount=8, output_device=z.device) +
+        ldm_utils.tiled_scale(z, decode_fn, tile_x, tile_y, overlap, upscale_amount=8, output_device=z.device)
+    ) / 3.0
+    return out
+
+
 # -- integration hook ------------------------------------------------------------
 
 def install_vae_hooks(sd_model) -> bool:
@@ -251,6 +373,14 @@ def install_vae_hooks(sd_model) -> bool:
             if kwargs:
                 return _orig_decode(z, **kwargs)
             try:
+                if should_tile_decode(z.device, tuple(z.shape), elem_bytes=z.element_size()):
+                    log.info(
+                        "[JAX VAE] Latent %s estimated to exceed available VRAM - "
+                        "decoding tiled via JAX directly (skipping a doomed full-res attempt)",
+                        list(z.shape),
+                    )
+                    return jax_decode_tiled(decode_jit, params, z).to(z.device)
+
                 z_np = z.detach().float().cpu().numpy()
                 z_jax = jnp.asarray(z_np, dtype=jnp.bfloat16)
                 out = decode_jit(params, z_jax)
