@@ -408,6 +408,7 @@ def _install_jax_sampler_hook() -> None:
                     denoiser = JAXCFGDenoiser(
                         jax_pipe._forward, jax_pipe._params,
                         jax_pipe.model_sampling, extra_args or {}, latent_shape,
+                        phase_manager=phase_manager,
                     )
                     wrapped_fn = make_jax_func(jax_fn, denoiser)
                     # Cache on the wrapper so it is not rebuilt on re-entry

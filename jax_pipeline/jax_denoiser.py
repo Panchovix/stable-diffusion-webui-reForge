@@ -48,6 +48,19 @@ enabling that setting gets identical batching behavior here. If neither
 is enabled, this warns once and ``JAXCFGDenoiser`` falls back to two
 separate (still fully JAX-accelerated) forward calls per step instead of
 one batched call — see ``JAXCFGDenoiser.__call__``.
+
+batch=2B vs two batch=B calls on VRAM-constrained cards
+----------------------------------------------------------
+Independent of the above: when the shared ``PhaseManager`` reports
+``.enabled`` (a <20GB-VRAM card — the same signal that gates UNet/CLIP/VAE
+phase-cycling), ``JAXCFGDenoiser`` always runs cond/uncond as two
+sequential batch=B forward calls, never one batch=2B call, even when their
+sequence lengths already match. A single 2B-batch UNet forward roughly
+doubles peak activation/workspace memory versus two B-batch calls (params
+are shared either way — this is about activations, not weights), which is
+enough to OOM on small cards even though the circuit breaker
+(``host_offload.handle_jax_oom``) recovers cleanly from it. See
+``JAXCFGDenoiser.__init__``'s ``vram_constrained`` check.
 """
 
 from __future__ import annotations
@@ -312,6 +325,12 @@ class JAXCFGDenoiser:
     extra_args     : k-diffusion sampler extra_args dict
                       (keys: ``cond``, ``uncond``, ``cond_scale``, ...)
     latent_shape   : ``(B, 4, H, W)`` of the initial noisy latent
+    phase_manager  : optional ``host_offload.PhaseManager`` — when its
+                      ``.enabled`` is True (VRAM-constrained card, <20GB),
+                      cond/uncond are ALWAYS run as two sequential batch=B
+                      forward calls instead of one batch=2B call, even when
+                      their sequence lengths already match. See the
+                      "batch=2B vs two batch=B calls" note below.
     """
 
     def __init__(
@@ -321,6 +340,7 @@ class JAXCFGDenoiser:
         model_sampling: Any,
         extra_args: Dict,
         latent_shape: Tuple[int, ...],
+        phase_manager: Any = None,
     ) -> None:
         import jax.numpy as jnp
 
@@ -344,7 +364,20 @@ class JAXCFGDenoiser:
         # (setting disabled), keep them separate and run two forward calls
         # per step instead — see __call__.
         enc_c, enc_u = _reconcile_cond_uncond_seq_len(enc_c, enc_u)
-        self._batched = (enc_c.shape[1] == enc_u.shape[1])
+
+        # batch=2B vs two batch=B calls: params are identical either way
+        # (shared, not duplicated), but a single 2B-batch UNet forward
+        # roughly doubles peak *activation*/workspace memory versus two
+        # sequential B-batch calls — SDXL's cross-attention maps and conv
+        # intermediates scale with batch size. On a VRAM-constrained card
+        # (phase_manager.enabled — the same <20GB signal used to decide
+        # whether to phase-cycle UNet/CLIP/VAE at all) that extra headroom
+        # is worth more than the one-time extra jax.jit compile and the
+        # small per-step dispatch overhead of a second forward call, so
+        # always take the unbatched path there regardless of whether
+        # lengths already matched.
+        vram_constrained = phase_manager is not None and getattr(phase_manager, "enabled", False)
+        self._batched = (enc_c.shape[1] == enc_u.shape[1]) and not vram_constrained
 
         if self._batched:
             # Build batched conditioning: cond first, uncond second -> [2B, ...]
