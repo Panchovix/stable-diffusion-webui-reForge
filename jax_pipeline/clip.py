@@ -279,14 +279,20 @@ def build_clip_text_encoder(
 
 # -- hook helpers ----------------------------------------------------------------
 
-def _make_clip_l_hook(jax_enc: "JAXCLIPTextEncoder", orig_fn, clip_l_model=None):
-    """Return a drop-in replacement for CLIP_SD_XL_L.encode_with_transformers."""
+def _make_clip_l_hook(clip_state: dict, orig_fn, clip_l_model=None, phase_manager=None):
+    """Return a drop-in replacement for CLIP_SD_XL_L.encode_with_transformers.
+
+    ``clip_state`` is the SHARED mutable dict created once in
+    ``install_clip_hooks`` (holds both "l" and "g" encoders) — using it
+    instead of a private closure-local dict means a LoRA-triggered rebuild
+    here (which replaces ``clip_state["l"]`` with a brand new
+    ``JAXCLIPTextEncoder`` instance) stays visible to the phase manager's
+    registered ``get_params``/``set_params`` for the "clip" component,
+    which read/write through this same dict.
+    """
     from jax_pipeline.lora import clip_weight_fingerprint
 
-    _state = {
-        "enc": jax_enc,
-        "fp": clip_weight_fingerprint(clip_l_model.transformer) if clip_l_model is not None else (),
-    }
+    clip_state["l_fp"] = clip_weight_fingerprint(clip_l_model.transformer) if clip_l_model is not None else ()
 
     def _hook(tokens: torch.Tensor) -> torch.Tensor:
         if tokens.max().item() >= _CLIP_VOCAB_SIZE:
@@ -295,37 +301,39 @@ def _make_clip_l_hook(jax_enc: "JAXCLIPTextEncoder", orig_fn, clip_l_model=None)
 
         if clip_l_model is not None:
             current_fp = clip_weight_fingerprint(clip_l_model.transformer)
-            if current_fp != _state["fp"]:
+            if current_fp != clip_state["l_fp"]:
                 log.info("[JAX CLIP-L] Weight change detected (LoRA?), rebuilding...")
                 try:
-                    _state["enc"] = build_clip_text_encoder(
+                    clip_state["l"] = build_clip_text_encoder(
                         clip_l_model.transformer,
                         layer_idx=clip_l_model.layer_idx if clip_l_model.layer_idx is not None else -2,
                         has_text_projection=False,
                         activation=_quick_gelu,
                     )
-                    _state["fp"] = current_fp
+                    clip_state["l_fp"] = current_fp
                 except Exception as rb_exc:
                     log.warning("[JAX CLIP-L] Rebuild failed (%s), using torch fallback", rb_exc)
                     return orig_fn(tokens)
 
-        z, _ = _state["enc"].encode(tokens)
+        if phase_manager is not None:
+            phase_manager.activate("clip")
+
+        z, _ = clip_state["l"].encode(tokens)
         return z.to(tokens.device)
 
     return _hook
 
 
-def _make_clip_g_hook(jax_enc: "JAXCLIPTextEncoder", orig_fn, clip_g_model=None):
-    """Return a drop-in replacement for CLIP_SD_XL_G.encode_with_transformers."""
+def _make_clip_g_hook(clip_state: dict, orig_fn, clip_g_model=None, phase_manager=None):
+    """Return a drop-in replacement for CLIP_SD_XL_G.encode_with_transformers.
+
+    See ``_make_clip_l_hook`` for why ``clip_state`` is a shared dict.
+    """
     from jax_pipeline.lora import clip_weight_fingerprint
 
     tp_param = getattr(clip_g_model, "text_projection", None) if clip_g_model is not None else None
     tp_data = tp_param.data if tp_param is not None else None
-
-    _state = {
-        "enc": jax_enc,
-        "fp": clip_weight_fingerprint(clip_g_model.transformer, tp_data) if clip_g_model is not None else (),
-    }
+    clip_state["g_fp"] = clip_weight_fingerprint(clip_g_model.transformer, tp_data) if clip_g_model is not None else ()
 
     def _hook(tokens: torch.Tensor) -> torch.Tensor:
         if tokens.max().item() >= _CLIP_VOCAB_SIZE:
@@ -336,22 +344,25 @@ def _make_clip_g_hook(jax_enc: "JAXCLIPTextEncoder", orig_fn, clip_g_model=None)
             _tp_param = getattr(clip_g_model, "text_projection", None)
             _tp_data = _tp_param.data if _tp_param is not None else None
             current_fp = clip_weight_fingerprint(clip_g_model.transformer, _tp_data)
-            if current_fp != _state["fp"]:
+            if current_fp != clip_state["g_fp"]:
                 log.info("[JAX CLIP-G] Weight change detected (LoRA?), rebuilding...")
                 try:
-                    _state["enc"] = build_clip_text_encoder(
+                    clip_state["g"] = build_clip_text_encoder(
                         clip_g_model.transformer,
                         layer_idx=clip_g_model.layer_idx if clip_g_model.layer_idx is not None else -2,
                         has_text_projection=_tp_data is not None,
                         activation=_gelu,
                         text_projection_param=_tp_data,
                     )
-                    _state["fp"] = current_fp
+                    clip_state["g_fp"] = current_fp
                 except Exception as rb_exc:
                     log.warning("[JAX CLIP-G] Rebuild failed (%s), using torch fallback", rb_exc)
                     return orig_fn(tokens)
 
-        z, pooled = _state["enc"].encode(tokens)
+        if phase_manager is not None:
+            phase_manager.activate("clip")
+
+        z, pooled = clip_state["g"].encode(tokens)
         z = z.to(tokens.device)
         if pooled is not None:
             z.pooled = pooled.to(tokens.device)
@@ -360,13 +371,19 @@ def _make_clip_g_hook(jax_enc: "JAXCLIPTextEncoder", orig_fn, clip_g_model=None)
     return _hook
 
 
-def install_clip_hooks(sd_model, forge_objects) -> bool:
+def install_clip_hooks(sd_model, forge_objects, phase_manager=None) -> bool:
     """Install JAX hooks on the CLIP-L and CLIP-G encode_with_transformers methods.
 
     Parameters
     ----------
     sd_model      : SDXL sd_model
     forge_objects : ForgeObjects (has .clip with .cond_stage_model)
+    phase_manager : optional jax_pipeline.host_offload.PhaseManager shared
+                    with the UNet/VAE hooks — when its ``enabled`` is True,
+                    CLIP-L+G params are treated as ONE combined "clip"
+                    component that gets moved to device together right
+                    before encoding and offloaded to pinned host memory
+                    whenever a different phase (unet/vae) activates.
 
     Returns
     -------
@@ -394,6 +411,21 @@ def install_clip_hooks(sd_model, forge_objects) -> bool:
             text_projection_param=tp_data,
         )
 
+        # Shared mutable holder for both encoders — see _make_clip_l_hook's
+        # docstring for why this (rather than two private per-hook dicts)
+        # is what the phase manager registers against.
+        clip_state = {"l": jax_clip_l, "g": jax_clip_g}
+
+        if phase_manager is not None:
+            def _get_clip_params():
+                return {"l": clip_state["l"].params, "g": clip_state["g"].params}
+
+            def _set_clip_params(new):
+                clip_state["l"].params = new["l"]
+                clip_state["g"].params = new["g"]
+
+            phase_manager.register("clip", get_params=_get_clip_params, set_params=_set_clip_params)
+
         from modules_forge import forge_clip as fc
         conditioner = getattr(sd_model, "conditioner", None) or getattr(sd_model.cond_stage_model, "conditioner", None)
         if conditioner is None and hasattr(sd_model, "cond_stage_model"):
@@ -406,14 +438,14 @@ def install_clip_hooks(sd_model, forge_objects) -> bool:
             if isinstance(obj, fc.CLIP_SD_XL_L):
                 orig = obj.encode_with_transformers.__func__ if hasattr(obj.encode_with_transformers, "__func__") else obj.encode_with_transformers
                 obj.encode_with_transformers = _make_clip_l_hook(
-                    jax_clip_l, lambda t: orig(obj, t), clip_l_model=clip_l,
+                    clip_state, lambda t: orig(obj, t), clip_l_model=clip_l, phase_manager=phase_manager,
                 )
                 n_patched += 1
                 log.debug("[JAX CLIP] Patched CLIP_SD_XL_L instance (LoRA-aware)")
             elif isinstance(obj, fc.CLIP_SD_XL_G):
                 orig = obj.encode_with_transformers.__func__ if hasattr(obj.encode_with_transformers, "__func__") else obj.encode_with_transformers
                 obj.encode_with_transformers = _make_clip_g_hook(
-                    jax_clip_g, lambda t: orig(obj, t), clip_g_model=clip_g,
+                    clip_state, lambda t: orig(obj, t), clip_g_model=clip_g, phase_manager=phase_manager,
                 )
                 n_patched += 1
                 log.debug("[JAX CLIP] Patched CLIP_SD_XL_G instance (LoRA-aware)")
@@ -428,8 +460,7 @@ def install_clip_hooks(sd_model, forge_objects) -> bool:
             log.info(
                 "[JAX CLIP] Hooked %d CLIP encoder(s) - jax.jit text encoding active", n_patched,
             )
-            sd_model._jax_clip_l = jax_clip_l
-            sd_model._jax_clip_g = jax_clip_g
+            sd_model._jax_clip_state = clip_state
             return True
         else:
             log.debug("[JAX CLIP] No forge_clip CLIP_SD_XL_L/G instances found to patch")

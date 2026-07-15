@@ -85,9 +85,10 @@ class JAXSDXLPipeline:
     sampling step by the forge wrapper registered in ``jax_pipeline.__init__``.
     """
 
-    def __init__(self, unet_patcher: "UnetPatcher", sd_model: Any):
+    def __init__(self, unet_patcher: "UnetPatcher", sd_model: Any, phase_manager=None):
         self.unet_patcher = unet_patcher
         self.sd_model = sd_model
+        self._phase_manager = phase_manager
 
         # Sigma preconditioning from the loaded model's model_sampling object
         # (same object DiffPipeline and MLXSDXLPipeline use).
@@ -99,9 +100,26 @@ class JAXSDXLPipeline:
         self._device = host_offload.get_default_device()
         params = convert.load_weights_from_ldm(unet_patcher.model, report=True)
 
-        self.host_offload: bool = host_offload.should_offload(unet_patcher, params)
-        self._params = host_offload.place_params(params, self._device, self.host_offload)
-        self._forward = host_offload.make_forward(self._device, self.host_offload)
+        if phase_manager is not None and phase_manager.enabled:
+            # PhaseManager owns device<->host placement (moving UNet on
+            # device once per sampling phase, not re-streaming from host on
+            # every single forward call the way make_forward's static
+            # host_offload path does) — so params start plain
+            # device-resident here (matching how they're freshly converted)
+            # and a bare jit is enough; register() immediately offloads them
+            # to pinned host until UNet's phase is actually activated.
+            self.host_offload = False
+            self._params = params
+            self._forward = host_offload.make_forward(self._device, offload=False)
+            phase_manager.register(
+                "unet",
+                get_params=lambda: self._params,
+                set_params=lambda p: setattr(self, "_params", p),
+            )
+        else:
+            self.host_offload: bool = host_offload.should_offload(unet_patcher, params)
+            self._params = host_offload.place_params(params, self._device, self.host_offload)
+            self._forward = host_offload.make_forward(self._device, self.host_offload)
 
         # LoRA / DoRA tracking: the ldm_patched patches_uuid (a UUID4
         # regenerated on every LoRA add/remove/strength change) that was in
@@ -110,8 +128,9 @@ class JAXSDXLPipeline:
         self._lora_sig: str = str(unet_patcher.patches_uuid)
 
         log.info(
-            "[JAX Pipeline] Ready — backend=%s host_offload=%s",
+            "[JAX Pipeline] Ready — backend=%s host_offload=%s phase_managed=%s",
             self._device.platform, self.host_offload,
+            phase_manager.enabled if phase_manager is not None else False,
         )
 
     # -- forward pass ---------------------------------------------------------
@@ -158,6 +177,14 @@ class JAXSDXLPipeline:
                 self._lora_sig = cur_uuid
         except Exception as lora_exc:
             log.warning("[JAX LoRA] LoRA reload skipped: %s", lora_exc)
+
+        # -- 0.5. Phase activation ----------------------------------------------
+        # No-op if the phase manager is disabled (large-VRAM card) or UNet is
+        # already the active phase (e.g. every step after the first in this
+        # sampling loop) — only pays a host<->device transfer once per phase
+        # transition, not once per call.
+        if self._phase_manager is not None:
+            self._phase_manager.activate("unet")
 
         import jax.numpy as jnp
 

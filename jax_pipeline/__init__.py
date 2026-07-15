@@ -267,10 +267,20 @@ def maybe_activate(sd_model, forge_objects) -> bool:
         return False
 
     try:
+        from jax_pipeline import host_offload
         from jax_pipeline.pipeline import JAXSDXLPipeline
         from ldm_patched.modules.patcher_extension import WrappersMP
 
-        jax_pipe = JAXSDXLPipeline(forge_objects.unet, sd_model)
+        # One PhaseManager per model load, shared by UNet/CLIP/VAE below —
+        # on VRAM-constrained cards (<20GB total) it keeps only whichever
+        # component is actively in use resident on device, offloading the
+        # others to pinned host memory, instead of all three (UNet+CLIP-L+
+        # CLIP-G+VAE) sitting on device simultaneously for the entire
+        # session. No-ops on generously-sized cards.
+        phase_manager = host_offload.PhaseManager(host_offload.get_default_device())
+        sd_model._jax_phase_manager = phase_manager  # keep alive
+
+        jax_pipe = JAXSDXLPipeline(forge_objects.unet, sd_model, phase_manager=phase_manager)
 
         def _jax_apply_model_wrapper(
             executor, x, t,
@@ -305,26 +315,30 @@ def maybe_activate(sd_model, forge_objects) -> bool:
         clip_active = False
         try:
             from jax_pipeline.clip import install_clip_hooks
-            clip_active = install_clip_hooks(sd_model, forge_objects)
+            clip_active = install_clip_hooks(sd_model, forge_objects, phase_manager=phase_manager)
         except Exception as clip_exc:
             log.warning("[JAX Pipeline] CLIP hook skipped: %s", clip_exc)
 
         vae_active = False
         try:
             from jax_pipeline.vae import install_vae_hooks
-            vae_active = install_vae_hooks(sd_model)
+            vae_active = install_vae_hooks(sd_model, phase_manager=phase_manager)
         except Exception as vae_exc:
             log.warning("[JAX Pipeline] VAE hook skipped: %s", vae_exc)
 
+        offload_desc = "enabled" if jax_pipe.host_offload else "disabled"
+        if phase_manager.enabled:
+            offload_desc = "phase-managed (<20GB VRAM, cycles per phase)"
+
         print(_BANNER.format(
             backend=get_jax_backend() or "unknown",
-            offload="enabled" if jax_pipe.host_offload else "disabled",
+            offload=offload_desc,
             clip="active (jax.jit)" if clip_active else "PyTorch (hook failed, see log)",
             vae="active (jax.jit)" if vae_active else "PyTorch (hook failed, see log)",
         ))
         log.info(
-            "[JAX Pipeline] SDXL UNet registered on backend=%s clip_active=%s vae_active=%s",
-            get_jax_backend(), clip_active, vae_active,
+            "[JAX Pipeline] SDXL UNet registered on backend=%s clip_active=%s vae_active=%s phase_managed=%s",
+            get_jax_backend(), clip_active, vae_active, phase_manager.enabled,
         )
         return True
 

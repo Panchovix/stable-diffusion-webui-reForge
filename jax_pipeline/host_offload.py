@@ -80,6 +80,11 @@ def make_forward(device, offload: bool):
     so XLA schedules the host->device transfer as part of the compiled
     program — the same pattern JAX's host-offloading docs use for parameter
     offloading. When False, this is just ``jax.jit(unet_forward)``.
+
+    Used only when ``PhaseManager`` is disabled (large-VRAM cards). When
+    enabled, ``PhaseManager`` moves params to device once per phase
+    transition instead of re-streaming from host on every single call —
+    see ``PhaseManager`` below.
     """
     import jax
     from jax_pipeline.unet import unet_forward
@@ -94,3 +99,104 @@ def make_forward(device, offload: bool):
         return unet_forward(device_params, sample, timestep, encoder_hidden_states, added_cond_kwargs)
 
     return jax.jit(_offloaded_forward)
+
+
+# -- phase-based component offload --------------------------------------------
+
+class PhaseManager:
+    """Coordinates which JAX-resident component (unet / clip / vae) lives on
+    GPU device memory at any given moment, offloading every other
+    registered component to pinned host memory when a different phase
+    becomes active.
+
+    Why this exists: UNet + CLIP-L + CLIP-G + VAE simultaneously resident on
+    device can exceed VRAM even when each is individually placed sensibly
+    (``should_offload``'s footprint-vs-free-VRAM check is per-component, not
+    aware of what ELSE is currently resident). A normal generation only
+    ever needs ONE of these three phases active at a time — CLIP encodes
+    the prompt, then UNet samples for many steps, then VAE decodes once —
+    so cycling components between device and pinned host memory at phase
+    boundaries (not per-call — ``activate()`` is a no-op if the same phase
+    is already active, so a 20-50 step sampling loop pays the UNet
+    host->device transfer exactly once) trades a bounded, small number of
+    PCIe transfers per generation for materially lower peak VRAM.
+
+    Only engages when total device VRAM is below LARGE_VRAM_THRESHOLD_BYTES
+    — on generously-sized cards there's no benefit to paying that transfer
+    cost, so ``enabled`` is False and every method becomes a no-op,
+    preserving today's "everything stays resident" behavior.
+    """
+
+    LARGE_VRAM_THRESHOLD_BYTES = 20 * 1024 ** 3  # 20GB
+
+    def __init__(self, device):
+        self.device = device
+        self.enabled = self._detect_should_manage()
+        self._components: Dict[str, dict] = {}
+        self._active: str | None = None
+
+    def _detect_should_manage(self) -> bool:
+        try:
+            from ldm_patched.modules import model_management
+            total = model_management.get_total_memory(self.device)
+        except Exception as e:
+            log.warning(
+                "[JAX Pipeline] Could not query total VRAM (%s); enabling "
+                "phase-based component offload defensively.", e,
+            )
+            return True
+        managed = total < self.LARGE_VRAM_THRESHOLD_BYTES
+        log.info(
+            "[JAX Pipeline] Total VRAM=%.2fGB -> phase-based component offload %s",
+            total / 1e9, "enabled" if managed else "disabled (large-VRAM card)",
+        )
+        return managed
+
+    def register(self, name: str, get_params, set_params) -> None:
+        """Register a component.
+
+        ``get_params()`` returns its current params pytree; ``set_params(p)``
+        replaces it (params are new array objects after every device<->host
+        move, since ``jax.device_put`` doesn't mutate in place).
+
+        Newly registered components are immediately offloaded to pinned
+        host memory (when enabled) rather than left on-device until the
+        next ``activate()`` call — components are constructed with normal
+        device-resident arrays (matching how each currently loads itself),
+        and without this, installing all three components in sequence at
+        model-load time would leave all three simultaneously resident on
+        device for the entire loading window, before a single generation
+        has even started — exactly the peak-VRAM scenario this exists to
+        avoid. The first real ``activate()`` call brings whichever phase
+        runs first back on device.
+        """
+        self._components[name] = {"get": get_params, "set": set_params, "on_device": True}
+        if self.enabled:
+            self._move(name, "pinned_host")
+
+    def activate(self, name: str) -> None:
+        """Ensure ``name`` is device-resident; offload every other
+        registered, currently-on-device component to pinned host memory
+        first. No-op if disabled, ``name`` isn't registered, or ``name`` is
+        already the active phase.
+        """
+        if not self.enabled or name not in self._components:
+            return
+        if self._active == name:
+            return
+        for other, info in self._components.items():
+            if other != name and info["on_device"]:
+                self._move(other, "pinned_host")
+        self._move(name, "device")
+        self._active = name
+
+    def _move(self, name: str, memory_kind: str) -> None:
+        import jax
+
+        info = self._components[name]
+        params = info["get"]()
+        sharding = jax.sharding.SingleDeviceSharding(self.device, memory_kind=memory_kind)
+        new_params = jax.tree.map(lambda p: jax.device_put(p, sharding), params)
+        info["set"](new_params)
+        info["on_device"] = (memory_kind == "device")
+        log.debug("[JAX Pipeline] Moved '%s' params to %s", name, memory_kind)

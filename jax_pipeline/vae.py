@@ -383,7 +383,7 @@ def jax_decode_tiled(
 
 # -- integration hook ------------------------------------------------------------
 
-def install_vae_hooks(sd_model) -> bool:
+def install_vae_hooks(sd_model, phase_manager=None) -> bool:
     """Monkey-patch ``first_stage_model.decode()`` to use the JAX decoder.
 
     Only patches the standard KL-F8 path (no 3-D conv / video VAE). Falls
@@ -392,6 +392,11 @@ def install_vae_hooks(sd_model) -> bool:
     The encoder is intentionally left as torch: img2img encode happens once
     per generation, and reparameterization requires keeping the
     regularization code path intact (same rationale as mlx_pipeline).
+
+    ``phase_manager``: optional jax_pipeline.host_offload.PhaseManager
+    shared with the UNet/CLIP hooks — when enabled, VAE params are moved
+    to device right before decoding and offloaded to pinned host memory
+    whenever a different phase (unet/clip) activates.
     """
     try:
         import jax.numpy as jnp
@@ -406,11 +411,16 @@ def install_vae_hooks(sd_model) -> bool:
             return False
 
         num_up, num_res = _detect_decoder_arch(sd_state)
-        params = load_vae_params(fst)
         decode_jit = make_decode_jit(num_up, num_res)
 
         _orig_decode = fst.decode
 
+        # _state["params"] (not a bare local `params`) so the phase
+        # manager's registered get_params/set_params can read/replace the
+        # live pytree — device<->host moves produce new array objects, so
+        # whatever holds the "current" reference has to be mutable and
+        # shared with whoever else touches it.
+        #
         # Circuit breaker: a JAX VAE decode failure (of any kind) has been
         # observed to leave GPU memory in a bad state rather than cleanly
         # release it — a RESOURCE_EXHAUSTED error from decode_jit() has
@@ -422,23 +432,33 @@ def install_vae_hooks(sd_model) -> bool:
         # path (including its own battle-tested OOM -> tiled fallback) from
         # then on, rather than repeatedly re-triggering a path that gets
         # the GPU into a worse state each time it fails.
-        _state = {"disabled": False}
+        _state = {"disabled": False, "params": load_vae_params(fst)}
+
+        if phase_manager is not None:
+            phase_manager.register(
+                "vae",
+                get_params=lambda: _state["params"],
+                set_params=lambda p: _state.__setitem__("params", p),
+            )
 
         def _jax_decode(z: torch.Tensor, **kwargs) -> torch.Tensor:
             if kwargs or _state["disabled"]:
                 return _orig_decode(z, **kwargs)
             try:
+                if phase_manager is not None:
+                    phase_manager.activate("vae")
+
                 if should_tile_decode(z.device, tuple(z.shape), elem_bytes=z.element_size()):
                     log.info(
                         "[JAX VAE] Latent %s estimated to exceed available VRAM - "
                         "decoding tiled via JAX directly (skipping a doomed full-res attempt)",
                         list(z.shape),
                     )
-                    return jax_decode_tiled(decode_jit, params, z).to(z.device)
+                    return jax_decode_tiled(decode_jit, _state["params"], z).to(z.device)
 
                 z_np = z.detach().float().cpu().numpy()
                 z_jax = jnp.asarray(z_np, dtype=jnp.bfloat16)
-                out = decode_jit(params, z_jax)
+                out = decode_jit(_state["params"], z_jax)
                 out_np = np.asarray(jnp.asarray(out, dtype=jnp.float32))
                 return torch.from_numpy(out_np.copy()).float().to(z.device)
             except Exception as e:
@@ -455,7 +475,7 @@ def install_vae_hooks(sd_model) -> bool:
         fst.decode = _jax_decode
 
         # Keep references alive (prevents GC)
-        sd_model._jax_vae_params = params
+        sd_model._jax_vae_state = _state
         sd_model._jax_vae_decode_jit = decode_jit
 
         log.info(

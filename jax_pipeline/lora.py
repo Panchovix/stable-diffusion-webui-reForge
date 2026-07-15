@@ -37,14 +37,29 @@ def unet_lora_sig(unet_patcher) -> str:
 
 def reload_jax_unet_weights(pipeline, unet_patcher) -> None:
     """Reconvert PyTorch UNet weights (LoRA/DoRA already merged) into JAX
-    and replace ``pipeline._params`` in place, re-applying the same
-    host-offload placement decision made at construction time.
+    and replace ``pipeline._params`` in place.
+
+    When ``pipeline._phase_manager`` is enabled, it — not the static
+    ``pipeline.host_offload`` flag — owns device<->host placement; the
+    freshly-converted params are left plain device-resident (matching how
+    they're constructed) and the ``phase_manager.activate("unet")`` call
+    ``apply_model`` makes right after this reconciles actual placement
+    (onloading them if UNet is/becomes the active phase, or leaving them
+    be otherwise). Re-applying ``host_offload.place_params(...,
+    pipeline.host_offload)`` here would be redundant with — and racier
+    than — letting the phase manager be the single source of truth.
     """
     from jax_pipeline import convert, host_offload
 
     log.info("[JAX LoRA] LoRA/DoRA config changed - reloading JAX UNet weights...")
     params = convert.load_weights_from_ldm(unet_patcher.model, report=False)
-    pipeline._params = host_offload.place_params(params, pipeline._device, pipeline.host_offload)
+
+    phase_manager = getattr(pipeline, "_phase_manager", None)
+    if phase_manager is not None and phase_manager.enabled:
+        pipeline._params = params
+    else:
+        pipeline._params = host_offload.place_params(params, pipeline._device, pipeline.host_offload)
+
     log.info("[JAX LoRA] JAX UNet weights reloaded (all LoRA / DoRA deltas merged).")
 
 
