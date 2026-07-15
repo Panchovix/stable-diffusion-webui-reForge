@@ -107,6 +107,68 @@ def handle_jax_oom(phase_manager, component: str, exc: BaseException) -> None:
     ) from exc
 
 
+def evict_torch_unet_from_gpu(unet_patcher) -> None:
+    """Move the torch-side SDXL UNet weights off GPU via ldm_patched's own
+    model_management unload path, once JAX no longer needs to read them
+    for this generation.
+
+    Only ever called from the JAX whole-loop sampler-hook path (see
+    ``jax_pipeline.__init__._install_jax_sampler_hook``) — NOT from
+    ``JAXSDXLPipeline.apply_model()``'s per-step path, which can fall back
+    to the real torch UNet mid-generation whenever ControlNet conditioning
+    is present, and must therefore never assume the torch copy is gone.
+    The whole-loop path has no such fallback (``JAXCFGDenoiser`` calls the
+    JAX forward function directly, every step, for the whole loop), so
+    nothing needs the torch UNet GPU-resident again until the NEXT
+    generation's own setup reloads it.
+
+    Why this is needed at all: Forge's ``sampling_prepare()`` (called at
+    the start of every generation, including each hires-fix pass)
+    unconditionally re-loads and re-patches the torch UNet onto GPU
+    regardless of what we did last time — so without this, JAX ends up
+    holding a full second copy of the same ~2.5-5GB of weights on GPU
+    every single generation, on top of its own copy, which is enough by
+    itself to OOM a small (<8GB) card even after trimming JAX's own peak
+    usage.
+
+    A raw ``unet_patcher.model.to("cpu")`` would leave
+    ``model_management.current_loaded_models``'s bookkeeping stale, so the
+    next ``sampling_prepare()`` would think the model is still
+    GPU-resident and skip reloading it (silently leaving stale/CPU-only
+    weights in place instead of the fresh, correctly LoRA-patched ones).
+    Removing the matching ``LoadedModel`` entry after calling its own
+    ``model_unload()`` — mirroring exactly what
+    ``model_management.free_memory``/``load_models_gpu`` do internally —
+    keeps that bookkeeping correct, so the torch UNet is transparently
+    reloaded (with fresh LoRA patches) the next time ``sampling_prepare()``
+    runs, same as if we'd never touched it.
+
+    Best-effort: never raises. If anything about model_management's
+    internals doesn't match what's expected here, this silently no-ops
+    and the torch UNet just stays resident (today's behavior) rather than
+    risk a half-broken unload.
+    """
+    try:
+        from ldm_patched.modules import model_management
+    except Exception:
+        return
+    try:
+        for i, lm in enumerate(model_management.current_loaded_models):
+            if lm.model is unet_patcher:
+                lm.model_unload()
+                model_management.current_loaded_models.pop(i)
+                model_management.soft_empty_cache(force=True)
+                log.debug(
+                    "[JAX Pipeline] Evicted torch-side UNet weights from GPU "
+                    "(JAX sampler loop has its own copy)."
+                )
+                break
+    except Exception as e:
+        log.debug(
+            "[JAX Pipeline] Torch UNet eviction skipped (%s) — torch copy stays resident.", e,
+        )
+
+
 def get_default_device():
     """The single JAX device this pipeline targets (v1: no multi-device sharding)."""
     import jax

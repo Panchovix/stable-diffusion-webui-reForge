@@ -413,6 +413,19 @@ def _install_jax_sampler_hook() -> None:
                     wrapped_fn = make_jax_func(jax_fn, denoiser)
                     # Cache on the wrapper so it is not rebuilt on re-entry
                     _lazy_func._wrapped = wrapped_fn
+
+                    # Conditioning is now baked into `denoiser` (JAX-side)
+                    # and the whole-loop path never calls back into the
+                    # real torch UNet (unlike apply_model()'s per-step
+                    # path, which can fall back to it for ControlNet) — so
+                    # the torch-side copy Forge just (re)loaded for this
+                    # generation via sampling_prepare() is pure redundant
+                    # VRAM from here until the next generation. Only
+                    # bother on VRAM-constrained cards; large-VRAM cards
+                    # have no need to pay the reload cost every call.
+                    if phase_manager is not None and phase_manager.enabled:
+                        from jax_pipeline.host_offload import evict_torch_unet_from_gpu
+                        evict_torch_unet_from_gpu(jax_pipe.unet_patcher)
                 except Exception as build_exc:
                     from jax_pipeline.host_offload import _is_jax_oom_exception, handle_jax_oom
                     if _is_jax_oom_exception(build_exc):
