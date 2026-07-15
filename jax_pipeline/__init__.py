@@ -33,8 +33,11 @@ and the standard PyTorch pipeline is used.
 Environment variables
 ----------------------
 Set automatically (unless already set by you): ``CUDA_ROOT``,
-``XLA_PYTHON_CLIENT_PREALLOCATE=false``, ``XLA_FLAGS`` (adds
-``--xla_gpu_strict_conv_algorithm_picker=false``). See
+``XLA_PYTHON_CLIENT_PREALLOCATE=false``, ``XLA_PYTHON_CLIENT_ALLOCATOR=
+platform`` (the only JAX GPU allocator that actually returns freed memory
+to the CUDA driver — without it, PhaseManager's device<->host moves don't
+translate into real free VRAM; see ``_apply_platform_allocator_default``),
+``XLA_FLAGS`` (adds ``--xla_gpu_strict_conv_algorithm_picker=false``). See
 ``_apply_*_workaround``/``_apply_*_default`` below for why.
 
 Opt-in only (NOT set automatically — see ``_apply_vmm_allocator_default``
@@ -119,6 +122,48 @@ def _apply_vram_preallocation_default() -> None:
     if "XLA_PYTHON_CLIENT_PREALLOCATE" in os.environ or "XLA_PYTHON_CLIENT_MEM_FRACTION" in os.environ:
         return
     os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+
+
+def _apply_platform_allocator_default() -> None:
+    """Default JAX's GPU allocator to "platform" — the only one that
+    actually returns freed memory to the CUDA driver.
+
+    This is the fix for a problem PhaseManager alone can't solve: JAX's
+    default allocator (BFC, best-fit-with-coalescing — still the default
+    even with XLA_PYTHON_CLIENT_PREALLOCATE=false) is a *caching*
+    allocator. It recycles freed device buffers for JAX's own future
+    allocations, but per JAX's own docs, "platform" is "the only
+    configuration that deallocates memory" — BFC never gives memory back
+    to the driver. That means PhaseManager's device<->host moves
+    (jax.device_put(params, pinned_host_sharding)) relocate the *logical*
+    data, but the underlying VRAM arena XLA claimed while UNet/CLIP were
+    active does not shrink back down — torch (or JAX's own next, unrelated
+    allocation) sees no more free VRAM than before the "offload" happened.
+    Symptom observed without this: torch reporting under 1% free VRAM
+    immediately after a JAX component was supposedly offloaded, and a
+    single JAX allocation failure being enough to permanently starve the
+    rest of the process — nothing was ever actually being freed.
+
+    JAX's docs call "platform" "very slow" (it does a real cudaMalloc/
+    cudaFree per allocation instead of reusing a cache) — a real tradeoff,
+    but on a card small enough for PhaseManager to have engaged at all
+    (<20GB total VRAM), correctness/stability matters far more than the
+    per-call allocator overhead.
+
+    Ordered before ``_apply_vmm_allocator_default`` and respects the same
+    opt-in: if you've set JAX_PIPELINE_VMM_ALLOCATOR=1 yourself, this
+    backs off and lets that apply instead. Also backs off if you've set
+    XLA_PYTHON_CLIENT_ALLOCATOR yourself, or if preallocation ends up
+    enabled (this only matters when it's disabled).
+    """
+    if "XLA_PYTHON_CLIENT_ALLOCATOR" in os.environ:
+        return
+    if os.environ.get("JAX_PIPELINE_VMM_ALLOCATOR", "").strip().lower() in ("1", "true"):
+        return
+    preallocate_off = os.environ.get("XLA_PYTHON_CLIENT_PREALLOCATE", "").strip().lower() in ("false", "0")
+    if not preallocate_off:
+        return
+    os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"] = "platform"
 
 
 def _apply_vmm_allocator_default() -> None:
@@ -207,6 +252,7 @@ def _jax_probe():
     """
     _apply_cuda_nvcc_namespace_package_workaround()
     _apply_vram_preallocation_default()
+    _apply_platform_allocator_default()
     _apply_vmm_allocator_default()
     _apply_xla_conv_autotune_workaround()
     try:
