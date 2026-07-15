@@ -273,8 +273,42 @@ def downsample_2d(params: Params, prefix: str, x):
     return conv2d(params, f"{prefix}.conv", x, stride=2, padding=1)
 
 
-def upsample_2d(params: Params, prefix: str, x):
-    return conv2d(params, f"{prefix}.conv", _upsample2x(x), stride=1, padding=1)
+def upsample_2d(params: Params, prefix: str, x, target_hw: Optional[tuple] = None):
+    """Upsample, then conv.
+
+    SDXL/SD1.5 assume pixel resolution is a multiple of 64 (latent
+    divisible by 8, so the UNet's 3 internal 2x downsample stages divide
+    evenly) — but nothing actually enforces that: this webui's width/
+    height sliders only step by 8 (matching just the VAE's factor), so a
+    latent dimension not divisible by 8 is a real, reachable case.
+
+    The reference PyTorch UNet (ldm_patched/ldm/modules/diffusionmodules/
+    openaimodel.py) handles this not via padding tricks on Downsample (its
+    stride-2/padding-1 conv already rounds odd inputs up to ceil(L/2), the
+    same formula our `conv2d` uses), but by having each Upsample target
+    the *exact* shape of the next skip-connection tensor about to be
+    concatenated (`output_shape = hs[-1].shape`), rather than blindly
+    doubling. Skipping that step means our naive always-2x upsample
+    silently diverges from the skip tensor's actual shape whenever a
+    latent dim isn't divisible by 8 at that level, which crashes
+    jnp.concatenate at the next skip connection (shapes must match exactly
+    on non-concat axes) rather than merely producing wrong output.
+
+    `target_hw`, when given, is used only if it differs from the naive 2x
+    result — the already-verified jnp.repeat-based 2x path is untouched
+    for the common (resolution divisible by 64) case. jax.image.resize's
+    nearest-neighbor index mapping may not be bit-identical to PyTorch's
+    F.interpolate(mode="nearest") in the non-2x case, but any working
+    output beats a hard crash for what both this webui's own step=8 UI and
+    the reference implementation already treat as a valid resolution.
+    """
+    B, H, W, C = x.shape
+    if target_hw is not None and tuple(target_hw) != (H * 2, W * 2):
+        target_h, target_w = target_hw
+        x = jax.image.resize(x, (B, target_h, target_w, C), method="nearest")
+    else:
+        x = _upsample2x(x)
+    return conv2d(params, f"{prefix}.conv", x, stride=1, padding=1)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -318,23 +352,27 @@ def mid_block(params: Params, prefix: str, x, temb, encoder_hidden_states, num_h
 def cross_attn_up_block2d(
     params: Params, prefix: str, x, temb, encoder_hidden_states, res_samples: List,
     num_layers: int, num_attn_layers: int, num_heads: int, add_upsample: bool,
+    target_hw: Optional[tuple] = None,
 ):
     for i in range(num_layers):
         x = jnp.concatenate([x, res_samples[i]], axis=-1)
         x = resnet_block(params, f"{prefix}.resnets.{i}", x, temb)
         x = transformer_2d(params, f"{prefix}.attentions.{i}", x, encoder_hidden_states, num_heads, num_attn_layers)
     if add_upsample:
-        x = upsample_2d(params, f"{prefix}.upsamplers.0", x)
+        x = upsample_2d(params, f"{prefix}.upsamplers.0", x, target_hw=target_hw)
     return x
 
 
-def up_block2d(params: Params, prefix: str, x, temb, res_samples: List, num_layers: int, add_upsample: bool):
+def up_block2d(
+    params: Params, prefix: str, x, temb, res_samples: List, num_layers: int, add_upsample: bool,
+    target_hw: Optional[tuple] = None,
+):
     """Pure-ResNet up block — SDXL level 2 (ch=320), no attention."""
     for i in range(num_layers):
         x = jnp.concatenate([x, res_samples[i]], axis=-1)
         x = resnet_block(params, f"{prefix}.resnets.{i}", x, temb)
     if add_upsample:
-        x = upsample_2d(params, f"{prefix}.upsamplers.0", x)
+        x = upsample_2d(params, f"{prefix}.upsamplers.0", x, target_hw=target_hw)
     return x
 
 
@@ -450,14 +488,26 @@ def unet_forward(
     for spec in up_block_specs:
         n = spec["num_layers"]
         res_samples = [down_block_res_samples.pop() for _ in range(n)]
+        # Mirrors the reference UNet's `output_shape = hs[-1].shape if hs else None`
+        # (openaimodel.py): after popping this block's own skips, whatever
+        # is left on top of the stack is the exact shape the NEXT up_block
+        # will consume — that's what THIS block's own trailing upsample (if
+        # any) must land on, not a naive doubling, so the following
+        # concatenate sees matching shapes even when the latent dims aren't
+        # divisible by 8 (pixel resolution not a multiple of 64).
+        target_hw = down_block_res_samples[-1].shape[1:3] if down_block_res_samples else None
         if spec["attn"]:
             sample = cross_attn_up_block2d(
                 params, spec["name"], sample, temb, encoder_hidden_states, res_samples,
                 num_layers=n, num_attn_layers=spec["num_attn_layers"],
                 num_heads=spec["num_heads"], add_upsample=spec["add_upsample"],
+                target_hw=target_hw,
             )
         else:
-            sample = up_block2d(params, spec["name"], sample, temb, res_samples, n, spec["add_upsample"])
+            sample = up_block2d(
+                params, spec["name"], sample, temb, res_samples, n, spec["add_upsample"],
+                target_hw=target_hw,
+            )
 
     # 8. Output projection
     sample = _silu(group_norm(params, "conv_norm_out", sample))
