@@ -297,6 +297,8 @@ def _make_clip_l_hook(clip_state: dict, orig_fn, clip_l_model=None, phase_manage
     def _hook(tokens: torch.Tensor) -> torch.Tensor:
         if tokens.max().item() >= _CLIP_VOCAB_SIZE:
             log.debug("[JAX CLIP-L] Textual inversion detected, falling back to torch")
+            if phase_manager is not None:
+                phase_manager.escape_to_pytorch()
             return orig_fn(tokens)
 
         if clip_l_model is not None:
@@ -313,12 +315,20 @@ def _make_clip_l_hook(clip_state: dict, orig_fn, clip_l_model=None, phase_manage
                     clip_state["l_fp"] = current_fp
                 except Exception as rb_exc:
                     log.warning("[JAX CLIP-L] Rebuild failed (%s), using torch fallback", rb_exc)
+                    if phase_manager is not None:
+                        phase_manager.escape_to_pytorch()
                     return orig_fn(tokens)
 
         if phase_manager is not None:
             phase_manager.activate("clip")
 
-        z, _ = clip_state["l"].encode(tokens)
+        try:
+            z, _ = clip_state["l"].encode(tokens)
+        except Exception as exc:
+            from jax_pipeline.host_offload import _is_jax_oom_exception, handle_jax_oom
+            if _is_jax_oom_exception(exc):
+                handle_jax_oom(phase_manager, "CLIP-L encode", exc)  # always raises
+            raise
         return z.to(tokens.device)
 
     return _hook
@@ -338,6 +348,8 @@ def _make_clip_g_hook(clip_state: dict, orig_fn, clip_g_model=None, phase_manage
     def _hook(tokens: torch.Tensor) -> torch.Tensor:
         if tokens.max().item() >= _CLIP_VOCAB_SIZE:
             log.debug("[JAX CLIP-G] Textual inversion detected, falling back to torch")
+            if phase_manager is not None:
+                phase_manager.escape_to_pytorch()
             return orig_fn(tokens)
 
         if clip_g_model is not None:
@@ -357,12 +369,20 @@ def _make_clip_g_hook(clip_state: dict, orig_fn, clip_g_model=None, phase_manage
                     clip_state["g_fp"] = current_fp
                 except Exception as rb_exc:
                     log.warning("[JAX CLIP-G] Rebuild failed (%s), using torch fallback", rb_exc)
+                    if phase_manager is not None:
+                        phase_manager.escape_to_pytorch()
                     return orig_fn(tokens)
 
         if phase_manager is not None:
             phase_manager.activate("clip")
 
-        z, pooled = clip_state["g"].encode(tokens)
+        try:
+            z, pooled = clip_state["g"].encode(tokens)
+        except Exception as exc:
+            from jax_pipeline.host_offload import _is_jax_oom_exception, handle_jax_oom
+            if _is_jax_oom_exception(exc):
+                handle_jax_oom(phase_manager, "CLIP-G encode", exc)  # always raises
+            raise
         z = z.to(tokens.device)
         if pooled is not None:
             z.pooled = pooled.to(tokens.device)

@@ -395,3 +395,48 @@ def maybe_activate(sd_model, forge_objects) -> bool:
             "  Falling back to standard PyTorch pipeline.\n"
         )
         return False
+
+
+def release_model_memory(sd_model, release: bool = True) -> None:
+    """Force-cleanup any JAX-resident memory held by ``sd_model``'s
+    jax_pipeline components (UNet/CLIP/VAE), if present.
+
+    Call this from a checkpoint-switch / model-teardown path (see
+    ``modules/sd_models.py``'s ``complete_model_teardown`` and
+    ``unload_model_weights``). Those functions only know how to walk
+    torch.nn.Module parameter/buffer trees — jax_pipeline's state lives in
+    plain Python attributes holding JAX arrays, which that traversal never
+    touches, so without this the old checkpoint's JAX-side weights would
+    only get cleaned up whenever Python's garbage collector eventually
+    gets to them (if anything, e.g. a monkey-patched closure, keeps a
+    stray reference alive, that might be never).
+
+    ``release=True`` (default): permanently delete the arrays
+    (``PhaseManager.force_release_all``) — for a checkpoint switch, where
+    a fresh JAXSDXLPipeline/CLIP/VAE gets built from scratch for whatever
+    loads next and there's no reason to keep the old checkpoint's weights
+    around in any tier.
+
+    ``release=False``: move the arrays to pinned host memory instead
+    (``PhaseManager.force_offload_all``) — for "unload model to RAM"
+    (recoverable): the model may be reactivated later via
+    ``load_model_to_device``, and PhaseManager's own ``activate()`` will
+    transparently bring whichever component is needed back on-device on
+    its next real use, so no explicit "reload" hook is needed on that
+    path.
+
+    Safe to call on any sd_model, JAX-backed or not — no-ops if
+    ``_jax_phase_manager`` isn't present, and never raises (best-effort).
+    """
+    phase_manager = getattr(sd_model, "_jax_phase_manager", None)
+    if phase_manager is None:
+        return
+    try:
+        if release:
+            phase_manager.force_release_all()
+            log.info("[JAX Pipeline] Released JAX GPU memory for %s", getattr(sd_model, "filename", sd_model))
+        else:
+            phase_manager.force_offload_all()
+            log.info("[JAX Pipeline] Offloaded JAX GPU memory for %s", getattr(sd_model, "filename", sd_model))
+    except Exception as e:
+        log.warning("[JAX Pipeline] Error during JAX memory cleanup: %s", e)

@@ -160,6 +160,13 @@ class JAXSDXLPipeline:
                     "falling back to the standard PyTorch UNet while ControlNet is active."
                 )
                 self._warned_controlnet = True
+            # PyTorch is about to need GPU memory JAX may be holding, and
+            # PyTorch's allocator can't see JAX's — free it proactively.
+            # No-op after the first call in a ControlNet-active generation
+            # (every sampling step reaches here; only the first pays the
+            # transfer cost).
+            if self._phase_manager is not None:
+                self._phase_manager.escape_to_pytorch()
             return None
 
         if transformer_options is None:
@@ -239,9 +246,15 @@ class JAXSDXLPipeline:
         }
 
         # -- 4. JAX forward pass -------------------------------------------------
-        jx_output = self._forward(
-            self._params, jx_sample, jx_timestep, jx_enc_hs, added_cond_kwargs,
-        )  # [B, 4, H, W]
+        try:
+            jx_output = self._forward(
+                self._params, jx_sample, jx_timestep, jx_enc_hs, added_cond_kwargs,
+            )  # [B, 4, H, W]
+        except Exception as exc:
+            from jax_pipeline.host_offload import _is_jax_oom_exception, handle_jax_oom
+            if _is_jax_oom_exception(exc):
+                handle_jax_oom(self._phase_manager, "UNet forward", exc)  # always raises
+            raise
 
         # -- 5. Convert back to torch ---------------------------------------------
         model_output = _jax_to_torch(jx_output, device=device, dtype=torch.float32)

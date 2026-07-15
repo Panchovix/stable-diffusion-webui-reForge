@@ -456,6 +456,16 @@ def complete_model_teardown(model):
 
     print(f"Performing complete teardown of model: {model_name}")
 
+    # jax_pipeline's state (UNet/CLIP/VAE JAX arrays) lives in plain Python
+    # attributes, not torch.nn.Module parameters/buffers — the traversal
+    # below never touches it, so release it explicitly first. No-op for
+    # non-JAX-backed models; never raises.
+    try:
+        import jax_pipeline
+        jax_pipeline.release_model_memory(model)
+    except Exception:
+        pass
+
     # Create a set of objects to preserve (don't nullify these)
     preserve_attributes = set()
 
@@ -1294,6 +1304,15 @@ def unload_model_weights(model=None):
         model.to(model.offload_device)
     else:
         model.to('cpu')
+
+    # Recoverable (not a permanent discard — the model may come back via
+    # load_model_to_device), so offload rather than release; see
+    # jax_pipeline.release_model_memory's docstring for the distinction.
+    try:
+        import jax_pipeline
+        jax_pipeline.release_model_memory(model, release=False)
+    except Exception:
+        pass
 
     model_management.soft_empty_cache(force=True)
     gc.collect()

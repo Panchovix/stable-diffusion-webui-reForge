@@ -435,17 +435,13 @@ def install_vae_hooks(sd_model, phase_manager=None) -> bool:
         # whatever holds the "current" reference has to be mutable and
         # shared with whoever else touches it.
         #
-        # Circuit breaker: a JAX VAE decode failure (of any kind) has been
-        # observed to leave GPU memory in a bad state rather than cleanly
-        # release it — a RESOURCE_EXHAUSTED error from decode_jit() has
-        # shown up followed by torch itself reporting almost no free VRAM
-        # immediately after, even for a tiny subsequent allocation. Retrying
-        # JAX on the next call (or the next tile, or the next generation)
-        # only compounds this. So: on the first failure, disable JAX decode
-        # for the rest of this model's lifetime and use the proven torch
-        # path (including its own battle-tested OOM -> tiled fallback) from
-        # then on, rather than repeatedly re-triggering a path that gets
-        # the GPU into a worse state each time it fails.
+        # Circuit breaker for NON-OOM failures: a genuine bug (shape
+        # mismatch, missing key, etc.) disables JAX decode for the rest of
+        # this model's session and falls back to the proven torch path,
+        # rather than repeatedly re-triggering the same bug every
+        # generation. OOM-class failures are handled differently below
+        # (host_offload.handle_jax_oom aborts instead) — see that
+        # function's docstring for why a silent fallback isn't safe there.
         _state = {"disabled": False, "params": load_vae_params(fst)}
 
         if phase_manager is not None:
@@ -457,6 +453,8 @@ def install_vae_hooks(sd_model, phase_manager=None) -> bool:
 
         def _jax_decode(z: torch.Tensor, **kwargs) -> torch.Tensor:
             if kwargs or _state["disabled"]:
+                if phase_manager is not None:
+                    phase_manager.escape_to_pytorch()
                 return _orig_decode(z, **kwargs)
             try:
                 if phase_manager is not None:
@@ -476,14 +474,19 @@ def install_vae_hooks(sd_model, phase_manager=None) -> bool:
                 out_np = np.asarray(jnp.asarray(out, dtype=jnp.float32))
                 return torch.from_numpy(out_np.copy()).float().to(z.device)
             except Exception as e:
+                from jax_pipeline.host_offload import _is_jax_oom_exception, handle_jax_oom
+                if _is_jax_oom_exception(e):
+                    handle_jax_oom(phase_manager, "VAE decode", e)  # always raises
+
                 log.warning(
                     "[JAX VAE] Decoder error on latent %s: %s - falling back to torch for "
                     "this call and disabling JAX VAE decode for the rest of this model's "
-                    "session (a JAX decode failure has been observed to leave GPU memory "
-                    "in a bad state; retrying would likely compound it).",
+                    "session.",
                     list(z.shape), e, exc_info=True,
                 )
                 _state["disabled"] = True
+                if phase_manager is not None:
+                    phase_manager.escape_to_pytorch()
                 return _orig_decode(z)
 
         fst.decode = _jax_decode
