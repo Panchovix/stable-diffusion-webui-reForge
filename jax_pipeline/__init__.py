@@ -3,15 +3,23 @@ jax_pipeline — JAX JIT SDXL UNet backend.
 
 Opt-in via --forge-jax-pipeline. Replaces the UNet forward pass
 (apply_model), CLIP-L/G text encoding, and VAE decode with jax.jit-compiled
-implementations; the sampler loop remains on PyTorch/k-diffusion. Routing
-CLIP+VAE through JAX too (not just the UNet) keeps everything in one XLA
-memory pool instead of two allocators competing for VRAM — PyTorch's
-allocator and JAX's default `XLA_PYTHON_CLIENT_PREALLOCATE` pool fighting
-over the same GPU was the original motivation for porting these. JAX's
-tracing model recompiles/caches automatically per input shape (no manual
-guard bookkeeping), and its Memories API (pinned_host sharding) can stream
-UNet weights from host RAM to device on demand to relieve VRAM pressure
-further.
+implementations. Routing CLIP+VAE through JAX too (not just the UNet)
+keeps everything in one XLA memory pool instead of two allocators
+competing for VRAM — PyTorch's allocator and JAX's default
+`XLA_PYTHON_CLIENT_PREALLOCATE` pool fighting over the same GPU was the
+original motivation for porting these. JAX's tracing model recompiles/
+caches automatically per input shape (no manual guard bookkeeping), and
+its Memories API (pinned_host sharding) can stream UNet weights from host
+RAM to device on demand to relieve VRAM pressure further.
+
+For samplers with a JAX-native implementation (jax_pipeline.samplers —
+Euler, Euler ancestral, Heun, DPM++ 2M/SDE/2M SDE/3M SDE), the entire
+sampling loop runs in JAX end to end, not just the per-step UNet forward:
+the latent stays resident in JAX arrays for all 20-50 steps instead of
+round-tripping through torch<->JAX conversion every single step (see
+jax_pipeline.samplers's module docstring for the data-flow diagram). Other
+samplers fall back to the standard per-step apply_model path (still
+JAX-accelerated per step, just without the whole-loop residency).
 
 CLIP and VAE hooks are independent of UNet activation and of each other:
 if either fails to install, that component falls back to PyTorch while the
@@ -55,6 +63,8 @@ import logging
 import os
 
 log = logging.getLogger(__name__)
+
+_sampler_hook_installed: bool = False
 
 
 def _find_cuda_nvcc_spec():
@@ -237,7 +247,7 @@ _BANNER = """
 ║  Host offload→ {offload:<54}║
 ║  CLIP        → {clip:<54}║
 ║  VAE decode  → {vae:<54}║
-║  Samplers    → unchanged (PyTorch / k-diffusion)                     ║
+║  Samplers    → {samplers:<54}║
 ╚══════════════════════════════════════════════════════════════════════╝
 """
 
@@ -281,6 +291,170 @@ def get_jax_backend() -> str:
         return jax.default_backend()
     except Exception:
         return ""
+
+
+def _install_jax_sampler_hook() -> None:
+    """Monkey-patch ``KDiffusionSampler.sample`` *once* so that whenever a
+    JAX pipeline is active and the chosen sampler has a JAX-native
+    implementation, the ENTIRE sampling loop runs in JAX — not just the
+    per-step UNet forward — eliminating the torch<->JAX round trip at
+    every single step.
+
+    The patch is idempotent — calling this multiple times is safe.
+
+    Strategy — identical to mlx_pipeline's ``_install_mlx_sampler_hook``:
+    rather than rewriting all the sigma-scheduling and callback plumbing
+    in ``KDiffusionSampler.sample``, let the original method do its setup
+    and only swap ``self.func`` (the inner sampler function) for the
+    duration of the call::
+
+        orig.sample(...)
+            +-- self.func = JAX wrapper  <- swapped in for this call
+                    +-- build JAXCFGDenoiser (cond/uncond pre-converted)
+                    +-- JAX sampler loop
+            +-- self.func = restored     <- always restored in finally
+
+    If the chosen sampler has no JAX implementation, or building the
+    denoiser fails for a non-OOM reason, this falls back to the standard
+    per-call path — which, since ``WrappersMP.APPLY_MODEL`` is a separate,
+    independent hook from this ``self.func`` swap, still routes each
+    step's UNet forward through JAX via ``apply_model()`` (with its own
+    phase-activation and OOM handling); only the whole-loop residency
+    optimization is lost, not JAX acceleration entirely. An OOM anywhere
+    in this path aborts via ``host_offload.handle_jax_oom`` like every
+    other JAX entry point.
+    """
+    global _sampler_hook_installed
+    if _sampler_hook_installed:
+        return
+
+    try:
+        from modules.sd_samplers_kdiffusion import KDiffusionSampler
+        from jax_pipeline.samplers import JAX_SAMPLER_MAP, make_jax_func
+        from jax_pipeline.jax_denoiser import JAXCFGDenoiser
+        import modules.shared as _shared
+    except ImportError as e:
+        log.debug("[JAX Pipeline] Sampler hook skipped (import error): %s", e)
+        return
+
+    _orig_sample = KDiffusionSampler.sample
+
+    def _patched_sample(
+        self,
+        p,
+        x,
+        conditioning,
+        unconditional_conditioning,
+        steps=None,
+        image_conditioning=None,
+    ):
+        # Check if a JAX pipeline is active on the current model
+        jax_pipe = getattr(getattr(_shared, "sd_model", None), "jax_pipeline", None)
+        funcname = self.funcname if isinstance(self.funcname, str) else None
+
+        if jax_pipe is None or funcname not in JAX_SAMPLER_MAP:
+            # Fall through to original (non-whole-loop) path
+            return _orig_sample(
+                self, p, x, conditioning, unconditional_conditioning,
+                steps, image_conditioning,
+            )
+
+        phase_manager = getattr(jax_pipe, "_phase_manager", None)
+
+        # -- LoRA / DoRA hot-sync + phase activation (sampler-loop path) --
+        # When the JAX sampler loop is active, jax_pipe.apply_model() is
+        # never called — JAXCFGDenoiser goes straight to the UNet forward
+        # function, bypassing both the LoRA reload AND the
+        # phase_manager.activate("unet") call that normally live inside
+        # apply_model(). Both need to happen here instead, before the
+        # denoiser is built, for exactly the same reason mlx_pipeline's
+        # hook re-syncs LoRA here: patch_weight_to_device() has already
+        # merged any new LoRA/DoRA deltas into the PyTorch diffusion_model
+        # by this point; unet_patcher.patches_uuid is a cheap UUID4
+        # comparison, not a weight hash.
+        try:
+            from jax_pipeline.lora import reload_jax_unet_weights, unet_lora_sig
+            cur_uuid = unet_lora_sig(jax_pipe.unet_patcher)
+            if cur_uuid != jax_pipe._lora_sig:
+                reload_jax_unet_weights(jax_pipe, jax_pipe.unet_patcher)
+                jax_pipe._lora_sig = cur_uuid
+        except Exception as lora_exc:
+            log.warning("[JAX LoRA] Sampler-hook LoRA sync failed: %s", lora_exc)
+
+        if phase_manager is not None:
+            phase_manager.activate("unet")
+
+        # Build JAXCFGDenoiser lazily inside the sample call so it has
+        # access to the final sampler_extra_args (set by initialize()).
+        # We use sentinels to detect the first self.func call and to
+        # remember a failed build across the remaining steps of this call
+        # (rebuilding — and re-failing — on every step would be wasteful).
+        latent_shape = tuple(x.shape)
+        jax_fn = JAX_SAMPLER_MAP[funcname]
+        orig_func = self.func
+        _built = [False]
+        _build_failed = [False]
+
+        def _lazy_func(model_wrap_cfg, x_torch, sigmas=None, extra_args=None,
+                        callback=None, disable=None, **kwargs):
+            if _build_failed[0]:
+                return orig_func(model_wrap_cfg, x_torch, sigmas=sigmas,
+                                  extra_args=extra_args, callback=callback,
+                                  disable=disable, **kwargs)
+
+            if not _built[0]:
+                _built[0] = True
+                try:
+                    denoiser = JAXCFGDenoiser(
+                        jax_pipe._forward, jax_pipe._params,
+                        jax_pipe.model_sampling, extra_args or {}, latent_shape,
+                    )
+                    wrapped_fn = make_jax_func(jax_fn, denoiser)
+                    # Cache on the wrapper so it is not rebuilt on re-entry
+                    _lazy_func._wrapped = wrapped_fn
+                except Exception as build_exc:
+                    from jax_pipeline.host_offload import _is_jax_oom_exception, handle_jax_oom
+                    if _is_jax_oom_exception(build_exc):
+                        handle_jax_oom(phase_manager, "sampler-loop denoiser build", build_exc)  # raises
+                    log.warning(
+                        "[JAX Pipeline] Sampler-loop denoiser build failed (%s), "
+                        "falling back to the standard per-step path.", build_exc,
+                    )
+                    _build_failed[0] = True
+                    return orig_func(model_wrap_cfg, x_torch, sigmas=sigmas,
+                                      extra_args=extra_args, callback=callback,
+                                      disable=disable, **kwargs)
+
+            try:
+                return _lazy_func._wrapped(
+                    model_wrap_cfg, x_torch, sigmas=sigmas,
+                    extra_args=extra_args, callback=callback,
+                    disable=disable, **kwargs,
+                )
+            except Exception as run_exc:
+                from jax_pipeline.host_offload import _is_jax_oom_exception, handle_jax_oom
+                if _is_jax_oom_exception(run_exc):
+                    handle_jax_oom(phase_manager, "JAX sampler loop", run_exc)  # raises
+                raise
+
+        self.func = _lazy_func
+        try:
+            result = _orig_sample(
+                self, p, x, conditioning, unconditional_conditioning,
+                steps, image_conditioning,
+            )
+        finally:
+            self.func = orig_func  # always restore
+
+        return result
+
+    _patched_sample.__wrapped__ = _orig_sample
+    KDiffusionSampler.sample = _patched_sample
+    _sampler_hook_installed = True
+    log.info(
+        "[JAX Pipeline] KDiffusionSampler hooked — JAX samplers: %s",
+        ", ".join(sorted(JAX_SAMPLER_MAP)),
+    )
 
 
 def maybe_activate(sd_model, forge_objects) -> bool:
@@ -354,6 +528,17 @@ def maybe_activate(sd_model, forge_objects) -> bool:
 
         sd_model.jax_pipeline = jax_pipe
 
+        # Whole-loop sampler hook: independent of the per-step apply_model
+        # wrapper above — installed unconditionally (idempotent, and it
+        # self-gates per generation on whether the chosen sampler has a
+        # JAX implementation), never blocks UNet activation if it fails.
+        sampler_hook_active = False
+        try:
+            _install_jax_sampler_hook()
+            sampler_hook_active = _sampler_hook_installed
+        except Exception as sampler_exc:
+            log.warning("[JAX Pipeline] Sampler hook skipped: %s", sampler_exc)
+
         # CLIP and VAE hooks are independent of the UNet wrapper above and of
         # each other — a failure in either falls back to the standard
         # PyTorch path for that component only, it does not undo UNet
@@ -381,10 +566,15 @@ def maybe_activate(sd_model, forge_objects) -> bool:
             offload=offload_desc,
             clip="active (jax.jit)" if clip_active else "PyTorch (hook failed, see log)",
             vae="active (jax.jit)" if vae_active else "PyTorch (hook failed, see log)",
+            samplers=(
+                "whole-loop in JAX (Euler/Heun/DPM++...)" if sampler_hook_active
+                else "per-step only (hook failed, see log)"
+            ),
         ))
         log.info(
-            "[JAX Pipeline] SDXL UNet registered on backend=%s clip_active=%s vae_active=%s phase_managed=%s",
-            get_jax_backend(), clip_active, vae_active, phase_manager.enabled,
+            "[JAX Pipeline] SDXL UNet registered on backend=%s clip_active=%s vae_active=%s "
+            "sampler_hook_active=%s phase_managed=%s",
+            get_jax_backend(), clip_active, vae_active, sampler_hook_active, phase_manager.enabled,
         )
         return True
 
