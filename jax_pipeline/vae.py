@@ -82,6 +82,16 @@ _NORM_EPS = 1e-6  # VAE GroupNorm eps differs from UNet's 1e-5
 # Matches diff_pipeline/adapter.py's fallback default for the same formula.
 _BLOCK_OUT_CHANNELS: Tuple[int, ...] = (128, 256, 512, 512)
 
+# Hard cap on the (latent-space) tile size jax_decode_tiled will ever use,
+# regardless of what model_management.VAE_DECODE_TILE_SIZE_X/Y reports.
+# Verified safe by tracing the exact up-block spatial progression: a square
+# 64x64 input tile peaks at a 512x512@256ch intermediate (~268MB) — well
+# within budget. Those globals are tuned for torch's per-tile memory
+# profile; inheriting a larger value (observed: 256, from the "Never OOM"
+# extension) produced a real, proportionate ~4GB-plus intermediate that
+# both took XLA's autotuner tens of seconds to search and eventually OOM'd.
+_JAX_VAE_MAX_TILE = 64
+
 
 # -- conversion ----------------------------------------------------------------
 
@@ -342,24 +352,33 @@ def jax_decode_tiled(
 
     Reuses ``ldm_patched.modules.utils.tiled_scale`` — the same proven
     slice/dispatch/feathered-blend engine ``VAE.decode_tiled_()`` uses —
-    instead of hand-rolling tiling/blending. Every tile within a given
-    pass is padded to that pass's fixed (tile_h, tile_w) shape (see
-    ``_jax_tile_decode_fn``), so each pass reuses exactly one
-    jax.jit-compiled executable rather than recompiling per distinct edge
-    shape.
+    instead of hand-rolling tiling/blending. Every tile is padded to a
+    fixed (tile_h, tile_w) shape (see ``_jax_tile_decode_fn``), so the
+    whole decode reuses exactly one jax.jit-compiled executable rather
+    than recompiling per distinct edge shape.
 
-    Replicates ``decode_tiled_()``'s 3-pass-average-over-aspect-ratios
-    trick (this repo has no GroupNorm-sync "real" Tiled VAE, so blending
-    result from 3 differently-shaped tile grids is the seam-reduction
-    substitute already in use here — kept for consistency with the torch
-    tiled path's established output quality). This still means 3 distinct
-    compiled shapes total (one per aspect ratio), not 1 — a further
-    speed/robustness trade would be dropping to a single pass, at a small
-    cost to seam quality.
+    Single square-tile pass only — no longer replicates
+    ``decode_tiled_()``'s 3-pass-average-over-aspect-ratios seam-reduction
+    trick. That trick multiplies the base tile size into elongated shapes
+    (e.g. tile_y*2 x tile_x//2), and at this repo's actual live
+    VAE_DECODE_TILE_SIZE_X/Y (256, not the 64 this was originally verified
+    against), one of those elongated tiles balloons to a genuinely huge
+    ~4096x1024 intermediate by the widest up-block — confirmed by tracing
+    the exact conv shapes XLA's slow-operation-alarm log reported back to
+    a 512x128 input tile. That's not a bug in the size estimate, it's a
+    real, proportionate memory requirement for a conv that large — hence
+    both the extreme cuDNN autotuning time (many algorithms benchmarked
+    against a genuinely large op) and the eventual OOM. Dropping to one
+    square pass removes the amplification entirely and is ~3x faster on
+    its own; this repo has no GroupNorm-sync "real" Tiled VAE either way,
+    so the seam-quality this traded away was already imperfect.
 
-    ``tile_x``/``tile_y`` default to ``model_management.VAE_DECODE_TILE_SIZE_X/Y``
-    (the same globals the "Never OOM" UI script's sliders write to) so this
-    respects whatever the user has already configured there.
+    ``tile_x``/``tile_y`` are clamped to ``_JAX_VAE_MAX_TILE`` regardless
+    of what ``model_management.VAE_DECODE_TILE_SIZE_X/Y`` (the "Never OOM"
+    UI sliders) report — those globals are tuned for torch's per-tile
+    memory profile, not JAX's, and blindly inheriting a larger value is
+    exactly what caused this. A smaller user-configured value is still
+    respected.
     """
     from ldm_patched.modules import model_management
     from ldm_patched.modules import utils as ldm_utils
@@ -369,16 +388,11 @@ def jax_decode_tiled(
     if tile_y is None:
         tile_y = model_management.VAE_DECODE_TILE_SIZE_Y
 
-    def _pass(tx: int, ty: int) -> "torch.Tensor":
-        decode_fn = _jax_tile_decode_fn(decode_jit, params, tile_h=ty, tile_w=tx)
-        return ldm_utils.tiled_scale(z, decode_fn, tx, ty, overlap, upscale_amount=8, output_device=z.device)
+    tile_x = min(tile_x, _JAX_VAE_MAX_TILE)
+    tile_y = min(tile_y, _JAX_VAE_MAX_TILE)
 
-    out = (
-        _pass(tile_x // 2, tile_y * 2) +
-        _pass(tile_x * 2, tile_y // 2) +
-        _pass(tile_x, tile_y)
-    ) / 3.0
-    return out
+    decode_fn = _jax_tile_decode_fn(decode_jit, params, tile_h=tile_y, tile_w=tile_x)
+    return ldm_utils.tiled_scale(z, decode_fn, tile_x, tile_y, overlap, upscale_amount=8, output_device=z.device)
 
 
 # -- integration hook ------------------------------------------------------------
