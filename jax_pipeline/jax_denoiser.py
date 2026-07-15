@@ -32,6 +32,22 @@ the final array conversion differs from mlx_pipeline's:
 
     cond_list[0]['model_conds']['crossattn'].cond     -> [1, S, 2048] torch
     cond_list[0]['model_conds']['pooled_output'].cond -> [1, 1280+] torch
+
+cond/uncond sequence-length mismatch
+--------------------------------------
+Positive and negative prompts are chunked into 77-token blocks
+independently, so they routinely encode to different sequence lengths
+(e.g. a longer positive prompt needing 2 chunks against a 1-chunk
+negative prompt) — concatenating them along the batch axis for a single
+UNet call requires the other axes to match first. This is exactly what
+``shared.opts.pad_cond_uncond`` / ``pad_cond_uncond_v0`` (Settings >
+Stable Diffusion > "Pad prompt/negative prompt") already solve for the
+standard PyTorch path (``modules/sd_samplers_cfg_denoiser.py``) —
+``_reconcile_cond_uncond_seq_len`` mirrors both of those exactly, so
+enabling that setting gets identical batching behavior here. If neither
+is enabled, this warns once and ``JAXCFGDenoiser`` falls back to two
+separate (still fully JAX-accelerated) forward calls per step instead of
+one batched call — see ``JAXCFGDenoiser.__call__``.
 """
 
 from __future__ import annotations
@@ -46,6 +62,8 @@ if TYPE_CHECKING:
     import jax.numpy as jnp
 
 log = logging.getLogger(__name__)
+
+_warned_unpadded_mismatch = False
 
 
 # -- conditioning extraction (framework-agnostic torch-side logic) --------------
@@ -130,6 +148,147 @@ def _extract_cond_jax(
     return enc_hs, text_embeds, time_ids
 
 
+# -- cond/uncond sequence-length reconciliation ---------------------------------
+# See the module docstring's "cond/uncond sequence-length mismatch" section.
+
+def _empty_prompt_to_jax(empty_torch: "torch.Tensor") -> "jnp.ndarray":
+    import jax.numpy as jnp
+    arr = empty_torch.detach().cpu().float().numpy()
+    return jnp.asarray(arr, dtype=jnp.bfloat16)
+
+
+def _get_empty_prompt_embedding(sd_model) -> Optional["torch.Tensor"]:
+    """Get (and cache, on ``sd_model``) the empty-prompt ('') CLIP
+    crossattn embedding.
+
+    Reuses the exact same sd_model-level cache
+    (``cond_stage_model_empty_prompt``) that
+    ``modules.sd_samplers_cfg_denoiser.CFGDenoiser.
+    _compute_and_cache_empty_prompt`` uses, so it's computed at most once
+    per model load regardless of which code path (the standard torch
+    CFGDenoiser, or this one) needs it first.
+    """
+    empty = getattr(sd_model, "cond_stage_model_empty_prompt", None)
+    if empty is not None:
+        return empty
+    try:
+        if hasattr(sd_model, "get_learned_conditioning"):
+            with torch.no_grad():
+                d = sd_model.get_learned_conditioning([""])
+        elif hasattr(sd_model, "cond_stage_model"):
+            with torch.no_grad():
+                d = sd_model.cond_stage_model([""])
+        else:
+            return None
+        if isinstance(d, dict):
+            d = d["crossattn"]
+        sd_model.cond_stage_model_empty_prompt = d
+        return d
+    except Exception as e:
+        log.warning("[JAX denoiser] Could not compute empty-prompt embedding: %s", e)
+        return None
+
+
+def _pad_seq_v0(enc_c: "jnp.ndarray", enc_u: "jnp.ndarray") -> Tuple["jnp.ndarray", "jnp.ndarray"]:
+    """Mirrors ``CFGDenoiser.pad_cond_uncond_v0`` exactly: repeat uncond's
+    last token vector to extend it, or truncate it, so its sequence length
+    matches cond's. Only ever adjusts uncond — matches the reference
+    exactly, including its "truncates negative prompt if too long" caveat.
+    """
+    import jax.numpy as jnp
+
+    if enc_u.shape[1] < enc_c.shape[1]:
+        last = enc_u[:, -1:, :]
+        pad = jnp.tile(last, (1, enc_c.shape[1] - enc_u.shape[1], 1))
+        enc_u = jnp.concatenate([enc_u, pad], axis=1)
+    elif enc_u.shape[1] > enc_c.shape[1]:
+        enc_u = enc_u[:, :enc_c.shape[1], :]
+    return enc_c, enc_u
+
+
+def _pad_seq_with_empty(
+    enc_c: "jnp.ndarray", enc_u: "jnp.ndarray", empty_jax: "jnp.ndarray",
+) -> Tuple["jnp.ndarray", "jnp.ndarray"]:
+    """Mirrors ``CFGDenoiser.pad_cond_uncond`` / the module-level
+    ``pad_cond`` exactly: extend the shorter of cond/uncond with whole
+    tiled copies of the empty-prompt embedding until their lengths match.
+
+    Falls back to ``_pad_seq_v0`` if the length difference isn't a clean
+    multiple of the empty embedding's length — shouldn't happen in
+    practice (webui's chunking always produces multiples of one chunk
+    length) but stay safe rather than raise.
+    """
+    import jax.numpy as jnp
+
+    diff = enc_c.shape[1] - enc_u.shape[1]
+    empty_len = empty_jax.shape[1]
+    if empty_len == 0 or diff % empty_len != 0:
+        return _pad_seq_v0(enc_c, enc_u)
+
+    num_repeats = diff // empty_len
+    if num_repeats > 0:
+        tiled = jnp.tile(empty_jax, (enc_u.shape[0], num_repeats, 1))
+        enc_u = jnp.concatenate([enc_u, tiled], axis=1)
+    elif num_repeats < 0:
+        tiled = jnp.tile(empty_jax, (enc_c.shape[0], -num_repeats, 1))
+        enc_c = jnp.concatenate([enc_c, tiled], axis=1)
+    return enc_c, enc_u
+
+
+def _reconcile_cond_uncond_seq_len(
+    enc_c: "jnp.ndarray", enc_u: "jnp.ndarray",
+) -> Tuple["jnp.ndarray", "jnp.ndarray"]:
+    """Make ``enc_c``/``enc_u``'s sequence lengths match, so they CAN be
+    batched into a single UNet forward call, by mirroring webui's own
+    ``shared.opts.pad_cond_uncond`` / ``pad_cond_uncond_v0`` settings
+    (Settings > Stable Diffusion > "Pad prompt/negative prompt") —
+    including their exact precedence (v0 overrides the other when both are
+    set) — so enabling that setting gets identical batching behavior here
+    as in the standard PyTorch CFGDenoiser path.
+
+    If already equal, or if neither setting is enabled, returns the arrays
+    unchanged (a no-mismatch call is nearly free — one shape comparison).
+    When neither setting is enabled AND the lengths differ, warns once per
+    process — this is a real, common situation (differently-sized positive
+    /negative prompts), not an edge case — and leaves reconciliation to the
+    caller, which falls back to two separate forward calls per step
+    instead of one batched call (see ``JAXCFGDenoiser.__call__``).
+    """
+    global _warned_unpadded_mismatch
+
+    if enc_c.shape[1] == enc_u.shape[1]:
+        return enc_c, enc_u
+
+    import modules.shared as shared
+
+    v0 = bool(getattr(shared.opts, "pad_cond_uncond_v0", False))
+    v1 = bool(getattr(shared.opts, "pad_cond_uncond", False))
+
+    if v0:
+        return _pad_seq_v0(enc_c, enc_u)
+
+    if v1:
+        empty = _get_empty_prompt_embedding(shared.sd_model)
+        if empty is not None:
+            return _pad_seq_with_empty(enc_c, enc_u, _empty_prompt_to_jax(empty))
+        return _pad_seq_v0(enc_c, enc_u)  # matches pad_cond_uncond's own fallback
+
+    if not _warned_unpadded_mismatch:
+        log.warning(
+            "[JAX Pipeline] cond and uncond prompts encode to different "
+            "lengths (%d vs %d tokens) and neither 'Pad prompt/negative "
+            "prompt' setting is enabled (Settings > Stable Diffusion) — "
+            "falling back to two separate JAX UNet forward calls per step "
+            "instead of one batched call for this generation (still fully "
+            "JAX-accelerated, just not batched). Enable 'Pad prompt/"
+            "negative prompt' to restore single-call batching.",
+            enc_c.shape[1], enc_u.shape[1],
+        )
+        _warned_unpadded_mismatch = True
+
+    return enc_c, enc_u
+
+
 # -- JAX CFG denoiser ----------------------------------------------------------
 
 class JAXCFGDenoiser:
@@ -178,18 +337,37 @@ class JAXCFGDenoiser:
         enc_c, te_c, ti = _extract_cond_jax(cond_list, B, latent_hw)
         enc_u, te_u, _ = _extract_cond_jax(uncond_list, B, latent_hw)
 
-        # Build batched conditioning: cond first, uncond second -> [2B, ...]
-        self._enc_b = jnp.concatenate([enc_c, enc_u], axis=0)  # [2B, S, 2048]
-        self._te_b = jnp.concatenate([te_c, te_u], axis=0)     # [2B, 1280]
-        self._ti_b = jnp.concatenate([ti, ti], axis=0)         # [2B, 6]
+        # cond/uncond routinely encode to different sequence lengths (see
+        # module docstring) — try to reconcile them (respecting the same
+        # webui settings the standard PyTorch path uses) so they CAN be
+        # batched into one [2B, ...] UNet call; if that's not possible
+        # (setting disabled), keep them separate and run two forward calls
+        # per step instead — see __call__.
+        enc_c, enc_u = _reconcile_cond_uncond_seq_len(enc_c, enc_u)
+        self._batched = (enc_c.shape[1] == enc_u.shape[1])
+
+        if self._batched:
+            # Build batched conditioning: cond first, uncond second -> [2B, ...]
+            self._enc_b = jnp.concatenate([enc_c, enc_u], axis=0)  # [2B, S, 2048]
+            self._te_b = jnp.concatenate([te_c, te_u], axis=0)     # [2B, 1280]
+            self._ti_b = jnp.concatenate([ti, ti], axis=0)         # [2B, 6]
+        else:
+            # Two separate B-sized calls per step instead of one 2B-sized
+            # call. Safe regardless of the (now possibly still mismatched)
+            # sequence lengths, because the UNet's output shape depends
+            # only on the latent x, never on encoder_hidden_states'
+            # sequence length.
+            self._enc_c, self._enc_u = enc_c, enc_u
+            self._te_c, self._te_u = te_c, te_u
+            self._ti_single = ti
 
         # Cache log-sigma table for fast timestep lookup (avoids torch round-trip)
         log_sigmas_np = model_sampling.log_sigmas.detach().cpu().float().numpy()
         self._log_sigmas = jnp.asarray(log_sigmas_np)  # [N]
 
         log.debug(
-            "[JAX denoiser] Conditioning pre-built: enc=%s te=%s cond_scale=%.1f",
-            self._enc_b.shape, self._te_b.shape, self.cond_scale,
+            "[JAX denoiser] Conditioning pre-built: enc_c=%s enc_u=%s batched=%s cond_scale=%.1f",
+            enc_c.shape, enc_u.shape, self._batched, self.cond_scale,
         )
 
     # -- sigma ops (all in JAX) ------------------------------------------------
@@ -241,17 +419,30 @@ class JAXCFGDenoiser:
         xc = self._calc_input(sigma, x)  # [B, 4, H, W]
         ts = self._timestep(sigma)       # [B]
 
-        # Tile for cond || uncond (2B)
-        xc_b = jnp.concatenate([xc, xc], axis=0)  # [2B, 4, H, W]
-        ts_b = jnp.concatenate([ts, ts], axis=0)  # [2B]
-
-        added = {
-            "text_embeds": self._te_b,  # [2B, 1280]
-            "time_ids": self._ti_b,     # [2B, 6]
-        }
-
-        # Single batched UNet forward — no redundant torch<->JAX conversions
-        out = self._forward(self._params, xc_b, ts_b, self._enc_b, added)  # [2B, 4, H, W]
+        if self._batched:
+            # Single batched UNet forward (batch=2B) — no redundant
+            # torch<->JAX conversions, and only one jax.jit executable.
+            xc_b = jnp.concatenate([xc, xc], axis=0)  # [2B, 4, H, W]
+            ts_b = jnp.concatenate([ts, ts], axis=0)  # [2B]
+            added = {
+                "text_embeds": self._te_b,  # [2B, 1280]
+                "time_ids": self._ti_b,     # [2B, 6]
+            }
+            out = self._forward(self._params, xc_b, ts_b, self._enc_b, added)  # [2B, 4, H, W]
+            out_c = out[:B].astype(jnp.float32)  # cond   [B, 4, H, W] f32
+            out_u = out[B:].astype(jnp.float32)  # uncond [B, 4, H, W] f32
+        else:
+            # cond/uncond couldn't be reconciled to the same sequence
+            # length (see _reconcile_cond_uncond_seq_len) — run them as
+            # two separate batch=B calls instead. jax.jit caches each
+            # shape's compiled executable independently, so this costs one
+            # extra one-time compile at the start of the loop, not a
+            # per-step penalty; the whole-loop residency optimization
+            # (no torch round-trip) is still fully in effect either way.
+            added_c = {"text_embeds": self._te_c, "time_ids": self._ti_single}
+            added_u = {"text_embeds": self._te_u, "time_ids": self._ti_single}
+            out_c = self._forward(self._params, xc, ts, self._enc_c, added_c).astype(jnp.float32)
+            out_u = self._forward(self._params, xc, ts, self._enc_u, added_u).astype(jnp.float32)
 
         # CFG: uncond + scale*(cond - uncond)
         #
@@ -259,8 +450,6 @@ class JAXCFGDenoiser:
         # note: bfloat16's 7 mantissa bits quantise cond-uncond differences
         # catastrophically, producing isolated bright-spot artifacts that
         # are most visible at low CFG scales.
-        out_c = out[:B].astype(jnp.float32)  # cond   [B, 4, H, W] f32
-        out_u = out[B:].astype(jnp.float32)  # uncond [B, 4, H, W] f32
         cfg_out = out_u + self.cond_scale * (out_c - out_u)  # f32
 
         # Postconditioning (stays in JAX, _calc_denoised handles f32 input)
