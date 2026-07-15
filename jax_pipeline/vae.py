@@ -397,7 +397,7 @@ def jax_decode_tiled(
 
 # -- integration hook ------------------------------------------------------------
 
-def install_vae_hooks(sd_model, phase_manager=None) -> bool:
+def install_vae_hooks(sd_model, forge_objects=None, phase_manager=None) -> bool:
     """Monkey-patch ``first_stage_model.decode()`` to use the JAX decoder.
 
     Only patches the standard KL-F8 path (no 3-D conv / video VAE). Falls
@@ -405,7 +405,19 @@ def install_vae_hooks(sd_model, phase_manager=None) -> bool:
 
     The encoder is intentionally left as torch: img2img encode happens once
     per generation, and reparameterization requires keeping the
-    regularization code path intact (same rationale as mlx_pipeline).
+    regularization code path intact (same rationale as mlx_pipeline). Note
+    the un-hooked ``VAE.encode()`` wrapper (``forge_objects.vae.encode``,
+    distinct from ``fst.decode`` below) already does its own on-demand
+    ``load_models_gpu`` before calling into ``first_stage_model`` — that
+    path is untouched and needs no eviction/reload help from us.
+
+    ``forge_objects``: optional ``ForgeObjects``/``ForgeSD`` — used to find
+    ``forge_objects.vae.patcher`` (the ``ModelPatcher`` wrapping
+    ``first_stage_model``) so the torch-side copy can be evicted once JAX
+    has its own, and reloaded on demand for the fallback paths below
+    (which call ``fst.decode`` directly, bypassing the higher-level
+    ``VAE.decode()`` wrapper's own load-on-demand call — so once evicted,
+    this hook must replicate that guarantee itself).
 
     ``phase_manager``: optional jax_pipeline.host_offload.PhaseManager
     shared with the UNet/CLIP hooks — when enabled, VAE params are moved
@@ -416,6 +428,7 @@ def install_vae_hooks(sd_model, phase_manager=None) -> bool:
         import jax.numpy as jnp
 
         fst = sd_model.first_stage_model
+        vae_patcher = getattr(getattr(forge_objects, "vae", None), "patcher", None)
         sd_state = fst.state_dict()
         if "decoder.conv_in.weight" not in sd_state:
             log.debug("[JAX VAE] Non-standard decoder; skipping hook")
@@ -451,10 +464,25 @@ def install_vae_hooks(sd_model, phase_manager=None) -> bool:
                 set_params=lambda p: _state.__setitem__("params", p),
             )
 
+        # JAX now has its own copy of the decoder weights (just read above)
+        # — evict the torch-side copy if it happens to already be
+        # GPU-resident. Unlike CLIP/UNet, VAE usually ISN'T force-loaded
+        # eagerly (it's normally lazy, loaded on first encode/decode), so
+        # this is frequently a no-op; when it does have something to
+        # evict, the two `ensure_torch_model_on_gpu` calls below restore
+        # it on demand for the fallback paths, which call `fst.decode`
+        # directly and therefore need it back explicitly.
+        if phase_manager is not None and phase_manager.enabled and vae_patcher is not None:
+            from jax_pipeline.host_offload import evict_torch_model_from_gpu
+            evict_torch_model_from_gpu(vae_patcher, label="VAE")
+
         def _jax_decode(z: torch.Tensor, **kwargs) -> torch.Tensor:
             if kwargs or _state["disabled"]:
                 if phase_manager is not None:
                     phase_manager.escape_to_pytorch()
+                if vae_patcher is not None:
+                    from jax_pipeline.host_offload import ensure_torch_model_on_gpu
+                    ensure_torch_model_on_gpu(vae_patcher)
                 return _orig_decode(z, **kwargs)
             try:
                 if phase_manager is not None:
@@ -487,6 +515,9 @@ def install_vae_hooks(sd_model, phase_manager=None) -> bool:
                 _state["disabled"] = True
                 if phase_manager is not None:
                     phase_manager.escape_to_pytorch()
+                if vae_patcher is not None:
+                    from jax_pipeline.host_offload import ensure_torch_model_on_gpu
+                    ensure_torch_model_on_gpu(vae_patcher)
                 return _orig_decode(z)
 
         fst.decode = _jax_decode

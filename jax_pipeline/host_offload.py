@@ -107,10 +107,55 @@ def handle_jax_oom(phase_manager, component: str, exc: BaseException) -> None:
     ) from exc
 
 
+def evict_torch_model_from_gpu(patcher, label: str = "model") -> None:
+    """Move a torch-side ModelPatcher's weights off GPU via ldm_patched's
+    own model_management unload path, once JAX no longer needs to read
+    them (UNet: for this generation; CLIP/VAE: until their next LoRA
+    change or fallback use).
+
+    A raw ``patcher.model.to("cpu")`` would leave
+    ``model_management.current_loaded_models``'s bookkeeping stale, so the
+    next ``load_models_gpu``/``sampling_prepare()`` call would think the
+    model is still GPU-resident and skip reloading it (silently leaving
+    stale/CPU-only weights in place instead of the fresh, correctly
+    LoRA-patched ones). Removing the matching ``LoadedModel`` entry after
+    calling its own ``model_unload()`` — mirroring exactly what
+    ``model_management.free_memory``/``load_models_gpu`` do internally —
+    keeps that bookkeeping correct, so the torch copy is transparently
+    reloaded (with fresh LoRA patches) the next time something calls
+    ``load_models_gpu``/``sampling_prepare()`` on it, same as if we'd
+    never touched it. Pairs with ``ensure_torch_model_on_gpu`` for call
+    sites that need the torch copy back on demand.
+
+    Best-effort: never raises. If anything about model_management's
+    internals doesn't match what's expected here, this silently no-ops
+    and the torch copy just stays resident (today's behavior) rather than
+    risk a half-broken unload.
+    """
+    try:
+        from ldm_patched.modules import model_management
+    except Exception:
+        return
+    try:
+        for i, lm in enumerate(model_management.current_loaded_models):
+            if lm.model is patcher:
+                lm.model_unload()
+                model_management.current_loaded_models.pop(i)
+                model_management.soft_empty_cache(force=True)
+                log.debug(
+                    "[JAX Pipeline] Evicted torch-side %s weights from GPU "
+                    "(JAX has its own copy).", label,
+                )
+                break
+    except Exception as e:
+        log.debug(
+            "[JAX Pipeline] Torch %s eviction skipped (%s) — torch copy stays resident.",
+            label, e,
+        )
+
+
 def evict_torch_unet_from_gpu(unet_patcher) -> None:
-    """Move the torch-side SDXL UNet weights off GPU via ldm_patched's own
-    model_management unload path, once JAX no longer needs to read them
-    for this generation.
+    """``evict_torch_model_from_gpu`` for the UNet specifically.
 
     Only ever called from the JAX whole-loop sampler-hook path (see
     ``jax_pipeline.__init__._install_jax_sampler_hook``) — NOT from
@@ -130,43 +175,37 @@ def evict_torch_unet_from_gpu(unet_patcher) -> None:
     every single generation, on top of its own copy, which is enough by
     itself to OOM a small (<8GB) card even after trimming JAX's own peak
     usage.
+    """
+    evict_torch_model_from_gpu(unet_patcher, label="UNet")
 
-    A raw ``unet_patcher.model.to("cpu")`` would leave
-    ``model_management.current_loaded_models``'s bookkeeping stale, so the
-    next ``sampling_prepare()`` would think the model is still
-    GPU-resident and skip reloading it (silently leaving stale/CPU-only
-    weights in place instead of the fresh, correctly LoRA-patched ones).
-    Removing the matching ``LoadedModel`` entry after calling its own
-    ``model_unload()`` — mirroring exactly what
-    ``model_management.free_memory``/``load_models_gpu`` do internally —
-    keeps that bookkeeping correct, so the torch UNet is transparently
-    reloaded (with fresh LoRA patches) the next time ``sampling_prepare()``
-    runs, same as if we'd never touched it.
 
-    Best-effort: never raises. If anything about model_management's
-    internals doesn't match what's expected here, this silently no-ops
-    and the torch UNet just stays resident (today's behavior) rather than
-    risk a half-broken unload.
+def ensure_torch_model_on_gpu(patcher) -> None:
+    """Bring a torch-side ModelPatcher back onto GPU on demand, via the
+    official ldm_patched load path, right before a torch code path that
+    needs its live, correctly-patched weights (a ``state_dict()`` read for
+    a LoRA-triggered JAX rebuild, or a genuine fallback to the real torch
+    forward pass).
+
+    Pairs with ``evict_torch_model_from_gpu`` — components jax_pipeline
+    evicts once it has its own JAX-side copy get lazily reloaded here only
+    at the specific moments something still needs the torch copy, rather
+    than staying GPU-resident just in case. Cheap when already loaded —
+    ``load_models_gpu`` short-circuits on a model that's already the
+    current ``LoadedModel`` for its device.
+
+    Best-effort: never raises. If model_management is unavailable, this
+    silently no-ops — the caller's subsequent read may then see stale/
+    CPU-resident weights, but that's no worse than the situation before
+    eviction existed at all.
     """
     try:
         from ldm_patched.modules import model_management
     except Exception:
         return
     try:
-        for i, lm in enumerate(model_management.current_loaded_models):
-            if lm.model is unet_patcher:
-                lm.model_unload()
-                model_management.current_loaded_models.pop(i)
-                model_management.soft_empty_cache(force=True)
-                log.debug(
-                    "[JAX Pipeline] Evicted torch-side UNet weights from GPU "
-                    "(JAX sampler loop has its own copy)."
-                )
-                break
+        model_management.load_models_gpu([patcher])
     except Exception as e:
-        log.debug(
-            "[JAX Pipeline] Torch UNet eviction skipped (%s) — torch copy stays resident.", e,
-        )
+        log.debug("[JAX Pipeline] Torch model reload-on-demand failed (%s).", e)
 
 
 def get_default_device():

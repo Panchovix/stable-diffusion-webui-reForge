@@ -567,7 +567,7 @@ def maybe_activate(sd_model, forge_objects) -> bool:
         vae_active = False
         try:
             from jax_pipeline.vae import install_vae_hooks
-            vae_active = install_vae_hooks(sd_model, phase_manager=phase_manager)
+            vae_active = install_vae_hooks(sd_model, forge_objects, phase_manager=phase_manager)
         except Exception as vae_exc:
             log.warning("[JAX Pipeline] VAE hook skipped: %s", vae_exc)
 

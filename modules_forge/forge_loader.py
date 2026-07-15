@@ -3,6 +3,7 @@ import contextlib
 import os
 from ldm_patched.modules import model_management
 from ldm_patched.modules import model_detection
+from ldm_patched.modules import supported_models
 
 from ldm_patched.modules.sd import VAE, CLIP
 import ldm_patched.modules.model_patcher
@@ -279,6 +280,22 @@ def load_state_dict_guess_config(sd, output_vae=True, output_clip=True, output_c
 
     if output_model:
         inital_load_device = model_management.unet_inital_load_device(parameters, unet_dtype)
+        if getattr(cmd_opts, 'forge_jax_pipeline', False) and isinstance(model_config, supported_models.SDXL):
+            # jax_pipeline (see modules_forge/forge_loader.py's own
+            # maybe_activate() call below) builds its own independent
+            # JAX-side copy of this UNet by reading its state_dict() once
+            # activation happens — state_dict() returns identical tensors
+            # regardless of which device they currently live on, so there
+            # is no need to eagerly materialize the torch copy on GPU only
+            # to have jax_pipeline read it and then evict it moments
+            # later (see host_offload.evict_torch_unet_from_gpu). Loading
+            # it to CPU here means the `inital_load_device != cpu` check
+            # below naturally skips the eager full GPU load entirely;
+            # forge's own sampling_prepare() still loads it on demand for
+            # the first real generation, same as it would for any other
+            # backend — this only removes the redundant, otherwise-wasted
+            # load-then-evict round trip at checkpoint-load time.
+            inital_load_device = torch.device("cpu")
         model = model_config.get_model(sd, diffusion_model_prefix, device=inital_load_device)
         model.load_model_weights(sd, diffusion_model_prefix)
 

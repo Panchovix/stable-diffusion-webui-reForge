@@ -279,7 +279,7 @@ def build_clip_text_encoder(
 
 # -- hook helpers ----------------------------------------------------------------
 
-def _make_clip_l_hook(clip_state: dict, orig_fn, clip_l_model=None, phase_manager=None):
+def _make_clip_l_hook(clip_state: dict, orig_fn, clip_l_model=None, clip_patcher=None, phase_manager=None):
     """Return a drop-in replacement for CLIP_SD_XL_L.encode_with_transformers.
 
     ``clip_state`` is the SHARED mutable dict created once in
@@ -289,34 +289,47 @@ def _make_clip_l_hook(clip_state: dict, orig_fn, clip_l_model=None, phase_manage
     ``JAXCLIPTextEncoder`` instance) stays visible to the phase manager's
     registered ``get_params``/``set_params`` for the "clip" component,
     which read/write through this same dict.
-    """
-    from jax_pipeline.lora import clip_weight_fingerprint
 
-    clip_state["l_fp"] = clip_weight_fingerprint(clip_l_model.transformer) if clip_l_model is not None else ()
+    ``clip_patcher`` (``forge_objects.clip.patcher``) is used both for the
+    cheap ``patches_uuid``-based change-detection signal (see
+    ``jax_pipeline.lora.clip_lora_sig``) and to reload the torch CLIP back
+    onto GPU on demand — see ``install_clip_hooks``'s docstring for why
+    the torch copy is evicted after JAX has its own.
+    """
+    from jax_pipeline.lora import clip_lora_sig
+    from jax_pipeline.host_offload import ensure_torch_model_on_gpu, evict_torch_model_from_gpu
+
+    clip_state.setdefault("l_sig", clip_lora_sig(clip_patcher) if clip_patcher is not None else "")
 
     def _hook(tokens: torch.Tensor) -> torch.Tensor:
         if tokens.max().item() >= _CLIP_VOCAB_SIZE:
             log.debug("[JAX CLIP-L] Textual inversion detected, falling back to torch")
             if phase_manager is not None:
                 phase_manager.escape_to_pytorch()
+            if clip_patcher is not None:
+                ensure_torch_model_on_gpu(clip_patcher)
             return orig_fn(tokens)
 
-        if clip_l_model is not None:
-            current_fp = clip_weight_fingerprint(clip_l_model.transformer)
-            if current_fp != clip_state["l_fp"]:
+        if clip_l_model is not None and clip_patcher is not None:
+            current_sig = clip_lora_sig(clip_patcher)
+            if current_sig != clip_state["l_sig"]:
                 log.info("[JAX CLIP-L] Weight change detected (LoRA?), rebuilding...")
                 try:
+                    ensure_torch_model_on_gpu(clip_patcher)
                     clip_state["l"] = build_clip_text_encoder(
                         clip_l_model.transformer,
                         layer_idx=clip_l_model.layer_idx if clip_l_model.layer_idx is not None else -2,
                         has_text_projection=False,
                         activation=_quick_gelu,
                     )
-                    clip_state["l_fp"] = current_fp
+                    clip_state["l_sig"] = current_sig
+                    if phase_manager is not None and phase_manager.enabled:
+                        evict_torch_model_from_gpu(clip_patcher, label="CLIP")
                 except Exception as rb_exc:
                     log.warning("[JAX CLIP-L] Rebuild failed (%s), using torch fallback", rb_exc)
                     if phase_manager is not None:
                         phase_manager.escape_to_pytorch()
+                    ensure_torch_model_on_gpu(clip_patcher)
                     return orig_fn(tokens)
 
         if phase_manager is not None:
@@ -334,31 +347,34 @@ def _make_clip_l_hook(clip_state: dict, orig_fn, clip_l_model=None, phase_manage
     return _hook
 
 
-def _make_clip_g_hook(clip_state: dict, orig_fn, clip_g_model=None, phase_manager=None):
+def _make_clip_g_hook(clip_state: dict, orig_fn, clip_g_model=None, clip_patcher=None, phase_manager=None):
     """Return a drop-in replacement for CLIP_SD_XL_G.encode_with_transformers.
 
-    See ``_make_clip_l_hook`` for why ``clip_state`` is a shared dict.
+    See ``_make_clip_l_hook`` for why ``clip_state`` is a shared dict and
+    what ``clip_patcher`` is used for.
     """
-    from jax_pipeline.lora import clip_weight_fingerprint
+    from jax_pipeline.lora import clip_lora_sig
+    from jax_pipeline.host_offload import ensure_torch_model_on_gpu, evict_torch_model_from_gpu
 
-    tp_param = getattr(clip_g_model, "text_projection", None) if clip_g_model is not None else None
-    tp_data = tp_param.data if tp_param is not None else None
-    clip_state["g_fp"] = clip_weight_fingerprint(clip_g_model.transformer, tp_data) if clip_g_model is not None else ()
+    clip_state.setdefault("g_sig", clip_lora_sig(clip_patcher) if clip_patcher is not None else "")
 
     def _hook(tokens: torch.Tensor) -> torch.Tensor:
         if tokens.max().item() >= _CLIP_VOCAB_SIZE:
             log.debug("[JAX CLIP-G] Textual inversion detected, falling back to torch")
             if phase_manager is not None:
                 phase_manager.escape_to_pytorch()
+            if clip_patcher is not None:
+                ensure_torch_model_on_gpu(clip_patcher)
             return orig_fn(tokens)
 
-        if clip_g_model is not None:
-            _tp_param = getattr(clip_g_model, "text_projection", None)
-            _tp_data = _tp_param.data if _tp_param is not None else None
-            current_fp = clip_weight_fingerprint(clip_g_model.transformer, _tp_data)
-            if current_fp != clip_state["g_fp"]:
+        if clip_g_model is not None and clip_patcher is not None:
+            current_sig = clip_lora_sig(clip_patcher)
+            if current_sig != clip_state["g_sig"]:
                 log.info("[JAX CLIP-G] Weight change detected (LoRA?), rebuilding...")
                 try:
+                    ensure_torch_model_on_gpu(clip_patcher)
+                    _tp_param = getattr(clip_g_model, "text_projection", None)
+                    _tp_data = _tp_param.data if _tp_param is not None else None
                     clip_state["g"] = build_clip_text_encoder(
                         clip_g_model.transformer,
                         layer_idx=clip_g_model.layer_idx if clip_g_model.layer_idx is not None else -2,
@@ -366,11 +382,14 @@ def _make_clip_g_hook(clip_state: dict, orig_fn, clip_g_model=None, phase_manage
                         activation=_gelu,
                         text_projection_param=_tp_data,
                     )
-                    clip_state["g_fp"] = current_fp
+                    clip_state["g_sig"] = current_sig
+                    if phase_manager is not None and phase_manager.enabled:
+                        evict_torch_model_from_gpu(clip_patcher, label="CLIP")
                 except Exception as rb_exc:
                     log.warning("[JAX CLIP-G] Rebuild failed (%s), using torch fallback", rb_exc)
                     if phase_manager is not None:
                         phase_manager.escape_to_pytorch()
+                    ensure_torch_model_on_gpu(clip_patcher)
                     return orig_fn(tokens)
 
         if phase_manager is not None:
@@ -435,6 +454,21 @@ def install_clip_hooks(sd_model, forge_objects, phase_manager=None) -> bool:
         # docstring for why this (rather than two private per-hook dicts)
         # is what the phase manager registers against.
         clip_state = {"l": jax_clip_l, "g": jax_clip_g}
+        clip_patcher = getattr(forge_objects.clip, "patcher", None)
+
+        # JAX now has its own independent copy of these weights (just
+        # built above) — the torch-side CLIP the checkpoint loader force-
+        # loaded onto GPU is redundant until the next LoRA change or a
+        # torch-fallback path (textual inversion, rebuild failure) needs
+        # it again, both of which reload it on demand via
+        # ensure_torch_model_on_gpu (see _make_clip_l_hook/_make_clip_g_hook).
+        # Unlike the UNet, this is a ONE-TIME saving, not per-generation —
+        # CLIP's torch copy is only ever force-loaded once, at checkpoint
+        # load, not re-loaded every generation the way sampling_prepare()
+        # does for the UNet.
+        if phase_manager is not None and phase_manager.enabled and clip_patcher is not None:
+            from jax_pipeline.host_offload import evict_torch_model_from_gpu
+            evict_torch_model_from_gpu(clip_patcher, label="CLIP")
 
         if phase_manager is not None:
             def _get_clip_params():
@@ -458,14 +492,16 @@ def install_clip_hooks(sd_model, forge_objects, phase_manager=None) -> bool:
             if isinstance(obj, fc.CLIP_SD_XL_L):
                 orig = obj.encode_with_transformers.__func__ if hasattr(obj.encode_with_transformers, "__func__") else obj.encode_with_transformers
                 obj.encode_with_transformers = _make_clip_l_hook(
-                    clip_state, lambda t: orig(obj, t), clip_l_model=clip_l, phase_manager=phase_manager,
+                    clip_state, lambda t: orig(obj, t), clip_l_model=clip_l,
+                    clip_patcher=clip_patcher, phase_manager=phase_manager,
                 )
                 n_patched += 1
                 log.debug("[JAX CLIP] Patched CLIP_SD_XL_L instance (LoRA-aware)")
             elif isinstance(obj, fc.CLIP_SD_XL_G):
                 orig = obj.encode_with_transformers.__func__ if hasattr(obj.encode_with_transformers, "__func__") else obj.encode_with_transformers
                 obj.encode_with_transformers = _make_clip_g_hook(
-                    clip_state, lambda t: orig(obj, t), clip_g_model=clip_g, phase_manager=phase_manager,
+                    clip_state, lambda t: orig(obj, t), clip_g_model=clip_g,
+                    clip_patcher=clip_patcher, phase_manager=phase_manager,
                 )
                 n_patched += 1
                 log.debug("[JAX CLIP] Patched CLIP_SD_XL_G instance (LoRA-aware)")
