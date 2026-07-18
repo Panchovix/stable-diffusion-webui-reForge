@@ -80,6 +80,19 @@ def checkpoint(label: str) -> None:
     print(msg)
 
 
+def note(message: str) -> None:
+    """Log a plain diagnostic line (no torch/JAX stats attached). No-op
+    unless JAX_PIPELINE_PROFILE=1. For one-off yes/no findings (e.g. "did
+    the eviction actually find its target?") that don't need a full
+    memory snapshot attached.
+    """
+    if not ENABLED:
+        return
+    msg = f"[JAX Profile] {message}"
+    log.warning(msg)
+    print(msg)
+
+
 def start_torch_history() -> None:
     """Start torch's CUDA memory-history recorder. No-op unless enabled or
     already started; safe to call repeatedly.
@@ -89,7 +102,18 @@ def start_torch_history() -> None:
         return
     try:
         import torch
-        torch.cuda.memory._record_memory_history(max_entries=200_000)
+        # stacks="all" (Python + C++) is required for the dumped snapshot's
+        # per-block `frames` to include Python call sites — without it,
+        # torch only records C++ unwind frames (torch::unwind::unwind()),
+        # which makes the snapshot useless for telling jax_pipeline's own
+        # code apart from ldm_patched/torch internals. Older torch builds
+        # don't accept stacks/context kwargs, so fall back to the bare call.
+        try:
+            torch.cuda.memory._record_memory_history(
+                max_entries=200_000, context="all", stacks="all",
+            )
+        except TypeError:
+            torch.cuda.memory._record_memory_history(max_entries=200_000)
         _torch_history_started = True
         log.warning("[JAX Profile] torch.cuda.memory._record_memory_history() started")
     except Exception as e:

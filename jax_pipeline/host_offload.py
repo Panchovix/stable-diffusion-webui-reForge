@@ -147,6 +147,19 @@ def evict_torch_model_from_gpu(patcher, label: str = "model") -> None:
                     "(JAX has its own copy).", label,
                 )
                 break
+        else:
+            # TEMPORARY DEBUG (VRAM profiling session): this branch was
+            # previously silent (no log at all — not even at debug level),
+            # which hid whether the identity match (`lm.model is patcher`)
+            # against model_management.current_loaded_models was ever
+            # failing. `_debug_profile.note()` is a no-op unless
+            # JAX_PIPELINE_PROFILE=1, so this has no effect normally.
+            from jax_pipeline import _debug_profile
+            _debug_profile.note(
+                f"evict_torch_model_from_gpu({label}): NO MATCH found in "
+                f"current_loaded_models ({len(model_management.current_loaded_models)} "
+                f"entries) — eviction was a no-op, torch copy still resident if it was ever loaded."
+            )
     except Exception as e:
         log.debug(
             "[JAX Pipeline] Torch %s eviction skipped (%s) — torch copy stays resident.",
