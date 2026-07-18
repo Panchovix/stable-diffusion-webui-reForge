@@ -66,6 +66,23 @@ log = logging.getLogger(__name__)
 
 _sampler_hook_installed: bool = False
 
+# ============================================================================
+# TEMPORARY DEBUG PATCH (VRAM profiling session) — see
+# jax_pipeline/_debug_profile.py. Bypasses the JAX pipeline entirely (both
+# the whole-loop sampler hook AND the per-step apply_model wrapper) for the
+# listed k-diffusion funcnames, so they run 100% on PyTorch. Added so Euler
+# A can run a full generation without the sampler-loop OOM, while
+# jax_pipeline._debug_profile's checkpoints still record JAX's
+# activation-time VRAM baseline (which is independent of whether the
+# sampling loop itself uses JAX).
+#
+# REMOVE _TEMP_JAX_BYPASS_FUNCNAMES, _temp_bypass_active, and every
+# reference to them (search this file for "_temp_bypass") once the
+# baseline issue is diagnosed and fixed.
+# ============================================================================
+_TEMP_JAX_BYPASS_FUNCNAMES = {"sample_euler_ancestral"}
+_temp_bypass_active = {"on": False}
+
 
 def _find_cuda_nvcc_spec():
     """Locate the nvidia-cuda-nvcc-cu12 package spec, if installed.
@@ -348,9 +365,43 @@ def _install_jax_sampler_hook() -> None:
         steps=None,
         image_conditioning=None,
     ):
+        funcname = self.funcname if isinstance(self.funcname, str) else None
+
+        # -- TEMPORARY DEBUG PATCH: full JAX bypass for profiling --------
+        # See the _TEMP_JAX_BYPASS_FUNCNAMES docstring above. Skips both
+        # this whole-loop hook AND (via _temp_bypass_active) the per-step
+        # apply_model wrapper registered in maybe_activate, so `funcname`
+        # runs entirely on PyTorch. _debug_profile.checkpoint() calls are
+        # no-ops unless JAX_PIPELINE_PROFILE=1 is set.
+        if funcname in _TEMP_JAX_BYPASS_FUNCNAMES:
+            from jax_pipeline import _debug_profile
+            _debug_profile.checkpoint(f"generation start (JAX BYPASSED for {funcname})")
+            _debug_profile.start_torch_history()
+            _temp_bypass_active["on"] = True
+            orig_callback_state = self.callback_state
+            step_counter = [0]
+
+            def _profiled_callback_state(d):
+                step_counter[0] += 1
+                _debug_profile.checkpoint(f"step {step_counter[0]} (JAX bypassed, {funcname})")
+                return orig_callback_state(d)
+
+            if _debug_profile.ENABLED:
+                self.callback_state = _profiled_callback_state
+            try:
+                result = _orig_sample(
+                    self, p, x, conditioning, unconditional_conditioning,
+                    steps, image_conditioning,
+                )
+            finally:
+                _temp_bypass_active["on"] = False
+                self.callback_state = orig_callback_state
+                _debug_profile.checkpoint(f"generation end (JAX bypassed, {funcname})")
+                _debug_profile.dump_snapshots(f"bypassed_{funcname}")
+            return result
+
         # Check if a JAX pipeline is active on the current model
         jax_pipe = getattr(getattr(_shared, "sd_model", None), "jax_pipeline", None)
-        funcname = self.funcname if isinstance(self.funcname, str) else None
 
         if jax_pipe is None or funcname not in JAX_SAMPLER_MAP:
             # Fall through to original (non-whole-loop) path
@@ -521,6 +572,15 @@ def maybe_activate(sd_model, forge_objects) -> bool:
             c_concat=None, c_crossattn=None,
             control=None, transformer_options=None, **kwargs
         ):
+            # TEMPORARY DEBUG PATCH — see _TEMP_JAX_BYPASS_FUNCNAMES above.
+            # When the whole-loop hook has flagged the current generation
+            # as bypassed, skip JAX for this per-step call too, so the
+            # bypassed sampler never touches JAX at all (not just skips
+            # the whole-loop optimization).
+            if _temp_bypass_active["on"]:
+                return executor(x, t, c_concat=c_concat, c_crossattn=c_crossattn,
+                                 control=control, transformer_options=transformer_options,
+                                 **kwargs)
             result = jax_pipe.apply_model(
                 x, t,
                 c_concat=c_concat, c_crossattn=c_crossattn,
@@ -590,6 +650,13 @@ def maybe_activate(sd_model, forge_objects) -> bool:
             "sampler_hook_active=%s phase_managed=%s",
             get_jax_backend(), clip_active, vae_active, sampler_hook_active, phase_manager.enabled,
         )
+
+        # TEMPORARY DEBUG PATCH (VRAM profiling) — see _debug_profile.py.
+        # No-op unless JAX_PIPELINE_PROFILE=1. This is the "baseline before
+        # any generation" snapshot the user is trying to explain.
+        from jax_pipeline import _debug_profile
+        _debug_profile.checkpoint("activation complete (before any generation)")
+
         return True
 
     except Exception as exc:
