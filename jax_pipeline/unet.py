@@ -42,7 +42,7 @@ verbatim from mlx_pipeline/unet.py rather than re-derived:
 from __future__ import annotations
 
 import math
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import jax
 import jax.numpy as jnp
@@ -518,3 +518,333 @@ def unet_forward(
 
 
 unet_forward_jit = jax.jit(unet_forward)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Block-level streaming forward pass (VRAM-constrained cards)
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# unet_forward/unet_forward_jit above compile the ENTIRE UNet as one XLA
+# program, which requires the whole ~2.6B-parameter (bf16: ~5-6GB
+# including XLA's own compiled-executable/compilation state) params
+# pytree to already be device-resident before the call — fine for
+# large-VRAM cards, but on constrained cards (<20GB, see
+# host_offload.PhaseManager) that single ~5-6GB residency requirement
+# alone can leave too little headroom for the forward pass's own
+# activation memory. Extensive VRAM profiling in this repo's commit
+# history (~2026-07-19) showed a whole-UNet-resident approach
+# consistently landing within a few hundred MB of an 8GB card's ceiling,
+# no matter how aggressively everything ELSE (torch's redundant copies,
+# CLIP, VAE) was evicted first.
+#
+# unet_forward_streaming below is architecturally different, not just a
+# smaller jit: instead of ONE jax.jit covering the whole network, each
+# block — each ResnetBlock2D, each individual transformer sub-block (NOT
+# the whole bundled N-layer Transformer2D — SDXL's deepest attention
+# stacks bundle up to 10 transformer_blocks per call site, ~700MB if kept
+# as one streaming unit, so those are split further), each
+# Downsample/Upsample, both embedding MLPs, conv_in, conv_norm_out,
+# conv_out — is jitted SEPARATELY, and a Python-level
+# jax_pipeline.block_cache.BlockParamCache decides, block by block,
+# whether to stage that block's weights onto device or reuse an
+# already-resident copy. This mirrors the layer-streaming lowvram
+# approach ldm_patched's own PyTorch model_patcher.py already uses for
+# the torch UNet (move_weight_functions per nn.Module via forward hooks),
+# reimplemented for JAX's array/pytree model — JAX has no stateful
+# modules or hooks to hang a callback off, hence the explicit Python-level
+# orchestration below instead of one big traced function.
+#
+# Trade-off, and why it's the right one here: a full forward pass visits
+# every block exactly once (no cross-block weight reuse within one pass,
+# unlike e.g. attention KV caching), so a cache budget smaller than the
+# whole UNet means every block's weights get re-transferred from pinned
+# host on EVERY denoising step, not just once per generation — that's the
+# deliberate trade this cache makes (bounded, small peak VRAM for real
+# PCIe transfer time), not an oversight.
+#
+# Numerical correctness: every block-level jitted function below wraps
+# the EXACT SAME per-block function unet_forward already uses
+# (resnet_block, basic_transformer_block, downsample_2d, upsample_2d,
+# conv2d, linear, group_norm, timestep_embedding_mlp, add_embedding) —
+# this section only changes WHERE each call's params come from (a
+# per-block cache lookup instead of a slice of one big resident dict) and
+# HOW each call is jit-compiled (individually, not as part of one big
+# trace). The math executed, and the control flow (down blocks -> mid ->
+# up blocks, skip-connection bookkeeping, target_hw shape-matching for
+# non-64-multiple resolutions), are copied verbatim from unet_forward
+# above.
+
+import functools
+
+_jit_conv2d = jax.jit(conv2d, static_argnames=("prefix", "stride", "padding"))
+_jit_linear = jax.jit(linear, static_argnames=("prefix",))
+_jit_group_norm = jax.jit(group_norm, static_argnames=("prefix", "num_groups", "eps"))
+_jit_timestep_embedding_mlp = jax.jit(timestep_embedding_mlp, static_argnames=("prefix",))
+_jit_add_embedding = jax.jit(add_embedding, static_argnames=("prefix", "time_embed_dim"))
+_jit_resnet_block = jax.jit(resnet_block, static_argnames=("prefix",))
+_jit_basic_transformer_block = jax.jit(basic_transformer_block, static_argnames=("prefix", "num_heads"))
+_jit_downsample_2d = jax.jit(downsample_2d, static_argnames=("prefix",))
+_jit_upsample_2d = jax.jit(upsample_2d, static_argnames=("prefix", "target_hw"))
+
+
+# ── block registry ──────────────────────────────────────────────────────────
+
+def _transformer_2d_block_ids(prefix: str, num_layers: int) -> List[str]:
+    """Every streaming block_id one transformer_2d call site needs — the
+    norm+proj_in and proj_out wrapper stages, plus one id per individual
+    basic_transformer_block (the fine-grained split that keeps SDXL's
+    deepest attention stacks, which bundle up to 10 transformer_blocks
+    per call site, from becoming a single ~700MB streaming unit).
+    """
+    ids = [f"{prefix}.norm", f"{prefix}.proj_in"]
+    for i in range(num_layers):
+        ids.append(f"{prefix}.transformer_blocks.{i}")
+    ids.append(f"{prefix}.proj_out")
+    return ids
+
+
+def build_block_ids() -> List[str]:
+    """Enumerate every streaming block_id covering the UNet's full
+    parameter space, walked in the SAME down -> mid -> up structure
+    unet_forward/unet_forward_streaming use. Must stay in exact sync with
+    that traversal — jax_pipeline.block_cache.partition_params_by_block's
+    coverage check (every param key claimed by exactly one block_id,
+    every block_id claims at least one key) is the safety net if it ever
+    drifts.
+    """
+    ch = _BLOCK_OUT_CHANNELS
+    ids = ["time_embedding", "add_embedding", "conv_in"]
+
+    # down_blocks.0: pure-resnet, no attention
+    for i in range(_LAYERS_PER_BLOCK):
+        ids.append(f"down_blocks.0.resnets.{i}")
+    ids.append("down_blocks.0.downsamplers.0")
+
+    # down_blocks.1 / down_blocks.2: cross-attention
+    for level, num_attn, add_downsample in (
+        (1, _TRANSFORMER_LAYERS[0], True),
+        (2, _TRANSFORMER_LAYERS[1], False),
+    ):
+        for i in range(_LAYERS_PER_BLOCK):
+            ids.append(f"down_blocks.{level}.resnets.{i}")
+            ids += _transformer_2d_block_ids(f"down_blocks.{level}.attentions.{i}", num_attn)
+        if add_downsample:
+            ids.append(f"down_blocks.{level}.downsamplers.0")
+
+    # mid_block
+    ids.append("mid_block.resnets.0")
+    ids += _transformer_2d_block_ids("mid_block.attentions.0", _TRANSFORMER_LAYERS[2])
+    ids.append("mid_block.resnets.1")
+
+    # up_blocks (3 layers each; up_blocks.0/.1 have attention, up_blocks.2 doesn't —
+    # attn layer counts mirror _TRANSFORMER_LAYERS reversed per up-block index,
+    # matching unet_forward's up_block_specs exactly)
+    up_specs = [
+        ("up_blocks.0", 3, _TRANSFORMER_LAYERS[2], True),
+        ("up_blocks.1", 3, _TRANSFORMER_LAYERS[1], True),
+        ("up_blocks.2", 3, None, False),
+    ]
+    for name, n, num_attn, add_upsample in up_specs:
+        for i in range(n):
+            ids.append(f"{name}.resnets.{i}")
+            if num_attn is not None:
+                ids += _transformer_2d_block_ids(f"{name}.attentions.{i}", num_attn)
+        if add_upsample:
+            ids.append(f"{name}.upsamplers.0")
+
+    ids += ["conv_norm_out", "conv_out"]
+    return ids
+
+
+# ── streaming block functions ────────────────────────────────────────────────
+
+def _transformer_2d_streaming(cache, prefix: str, hidden_states, encoder_hidden_states, num_heads: int, num_layers: int):
+    B, H, W, C = hidden_states.shape
+    residual = hidden_states
+
+    norm_id = f"{prefix}.norm"
+    h = _jit_group_norm(cache.get(norm_id), hidden_states, prefix=norm_id)
+    h = h.reshape(B, H * W, C)
+    proj_in_id = f"{prefix}.proj_in"
+    h = _jit_linear(cache.get(proj_in_id), h, prefix=proj_in_id)
+
+    for i in range(num_layers):
+        block_id = f"{prefix}.transformer_blocks.{i}"
+        h = _jit_basic_transformer_block(
+            cache.get(block_id), h, encoder_hidden_states, prefix=block_id, num_heads=num_heads,
+        )
+
+    proj_out_id = f"{prefix}.proj_out"
+    h = _jit_linear(cache.get(proj_out_id), h, prefix=proj_out_id)
+    h = h.reshape(B, H, W, C)
+    return h + residual
+
+
+def _down_block2d_streaming(cache, prefix: str, x, temb, num_layers: int):
+    skips: List = []
+    for i in range(num_layers):
+        rp = f"{prefix}.resnets.{i}"
+        x = _jit_resnet_block(cache.get(rp), x, temb, prefix=rp)
+        skips.append(x)
+    dp = f"{prefix}.downsamplers.0"
+    x = _jit_downsample_2d(cache.get(dp), x, prefix=dp)
+    skips.append(x)
+    return x, skips
+
+
+def _cross_attn_down_block2d_streaming(
+    cache, prefix: str, x, temb, encoder_hidden_states,
+    num_layers: int, num_attn_layers: int, num_heads: int, add_downsample: bool,
+):
+    skips: List = []
+    for i in range(num_layers):
+        rp = f"{prefix}.resnets.{i}"
+        x = _jit_resnet_block(cache.get(rp), x, temb, prefix=rp)
+        ap = f"{prefix}.attentions.{i}"
+        x = _transformer_2d_streaming(cache, ap, x, encoder_hidden_states, num_heads, num_attn_layers)
+        skips.append(x)
+    if add_downsample:
+        dp = f"{prefix}.downsamplers.0"
+        x = _jit_downsample_2d(cache.get(dp), x, prefix=dp)
+        skips.append(x)
+    return x, skips
+
+
+def _mid_block_streaming(cache, prefix: str, x, temb, encoder_hidden_states, num_heads: int, num_attn_layers: int):
+    p0 = f"{prefix}.resnets.0"
+    x = _jit_resnet_block(cache.get(p0), x, temb, prefix=p0)
+    ap = f"{prefix}.attentions.0"
+    x = _transformer_2d_streaming(cache, ap, x, encoder_hidden_states, num_heads, num_attn_layers)
+    p1 = f"{prefix}.resnets.1"
+    x = _jit_resnet_block(cache.get(p1), x, temb, prefix=p1)
+    return x
+
+
+def _cross_attn_up_block2d_streaming(
+    cache, prefix: str, x, temb, encoder_hidden_states, res_samples: List,
+    num_layers: int, num_attn_layers: int, num_heads: int, add_upsample: bool,
+    target_hw: Optional[Tuple[int, int]] = None,
+):
+    for i in range(num_layers):
+        x = jnp.concatenate([x, res_samples[i]], axis=-1)
+        rp = f"{prefix}.resnets.{i}"
+        x = _jit_resnet_block(cache.get(rp), x, temb, prefix=rp)
+        ap = f"{prefix}.attentions.{i}"
+        x = _transformer_2d_streaming(cache, ap, x, encoder_hidden_states, num_heads, num_attn_layers)
+    if add_upsample:
+        up = f"{prefix}.upsamplers.0"
+        x = _jit_upsample_2d(cache.get(up), x, prefix=up, target_hw=target_hw)
+    return x
+
+
+def _up_block2d_streaming(
+    cache, prefix: str, x, temb, res_samples: List, num_layers: int, add_upsample: bool,
+    target_hw: Optional[Tuple[int, int]] = None,
+):
+    for i in range(num_layers):
+        x = jnp.concatenate([x, res_samples[i]], axis=-1)
+        rp = f"{prefix}.resnets.{i}"
+        x = _jit_resnet_block(cache.get(rp), x, temb, prefix=rp)
+    if add_upsample:
+        up = f"{prefix}.upsamplers.0"
+        x = _jit_upsample_2d(cache.get(up), x, prefix=up, target_hw=target_hw)
+    return x
+
+
+def unet_forward_streaming(
+    cache,
+    sample: "jnp.ndarray",
+    timestep: "jnp.ndarray",
+    encoder_hidden_states: "jnp.ndarray",
+    added_cond_kwargs: Dict[str, "jnp.ndarray"],
+) -> "jnp.ndarray":
+    """Block-streaming counterpart of unet_forward — identical math and
+    control flow, sourced from ``cache`` (a
+    jax_pipeline.block_cache.BlockParamCache already loaded with this
+    UNet's params — see jax_pipeline.pipeline/lora for construction) one
+    block at a time instead of from one big resident params dict.
+
+    Deliberately NOT itself wrapped in jax.jit — cache.get(...) has to
+    run as plain eager Python between the individually-jitted block
+    calls below; that Python-level per-block residency decision is the
+    entire point (see the module-level "Block-level streaming forward
+    pass" section docstring above).
+
+    Output: [B, 4, H, W] NCHW, matching unet_forward's convention.
+    """
+    ch = _BLOCK_OUT_CHANNELS
+
+    sample = jnp.transpose(sample, (0, 2, 3, 1))
+
+    timestep_emb = _sinusoidal_embedding(
+        timestep.astype(jnp.float32), _TIME_DIM, flip_sin_to_cos=True
+    ).astype(sample.dtype)
+    temb = _jit_timestep_embedding_mlp(cache.get("time_embedding"), timestep_emb, prefix="time_embedding")
+
+    text_embeds = added_cond_kwargs["text_embeds"].astype(sample.dtype)
+    time_ids = added_cond_kwargs["time_ids"].astype(jnp.float32)
+    aug_emb = _jit_add_embedding(
+        cache.get("add_embedding"), text_embeds, time_ids,
+        prefix="add_embedding", time_embed_dim=_ADD_TIME_EMBED_DIM,
+    ).astype(sample.dtype)
+    temb = temb + aug_emb
+
+    sample = _jit_conv2d(cache.get("conv_in"), sample, prefix="conv_in", stride=1, padding=1)
+
+    down_block_res_samples: List = [sample]
+
+    sample, skips = _down_block2d_streaming(cache, "down_blocks.0", sample, temb, _LAYERS_PER_BLOCK)
+    down_block_res_samples.extend(skips)
+
+    sample, skips = _cross_attn_down_block2d_streaming(
+        cache, "down_blocks.1", sample, temb, encoder_hidden_states,
+        num_layers=_LAYERS_PER_BLOCK,
+        num_attn_layers=_TRANSFORMER_LAYERS[0],
+        num_heads=_num_heads(ch[1]),
+        add_downsample=True,
+    )
+    down_block_res_samples.extend(skips)
+
+    sample, skips = _cross_attn_down_block2d_streaming(
+        cache, "down_blocks.2", sample, temb, encoder_hidden_states,
+        num_layers=_LAYERS_PER_BLOCK,
+        num_attn_layers=_TRANSFORMER_LAYERS[1],
+        num_heads=_num_heads(ch[2]),
+        add_downsample=False,
+    )
+    down_block_res_samples.extend(skips)
+
+    sample = _mid_block_streaming(
+        cache, "mid_block", sample, temb, encoder_hidden_states,
+        num_heads=_num_heads(ch[2]), num_attn_layers=_TRANSFORMER_LAYERS[2],
+    )
+
+    up_block_specs = [
+        dict(name="up_blocks.0", num_layers=3, attn=True,
+             num_attn_layers=_TRANSFORMER_LAYERS[2], num_heads=_num_heads(ch[2]), add_upsample=True),
+        dict(name="up_blocks.1", num_layers=3, attn=True,
+             num_attn_layers=_TRANSFORMER_LAYERS[1], num_heads=_num_heads(ch[1]), add_upsample=True),
+        dict(name="up_blocks.2", num_layers=3, attn=False, add_upsample=False),
+    ]
+    for spec in up_block_specs:
+        n = spec["num_layers"]
+        res_samples = [down_block_res_samples.pop() for _ in range(n)]
+        target_hw = down_block_res_samples[-1].shape[1:3] if down_block_res_samples else None
+        if spec["attn"]:
+            sample = _cross_attn_up_block2d_streaming(
+                cache, spec["name"], sample, temb, encoder_hidden_states, res_samples,
+                num_layers=n, num_attn_layers=spec["num_attn_layers"],
+                num_heads=spec["num_heads"], add_upsample=spec["add_upsample"],
+                target_hw=target_hw,
+            )
+        else:
+            sample = _up_block2d_streaming(
+                cache, spec["name"], sample, temb, res_samples, n, spec["add_upsample"],
+                target_hw=target_hw,
+            )
+
+    norm_out_id = "conv_norm_out"
+    sample = _silu(_jit_group_norm(cache.get(norm_out_id), sample, prefix=norm_out_id))
+    sample = _jit_conv2d(cache.get("conv_out"), sample, prefix="conv_out", stride=1, padding=1)
+
+    return jnp.transpose(sample, (0, 3, 1, 2))

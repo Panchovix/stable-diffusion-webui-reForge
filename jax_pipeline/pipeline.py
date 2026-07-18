@@ -101,21 +101,35 @@ class JAXSDXLPipeline:
         params = convert.load_weights_from_ldm(unet_patcher.model, report=True)
 
         if phase_manager is not None and phase_manager.enabled:
-            # PhaseManager owns device<->host placement (moving UNet on
-            # device once per sampling phase, not re-streaming from host on
-            # every single forward call the way make_forward's static
-            # host_offload path does) — so params start plain
-            # device-resident here (matching how they're freshly converted)
-            # and a bare jit is enough; register() immediately offloads them
-            # to pinned host until UNet's phase is actually activated.
+            # Block-level LRU streaming (jax_pipeline.block_cache), NOT
+            # PhaseManager's coarse whole-component device<->host moves —
+            # bringing the whole ~5-6GB bf16 UNet resident at once (even
+            # just once per sampling phase, not per call) left too little
+            # headroom for the forward pass's own activation memory on an
+            # 8GB card; see the VRAM-profiling trail in this repo's commit
+            # history (~2026-07-19). self._params is a BlockParamCache
+            # here, not a flat dict — self._forward's signature is
+            # unchanged either way (see make_streaming_forward), so
+            # apply_model()/JAXCFGDenoiser's call sites don't need to
+            # know which mode built it.
+            #
+            # NOT registered with phase_manager.register("unet", ...) —
+            # the cache manages the UNet's own device residency entirely
+            # independently, at a much finer (per-block) granularity than
+            # PhaseManager's per-component moves. PhaseManager continues
+            # to coarsely manage CLIP/VAE exactly as before; the two
+            # mechanisms coexist without overlapping responsibility.
             self.host_offload = False
-            self._params = params
-            self._forward = host_offload.make_forward(self._device, offload=False)
-            phase_manager.register(
-                "unet",
-                get_params=lambda: self._params,
-                set_params=lambda p: setattr(self, "_params", p),
-            )
+            from jax_pipeline.block_cache import BlockParamCache, partition_params_by_block
+            from jax_pipeline.unet import build_block_ids
+
+            self._block_cache = BlockParamCache(self._device, budget_bytes=None)
+            self._block_cache.load(partition_params_by_block(params, build_block_ids()))
+            self._params = self._block_cache
+            self._forward = host_offload.make_streaming_forward()
+
+            phase_manager.register_evict_callback(self._block_cache.evict_all_resident)
+            phase_manager.register_release_callback(self._block_cache.clear)
         else:
             self.host_offload: bool = host_offload.should_offload(unet_patcher, params)
             self._params = host_offload.place_params(params, self._device, self.host_offload)
@@ -186,12 +200,20 @@ class JAXSDXLPipeline:
             log.warning("[JAX LoRA] LoRA reload skipped: %s", lora_exc)
 
         # -- 0.5. Phase activation ----------------------------------------------
-        # No-op if the phase manager is disabled (large-VRAM card) or UNet is
-        # already the active phase (e.g. every step after the first in this
-        # sampling loop) — only pays a host<->device transfer once per phase
-        # transition, not once per call.
+        # When block-streaming is active (self._block_cache set — see
+        # __init__), "unet" was never registered with phase_manager (the
+        # cache manages UNet residency itself, per-block); the only thing
+        # left for phase_manager to do here is make sure CLIP/VAE aren't
+        # sitting on device competing with the UNet block cache's budget.
+        # force_offload_all() is cheap/no-op when nothing's resident (e.g.
+        # every step after the first, since nothing else re-activates
+        # CLIP/VAE mid-sampling-loop). On large-VRAM cards (phase_manager
+        # disabled) this whole block is a no-op either way.
         if self._phase_manager is not None:
-            self._phase_manager.activate("unet")
+            if self._phase_manager.enabled:
+                self._phase_manager.force_offload_all()
+            else:
+                self._phase_manager.activate("unet")
 
         import jax.numpy as jnp
 

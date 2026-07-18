@@ -52,15 +52,14 @@ def reload_jax_unet_weights(pipeline, unet_patcher) -> None:
     """Reconvert PyTorch UNet weights (LoRA/DoRA already merged) into JAX
     and replace ``pipeline._params`` in place.
 
-    When ``pipeline._phase_manager`` is enabled, it — not the static
-    ``pipeline.host_offload`` flag — owns device<->host placement; the
-    freshly-converted params are left plain device-resident (matching how
-    they're constructed) and the ``phase_manager.activate("unet")`` call
-    ``apply_model`` makes right after this reconciles actual placement
-    (onloading them if UNet is/becomes the active phase, or leaving them
-    be otherwise). Re-applying ``host_offload.place_params(...,
-    pipeline.host_offload)`` here would be redundant with — and racier
-    than — letting the phase manager be the single source of truth.
+    When ``pipeline._phase_manager`` is enabled, ``pipeline._params`` is a
+    ``jax_pipeline.block_cache.BlockParamCache`` (block-level streaming —
+    see ``pipeline.py``'s ``JAXSDXLPipeline.__init__``), not a flat dict —
+    re-partition the freshly-converted weights and ``cache.load(...)``
+    them, which replaces the cache's pinned-host store (and drops any
+    stale device-resident blocks from the OLD weights) in one call.
+    Otherwise (large-VRAM cards), re-place the flat dict exactly as
+    before.
     """
     from jax_pipeline import convert, host_offload
 
@@ -69,7 +68,12 @@ def reload_jax_unet_weights(pipeline, unet_patcher) -> None:
 
     phase_manager = getattr(pipeline, "_phase_manager", None)
     if phase_manager is not None and phase_manager.enabled:
-        pipeline._params = params
+        from jax_pipeline.block_cache import partition_params_by_block
+        from jax_pipeline.unet import build_block_ids
+
+        cache = pipeline._block_cache
+        cache.load(partition_params_by_block(params, build_block_ids()))
+        pipeline._params = cache
     else:
         pipeline._params = host_offload.place_params(params, pipeline._device, pipeline.host_offload)
 

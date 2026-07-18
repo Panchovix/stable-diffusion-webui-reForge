@@ -313,14 +313,23 @@ class JAXCFGDenoiser:
 
     Parameters
     ----------
-    forward_fn     : jax.jit-compiled ``unet_forward``-shaped callable,
+    forward_fn     : callable matching ``unet_forward``'s call signature,
                       ``forward_fn(params, x, t, encoder_hidden_states,
-                      added_cond_kwargs) -> jnp.ndarray`` (see
-                      ``jax_pipeline.host_offload.make_forward`` /
-                      ``JAXSDXLPipeline._forward``)
-    params         : the UNet's current params pytree (device-resident by
-                      the time this is constructed — the sampler-loop hook
-                      calls ``phase_manager.activate("unet")`` first)
+                      added_cond_kwargs) -> jnp.ndarray`` — either
+                      ``jax.jit``-compiled directly (see
+                      ``jax_pipeline.host_offload.make_forward``) or the
+                      block-streaming wrapper (``make_streaming_forward``)
+                      around ``jax_pipeline.unet.unet_forward_streaming``.
+    params         : the UNet's current params — either a plain pytree
+                      (device-resident by the time this is constructed on
+                      large-VRAM cards) or, when block-streaming is active
+                      (VRAM-constrained cards — see
+                      ``JAXSDXLPipeline.__init__``), a
+                      ``jax_pipeline.block_cache.BlockParamCache`` that
+                      stages each block onto device on demand inside
+                      ``forward_fn`` itself. Either way this is just
+                      passed straight through to ``forward_fn``'s first
+                      argument — ``JAXCFGDenoiser`` never inspects it.
     model_sampling : ldm model_sampling object for sigma <-> timestep
     extra_args     : k-diffusion sampler extra_args dict
                       (keys: ``cond``, ``uncond``, ``cond_scale``, ...)
@@ -336,7 +345,7 @@ class JAXCFGDenoiser:
     def __init__(
         self,
         forward_fn,
-        params: Dict[str, "jnp.ndarray"],
+        params: Any,  # flat pytree OR a jax_pipeline.block_cache.BlockParamCache — see docstring
         model_sampling: Any,
         extra_args: Dict,
         latent_shape: Tuple[int, ...],

@@ -290,9 +290,12 @@ def make_forward(device, offload: bool):
     offloading. When False, this is just ``jax.jit(unet_forward)``.
 
     Used only when ``PhaseManager`` is disabled (large-VRAM cards). When
-    enabled, ``PhaseManager`` moves params to device once per phase
-    transition instead of re-streaming from host on every single call —
-    see ``PhaseManager`` below.
+    enabled, block-level streaming (``make_streaming_forward`` below) is
+    used instead — the whole UNet resident-at-once requirement this
+    function's ``offload=True`` path still has (host->device transfer
+    happens as part of ONE jitted call, but every param still ends up
+    device-resident together for that call) is exactly what streaming
+    avoids.
     """
     import jax
     from jax_pipeline.unet import unet_forward
@@ -307,6 +310,33 @@ def make_forward(device, offload: bool):
         return unet_forward(device_params, sample, timestep, encoder_hidden_states, added_cond_kwargs)
 
     return jax.jit(_offloaded_forward)
+
+
+def make_streaming_forward():
+    """Return a forward function matching ``make_forward``'s call
+    signature — ``forward(params, sample, timestep, encoder_hidden_states,
+    added_cond_kwargs)`` — for block-level LRU-cached UNet execution (see
+    ``jax_pipeline.block_cache.BlockParamCache`` and
+    ``jax_pipeline.unet.unet_forward_streaming``).
+
+    Here ``params`` IS a ``BlockParamCache`` instance, not a flat params
+    dict — kept as the first positional argument purely so
+    ``JAXSDXLPipeline``/``JAXCFGDenoiser``'s existing
+    ``self._forward(self._params, xc, ts, enc, added)`` call sites need
+    no changes regardless of which mode (streaming or not) built
+    ``self._forward``.
+
+    Deliberately NOT itself ``jax.jit``-wrapped — ``unet_forward_streaming``
+    calls ``cache.get(...)`` between individually-jitted block calls,
+    which has to run as plain eager Python (a ``BlockParamCache`` isn't a
+    valid JAX pytype and jit can't trace through it).
+    """
+    from jax_pipeline.unet import unet_forward_streaming
+
+    def _forward(cache, sample, timestep, encoder_hidden_states, added_cond_kwargs):
+        return unet_forward_streaming(cache, sample, timestep, encoder_hidden_states, added_cond_kwargs)
+
+    return _forward
 
 
 # -- phase-based component offload --------------------------------------------
@@ -342,6 +372,8 @@ class PhaseManager:
         self.enabled = self._detect_should_manage()
         self._components: Dict[str, dict] = {}
         self._active: str | None = None
+        self._evict_callbacks: list = []
+        self._release_callbacks: list = []
 
     def _detect_should_manage(self) -> bool:
         try:
@@ -381,6 +413,25 @@ class PhaseManager:
         self._components[name] = {"get": get_params, "set": set_params, "on_device": True}
         if self.enabled:
             self._move(name, "pinned_host")
+
+    def register_evict_callback(self, fn) -> None:
+        """Extra cleanup hook invoked by ``force_offload_all()``/
+        ``escape_to_pytorch()`` for state this PhaseManager doesn't own
+        directly — e.g. a UNet ``BlockParamCache``'s device-resident set
+        (``jax_pipeline.block_cache``) — but that should still be cleared
+        on the same event-driven triggers (checkpoint switch, PyTorch
+        escape, JAX OOM cleanup) everything else already is. ``fn`` takes
+        no arguments; exceptions are caught and logged, never propagated.
+        """
+        self._evict_callbacks.append(fn)
+
+    def register_release_callback(self, fn) -> None:
+        """Same as ``register_evict_callback``, but invoked by
+        ``force_release_all()`` (full teardown, e.g. checkpoint switch) —
+        for state that should be discarded entirely, not just moved to
+        pinned host.
+        """
+        self._release_callbacks.append(fn)
 
     def activate(self, name: str) -> None:
         """Ensure ``name`` is device-resident; offload every other
@@ -436,6 +487,11 @@ class PhaseManager:
             if info["on_device"]:
                 self._move(name, "pinned_host")
         self._active = None
+        for cb in self._evict_callbacks:
+            try:
+                cb()
+            except Exception as e:
+                log.warning("[JAX Pipeline] Evict callback failed: %s", e)
 
     def force_release_all(self) -> None:
         """Explicitly delete every registered component's arrays (not just
@@ -459,6 +515,13 @@ class PhaseManager:
                 log.warning("[JAX Pipeline] Error releasing '%s' params: %s", name, e)
         self._components.clear()
         self._active = None
+        for cb in self._release_callbacks:
+            try:
+                cb()
+            except Exception as e:
+                log.warning("[JAX Pipeline] Release callback failed: %s", e)
+        self._release_callbacks.clear()
+        self._evict_callbacks.clear()
 
     def _move(self, name: str, memory_kind: str) -> None:
         import jax

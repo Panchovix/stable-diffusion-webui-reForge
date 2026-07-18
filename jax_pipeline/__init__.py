@@ -452,9 +452,17 @@ def _install_jax_sampler_hook() -> None:
         except Exception as lora_exc:
             log.warning("[JAX LoRA] Sampler-hook LoRA sync failed: %s", lora_exc)
 
+        # "unet" is never registered with phase_manager when block-
+        # streaming is active (see pipeline.py's __init__) — the cache
+        # manages UNet residency itself, per-block. All that's left for
+        # phase_manager here is making sure CLIP/VAE aren't competing
+        # with the UNet block cache's budget for device memory.
         if phase_manager is not None:
-            phase_manager.activate("unet")
-        _debug_profile.checkpoint("after phase_manager.activate('unet') (JAX active)")
+            if phase_manager.enabled:
+                phase_manager.force_offload_all()
+            else:
+                phase_manager.activate("unet")
+        _debug_profile.checkpoint("after phase_manager unet-phase handoff (JAX active)")
 
         # Build JAXCFGDenoiser lazily inside the sample call so it has
         # access to the final sampler_extra_args (set by initialize()).
