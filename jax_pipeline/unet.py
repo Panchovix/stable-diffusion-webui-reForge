@@ -692,19 +692,20 @@ def _transformer_2d_streaming(cache, prefix: str, hidden_states, encoder_hidden_
     residual = hidden_states
 
     norm_id = f"{prefix}.norm"
-    h = _jit_group_norm(cache.get(norm_id), hidden_states, prefix=norm_id)
+    h = _jit_group_norm(cache.get(norm_id), x=hidden_states, prefix=norm_id)
     h = h.reshape(B, H * W, C)
     proj_in_id = f"{prefix}.proj_in"
-    h = _jit_linear(cache.get(proj_in_id), h, prefix=proj_in_id)
+    h = _jit_linear(cache.get(proj_in_id), x=h, prefix=proj_in_id)
 
     for i in range(num_layers):
         block_id = f"{prefix}.transformer_blocks.{i}"
         h = _jit_basic_transformer_block(
-            cache.get(block_id), h, encoder_hidden_states, prefix=block_id, num_heads=num_heads,
+            cache.get(block_id), hidden_states=h, encoder_hidden_states=encoder_hidden_states,
+            prefix=block_id, num_heads=num_heads,
         )
 
     proj_out_id = f"{prefix}.proj_out"
-    h = _jit_linear(cache.get(proj_out_id), h, prefix=proj_out_id)
+    h = _jit_linear(cache.get(proj_out_id), x=h, prefix=proj_out_id)
     h = h.reshape(B, H, W, C)
     return h + residual
 
@@ -713,10 +714,10 @@ def _down_block2d_streaming(cache, prefix: str, x, temb, num_layers: int):
     skips: List = []
     for i in range(num_layers):
         rp = f"{prefix}.resnets.{i}"
-        x = _jit_resnet_block(cache.get(rp), x, temb, prefix=rp)
+        x = _jit_resnet_block(cache.get(rp), hidden_states=x, temb=temb, prefix=rp)
         skips.append(x)
     dp = f"{prefix}.downsamplers.0"
-    x = _jit_downsample_2d(cache.get(dp), x, prefix=dp)
+    x = _jit_downsample_2d(cache.get(dp), x=x, prefix=dp)
     skips.append(x)
     return x, skips
 
@@ -728,24 +729,24 @@ def _cross_attn_down_block2d_streaming(
     skips: List = []
     for i in range(num_layers):
         rp = f"{prefix}.resnets.{i}"
-        x = _jit_resnet_block(cache.get(rp), x, temb, prefix=rp)
+        x = _jit_resnet_block(cache.get(rp), hidden_states=x, temb=temb, prefix=rp)
         ap = f"{prefix}.attentions.{i}"
         x = _transformer_2d_streaming(cache, ap, x, encoder_hidden_states, num_heads, num_attn_layers)
         skips.append(x)
     if add_downsample:
         dp = f"{prefix}.downsamplers.0"
-        x = _jit_downsample_2d(cache.get(dp), x, prefix=dp)
+        x = _jit_downsample_2d(cache.get(dp), x=x, prefix=dp)
         skips.append(x)
     return x, skips
 
 
 def _mid_block_streaming(cache, prefix: str, x, temb, encoder_hidden_states, num_heads: int, num_attn_layers: int):
     p0 = f"{prefix}.resnets.0"
-    x = _jit_resnet_block(cache.get(p0), x, temb, prefix=p0)
+    x = _jit_resnet_block(cache.get(p0), hidden_states=x, temb=temb, prefix=p0)
     ap = f"{prefix}.attentions.0"
     x = _transformer_2d_streaming(cache, ap, x, encoder_hidden_states, num_heads, num_attn_layers)
     p1 = f"{prefix}.resnets.1"
-    x = _jit_resnet_block(cache.get(p1), x, temb, prefix=p1)
+    x = _jit_resnet_block(cache.get(p1), hidden_states=x, temb=temb, prefix=p1)
     return x
 
 
@@ -757,12 +758,12 @@ def _cross_attn_up_block2d_streaming(
     for i in range(num_layers):
         x = jnp.concatenate([x, res_samples[i]], axis=-1)
         rp = f"{prefix}.resnets.{i}"
-        x = _jit_resnet_block(cache.get(rp), x, temb, prefix=rp)
+        x = _jit_resnet_block(cache.get(rp), hidden_states=x, temb=temb, prefix=rp)
         ap = f"{prefix}.attentions.{i}"
         x = _transformer_2d_streaming(cache, ap, x, encoder_hidden_states, num_heads, num_attn_layers)
     if add_upsample:
         up = f"{prefix}.upsamplers.0"
-        x = _jit_upsample_2d(cache.get(up), x, prefix=up, target_hw=target_hw)
+        x = _jit_upsample_2d(cache.get(up), x=x, prefix=up, target_hw=target_hw)
     return x
 
 
@@ -773,10 +774,10 @@ def _up_block2d_streaming(
     for i in range(num_layers):
         x = jnp.concatenate([x, res_samples[i]], axis=-1)
         rp = f"{prefix}.resnets.{i}"
-        x = _jit_resnet_block(cache.get(rp), x, temb, prefix=rp)
+        x = _jit_resnet_block(cache.get(rp), hidden_states=x, temb=temb, prefix=rp)
     if add_upsample:
         up = f"{prefix}.upsamplers.0"
-        x = _jit_upsample_2d(cache.get(up), x, prefix=up, target_hw=target_hw)
+        x = _jit_upsample_2d(cache.get(up), x=x, prefix=up, target_hw=target_hw)
     return x
 
 
@@ -808,17 +809,17 @@ def unet_forward_streaming(
     timestep_emb = _sinusoidal_embedding(
         timestep.astype(jnp.float32), _TIME_DIM, flip_sin_to_cos=True
     ).astype(sample.dtype)
-    temb = _jit_timestep_embedding_mlp(cache.get("time_embedding"), timestep_emb, prefix="time_embedding")
+    temb = _jit_timestep_embedding_mlp(cache.get("time_embedding"), x=timestep_emb, prefix="time_embedding")
 
     text_embeds = added_cond_kwargs["text_embeds"].astype(sample.dtype)
     time_ids = added_cond_kwargs["time_ids"].astype(jnp.float32)
     aug_emb = _jit_add_embedding(
-        cache.get("add_embedding"), text_embeds, time_ids,
+        cache.get("add_embedding"), text_embeds=text_embeds, time_ids=time_ids,
         prefix="add_embedding", time_embed_dim=_ADD_TIME_EMBED_DIM,
     ).astype(sample.dtype)
     temb = temb + aug_emb
 
-    sample = _jit_conv2d(cache.get("conv_in"), sample, prefix="conv_in", stride=1, padding=1)
+    sample = _jit_conv2d(cache.get("conv_in"), x=sample, prefix="conv_in", stride=1, padding=1)
 
     down_block_res_samples: List = [sample]
 
@@ -873,7 +874,7 @@ def unet_forward_streaming(
             )
 
     norm_out_id = "conv_norm_out"
-    sample = _silu(_jit_group_norm(cache.get(norm_out_id), sample, prefix=norm_out_id))
-    sample = _jit_conv2d(cache.get("conv_out"), sample, prefix="conv_out", stride=1, padding=1)
+    sample = _silu(_jit_group_norm(cache.get(norm_out_id), x=sample, prefix=norm_out_id))
+    sample = _jit_conv2d(cache.get("conv_out"), x=sample, prefix="conv_out", stride=1, padding=1)
 
     return jnp.transpose(sample, (0, 3, 1, 2))
