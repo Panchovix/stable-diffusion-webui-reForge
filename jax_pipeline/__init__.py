@@ -412,6 +412,26 @@ def _install_jax_sampler_hook() -> None:
 
         phase_manager = getattr(jax_pipe, "_phase_manager", None)
 
+        # TEMPORARY DEBUG PATCH (VRAM profiling) — see _debug_profile.py.
+        # Mirrors the bypass branch's checkpoints/callback wrapping, for
+        # the REAL (JAX-active) whole-loop path — so a not-bypassed JAX
+        # sampler (e.g. DPM++ 2M) shows the phase_manager.activate("unet")
+        # transition and per-step behavior these numbers are missing from
+        # the bypassed-Euler-A run. No-op unless JAX_PIPELINE_PROFILE=1.
+        from jax_pipeline import _debug_profile
+        _debug_profile.checkpoint(f"generation start (JAX active, {funcname})")
+        _debug_profile.start_torch_history()
+        _profile_step_counter = [0]
+        _profile_orig_callback_state = self.callback_state
+
+        def _profile_wrapped_callback_state(d):
+            _profile_step_counter[0] += 1
+            _debug_profile.checkpoint(f"step {_profile_step_counter[0]} (JAX active, {funcname})")
+            return _profile_orig_callback_state(d)
+
+        if _debug_profile.ENABLED:
+            self.callback_state = _profile_wrapped_callback_state
+
         # -- LoRA / DoRA hot-sync + phase activation (sampler-loop path) --
         # When the JAX sampler loop is active, jax_pipe.apply_model() is
         # never called — JAXCFGDenoiser goes straight to the UNet forward
@@ -434,6 +454,7 @@ def _install_jax_sampler_hook() -> None:
 
         if phase_manager is not None:
             phase_manager.activate("unet")
+        _debug_profile.checkpoint("after phase_manager.activate('unet') (JAX active)")
 
         # Build JAXCFGDenoiser lazily inside the sample call so it has
         # access to the final sampler_extra_args (set by initialize()).
@@ -477,6 +498,7 @@ def _install_jax_sampler_hook() -> None:
                     if phase_manager is not None and phase_manager.enabled:
                         from jax_pipeline.host_offload import evict_torch_unet_from_gpu
                         evict_torch_unet_from_gpu(jax_pipe.unet_patcher)
+                    _debug_profile.checkpoint("after torch UNet evicted, denoiser built (JAX active)")
                 except Exception as build_exc:
                     from jax_pipeline.host_offload import _is_jax_oom_exception, handle_jax_oom
                     if _is_jax_oom_exception(build_exc):
@@ -510,6 +532,9 @@ def _install_jax_sampler_hook() -> None:
             )
         finally:
             self.func = orig_func  # always restore
+            self.callback_state = _profile_orig_callback_state
+            _debug_profile.checkpoint(f"generation end (JAX active, {funcname})")
+            _debug_profile.dump_snapshots(f"active_{funcname}")
 
         return result
 
