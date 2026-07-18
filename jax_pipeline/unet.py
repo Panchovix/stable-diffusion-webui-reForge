@@ -27,12 +27,27 @@ SDXL fixed config (stabilityai/stable-diffusion-xl-base-1.0), copied
 verbatim from mlx_pipeline/unet.py rather than re-derived:
   block_out_channels      : [320, 640, 1280]
   layers_per_block        : 2
-  transformer_layers      : [1, 2, 10]  (per CrossAttn level / mid — NOTE:
-                             up_blocks use this list REVERSED per-block, so
-                             up_blocks.0 (1280ch) gets 10 layers while
-                             down_blocks.1 (640ch) gets 1 and up_blocks.1
-                             (also 640ch) gets 2 — this asymmetry is the real
-                             SDXL config, not a bug; do not "simplify" it)
+  transformer_layers      : [1, 2, 10] — indexed by down_block index (0/1/2),
+                             matching ldm_patched's own SDXL reference config
+                             (supported_models.py: transformer_depth=
+                             [0,0,2,2,10,10], i.e. 2 per resnet at the 640ch
+                             level, 10 at the 1280ch level). Index 0 (=1) is
+                             DEAD/unused — down_blocks.0 has no attention at
+                             all, so nothing ever reads it; down_blocks.1
+                             uses index 1 (=2), down_blocks.2 uses index 2
+                             (=10). mid_block reuses index 2 (=10, matching
+                             the deepest/1280ch level). up_blocks mirror this
+                             REVERSED per-block: up_blocks.0 (1280ch) gets
+                             index 2 (=10), up_blocks.1 (640ch) gets index 1
+                             (=2) — matching down_blocks.1 exactly, no
+                             asymmetry. (A prior version of this file mis-
+                             indexed down_blocks.1/.2 to use index 0/1
+                             instead of 1/2 — silently ran too few
+                             transformer_blocks at both cross-attention down
+                             levels; caught via jax_pipeline.block_cache's
+                             strict per-block parameter coverage check
+                             raising on real checkpoint weights it found
+                             unassigned. Fixed 2026-07-19 — see git history.)
   attention_head_dim      : dim_per_head=64 fixed => num_heads = channels // 64
   cross_attention_dim     : 2048
   addition_embed_type     : "text_time"
@@ -453,7 +468,7 @@ def unet_forward(
     sample, skips = cross_attn_down_block2d(
         params, "down_blocks.1", sample, temb, encoder_hidden_states,
         num_layers=_LAYERS_PER_BLOCK,
-        num_attn_layers=_TRANSFORMER_LAYERS[0],
+        num_attn_layers=_TRANSFORMER_LAYERS[1],
         num_heads=_num_heads(ch[1]),
         add_downsample=True,
     )
@@ -462,7 +477,7 @@ def unet_forward(
     sample, skips = cross_attn_down_block2d(
         params, "down_blocks.2", sample, temb, encoder_hidden_states,
         num_layers=_LAYERS_PER_BLOCK,
-        num_attn_layers=_TRANSFORMER_LAYERS[1],
+        num_attn_layers=_TRANSFORMER_LAYERS[2],
         num_heads=_num_heads(ch[2]),
         add_downsample=False,
     )
@@ -622,8 +637,8 @@ def build_block_ids() -> List[str]:
 
     # down_blocks.1 / down_blocks.2: cross-attention
     for level, num_attn, add_downsample in (
-        (1, _TRANSFORMER_LAYERS[0], True),
-        (2, _TRANSFORMER_LAYERS[1], False),
+        (1, _TRANSFORMER_LAYERS[1], True),
+        (2, _TRANSFORMER_LAYERS[2], False),
     ):
         for i in range(_LAYERS_PER_BLOCK):
             ids.append(f"down_blocks.{level}.resnets.{i}")
@@ -799,7 +814,7 @@ def unet_forward_streaming(
     sample, skips = _cross_attn_down_block2d_streaming(
         cache, "down_blocks.1", sample, temb, encoder_hidden_states,
         num_layers=_LAYERS_PER_BLOCK,
-        num_attn_layers=_TRANSFORMER_LAYERS[0],
+        num_attn_layers=_TRANSFORMER_LAYERS[1],
         num_heads=_num_heads(ch[1]),
         add_downsample=True,
     )
@@ -808,7 +823,7 @@ def unet_forward_streaming(
     sample, skips = _cross_attn_down_block2d_streaming(
         cache, "down_blocks.2", sample, temb, encoder_hidden_states,
         num_layers=_LAYERS_PER_BLOCK,
-        num_attn_layers=_TRANSFORMER_LAYERS[1],
+        num_attn_layers=_TRANSFORMER_LAYERS[2],
         num_heads=_num_heads(ch[2]),
         add_downsample=False,
     )
