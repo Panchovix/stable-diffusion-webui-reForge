@@ -626,9 +626,23 @@ def build_block_ids() -> List[str]:
     coverage check (every param key claimed by exactly one block_id,
     every block_id claims at least one key) is the safety net if it ever
     drifts.
+
+    ``"class_embedding"``: ldm_patched.modules.utils.unet_to_diffusers's
+    own key-mapping table (jax_pipeline.convert reuses it directly) maps
+    the SAME source ldm weights (``label_emb.0.0/2.*``) to BOTH
+    ``add_embedding.linear_1/2.*`` AND ``class_embedding.linear_1/2.*`` —
+    intentional duplication for cross-compatibility with different HF
+    diffusers naming conventions, not a jax_pipeline bug. The forward
+    pass only ever reads ``add_embedding.*`` (see ``unet_forward``'s
+    step 3) — ``class_embedding`` is real, present, but permanently
+    unused data that still needs somewhere to live in the registry so
+    partition_params_by_block's coverage check doesn't (correctly) flag
+    it as unassigned. Small (2 tiny Linear layers) — parked in pinned
+    host memory, never staged to device since nothing ever calls
+    ``cache.get("class_embedding")``.
     """
     ch = _BLOCK_OUT_CHANNELS
-    ids = ["time_embedding", "add_embedding", "conv_in"]
+    ids = ["time_embedding", "add_embedding", "class_embedding", "conv_in"]
 
     # down_blocks.0: pure-resnet, no attention
     for i in range(_LAYERS_PER_BLOCK):
