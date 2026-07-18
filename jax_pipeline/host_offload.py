@@ -127,6 +127,18 @@ def evict_torch_model_from_gpu(patcher, label: str = "model") -> None:
     never touched it. Pairs with ``ensure_torch_model_on_gpu`` for call
     sites that need the torch copy back on demand.
 
+    Matches via ``ModelPatcher.is_clone()`` (compares the wrapped
+    ``nn.Module``, not the ``ModelPatcher`` wrapper itself), not raw
+    identity — Forge's own ``ModelPatcher.clone()`` (used for LoRA/hook
+    application; see ``model_patcher.py``) wraps the SAME underlying
+    model in a NEW ``ModelPatcher`` instance, so ``current_loaded_models``
+    typically holds a clone of whatever ``ModelPatcher`` jax_pipeline was
+    originally handed at activation time, not that exact object. A plain
+    ``lm.model is patcher`` check silently never matches in that case —
+    confirmed via ``_debug_profile.note()``'s "NO MATCH" diagnostic below
+    on a real run where memory still appeared to drop (from something
+    else entirely) despite eviction being a no-op the whole time.
+
     Best-effort: never raises. If anything about model_management's
     internals doesn't match what's expected here, this silently no-ops
     and the torch copy just stays resident (today's behavior) rather than
@@ -138,7 +150,7 @@ def evict_torch_model_from_gpu(patcher, label: str = "model") -> None:
         return
     try:
         for i, lm in enumerate(model_management.current_loaded_models):
-            if lm.model is patcher:
+            if lm.model is patcher or lm.model.is_clone(patcher):
                 lm.model_unload()
                 model_management.current_loaded_models.pop(i)
                 model_management.soft_empty_cache(force=True)
