@@ -180,15 +180,25 @@ class BlockParamCache:
     def get(self, block_id: str) -> Dict[str, "jnp.ndarray"]:
         if block_id in self._resident:
             self._resident.move_to_end(block_id)  # mark most-recently-used
+            from jax_pipeline import _debug_profile
+            _debug_profile.record_timing("hit", block_id, 0.0)
             return self._resident[block_id]
 
         import jax
+        from jax_pipeline import _debug_profile
 
         needed = self._host_bytes[block_id]
         self._evict_until_room(needed)
 
         device_sharding = jax.sharding.SingleDeviceSharding(self.device, memory_kind="device")
-        device_params = jax.tree.map(lambda p: jax.device_put(p, device_sharding), self._host_store[block_id])
+        if _debug_profile.ENABLED:
+            import time
+            t0 = time.perf_counter()
+            device_params = jax.tree.map(lambda p: jax.device_put(p, device_sharding), self._host_store[block_id])
+            jax.block_until_ready(device_params)  # force real transfer completion, not async dispatch time
+            _debug_profile.record_timing("transfer", block_id, time.perf_counter() - t0)
+        else:
+            device_params = jax.tree.map(lambda p: jax.device_put(p, device_sharding), self._host_store[block_id])
         self._resident[block_id] = device_params
         self._resident_bytes += needed
         return device_params

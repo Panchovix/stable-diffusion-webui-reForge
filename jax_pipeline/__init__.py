@@ -421,6 +421,8 @@ def _install_jax_sampler_hook() -> None:
         from jax_pipeline import _debug_profile
         _debug_profile.checkpoint(f"generation start (JAX active, {funcname})")
         _debug_profile.start_torch_history()
+        _debug_profile.reset_timing()
+        _debug_profile.start_jax_profiler_trace(f"active_{funcname}")
         _profile_step_counter = [0]
         _profile_orig_callback_state = self.callback_state
 
@@ -541,7 +543,10 @@ def _install_jax_sampler_hook() -> None:
         finally:
             self.func = orig_func  # always restore
             self.callback_state = _profile_orig_callback_state
+            _debug_profile.stop_jax_profiler_trace()
             _debug_profile.checkpoint(f"generation end (JAX active, {funcname})")
+            _debug_profile.print_timing_summary()
+            _debug_profile.dump_timing(f"active_{funcname}")
             _debug_profile.dump_snapshots(f"active_{funcname}")
 
         return result

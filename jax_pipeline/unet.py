@@ -591,15 +591,49 @@ unet_forward_jit = jax.jit(unet_forward)
 
 import functools
 
-_jit_conv2d = jax.jit(conv2d, static_argnames=("prefix", "stride", "padding"))
-_jit_linear = jax.jit(linear, static_argnames=("prefix",))
-_jit_group_norm = jax.jit(group_norm, static_argnames=("prefix", "num_groups", "eps"))
-_jit_timestep_embedding_mlp = jax.jit(timestep_embedding_mlp, static_argnames=("prefix",))
-_jit_add_embedding = jax.jit(add_embedding, static_argnames=("prefix", "time_embed_dim"))
-_jit_resnet_block = jax.jit(resnet_block, static_argnames=("prefix",))
-_jit_basic_transformer_block = jax.jit(basic_transformer_block, static_argnames=("prefix", "num_heads"))
-_jit_downsample_2d = jax.jit(downsample_2d, static_argnames=("prefix",))
-_jit_upsample_2d = jax.jit(upsample_2d, static_argnames=("prefix", "target_hw"))
+
+def _timed_jit(jitted_fn):
+    """TEMPORARY compute-timing instrumentation wrapper (see
+    jax_pipeline/_debug_profile.py's "speed phase") around an
+    ALREADY-``jax.jit``-wrapped callable — jax.jit's own tracing/caching
+    happens inside ``jitted_fn``, unaffected by this wrapper.
+
+    Measures each call's wall time via ``jax.block_until_ready()`` on the
+    result (real completion time, not async-dispatch time) and records
+    it under "compute", keyed by the ``prefix`` kwarg every call site
+    already passes (so timing is broken down per exact block_id, not
+    just per function).
+
+    Near-zero overhead when disabled (one ``if _debug_profile.ENABLED``
+    check, no timing/import work) — safe to leave wrapping every call
+    site unconditionally.
+    """
+    @functools.wraps(jitted_fn)
+    def wrapper(*args, **kwargs):
+        from jax_pipeline import _debug_profile
+        if not _debug_profile.ENABLED:
+            return jitted_fn(*args, **kwargs)
+        import time
+        t0 = time.perf_counter()
+        out = jitted_fn(*args, **kwargs)
+        jax.block_until_ready(out)
+        block_id = kwargs.get("prefix", "?")
+        _debug_profile.record_timing("compute", block_id, time.perf_counter() - t0)
+        return out
+    return wrapper
+
+
+_jit_conv2d = _timed_jit(jax.jit(conv2d, static_argnames=("prefix", "stride", "padding")))
+_jit_linear = _timed_jit(jax.jit(linear, static_argnames=("prefix",)))
+_jit_group_norm = _timed_jit(jax.jit(group_norm, static_argnames=("prefix", "num_groups", "eps")))
+_jit_timestep_embedding_mlp = _timed_jit(jax.jit(timestep_embedding_mlp, static_argnames=("prefix",)))
+_jit_add_embedding = _timed_jit(jax.jit(add_embedding, static_argnames=("prefix", "time_embed_dim")))
+_jit_resnet_block = _timed_jit(jax.jit(resnet_block, static_argnames=("prefix",)))
+_jit_basic_transformer_block = _timed_jit(
+    jax.jit(basic_transformer_block, static_argnames=("prefix", "num_heads"))
+)
+_jit_downsample_2d = _timed_jit(jax.jit(downsample_2d, static_argnames=("prefix",)))
+_jit_upsample_2d = _timed_jit(jax.jit(upsample_2d, static_argnames=("prefix", "target_hw")))
 
 
 # ── block registry ──────────────────────────────────────────────────────────
