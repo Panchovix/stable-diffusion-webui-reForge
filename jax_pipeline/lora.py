@@ -52,28 +52,58 @@ def reload_jax_unet_weights(pipeline, unet_patcher) -> None:
     """Reconvert PyTorch UNet weights (LoRA/DoRA already merged) into JAX
     and replace ``pipeline._params`` in place.
 
-    When ``pipeline._phase_manager`` is enabled, ``pipeline._params`` is a
-    ``jax_pipeline.block_cache.BlockParamCache`` (block-level streaming —
-    see ``pipeline.py``'s ``JAXSDXLPipeline.__init__``), not a flat dict —
-    re-partition the freshly-converted weights and ``cache.load(...)``
-    them, which replaces the cache's pinned-host store (and drops any
-    stale device-resident blocks from the OLD weights) in one call.
-    Otherwise (large-VRAM cards), re-place the flat dict exactly as
-    before.
+    ``pipeline._raw_params`` (the flat, un-partitioned dict — the single
+    canonical source ``ensure_unet_built``/autotune's benchmarking read
+    from) is always refreshed first.
+
+    When ``pipeline._phase_manager`` is enabled, ``pipeline._params`` is
+    either a ``jax_pipeline.block_cache.BlockParamCache`` (fine/coarse
+    streaming) or a flat dict ("whole" — see ``pipeline.py``'s
+    ``ensure_unet_built``/``_build_unet_execution``, chosen by
+    ``jax_pipeline.autotune``), or possibly not built at all yet (``None``
+    — no generation has run since checkpoint load, so no shape/fusion-
+    level decision exists yet):
+
+      * cache already built: re-partition the fresh weights with the SAME
+        fusion level already chosen (a LoRA change doesn't alter the
+        VRAM/speed trade-off that decided it — no need to re-autotune)
+        and ``cache.load(...)`` them, which replaces the cache's
+        pinned-host store (dropping any stale device-resident blocks from
+        the OLD weights) in one call.
+      * "whole" already built (``pipeline._block_cache is None`` but
+        ``pipeline._forward is not None``): re-place the flat dict, same
+        as the non-phase-managed path below.
+      * nothing built yet: just leave the refreshed ``_raw_params`` in
+        place — the next ``ensure_unet_built()`` call (first apply_model/
+        sampler-hook call of the next generation) builds fresh from it,
+        picking up these weights automatically.
+
+    Non-phase-managed (large-VRAM cards): re-place the flat dict exactly
+    as before — unchanged.
     """
     from jax_pipeline import convert, host_offload
 
     log.info("[JAX LoRA] LoRA/DoRA config changed - reloading JAX UNet weights...")
     params = convert.load_weights_from_ldm(unet_patcher.model, report=False)
+    pipeline._raw_params = params
 
     phase_manager = getattr(pipeline, "_phase_manager", None)
     if phase_manager is not None and phase_manager.enabled:
-        from jax_pipeline.block_cache import partition_params_by_block
-        from jax_pipeline.unet import build_block_ids
+        block_cache = getattr(pipeline, "_block_cache", None)
+        if block_cache is not None:
+            from jax_pipeline.block_cache import partition_params_by_block
+            from jax_pipeline.unet import build_block_ids, build_block_ids_coarse
 
-        cache = pipeline._block_cache
-        cache.load(partition_params_by_block(params, build_block_ids()))
-        pipeline._params = cache
+            level = getattr(pipeline, "_fusion_level", None) or "fine"
+            block_ids = build_block_ids() if level == "fine" else build_block_ids_coarse()
+            block_cache.load(partition_params_by_block(params, block_ids))
+            pipeline._params = block_cache
+        elif getattr(pipeline, "_forward", None) is not None:
+            # "whole" was chosen for this session's shape — no BlockParamCache,
+            # just a flat device-resident (or offloaded) dict to re-place.
+            pipeline._params = host_offload.place_params(params, pipeline._device, pipeline.host_offload)
+        # else: nothing built yet this session — _raw_params refresh above
+        # is enough; ensure_unet_built() picks it up on the next call.
     else:
         pipeline._params = host_offload.place_params(params, pipeline._device, pipeline.host_offload)
 

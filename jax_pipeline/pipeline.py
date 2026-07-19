@@ -99,38 +99,35 @@ class JAXSDXLPipeline:
 
         self._device = host_offload.get_default_device()
         params = convert.load_weights_from_ldm(unet_patcher.model, report=True)
+        # Kept for the lifetime of the pipeline (not just __init__) — every
+        # (re)build of the streaming execution (ensure_unet_built, LoRA
+        # reload) re-partitions/re-loads from this same flat dict, and
+        # autotune's empty-tensor benchmarking needs it directly too.
+        self._raw_params = params
+
+        self._block_cache = None
+        self._fusion_level = None
+        self._unet_shape_sig = None
 
         if phase_manager is not None and phase_manager.enabled:
-            # Block-level LRU streaming (jax_pipeline.block_cache), NOT
-            # PhaseManager's coarse whole-component device<->host moves —
-            # bringing the whole ~5-6GB bf16 UNet resident at once (even
-            # just once per sampling phase, not per call) left too little
-            # headroom for the forward pass's own activation memory on an
-            # 8GB card; see the VRAM-profiling trail in this repo's commit
-            # history (~2026-07-19). self._params is a BlockParamCache
-            # here, not a flat dict — self._forward's signature is
-            # unchanged either way (see make_streaming_forward), so
-            # apply_model()/JAXCFGDenoiser's call sites don't need to
-            # know which mode built it.
-            #
-            # NOT registered with phase_manager.register("unet", ...) —
-            # the cache manages the UNet's own device residency entirely
-            # independently, at a much finer (per-block) granularity than
-            # PhaseManager's per-component moves. PhaseManager continues
-            # to coarsely manage CLIP/VAE exactly as before; the two
-            # mechanisms coexist without overlapping responsibility.
+            # Fusion-level selection (jax_pipeline.autotune — "fine"
+            # per-micro-block streaming / "coarse" per-stage streaming /
+            # "whole" single-jit, mirroring TensorRT's builder exploring
+            # multiple kernel implementations and caching the winner) needs
+            # the REAL generation's latent resolution and batch size to
+            # decide correctly — model-load time (here) doesn't have that
+            # yet. Actual construction of self._params/self._forward is
+            # deferred to ensure_unet_built(), called once per generation
+            # from the sampler hook / apply_model(), once those are known.
             self.host_offload = False
-            from jax_pipeline.block_cache import BlockParamCache, partition_params_by_block
-            from jax_pipeline.unet import build_block_ids
-
-            self._block_cache = BlockParamCache(self._device, budget_bytes=None)
-            self._block_cache.load(partition_params_by_block(params, build_block_ids()))
-            self._params = self._block_cache
-            self._forward = host_offload.make_streaming_forward()
-
-            phase_manager.register_evict_callback(self._block_cache.evict_all_resident)
-            phase_manager.register_release_callback(self._block_cache.clear)
+            self._params = None
+            self._forward = None
         else:
+            # Large-VRAM cards: no fusion-level search needed, "whole"
+            # (the single-jit path) is always the right call and doesn't
+            # need per-generation-shape awareness the way the streaming
+            # levels' peak-VRAM trade-off does — keep this eager and
+            # unchanged from before.
             self.host_offload: bool = host_offload.should_offload(unet_patcher, params)
             self._params = host_offload.place_params(params, self._device, self.host_offload)
             self._forward = host_offload.make_forward(self._device, self.host_offload)
@@ -145,6 +142,106 @@ class JAXSDXLPipeline:
             "[JAX Pipeline] Ready — backend=%s host_offload=%s phase_managed=%s",
             self._device.platform, self.host_offload,
             phase_manager.enabled if phase_manager is not None else False,
+        )
+
+    def _build_unet_execution(self, level: str, params):
+        """Construct the (params_or_cache, forward_fn, block_cache) triple
+        for a chosen fusion level. ``block_cache`` is None for "whole"
+        (the plain flat-dict + make_forward path — no BlockParamCache
+        involved) so the caller knows whether there's a cache to register
+        phase_manager cleanup callbacks for.
+        """
+        from jax_pipeline import host_offload
+
+        if level == "whole":
+            offload_flag = host_offload.should_offload(self.unet_patcher, params)
+            placed = host_offload.place_params(params, self._device, offload_flag)
+            forward = host_offload.make_forward(self._device, offload_flag)
+            self.host_offload = offload_flag
+            return placed, forward, None
+
+        from jax_pipeline.block_cache import BlockParamCache, partition_params_by_block
+        from jax_pipeline.unet import build_block_ids, build_block_ids_coarse
+
+        block_ids = build_block_ids() if level == "fine" else build_block_ids_coarse()
+        cache = BlockParamCache(self._device, budget_bytes=None)
+        cache.load(partition_params_by_block(params, block_ids))
+        forward = host_offload.make_streaming_forward()
+        self.host_offload = False
+        return cache, forward, cache
+
+    def ensure_unet_built(self, latent_shape, seq_len: int = 77) -> None:
+        """Make sure self._params/self._forward are built for
+        ``latent_shape`` (B, 4, H, W) — no-op on every call after the
+        first for a given shape (the per-generation, not per-step, cost
+        this is meant to be), and a complete no-op when phase_manager is
+        disabled/None (large-VRAM cards already built their eager "whole"
+        forward in __init__, unaffected by any of this).
+
+        ``seq_len`` (prompt token count) only affects the autotune DB
+        signature/benchmark's dummy encoder_hidden_states shape, not
+        correctness of the real forward pass — defaults to 77 (one CLIP
+        chunk) since resolution dominates the VRAM trade-off between
+        fusion levels far more than prompt length does; callers that
+        don't have an exact count handy (this is most of them) can just
+        omit it.
+
+        Best-effort: any failure anywhere in autotuning/building falls
+        back to directly constructing "fine" (this session's original,
+        most battle-tested level) without going through autotune at all,
+        so apply_model() always has a working self._forward by the time
+        it needs one.
+        """
+        if self._phase_manager is None or not self._phase_manager.enabled:
+            return  # already built eagerly in __init__
+
+        B, _, H, W = latent_shape
+        shape_sig = (H, W, B, seq_len)
+        if self._unet_shape_sig == shape_sig and self._forward is not None:
+            return
+
+        try:
+            from jax_pipeline import autotune
+            level = autotune.autotune_unet(
+                self._raw_params, self._device, self.unet_patcher.load_device,
+                latent_h=H, latent_w=W, batch=B, seq_len=seq_len,
+            )
+            params, forward, block_cache = self._build_unet_execution(level, self._raw_params)
+        except Exception as e:
+            log.warning(
+                "[JAX Pipeline] ensure_unet_built: autotune/build failed (%s) — "
+                "falling back to 'fine' directly.", e, exc_info=True,
+            )
+            level = "fine"
+            params, forward, block_cache = self._build_unet_execution("fine", self._raw_params)
+
+        # Tear down whatever was built for the PREVIOUS shape (if any)
+        # before switching to the new one — avoids leaking the old
+        # cache's resident+host-store arrays once nothing references it.
+        if self._block_cache is not None:
+            self._block_cache.clear()
+
+        self._params = params
+        self._forward = forward
+        self._block_cache = block_cache
+        self._fusion_level = level
+        self._unet_shape_sig = shape_sig
+
+        if block_cache is not None:
+            # Note: each rebuild (a resolution change mid-session, e.g.
+            # hires-fix) registers a FRESH pair of callbacks rather than
+            # replacing the previous ones — PhaseManager's callback lists
+            # only grow. The stale callbacks reference an already-cleared
+            # cache (empty dicts), so calling them is harmless, just a
+            # little wasteful; not worth the extra bookkeeping to prune
+            # them given how infrequently resolution actually changes
+            # within one session.
+            self._phase_manager.register_evict_callback(block_cache.evict_all_resident)
+            self._phase_manager.register_release_callback(block_cache.clear)
+
+        log.info(
+            "[JAX Pipeline] UNet built: fusion_level=%s shape=%dx%d(latent) batch=%d seq~%d",
+            level, H, W, B, seq_len,
         )
 
     # -- forward pass ---------------------------------------------------------
@@ -214,6 +311,14 @@ class JAXSDXLPipeline:
                 self._phase_manager.force_offload_all()
             else:
                 self._phase_manager.activate("unet")
+
+        # -- 0.6. Fusion-level build (streaming path only) ----------------------
+        # No-op after the first call for a given latent shape this
+        # generation (and for every generation afterward at the SAME
+        # shape) — see ensure_unet_built's docstring. On large-VRAM cards
+        # this is a no-op every time (self._forward was already built
+        # eagerly in __init__).
+        self.ensure_unet_built(tuple(x.shape))
 
         import jax.numpy as jnp
 

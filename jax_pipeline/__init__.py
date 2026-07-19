@@ -527,6 +527,12 @@ def _install_jax_sampler_hook() -> None:
             if not _built[0]:
                 _built[0] = True
                 try:
+                    # No-op after the first call for this exact latent
+                    # shape (and for every later generation at the same
+                    # shape) — see JAXSDXLPipeline.ensure_unet_built's
+                    # docstring. Must run before JAXCFGDenoiser is built
+                    # below, since it reads jax_pipe._forward/_params.
+                    jax_pipe.ensure_unet_built(latent_shape)
                     denoiser = JAXCFGDenoiser(
                         jax_pipe._forward, jax_pipe._params,
                         jax_pipe.model_sampling, extra_args or {}, latent_shape,
