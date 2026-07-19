@@ -912,3 +912,159 @@ def unet_forward_streaming(
     sample = _jit_conv2d(cache.get("conv_out"), x=sample, prefix="conv_out", stride=1, padding=1)
 
     return jnp.transpose(sample, (0, 3, 1, 2))
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Coarse (per-stage) streaming — a second fusion granularity
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# unet_forward_streaming above jits ~129 individual blocks (each
+# ResnetBlock2D, each basic_transformer_block, etc.) separately — lowest
+# peak VRAM per streaming unit, but every one of those ~129 calls pays
+# its own Python/dispatch overhead every single denoising step. Speed
+# profiling (this repo's commit history, ~2026-07-19) found that even
+# fully warm (compilation cached, no compile spikes), steady-state
+# "compute" time still dominates wall-clock — consistent with the
+# well-documented JAX pitfall of many small dispatched ops each paying
+# fixed per-call overhead, rather than one large fused graph.
+#
+# unet_forward_streaming_coarse below is a SECOND, coarser fusion level:
+# each down/mid/up STAGE (all its resnets + attentions + the trailing
+# downsample/upsample) is ONE jitted call instead of ~10-15 separate
+# ones — cutting per-step dispatch count from ~129 to ~13. It reuses the
+# EXISTING composite functions (down_block2d, cross_attn_down_block2d,
+# mid_block, cross_attn_up_block2d, up_block2d) that unet_forward
+# (the original, non-streaming, whole-UNet path) already uses — same
+# unchanged math, just jitted as standalone per-stage units instead of
+# being traced once as part of one all-encompassing program. Needs more
+# peak VRAM per streaming unit (a whole stage's weights, not one micro-
+# block's) in exchange for far fewer dispatch calls.
+#
+# jax_pipeline.autotune benchmarks both this and the fine-grained level
+# (plus the non-streaming "whole" path — unet_forward_jit, used directly
+# on large-VRAM cards) against the current input shape and available
+# VRAM, and picks whichever is fastest while still fitting — see that
+# module's docstring for the full selection policy. This file only
+# provides the levels; it doesn't choose between them.
+
+_jit_down_block2d = _timed_jit(jax.jit(down_block2d, static_argnames=("prefix", "num_layers")))
+_jit_cross_attn_down_block2d = _timed_jit(jax.jit(
+    cross_attn_down_block2d,
+    static_argnames=("prefix", "num_layers", "num_attn_layers", "num_heads", "add_downsample"),
+))
+_jit_mid_block = _timed_jit(jax.jit(mid_block, static_argnames=("prefix", "num_heads", "num_attn_layers")))
+_jit_cross_attn_up_block2d = _timed_jit(jax.jit(
+    cross_attn_up_block2d,
+    static_argnames=("prefix", "num_layers", "num_attn_layers", "num_heads", "add_upsample", "target_hw"),
+))
+_jit_up_block2d = _timed_jit(jax.jit(
+    up_block2d, static_argnames=("prefix", "num_layers", "add_upsample", "target_hw"),
+))
+
+
+def build_block_ids_coarse() -> List[str]:
+    """Coarse-granularity streaming block_ids — one per down/mid/up STAGE
+    instead of one per micro-block. ``partition_params_by_block`` needs
+    no changes to support this: it already assigns every param key to
+    whichever block_id it starts with, so a coarser block_id (e.g.
+    ``"down_blocks.1"`` instead of ``"down_blocks.1.resnets.0"``,
+    ``"down_blocks.1.attentions.0.transformer_blocks.0"``, etc.)
+    naturally groups every key under that stage into one sub-dict.
+    """
+    return [
+        "time_embedding", "add_embedding", "class_embedding", "conv_in",
+        "down_blocks.0", "down_blocks.1", "down_blocks.2",
+        "mid_block",
+        "up_blocks.0", "up_blocks.1", "up_blocks.2",
+        "conv_norm_out", "conv_out",
+    ]
+
+
+def unet_forward_streaming_coarse(
+    cache,
+    sample: "jnp.ndarray",
+    timestep: "jnp.ndarray",
+    encoder_hidden_states: "jnp.ndarray",
+    added_cond_kwargs: Dict[str, "jnp.ndarray"],
+) -> "jnp.ndarray":
+    """Coarse-streaming counterpart of unet_forward_streaming — identical
+    math and control flow (copied from unet_forward), sourced from
+    ``cache`` one STAGE at a time instead of one micro-block at a time.
+    See the module-level "Coarse (per-stage) streaming" section docstring
+    above for why this exists alongside the fine-grained version.
+    """
+    ch = _BLOCK_OUT_CHANNELS
+
+    sample = jnp.transpose(sample, (0, 2, 3, 1))
+
+    timestep_emb = _sinusoidal_embedding(
+        timestep.astype(jnp.float32), _TIME_DIM, flip_sin_to_cos=True
+    ).astype(sample.dtype)
+    temb = _jit_timestep_embedding_mlp(cache.get("time_embedding"), x=timestep_emb, prefix="time_embedding")
+
+    text_embeds = added_cond_kwargs["text_embeds"].astype(sample.dtype)
+    time_ids = added_cond_kwargs["time_ids"].astype(jnp.float32)
+    aug_emb = _jit_add_embedding(
+        cache.get("add_embedding"), text_embeds=text_embeds, time_ids=time_ids,
+        prefix="add_embedding", time_embed_dim=_ADD_TIME_EMBED_DIM,
+    ).astype(sample.dtype)
+    temb = temb + aug_emb
+
+    sample = _jit_conv2d(cache.get("conv_in"), x=sample, prefix="conv_in", stride=1, padding=1)
+
+    down_block_res_samples: List = [sample]
+
+    sample, skips = _jit_down_block2d(
+        cache.get("down_blocks.0"), x=sample, temb=temb,
+        prefix="down_blocks.0", num_layers=_LAYERS_PER_BLOCK,
+    )
+    down_block_res_samples.extend(skips)
+
+    sample, skips = _jit_cross_attn_down_block2d(
+        cache.get("down_blocks.1"), x=sample, temb=temb, encoder_hidden_states=encoder_hidden_states,
+        prefix="down_blocks.1", num_layers=_LAYERS_PER_BLOCK,
+        num_attn_layers=_TRANSFORMER_LAYERS[1], num_heads=_num_heads(ch[1]), add_downsample=True,
+    )
+    down_block_res_samples.extend(skips)
+
+    sample, skips = _jit_cross_attn_down_block2d(
+        cache.get("down_blocks.2"), x=sample, temb=temb, encoder_hidden_states=encoder_hidden_states,
+        prefix="down_blocks.2", num_layers=_LAYERS_PER_BLOCK,
+        num_attn_layers=_TRANSFORMER_LAYERS[2], num_heads=_num_heads(ch[2]), add_downsample=False,
+    )
+    down_block_res_samples.extend(skips)
+
+    sample = _jit_mid_block(
+        cache.get("mid_block"), x=sample, temb=temb, encoder_hidden_states=encoder_hidden_states,
+        prefix="mid_block", num_heads=_num_heads(ch[2]), num_attn_layers=_TRANSFORMER_LAYERS[2],
+    )
+
+    up_block_specs = [
+        dict(name="up_blocks.0", num_layers=3, attn=True,
+             num_attn_layers=_TRANSFORMER_LAYERS[2], num_heads=_num_heads(ch[2]), add_upsample=True),
+        dict(name="up_blocks.1", num_layers=3, attn=True,
+             num_attn_layers=_TRANSFORMER_LAYERS[1], num_heads=_num_heads(ch[1]), add_upsample=True),
+        dict(name="up_blocks.2", num_layers=3, attn=False, add_upsample=False),
+    ]
+    for spec in up_block_specs:
+        n = spec["num_layers"]
+        res_samples = [down_block_res_samples.pop() for _ in range(n)]
+        target_hw = down_block_res_samples[-1].shape[1:3] if down_block_res_samples else None
+        if spec["attn"]:
+            sample = _jit_cross_attn_up_block2d(
+                cache.get(spec["name"]), x=sample, temb=temb,
+                encoder_hidden_states=encoder_hidden_states, res_samples=res_samples,
+                prefix=spec["name"], num_layers=n, num_attn_layers=spec["num_attn_layers"],
+                num_heads=spec["num_heads"], add_upsample=spec["add_upsample"], target_hw=target_hw,
+            )
+        else:
+            sample = _jit_up_block2d(
+                cache.get(spec["name"]), x=sample, temb=temb, res_samples=res_samples,
+                prefix=spec["name"], num_layers=n, add_upsample=spec["add_upsample"], target_hw=target_hw,
+            )
+
+    norm_out_id = "conv_norm_out"
+    sample = _silu(_jit_group_norm(cache.get(norm_out_id), x=sample, prefix=norm_out_id))
+    sample = _jit_conv2d(cache.get("conv_out"), x=sample, prefix="conv_out", stride=1, padding=1)
+
+    return jnp.transpose(sample, (0, 3, 1, 2))
