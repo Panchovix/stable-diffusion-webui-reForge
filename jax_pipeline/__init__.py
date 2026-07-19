@@ -269,6 +269,45 @@ _BANNER = """
 """
 
 
+def _apply_persistent_compilation_cache(jax_module) -> None:
+    """Enable JAX's built-in persistent compilation cache — compiled XLA
+    executables survive PROCESS restarts, not just JAX's own in-memory
+    jax.jit cache (which only lives for one process's lifetime).
+
+    Confirmed via profiling (this repo's commit history, ~2026-07-19)
+    that a fresh session's first generation pays a real, substantial
+    one-time compile tax (~65s across the block-streaming UNet's many
+    small jitted units) that a warm (same-process) second generation
+    doesn't — this cache extends that "warm" state across webui
+    restarts too: once ANY session has compiled a given (block, shape)
+    combination, every future session (until the checkpoint/cache dir
+    changes) reads the compiled executable back from disk instead of
+    recompiling from scratch.
+
+    Cache lives under jax_pipeline/.cache/xla_compile_cache/ (not /tmp —
+    this needs to survive reboots, unlike the VRAM/speed debug dumps in
+    _debug_profile.py). Must be set before the first jax.jit compilation
+    of the process; called from _jax_probe() right after `import jax`
+    succeeds, before anything else touches jax.jit.
+
+    Best-effort: never raises. A cache-setup failure should degrade to
+    "no persistent cache" (today's behavior), not block activation.
+    """
+    try:
+        cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".cache", "xla_compile_cache")
+        os.makedirs(cache_dir, exist_ok=True)
+        jax_module.config.update("jax_compilation_cache_dir", cache_dir)
+        # Cache everything regardless of size/compile-time — our units are
+        # individually small and fast enough (single blocks, milliseconds
+        # to a few seconds) that JAX's own default thresholds (tuned for
+        # large, slow-to-compile programs) would skip caching most of them.
+        jax_module.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
+        jax_module.config.update("jax_persistent_cache_min_compile_time_secs", 0)
+        log.info("[JAX Pipeline] Persistent compilation cache enabled at %s", cache_dir)
+    except Exception as e:
+        log.warning("[JAX Pipeline] Could not enable persistent compilation cache: %s", e)
+
+
 def _jax_probe():
     """Return (available: bool, reason: str) — reason is empty on success.
 
@@ -286,6 +325,7 @@ def _jax_probe():
         import jax
     except Exception as e:
         return False, f"import jax failed: {e!r}"
+    _apply_persistent_compilation_cache(jax)
     try:
         devices = jax.devices()
     except Exception as e:
