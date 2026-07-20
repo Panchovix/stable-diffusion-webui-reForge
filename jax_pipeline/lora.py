@@ -84,10 +84,21 @@ def reload_jax_unet_weights(pipeline, unet_patcher) -> None:
     from jax_pipeline import convert, host_offload
 
     log.info("[JAX LoRA] LoRA/DoRA config changed - reloading JAX UNet weights...")
-    params = convert.load_weights_from_ldm(unet_patcher.model, report=False)
-    pipeline._raw_params = params
 
     phase_manager = getattr(pipeline, "_phase_manager", None)
+    raw_sharding = None
+    if phase_manager is not None and phase_manager.enabled:
+        # Same reasoning as JAXSDXLPipeline.__init__: convert directly to
+        # pinned host on a phase-managed card so this refreshed
+        # pipeline._raw_params never touches device memory itself -- only
+        # the block_cache.load()/partition_params_for_atoms re-staging
+        # below (which already correctly targets pinned host) should.
+        import jax
+        raw_sharding = jax.sharding.SingleDeviceSharding(pipeline._device, memory_kind="pinned_host")
+
+    params = convert.load_weights_from_ldm(unet_patcher.model, report=False, sharding=raw_sharding)
+    pipeline._raw_params = params
+
     if phase_manager is not None and phase_manager.enabled:
         block_cache = getattr(pipeline, "_block_cache", None)
         level = getattr(pipeline, "_fusion_level", None) or "fine"

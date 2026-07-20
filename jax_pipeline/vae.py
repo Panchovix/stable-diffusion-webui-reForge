@@ -95,23 +95,30 @@ _JAX_VAE_MAX_TILE = 64
 
 # -- conversion ----------------------------------------------------------------
 
-def _tensor_to_jax(tensor: "torch.Tensor", dtype):
+def _tensor_to_jax(tensor: "torch.Tensor", dtype, sharding=None):
+    """``sharding``, when given, is passed as ``jnp.asarray``'s ``device=``
+    argument so the array lands directly where the caller wants it (e.g.
+    pinned host memory, on a phase-managed card) rather than defaulting
+    to GPU device memory and needing a second device_put to relocate it
+    later — same fix as ``jax_pipeline.convert``'s UNet-side counterpart;
+    see its docstring for the real-hardware OOM this class of bug caused.
+    """
     import jax.numpy as jnp
     import numpy as np
 
     arr = tensor.detach().float().cpu().numpy()
     if arr.ndim == 4:
         arr = np.transpose(arr, (2, 3, 1, 0))  # OIHW -> HWIO
-    return jnp.asarray(arr, dtype=dtype)
+    return jnp.asarray(arr, dtype=dtype, device=sharding)
 
 
-def load_vae_params(first_stage_model, dtype=None) -> Dict[str, "jnp.ndarray"]:
+def load_vae_params(first_stage_model, dtype=None, sharding=None) -> Dict[str, "jnp.ndarray"]:
     import jax.numpy as jnp
 
     if dtype is None:
         dtype = jnp.bfloat16
     sd = first_stage_model.state_dict()
-    return {k: _tensor_to_jax(v, dtype) for k, v in sd.items()}
+    return {k: _tensor_to_jax(v, dtype, sharding=sharding) for k, v in sd.items()}
 
 
 def _detect_decoder_arch(sd_state: Dict[str, "torch.Tensor"]):
@@ -455,7 +462,11 @@ def install_vae_hooks(sd_model, forge_objects=None, phase_manager=None) -> bool:
         # generation. OOM-class failures are handled differently below
         # (host_offload.handle_jax_oom aborts instead) — see that
         # function's docstring for why a silent fallback isn't safe there.
-        _state = {"disabled": False, "params": load_vae_params(fst)}
+        vae_sharding = None
+        if phase_manager is not None and phase_manager.enabled:
+            import jax
+            vae_sharding = jax.sharding.SingleDeviceSharding(phase_manager.device, memory_kind="pinned_host")
+        _state = {"disabled": False, "params": load_vae_params(fst, sharding=vae_sharding)}
 
         if phase_manager is not None:
             phase_manager.register(

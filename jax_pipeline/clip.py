@@ -170,16 +170,24 @@ def clip_encode(
 
 # -- weight loading ----------------------------------------------------------
 
-def _tensor_to_jax(tensor: "torch.Tensor", dtype):
+def _tensor_to_jax(tensor: "torch.Tensor", dtype, sharding=None):
+    """``sharding``, when given, is passed as ``jnp.asarray``'s ``device=``
+    argument so the array lands directly where the caller wants it (e.g.
+    pinned host memory, on a phase-managed card) instead of defaulting to
+    GPU device memory and needing a second device_put to relocate it
+    later. See ``jax_pipeline.convert._tensor_to_jax``'s docstring for
+    the same reasoning applied to the UNet -- this is the CLIP-side
+    counterpart of that fix.
+    """
     arr = tensor.detach().float().cpu().numpy()
-    return jnp.asarray(arr, dtype=dtype)
+    return jnp.asarray(arr, dtype=dtype, device=sharding)
 
 
-def load_clip_params(transformer, dtype=None) -> Dict[str, "jnp.ndarray"]:
+def load_clip_params(transformer, dtype=None, sharding=None) -> Dict[str, "jnp.ndarray"]:
     if dtype is None:
         dtype = jnp.bfloat16
     sd = transformer.state_dict()
-    return {k: _tensor_to_jax(v, dtype) for k, v in sd.items()}
+    return {k: _tensor_to_jax(v, dtype, sharding=sharding) for k, v in sd.items()}
 
 
 class JAXCLIPTextEncoder:
@@ -235,6 +243,7 @@ def build_clip_text_encoder(
     activation=None,
     text_projection_param: Optional["torch.Tensor"] = None,
     dtype=None,
+    sharding=None,
 ) -> "JAXCLIPTextEncoder":
     """Build a JAXCLIPTextEncoder from an ldm_patched CLIPTextModel.
 
@@ -245,6 +254,12 @@ def build_clip_text_encoder(
       2. ``"text_projection.weight"`` in the transformer state dict (Linear
          convention [out,in]) - transposed to [in,out] so the same
          ``pooled = eos_hidden @ tp_w`` formula holds either way.
+
+    ``sharding``: forwarded to every weight conversion (see
+    ``_tensor_to_jax``'s docstring) — ``install_clip_hooks`` passes a
+    pinned-host sharding here on a phase-managed card so CLIP-L/G never
+    touch device memory during conversion, only via
+    ``PhaseManager.activate("clip")`` on demand.
     """
     if dtype is None:
         dtype = jnp.bfloat16
@@ -259,11 +274,11 @@ def build_clip_text_encoder(
     )
     n_heads = d_model // 64  # all CLIP variants use 64-d heads
 
-    params = load_clip_params(transformer, dtype=dtype)
+    params = load_clip_params(transformer, dtype=dtype, sharding=sharding)
 
     if has_text_projection:
         if text_projection_param is not None:
-            params["text_projection.weight"] = _tensor_to_jax(text_projection_param, dtype)
+            params["text_projection.weight"] = _tensor_to_jax(text_projection_param, dtype, sharding=sharding)
         elif "text_projection.weight" in params:
             params["text_projection.weight"] = params["text_projection.weight"].T
 
@@ -433,11 +448,28 @@ def install_clip_hooks(sd_model, forge_objects, phase_manager=None) -> bool:
         clip_l = clip_model.clip_l  # SDClipModel
         clip_g = clip_model.clip_g  # SDXLClipG
 
+        # On a phase-managed (VRAM-constrained) card, convert CLIP-L/G
+        # weights DIRECTLY to pinned host instead of the default GPU
+        # placement -- phase_manager.register("clip", ...) below would
+        # move them to pinned host anyway, but doing it AT conversion
+        # time avoids a transient extra device allocation for the whole
+        # ~1-2GB combined CLIP-L+G footprint stacking on top of whatever
+        # else (notably the UNet's own conversion) is happening around
+        # the same point in activation. Same fix as
+        # jax_pipeline.convert.load_weights_from_ldm's sharding param —
+        # see its docstring for the real-hardware OOM this class of bug
+        # caused.
+        clip_sharding = None
+        if phase_manager is not None and phase_manager.enabled:
+            import jax
+            clip_sharding = jax.sharding.SingleDeviceSharding(phase_manager.device, memory_kind="pinned_host")
+
         jax_clip_l = build_clip_text_encoder(
             clip_l.transformer,
             layer_idx=clip_l.layer_idx if clip_l.layer_idx is not None else -2,
             has_text_projection=False,  # CLIP-L pooled not used in SDXL
             activation=_quick_gelu,
+            sharding=clip_sharding,
         )
 
         tp_param = getattr(clip_g, "text_projection", None)
@@ -448,6 +480,7 @@ def install_clip_hooks(sd_model, forge_objects, phase_manager=None) -> bool:
             has_text_projection=tp_data is not None,
             activation=_gelu,
             text_projection_param=tp_data,
+            sharding=clip_sharding,
         )
 
         # Shared mutable holder for both encoders — see _make_clip_l_hook's

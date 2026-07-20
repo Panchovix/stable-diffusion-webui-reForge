@@ -94,11 +94,19 @@ def _is_conv_weight(key: str, ndim: int) -> bool:
     )
 
 
-def _tensor_to_jax(key: str, tensor: "torch.Tensor", dtype) -> "jnp.ndarray":
+def _tensor_to_jax(key: str, tensor: "torch.Tensor", dtype, sharding=None) -> "jnp.ndarray":
     """Convert a single PyTorch tensor to a JAX array.
 
     Conv2d weight tensors are transposed from PyTorch's OIHW layout to
     JAX's HWIO layout: [O,I,kH,kW] -> [kH,kW,I,O].
+
+    ``sharding``, when given, is passed straight through as
+    ``jnp.asarray``'s ``device=`` argument — placing the array directly
+    where the caller wants it (e.g. pinned host memory) as part of THIS
+    conversion, rather than defaulting to GPU device memory (jnp.asarray's
+    behavior with no explicit device) and requiring a second device_put
+    later to relocate it. See ``load_weights_from_ldm``'s docstring for
+    why this matters on VRAM-constrained cards.
     """
     import jax.numpy as jnp
 
@@ -107,16 +115,18 @@ def _tensor_to_jax(key: str, tensor: "torch.Tensor", dtype) -> "jnp.ndarray":
     if _is_conv_weight(key, arr_np.ndim):
         arr_np = np.transpose(arr_np, (2, 3, 1, 0))  # OIHW -> HWIO
 
-    return jnp.asarray(arr_np, dtype=dtype)
+    return jnp.asarray(arr_np, dtype=dtype, device=sharding)
 
 
 def hf_sd_to_jax(
     hf_sd: Dict[str, "torch.Tensor"],
     dtype=None,
+    sharding=None,
 ) -> Dict[str, "jnp.ndarray"]:
     """Convert an HF-keyed state dict to a flat {key: jnp.ndarray} dict.
 
-    ``dtype`` defaults to ``jnp.bfloat16`` if not given.
+    ``dtype`` defaults to ``jnp.bfloat16`` if not given. ``sharding`` is
+    forwarded to every ``_tensor_to_jax`` call — see its docstring.
     """
     import jax.numpy as jnp
 
@@ -128,7 +138,7 @@ def hf_sd_to_jax(
 
     for key, tensor in hf_sd.items():
         try:
-            params[key] = _tensor_to_jax(key, tensor, dtype)
+            params[key] = _tensor_to_jax(key, tensor, dtype, sharding=sharding)
         except Exception as e:
             log.warning("[JAX convert] Skipping key %r: %s", key, e)
             skipped += 1
@@ -146,6 +156,7 @@ def load_weights_from_ldm(
     ldm_model,
     dtype=None,
     report: bool = True,
+    sharding=None,
 ) -> Dict[str, "jnp.ndarray"]:
     """One-shot: read ldm weights, convert to a flat JAX params dict.
 
@@ -154,11 +165,30 @@ def load_weights_from_ldm(
     ldm_model : ldm_patched model object with .diffusion_model and .model_config
     dtype     : target jnp dtype (default jnp.bfloat16)
     report    : if True, print a one-line summary
+    sharding  : where to place every converted array (forwarded to
+                ``jnp.asarray``'s ``device=`` argument via
+                ``hf_sd_to_jax``/``_tensor_to_jax``). Defaults to None,
+                which is JAX's own default placement (the GPU device, on
+                a GPU backend) -- the pre-existing behavior, correct for
+                a large-VRAM/non-phase-managed card where this dict IS
+                meant to be the device-resident "whole" params.
 
-    Returns
-    -------
-    {hf_key: jnp.ndarray} — flat dict, a valid JAX pytree, ready to pass to
-    ``jax_pipeline.unet.unet_forward(params, ...)``.
+                On a VRAM-constrained (phase-managed) card, callers
+                MUST pass a pinned-host ``SingleDeviceSharding`` here.
+                ``JAXSDXLPipeline`` retains its OWN copy of this dict
+                (``self._raw_params``) for the pipeline's entire
+                lifetime (LoRA reload / shape-change re-partitioning
+                reuse it) -- if it defaulted to GPU placement, that
+                would permanently pin the full ~5-6GB UNet on device on
+                top of whatever the ACTUAL streaming execution
+                (jax_pipeline.block_cache.BlockParamCache, which DOES
+                correctly re-stage to pinned host in its own load())
+                separately needs, for the whole session. This was a
+                real bug: a real-hardware VRAM-constrained run showed
+                ~5.3GB of JAX-resident device memory immediately after
+                activation, BEFORE any generation had even started,
+                starving even a 12.5MB CLIP tensor conversion moments
+                later -- see git history.
     """
     import jax.numpy as jnp
 
@@ -169,7 +199,7 @@ def load_weights_from_ldm(
     ldm_unet_cfg = dict(getattr(ldm_model, "model_config", type("_", (), {"unet_config": {}})()).unet_config)
 
     hf_sd = ldm_sd_to_hf(ldm_sd, ldm_unet_cfg)
-    params = hf_sd_to_jax(hf_sd, dtype=dtype)
+    params = hf_sd_to_jax(hf_sd, dtype=dtype, sharding=sharding)
 
     if report:
         n_params = sum(int(np.prod(v.shape)) for v in params.values())

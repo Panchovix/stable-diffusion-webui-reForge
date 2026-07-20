@@ -98,7 +98,25 @@ class JAXSDXLPipeline:
         from jax_pipeline import convert, host_offload
 
         self._device = host_offload.get_default_device()
-        params = convert.load_weights_from_ldm(unet_patcher.model, report=True)
+
+        # On a phase-managed (VRAM-constrained) card, self._raw_params is
+        # kept resident for the pipeline's ENTIRE lifetime (every
+        # ensure_unet_built/LoRA-reload re-partitions from it) -- if this
+        # conversion defaulted to GPU placement (jnp.asarray's own default
+        # with no explicit device), the full ~5-6GB UNet would sit
+        # permanently on device on top of whatever the actual streaming
+        # cache separately, correctly stages to pinned host, for the whole
+        # session. Converting DIRECTLY to pinned host here means the raw
+        # dict never touches device memory at all -- only the small,
+        # budget-bounded slices jax_pipeline.block_cache.BlockParamCache
+        # actually stages on demand do. See convert.load_weights_from_ldm's
+        # docstring for the real-hardware OOM this fixes.
+        raw_sharding = None
+        if phase_manager is not None and phase_manager.enabled:
+            import jax
+            raw_sharding = jax.sharding.SingleDeviceSharding(self._device, memory_kind="pinned_host")
+
+        params = convert.load_weights_from_ldm(unet_patcher.model, report=True, sharding=raw_sharding)
         # Kept for the lifetime of the pipeline (not just __init__) — every
         # (re)build of the streaming execution (ensure_unet_built, LoRA
         # reload) re-partitions/re-loads from this same flat dict, and
