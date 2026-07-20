@@ -93,6 +93,24 @@ log = logging.getLogger(__name__)
 #: back under it.
 _MAX_PENDING_FRACTION = 0.4
 
+#: Headroom reserved OUTSIDE the search's own budget for state that's
+#: concurrently resident during real sampling but isn't part of any
+#: UNet segment's own footprint: JAXCFGDenoiser's pre-converted
+#: conditioning tensors (encoder_hidden_states / pooled embeddings),
+#: the k-diffusion sampler loop's own per-step state (e.g. DPM++2M's
+#: ``old_denoised``, kept resident across steps — see samplers.py), the
+#: latent tensor itself, and general JAX/XLA compiled-executable
+#: overhead. A search that spends 100% of currently-free VRAM packing
+#: UNet atoms into one giant segment (observed on real hardware: 118
+#: atoms in ONE segment reported "fits" at the benchmark's isolated-
+#: UNet-call granularity) leaves nothing for any of that, which then
+#: OOMs once the full sampler loop is actually running around it even
+#: though the isolated benchmark succeeded. Mirrors
+#: jax_pipeline.host_offload.should_offload's existing 1GB headroom
+#: convention for the identical "leave room for everything else"
+#: reasoning.
+_SAMPLER_RESERVE_BYTES = 1024 * 1024 * 1024  # 1GB
+
 #: Don't bother spilling a value whose consumer is closer than this many
 #: atoms away — the round-trip transfer cost isn't worth it for
 #: something about to be re-staged almost immediately.
@@ -374,13 +392,32 @@ def estimate_activation_bytes(
 def search_unet_segmentation(
     flat_params: Dict[str, Any], jax_device, torch_device_for_vram_query,
     latent_h: int, latent_w: int, batch: int, seq_len: int, dtype_bytes: int = 2,
+    vram_budget_override: Optional[int] = None,
 ) -> Tuple[List[Any], SegmentPlan]:
     """Full pipeline: build atoms for this shape, get weight/value/
     activation footprints (DB warm start or fresh trace), run the
-    Best-Fit search against the CURRENT free VRAM, persist the
-    resulting plan. Returns ``(atoms, plan)`` — the caller (jax_pipeline
-    .pipeline / autotune) compiles the plan via
+    Best-Fit search against the available VRAM, persist the resulting
+    plan. Returns ``(atoms, plan)`` — the caller (jax_pipeline.pipeline /
+    autotune) compiles the plan via
     ``jax_pipeline.unet_segments.compile_segments``.
+
+    ``vram_budget_override``: when given, skips both the free-VRAM query
+    AND the DB-reuse-first shortcut below, and searches fresh against
+    exactly this budget — this is how ``jax_pipeline.autotune``'s
+    regret/backtrack loop asks for a progressively more conservative
+    plan after a previous (larger-budget) attempt failed to actually
+    build/run; it must bypass the cache, not reuse the failed attempt's
+    stale saved plan. When omitted (the common case), this function
+    checks for an EXACT signature match in engine_cache first and reuses
+    it verbatim rather than re-deriving a plan from whatever free VRAM
+    happens to be available at the moment — critical for consistency
+    with ``jax_pipeline.pipeline._build_unet_execution``'s OWN call to
+    this same function moments later to actually build the chosen plan:
+    without this, the plan that gets BUILT (and used for real sampling)
+    could differ from whichever plan ``autotune`` just spent time
+    verifying actually fits, since free VRAM can shift slightly between
+    the two calls and total_vram (the only thing the signature buckets
+    on) never does.
     """
     from ldm_patched.modules import model_management
     from jax_pipeline import unet_segments as segs
@@ -388,20 +425,41 @@ def search_unet_segmentation(
     from jax_pipeline import _debug_profile
     from jax_pipeline.autotune import device_name_for
 
+    device_name = device_name_for(jax_device)
+    total_vram = model_management.get_total_memory(torch_device_for_vram_query)
+    signature = engine_cache.compute_signature(
+        "unet_segmentation", device_name, total_vram, latent_h, latent_w, batch, seq_len,
+    )
     atoms = segs.build_atom_specs(latent_h, latent_w)
+
+    if vram_budget_override is None:
+        entry = engine_cache.lookup_exact(signature)
+        if entry is not None:
+            decision = entry.get("decision", {})
+            ranges = tuple(tuple(r) for r in decision.get("ranges", []))
+            spill_schedule = {int(k): tuple(v) for k, v in decision.get("spill_schedule", {}).items()}
+            if ranges and ranges[-1][1] == len(atoms):  # sanity: plan must cover exactly this atom count
+                _debug_profile.note(
+                    f"segment_search: reusing already-verified plan from engine_db "
+                    f"(sig={signature}) -- {len(ranges)} segments, skipping re-search"
+                )
+                return atoms, SegmentPlan(ranges=ranges, spill_schedule=spill_schedule)
+
     weight_bytes = segs.compute_weight_bytes(flat_params, atoms)
 
     shapes = segs.named_value_shapes(latent_h, latent_w)
     value_bytes = {vid: h * w * c * batch * dtype_bytes for vid, (h, w, c) in shapes.items()}
 
-    device_name = device_name_for(jax_device)
-    total_vram = model_management.get_total_memory(torch_device_for_vram_query)
     activation_bytes, _traced = estimate_activation_bytes(
         atoms, flat_params, jax_device, torch_device_for_vram_query,
         device_name, total_vram, latent_h, latent_w, batch, seq_len,
     )
 
-    free_vram = model_management.get_free_memory(torch_device_for_vram_query)
+    if vram_budget_override is not None:
+        raw_budget = vram_budget_override
+    else:
+        raw_budget = model_management.get_free_memory(torch_device_for_vram_query)
+    usable_budget = max(raw_budget - _SAMPLER_RESERVE_BYTES, 0)
 
     total_weight_bytes = sum(weight_bytes.values())
     total_value_bytes = sum(value_bytes.values())
@@ -414,10 +472,11 @@ def search_unet_segmentation(
         f"sum(named_value_bytes)={total_value_bytes/1e9:.3f}GB, "
         f"max_single_atom_activation={max_atom_activation/1e6:.1f}MB, "
         f"activation_source={'traced just now' if _traced else 'DB warm start'}, "
-        f"free_vram_for_search={free_vram/1e9:.3f}GB"
+        f"raw_budget={raw_budget/1e9:.3f}GB minus {_SAMPLER_RESERVE_BYTES/1e9:.3f}GB reserved for "
+        f"sampler-loop/denoiser/XLA overhead -> usable_budget_for_search={usable_budget/1e9:.3f}GB"
     )
 
-    plan = greedy_best_fit_search(atoms, weight_bytes, activation_bytes, value_bytes, free_vram)
+    plan = greedy_best_fit_search(atoms, weight_bytes, activation_bytes, value_bytes, usable_budget)
 
     seg_sizes = [e - s for s, e in plan.ranges]
     _debug_profile.note(
@@ -428,9 +487,6 @@ def search_unet_segmentation(
         f"{len(plan.spill_schedule)} boundaries"
     )
 
-    signature = engine_cache.compute_signature(
-        "unet_segmentation", device_name, total_vram, latent_h, latent_w, batch, seq_len,
-    )
     engine_cache.save(
         "unet_segmentation", signature, device_name, total_vram, latent_h, latent_w, batch, seq_len,
         {
@@ -438,7 +494,7 @@ def search_unet_segmentation(
             "ranges": [list(r) for r in plan.ranges],
             "spill_schedule": {str(k): list(v) for k, v in plan.spill_schedule.items()},
         },
-        {"num_segments": len(plan.ranges), "num_atoms": len(atoms), "free_vram_bytes": free_vram},
+        {"num_segments": len(plan.ranges), "num_atoms": len(atoms), "usable_budget_bytes": usable_budget},
     )
     log.info(
         "[JAX Pipeline] segment_search: %d atoms -> %d segments (%d boundary spills) for sig=%s",

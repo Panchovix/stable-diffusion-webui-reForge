@@ -92,6 +92,7 @@ def _free_vram_bytes(torch_device) -> int:
 def _benchmark_candidate(
     level: str, params: Dict[str, Any], jax_device, latent_h: int, latent_w: int,
     batch: int, seq_len: int, torch_device_for_vram_query,
+    vram_budget_override: Optional[int] = None,
 ) -> Optional[Tuple[int, float]]:
     """Build ``level``'s UNet execution path fresh, run it a few times
     with empty tensors, measure (peak_vram_bytes, avg_seconds_per_call),
@@ -99,6 +100,12 @@ def _benchmark_candidate(
     OOMs or otherwise fails to build/run — a legitimate outcome (the
     level just doesn't fit / doesn't work here), not something to
     propagate as an error.
+
+    ``vram_budget_override`` only applies to ``level == "segmented"`` —
+    forwarded to ``segment_search.search_unet_segmentation`` so
+    ``_benchmark_segmented_with_regret``'s backtrack loop can ask for a
+    progressively smaller, more conservative plan after a larger one
+    failed to actually build/run here.
     """
     import jax
     from jax_pipeline import block_cache as block_cache_mod
@@ -131,6 +138,7 @@ def _benchmark_candidate(
             phase = "build (segment search: atoms + footprint estimation + greedy plan)"
             atoms, plan = segment_search.search_unet_segmentation(
                 params, jax_device, torch_device_for_vram_query, latent_h, latent_w, batch, seq_len,
+                vram_budget_override=vram_budget_override,
             )
             _debug_profile.note(
                 f"autotune[segmented]: plan ready -- {len(plan.ranges)} segments over {len(atoms)} atoms, "
@@ -216,6 +224,82 @@ def _benchmark_candidate(
             pass
 
 
+#: Each regret retry uses this fraction of the PREVIOUS attempt's
+#: budget — geometric shrink (100%, 75%, 56%, 42%, 32% of the original
+#: over 5 attempts), converging quickly without being so aggressive
+#: that one failed attempt jumps straight to "fine"-equivalent
+#: granularity.
+_SEGMENTED_REGRET_SHRINK = 0.75
+
+#: How many progressively-smaller budgets to try before giving up on
+#: segmented entirely and falling through to fine/coarse/whole.
+_SEGMENTED_REGRET_MAX_ATTEMPTS = 5
+
+
+def _benchmark_segmented_with_regret(
+    params: Dict[str, Any], jax_device, latent_h: int, latent_w: int,
+    batch: int, seq_len: int, torch_device_for_vram_query,
+) -> Optional[Tuple[int, float]]:
+    """Try the segmented candidate; if it fails to actually build/run,
+    "regret" the budget the search used and try again with a smaller
+    one, producing a more conservative (more, smaller segments) plan
+    each time — up to ``_SEGMENTED_REGRET_MAX_ATTEMPTS`` attempts.
+
+    Without this, a single failed attempt (the search's footprint
+    estimate was too optimistic, or free VRAM was simply tighter than
+    expected once XLA's own compiled-executable overhead for a large
+    fused segment is included) abandoned segmentation outright in favor
+    of the fine/coarse/whole fallback — even though a SMALLER, safer
+    segmentation might well have fit. This is what makes the search an
+    actual Best-Fit BACKTRACKING search rather than a single blind
+    guess: infeasible attempts are retried against a tighter constraint
+    instead of given up on.
+
+    Each retry's ``search_unet_segmentation`` call still benefits from
+    ``estimate_activation_bytes``'s own DB warm start (the expensive
+    per-atom trace only ever runs once per shape/device, regardless of
+    how many regret attempts follow) — only the cheap O(atoms) greedy
+    pass re-runs on each retry.
+    """
+    from jax_pipeline import _debug_profile
+
+    free_vram = _free_vram_bytes(torch_device_for_vram_query)
+    budget = free_vram
+    for attempt in range(1, _SEGMENTED_REGRET_MAX_ATTEMPTS + 1):
+        result = _benchmark_candidate(
+            "segmented", params, jax_device, latent_h, latent_w, batch, seq_len,
+            torch_device_for_vram_query, vram_budget_override=budget,
+        )
+        if result is not None:
+            if attempt > 1:
+                log.info(
+                    "[JAX Pipeline] autotune: segmented succeeded on regret attempt %d/%d "
+                    "with a shrunk budget=%.3fGB (original free_vram=%.3fGB)",
+                    attempt, _SEGMENTED_REGRET_MAX_ATTEMPTS, budget / 1e9, free_vram / 1e9,
+                )
+            return result
+        if attempt == _SEGMENTED_REGRET_MAX_ATTEMPTS:
+            break
+        next_budget = int(budget * _SEGMENTED_REGRET_SHRINK)
+        _debug_profile.note(
+            f"autotune: segmented regret attempt {attempt}/{_SEGMENTED_REGRET_MAX_ATTEMPTS} failed at "
+            f"budget={budget/1e9:.3f}GB -- shrinking to {next_budget/1e9:.3f}GB and retrying"
+        )
+        log.info(
+            "[JAX Pipeline] autotune: segmented attempt %d/%d failed at budget=%.3fGB — "
+            "regretting, retrying with a smaller budget=%.3fGB",
+            attempt, _SEGMENTED_REGRET_MAX_ATTEMPTS, budget / 1e9, next_budget / 1e9,
+        )
+        budget = next_budget
+
+    log.info(
+        "[JAX Pipeline] autotune: segmented exhausted all %d regret attempts (final budget=%.3fGB) "
+        "— giving up on segmentation for this shape, falling back to fine/coarse/whole.",
+        _SEGMENTED_REGRET_MAX_ATTEMPTS, budget / 1e9,
+    )
+    return None
+
+
 def select_fusion_level(
     candidates: Dict[str, Tuple[int, float]], free_vram_bytes: int,
     safety_factor: float = _VRAM_SAFETY_FACTOR,
@@ -279,8 +363,8 @@ def autotune_unet(
             "seq=%d, free_vram=%.3fGB) — trying the Best-Fit segmentation search first...",
             signature, latent_h, latent_w, batch, seq_len, free_at_start / 1e9,
         )
-        segmented_result = _benchmark_candidate(
-            "segmented", params, jax_device, latent_h, latent_w, batch, seq_len, torch_device_for_vram_query,
+        segmented_result = _benchmark_segmented_with_regret(
+            params, jax_device, latent_h, latent_w, batch, seq_len, torch_device_for_vram_query,
         )
         if segmented_result is not None:
             peak, avg = segmented_result
