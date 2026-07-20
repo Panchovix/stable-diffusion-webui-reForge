@@ -125,11 +125,31 @@ _VRAM_SAFETY_FACTOR = 1.15
 
 class SegmentPlan(NamedTuple):
     """A concrete, ready-to-compile segmentation: which atom index
-    ranges form each segment, and which pending named values to spill
-    to host right after which segment closes.
+    ranges form each segment, which pending named values to spill to
+    host right after which segment closes, and how large a
+    BlockParamCache the runtime should build for it.
+
+    ``cache_budget_bytes`` matters more than it looks: a cache sized to
+    hold only ONE segment's own weights (the bare minimum needed to
+    avoid the segment's own gather loop evicting itself) means that
+    whenever there's more than one segment, EVERY segment evicts every OTHER
+    segment's blocks each time it runs — so on the very next denoising
+    step, the previous segment's blocks are gone and get re-transferred
+    from pinned host all over again. A real-hardware run hit this
+    directly: a 2-segment plan (peak usage only ~3.9GB on an 8GB card,
+    plenty of headroom left) still re-transferred its ENTIRE ~5GB of
+    weights on every single step (100% cache-miss "transfer" time in
+    the profiler, ~14.5s of pure PCIe traffic over a 10-step generation)
+    purely because the cache could only ever hold one segment's worth
+    at a time. Sizing the cache to hold AS MANY segments simultaneously
+    as the search's own VRAM budget allows (up to holding literally
+    everything, when it all fits) turns that into a ONE-TIME transfer
+    at the first step and zero further transfers for the rest of the
+    generation, without changing the segmentation itself at all.
     """
     ranges: Tuple[Tuple[int, int], ...]           # [(start, end), ...] over atoms, half-open
     spill_schedule: Dict[int, Tuple[str, ...]]     # segment_index -> value_ids to spill after it
+    cache_budget_bytes: int                        # how much weight data BlockParamCache may hold resident at once
 
 
 def greedy_best_fit_search(
@@ -146,7 +166,7 @@ def greedy_best_fit_search(
     for why greedy is optimal here and how spill decisions are made.
     """
     if not atoms:
-        return SegmentPlan(ranges=(), spill_schedule={})
+        return SegmentPlan(ranges=(), spill_schedule={}, cache_budget_bytes=0)
 
     consumer_idx: Dict[str, int] = {}
     for i, atom in enumerate(atoms):
@@ -210,7 +230,20 @@ def greedy_best_fit_search(
             pending.pop(vid, None)
 
     ranges.append((seg_start, len(atoms)))
-    return SegmentPlan(ranges=tuple(ranges), spill_schedule=spill_schedule)
+
+    # Size the cache to hold as MANY segments simultaneously resident as
+    # the search's own budget allows -- up to literally everything, if
+    # it all fits -- rather than just the bare minimum for one segment
+    # at a time (min(total_weight, vram_budget_bytes) is always >= any
+    # single segment's own weight sum by construction of the loop above,
+    # so this can never under-size below what compute_segment_cache_
+    # budget's floor would require). See SegmentPlan's docstring for the
+    # real-hardware "100% cache-miss, full retransfer every step" this
+    # directly fixes.
+    total_weight = sum(weight_bytes.get(a.block_id, 0) for a in atoms)
+    cache_budget_bytes = min(total_weight, vram_budget_bytes)
+
+    return SegmentPlan(ranges=tuple(ranges), spill_schedule=spill_schedule, cache_budget_bytes=cache_budget_bytes)
 
 
 def atom_groups_from_plan(atoms: List[Any], plan: SegmentPlan) -> List[List[Any]]:
@@ -438,12 +471,19 @@ def search_unet_segmentation(
             decision = entry.get("decision", {})
             ranges = tuple(tuple(r) for r in decision.get("ranges", []))
             spill_schedule = {int(k): tuple(v) for k, v in decision.get("spill_schedule", {}).items()}
-            if ranges and ranges[-1][1] == len(atoms):  # sanity: plan must cover exactly this atom count
+            cache_budget_bytes = decision.get("cache_budget_bytes")
+            if (
+                ranges and ranges[-1][1] == len(atoms)  # sanity: plan must cover exactly this atom count
+                and cache_budget_bytes is not None  # schema_version bump (v3) guarantees this field exists
+            ):
                 _debug_profile.note(
                     f"segment_search: reusing already-verified plan from engine_db "
-                    f"(sig={signature}) -- {len(ranges)} segments, skipping re-search"
+                    f"(sig={signature}) -- {len(ranges)} segments, "
+                    f"cache_budget={cache_budget_bytes/1e9:.3f}GB, skipping re-search"
                 )
-                return atoms, SegmentPlan(ranges=ranges, spill_schedule=spill_schedule)
+                return atoms, SegmentPlan(
+                    ranges=ranges, spill_schedule=spill_schedule, cache_budget_bytes=cache_budget_bytes,
+                )
 
     weight_bytes = segs.compute_weight_bytes(flat_params, atoms)
 
@@ -493,6 +533,7 @@ def search_unet_segmentation(
             "mode": "segmented",
             "ranges": [list(r) for r in plan.ranges],
             "spill_schedule": {str(k): list(v) for k, v in plan.spill_schedule.items()},
+            "cache_budget_bytes": plan.cache_budget_bytes,
         },
         {"num_segments": len(plan.ranges), "num_atoms": len(atoms), "usable_budget_bytes": usable_budget},
     )

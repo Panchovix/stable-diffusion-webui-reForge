@@ -463,49 +463,6 @@ def block_ids_in_order(atoms: List[AtomSpec]) -> List[str]:
     return list(seen.keys())
 
 
-def compute_segment_cache_budget(
-    weight_bytes: Dict[str, int], atom_groups: List[List[AtomSpec]],
-) -> int:
-    """Minimum ``BlockParamCache.budget_bytes`` that guarantees no
-    segment's own block set is ever partially evicted mid-gather.
-
-    ``unet_forward_segmented``'s driver stages an ENTIRE segment's
-    block_ids onto device (``{bid: param_cache.get(bid) for bid in
-    segment.block_ids}``) BEFORE calling that segment's fused jit
-    function — every one of a segment's blocks must be simultaneously
-    device-resident for that call to work at all. ``BlockParamCache``'s
-    own default budget (``budget_bytes=None`` -> ``3x the largest
-    SINGLE block``) is sized for the fine/coarse streaming levels, where
-    each ``get()`` call is immediately followed by that ONE block's own
-    jitted call — nowhere near enough once a segment spans dozens of
-    atoms whose CUMULATIVE weight bytes vastly exceed any single atom's
-    own. Passing a budget smaller than a segment's own total causes the
-    cache to evict (``jax.Array.delete()``) an EARLIER block in that
-    same gather loop before the segment function ever runs, so the
-    segment call then crashes on a `RuntimeError: Array has been
-    deleted` the moment it tries to actually use that block's weights —
-    every time, completely independent of how much free VRAM exists,
-    which is exactly what a real-hardware run hit: identical failures
-    across every regret-loop budget/segment-count combination, because
-    the actual bug was never in the search's budget at all.
-
-    Returns the LARGEST single segment's total weight-byte sum across
-    the whole plan (an exact, not estimated, number — same weight_bytes
-    dict jax_pipeline.segment_search already computes) — sizing the
-    cache to at least this guarantees every segment's own gather loop
-    completes without the cache evicting any of that SAME segment's
-    blocks. The cache MAY still evict a fully-finished PREVIOUS
-    segment's blocks once the NEXT segment starts gathering (correct,
-    intended behavior — that's the whole point of bounding streaming
-    residency between segments).
-    """
-    max_bytes = 0
-    for atoms in atom_groups:
-        seg_bytes = sum(weight_bytes.get(bid, 0) for bid in block_ids_in_order(atoms))
-        max_bytes = max(max_bytes, seg_bytes)
-    return max_bytes
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Boundary storage — spill pending named values (skips / residuals) to
 #  pinned host memory between segments, freeing device VRAM for atoms

@@ -68,7 +68,17 @@ _VRAM_TOLERANCE_BYTES = 512 * 1024 * 1024  # 512MB
 # logging, no segment_search trace, nothing -- even though the fixes had
 # completely changed the situation. Bumping this version is what makes
 # stale entries like that stop being trusted.
-_SCHEMA_VERSION = "v2"
+#
+# v2 -> v3: SegmentPlan gained cache_budget_bytes (how much weight data
+# BlockParamCache may hold resident at once) -- previously the cache
+# was sized to just one segment's own weights, so with >1 segment every
+# segment evicted every OTHER segment's blocks on every single
+# denoising step (100% cache-miss, full weight retransfer every step --
+# see segment_search.SegmentPlan's docstring). v2 "unet_segmentation"
+# entries don't carry this field at all; reusing one verbatim would
+# silently omit cache sizing entirely rather than
+# erroring, so the version bump is required, not optional here.
+_SCHEMA_VERSION = "v3"
 
 
 def _load_db() -> List[Dict[str, Any]]:
