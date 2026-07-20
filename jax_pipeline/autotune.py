@@ -103,9 +103,15 @@ def _benchmark_candidate(
     import jax
     from jax_pipeline import block_cache as block_cache_mod
     from jax_pipeline import unet as unet_mod
+    from jax_pipeline import _debug_profile
     from jax_pipeline.host_offload import _is_jax_oom_exception
 
     free_before = _free_vram_bytes(torch_device_for_vram_query)
+    _debug_profile.note(
+        f"autotune[{level}]: benchmark starting, free_vram={free_before/1e9:.3f}GB "
+        f"(shape={latent_h}x{latent_w} batch={batch} seq={seq_len})"
+    )
+    phase = "setup"  # updated as we go so a failure's log line always says WHERE it died
     cache = None
     device_params = None
     pending_store = None
@@ -114,6 +120,7 @@ def _benchmark_candidate(
         sample, timestep, enc, added = _empty_unet_inputs(latent_h, latent_w, batch, seq_len)
 
         if level == "whole":
+            phase = "build (stage full params to device)"
             device_sharding = jax.sharding.SingleDeviceSharding(jax_device, memory_kind="device")
             device_params = jax.tree.map(lambda p: jax.device_put(p, device_sharding), params)
             forward = jax.jit(unet_mod.unet_forward)
@@ -121,9 +128,16 @@ def _benchmark_candidate(
         elif level == "segmented":
             from jax_pipeline import segment_search, unet_segments as unet_segs
 
+            phase = "build (segment search: atoms + footprint estimation + greedy plan)"
             atoms, plan = segment_search.search_unet_segmentation(
                 params, jax_device, torch_device_for_vram_query, latent_h, latent_w, batch, seq_len,
             )
+            _debug_profile.note(
+                f"autotune[segmented]: plan ready -- {len(plan.ranges)} segments over {len(atoms)} atoms, "
+                f"{sum(len(v) for v in plan.spill_schedule.values())} boundary spills, "
+                f"free_vram={_free_vram_bytes(torch_device_for_vram_query)/1e9:.3f}GB"
+            )
+            phase = "build (compile segments + load block cache)"
             compiled = unet_segs.compile_segments(segment_search.atom_groups_from_plan(atoms, plan))
             cache = block_cache_mod.BlockParamCache(jax_device, budget_bytes=None)
             cache.load(unet_segs.partition_params_for_atoms(params, atoms))
@@ -132,6 +146,7 @@ def _benchmark_candidate(
                 cache, pending_store, compiled, dict(plan.spill_schedule), sample, timestep, enc, added,
             )
         else:
+            phase = "build (partition + load block cache)"
             block_ids = unet_mod.build_block_ids() if level == "fine" else unet_mod.build_block_ids_coarse()
             partitioned = block_cache_mod.partition_params_by_block(params, block_ids)
             cache = block_cache_mod.BlockParamCache(jax_device, budget_bytes=None)
@@ -139,25 +154,53 @@ def _benchmark_candidate(
             forward = unet_mod.unet_forward_streaming if level == "fine" else unet_mod.unet_forward_streaming_coarse
             call = lambda: forward(cache, sample, timestep, enc, added)
 
-        for _ in range(_WARMUP_CALLS):
+        _debug_profile.checkpoint(f"autotune[{level}]: after build, before warmup")
+
+        phase = f"warmup ({_WARMUP_CALLS} call(s))"
+        for i in range(_WARMUP_CALLS):
             out = call()
             jax.block_until_ready(out)
+            _debug_profile.note(
+                f"autotune[{level}]: warmup call {i+1}/{_WARMUP_CALLS} done, "
+                f"free_vram={_free_vram_bytes(torch_device_for_vram_query)/1e9:.3f}GB"
+            )
 
+        _debug_profile.checkpoint(f"autotune[{level}]: after warmup, before timed calls")
+
+        phase = f"timed ({_TIMED_CALLS} call(s))"
         t0 = time.perf_counter()
-        for _ in range(_TIMED_CALLS):
+        for i in range(_TIMED_CALLS):
             out = call()
             jax.block_until_ready(out)
         avg_seconds = (time.perf_counter() - t0) / _TIMED_CALLS
 
         free_after = _free_vram_bytes(torch_device_for_vram_query)  # measured BEFORE cleanup below
         peak_used = max(free_before - free_after, 0)
+        _debug_profile.note(
+            f"autotune[{level}]: benchmark SUCCEEDED -- peak={peak_used/1e9:.3f}GB "
+            f"avg={avg_seconds*1000:.1f}ms/call free_after={free_after/1e9:.3f}GB"
+        )
         return peak_used, avg_seconds
 
     except Exception as e:
+        free_at_failure = _free_vram_bytes(torch_device_for_vram_query)
         if _is_jax_oom_exception(e):
-            log.info("[JAX Pipeline] autotune: level=%s OOM'd during benchmark — doesn't fit here.", level)
+            log.info(
+                "[JAX Pipeline] autotune: level=%s OOM'd during benchmark (phase=%s, "
+                "free_vram_at_failure=%.3fGB, free_vram_before_attempt=%.3fGB) — doesn't fit here. %s",
+                level, phase, free_at_failure / 1e9, free_before / 1e9, e,
+            )
         else:
-            log.warning("[JAX Pipeline] autotune: level=%s benchmark failed (%s) — skipping.", level, e)
+            log.warning(
+                "[JAX Pipeline] autotune: level=%s benchmark failed (phase=%s, "
+                "free_vram_at_failure=%.3fGB) — skipping.",
+                level, phase, free_at_failure / 1e9, exc_info=True,
+            )
+        _debug_profile.note(
+            f"autotune[{level}]: benchmark FAILED at phase='{phase}' -- {type(e).__name__}: {e} "
+            f"(free_before={free_before/1e9:.3f}GB free_at_failure={free_at_failure/1e9:.3f}GB "
+            f"delta_consumed_before_failing={max(free_before - free_at_failure, 0)/1e9:.3f}GB)"
+        )
         return None
     finally:
         try:
@@ -225,10 +268,16 @@ def autotune_unet(
             )
             return chosen
 
+        from jax_pipeline import _debug_profile
+        free_at_start = model_management.get_free_memory(torch_device_for_vram_query)
+        _debug_profile.checkpoint(
+            f"autotune: starting for unet sig={signature} "
+            f"(free_vram={free_at_start/1e9:.3f}GB total_vram={total_vram/1e9:.3f}GB)"
+        )
         log.info(
             "[JAX Pipeline] autotune: no DB match for unet (sig=%s, %dx%d latent, batch=%d, "
-            "seq=%d) — trying the Best-Fit segmentation search first...",
-            signature, latent_h, latent_w, batch, seq_len,
+            "seq=%d, free_vram=%.3fGB) — trying the Best-Fit segmentation search first...",
+            signature, latent_h, latent_w, batch, seq_len, free_at_start / 1e9,
         )
         segmented_result = _benchmark_candidate(
             "segmented", params, jax_device, latent_h, latent_w, batch, seq_len, torch_device_for_vram_query,
@@ -273,9 +322,25 @@ def autotune_unet(
                 )
 
         if not stats:
+            free_at_end = model_management.get_free_memory(torch_device_for_vram_query)
+            # Distinguishes "genuinely out of luck" (free VRAM was already
+            # critically low before we even started trying, and stayed
+            # roughly flat across every attempt -- nothing to fit no
+            # matter what) from "something's off" (free VRAM DROPPED
+            # significantly across the attempts and never came back, i.e.
+            # a leak/cleanup bug, not a capacity problem). Set
+            # JAX_PIPELINE_PROFILE=1 for the full per-candidate/per-atom
+            # trail (autotune[<level>]/segment_search notes above) that
+            # pinpoints exactly which phase of which candidate failed.
+            leaked = free_at_start - free_at_end
             log.warning(
-                "[JAX Pipeline] autotune: every candidate failed/OOM'd during benchmarking — "
-                "defaulting to 'fine' (known safest)."
+                "[JAX Pipeline] autotune: every candidate (segmented, fine, coarse, whole) "
+                "failed/OOM'd during benchmarking — defaulting to 'fine' (known safest). "
+                "free_vram: start=%.3fGB end=%.3fGB (net change=%.3fGB%s). "
+                "Set JAX_PIPELINE_PROFILE=1 for a per-candidate/per-atom failure trail.",
+                free_at_start / 1e9, free_at_end / 1e9, leaked / 1e9,
+                " -- did NOT recover, suggests a cleanup/leak bug rather than plain capacity"
+                if leaked > 256 * 1024 * 1024 else " -- recovered fine, looks like a genuine capacity limit",
             )
             return "fine"
 

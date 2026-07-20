@@ -223,6 +223,7 @@ def trace_atom_activation_bytes(
     import jax.numpy as jnp
     from jax_pipeline import block_cache as block_cache_mod
     from jax_pipeline import unet_segments as segs
+    from jax_pipeline import _debug_profile
     from jax_pipeline.autotune import _free_vram_bytes, _empty_unet_inputs
     from jax_pipeline.unet import _sinusoidal_embedding, _TIME_DIM as _TD
 
@@ -235,6 +236,13 @@ def trace_atom_activation_bytes(
     pending_store = segs.PendingValueStore(jax_device)
     compiled = segs.compile_segments([[a] for a in atoms])
 
+    free_at_trace_start = _free_vram_bytes(torch_device_for_vram_query)
+    _debug_profile.note(
+        f"segment_search.trace: starting per-atom trace over {len(atoms)} atoms "
+        f"(free_vram={free_at_trace_start/1e9:.3f}GB, cache_budget="
+        f"{cache.budget_bytes/1e9 if cache.budget_bytes else 0:.3f}GB)"
+    )
+
     footprints: Dict[str, int] = {}
     try:
         s = jnp.transpose(sample, (0, 2, 3, 1))
@@ -246,7 +254,7 @@ def trace_atom_activation_bytes(
             "time_ids": added["time_ids"].astype(jnp.float32),
             "values": {},
         }
-        for atom, segment in zip(atoms, compiled):
+        for idx, (atom, segment) in enumerate(zip(atoms, compiled)):
             needed = set(atom.consumes) - set(atom.produces)
             for vid in needed:
                 if vid in ctx["values"]:
@@ -255,6 +263,15 @@ def trace_atom_activation_bytes(
             params_by_block = {bid: cache.get(bid) for bid in segment.block_ids}
 
             free_before = _free_vram_bytes(torch_device_for_vram_query)
+            # Logged BEFORE the call runs, not after -- if this specific
+            # atom's first-ever compile OOMs or hangs, this is the last
+            # line printed, pinpointing exactly which atom/block_id died
+            # instead of leaving "every candidate failed" as the only clue.
+            _debug_profile.note(
+                f"segment_search.trace: atom {idx+1}/{len(atoms)} block_id={atom.block_id!r} "
+                f"kind={atom.kind} pending_values={len(ctx['values'])} "
+                f"resident_bytes={cache._resident_bytes/1e6:.1f}MB free_vram={free_before/1e9:.3f}GB"
+            )
             ctx = segment.fn(params_by_block, ctx)
             jax.block_until_ready(ctx["x"])
             free_after = _free_vram_bytes(torch_device_for_vram_query)
@@ -264,6 +281,24 @@ def trace_atom_activation_bytes(
             ctx["values"] = {}
             for vid, arr in still_pending.items():
                 pending_store.put(vid, arr)
+
+            if (idx + 1) % 20 == 0 or idx + 1 == len(atoms):
+                _debug_profile.checkpoint(
+                    f"segment_search.trace: {idx+1}/{len(atoms)} atoms done, "
+                    f"cumulative_footprint_sum={sum(footprints.values())/1e6:.1f}MB "
+                    f"vs_started_at_free={free_at_trace_start/1e9:.3f}GB"
+                )
+    except Exception:
+        free_now = _free_vram_bytes(torch_device_for_vram_query)
+        log.warning(
+            "[JAX Pipeline] segment_search.trace: FAILED partway through the atom trace "
+            "(free_vram_now=%.3fGB, free_vram_at_trace_start=%.3fGB, %d/%d atoms measured "
+            "before failing) -- see the 'atom N/M block_id=...' note just above this for "
+            "exactly which atom was in flight.",
+            free_now / 1e9, free_at_trace_start / 1e9, len(footprints), len(atoms),
+            exc_info=True,
+        )
+        raise
     finally:
         try:
             cache.clear()
@@ -350,6 +385,7 @@ def search_unet_segmentation(
     from ldm_patched.modules import model_management
     from jax_pipeline import unet_segments as segs
     from jax_pipeline import engine_cache
+    from jax_pipeline import _debug_profile
     from jax_pipeline.autotune import device_name_for
 
     atoms = segs.build_atom_specs(latent_h, latent_w)
@@ -366,7 +402,31 @@ def search_unet_segmentation(
     )
 
     free_vram = model_management.get_free_memory(torch_device_for_vram_query)
+
+    total_weight_bytes = sum(weight_bytes.values())
+    total_value_bytes = sum(value_bytes.values())
+    max_atom_activation = max(activation_bytes.values()) if activation_bytes else 0
+    _debug_profile.note(
+        f"segment_search: shape={latent_h}x{latent_w} batch={batch} seq={seq_len} -- "
+        f"{len(atoms)} atoms, sum(weight_bytes)={total_weight_bytes/1e9:.3f}GB "
+        f"(sanity check: should be close to the UNet's total param footprint -- a much "
+        f"SMALLER number here means partition_params_for_atoms silently dropped weights), "
+        f"sum(named_value_bytes)={total_value_bytes/1e9:.3f}GB, "
+        f"max_single_atom_activation={max_atom_activation/1e6:.1f}MB, "
+        f"activation_source={'traced just now' if _traced else 'DB warm start'}, "
+        f"free_vram_for_search={free_vram/1e9:.3f}GB"
+    )
+
     plan = greedy_best_fit_search(atoms, weight_bytes, activation_bytes, value_bytes, free_vram)
+
+    seg_sizes = [e - s for s, e in plan.ranges]
+    _debug_profile.note(
+        f"segment_search: greedy plan -- {len(plan.ranges)} segments over {len(atoms)} atoms "
+        f"(sizes: min={min(seg_sizes) if seg_sizes else 0} max={max(seg_sizes) if seg_sizes else 0} "
+        f"avg={sum(seg_sizes)/len(seg_sizes) if seg_sizes else 0:.1f}), "
+        f"{sum(len(v) for v in plan.spill_schedule.values())} boundary spills across "
+        f"{len(plan.spill_schedule)} boundaries"
+    )
 
     signature = engine_cache.compute_signature(
         "unet_segmentation", device_name, total_vram, latent_h, latent_w, batch, seq_len,
