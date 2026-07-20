@@ -90,11 +90,24 @@ def reload_jax_unet_weights(pipeline, unet_patcher) -> None:
     phase_manager = getattr(pipeline, "_phase_manager", None)
     if phase_manager is not None and phase_manager.enabled:
         block_cache = getattr(pipeline, "_block_cache", None)
-        if block_cache is not None:
+        level = getattr(pipeline, "_fusion_level", None) or "fine"
+        if level == "segmented" and block_cache is not None:
+            # block_cache is actually a jax_pipeline.unet_segments.SegmentedUnetState
+            # here (see pipeline.py's _build_unet_execution) -- its own
+            # BlockParamCache re-partitions against the SAME atom sequence
+            # (and thus the SAME segmentation/spill_schedule) already
+            # chosen for this shape; a LoRA change doesn't alter the
+            # weight-byte-driven segmentation decision enough to be worth
+            # re-searching (weight SHAPES, which drive the search, never
+            # change from a LoRA merge -- only weight VALUES do).
+            from jax_pipeline import unet_segments as unet_segs
+
+            block_cache.param_cache.load(unet_segs.partition_params_for_atoms(params, block_cache.atoms))
+            pipeline._params = block_cache
+        elif block_cache is not None:
             from jax_pipeline.block_cache import partition_params_by_block
             from jax_pipeline.unet import build_block_ids, build_block_ids_coarse
 
-            level = getattr(pipeline, "_fusion_level", None) or "fine"
             block_ids = build_block_ids() if level == "fine" else build_block_ids_coarse()
             block_cache.load(partition_params_by_block(params, block_ids))
             pipeline._params = block_cache

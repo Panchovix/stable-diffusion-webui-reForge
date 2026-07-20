@@ -38,7 +38,7 @@ from typing import Any, Dict, Optional, Tuple
 
 log = logging.getLogger(__name__)
 
-FUSION_LEVELS: Tuple[str, ...] = ("fine", "coarse", "whole")
+FUSION_LEVELS: Tuple[str, ...] = ("fine", "coarse", "whole", "segmented")
 
 _WARMUP_CALLS = 1
 _TIMED_CALLS = 2
@@ -95,6 +95,7 @@ def _benchmark_candidate(
     free_before = _free_vram_bytes(torch_device_for_vram_query)
     cache = None
     device_params = None
+    pending_store = None
     out = None
     try:
         sample, timestep, enc, added = _empty_unet_inputs(latent_h, latent_w, batch, seq_len)
@@ -104,6 +105,19 @@ def _benchmark_candidate(
             device_params = jax.tree.map(lambda p: jax.device_put(p, device_sharding), params)
             forward = jax.jit(unet_mod.unet_forward)
             call = lambda: forward(device_params, sample, timestep, enc, added)
+        elif level == "segmented":
+            from jax_pipeline import segment_search, unet_segments as unet_segs
+
+            atoms, plan = segment_search.search_unet_segmentation(
+                params, jax_device, torch_device_for_vram_query, latent_h, latent_w, batch, seq_len,
+            )
+            compiled = unet_segs.compile_segments(segment_search.atom_groups_from_plan(atoms, plan))
+            cache = block_cache_mod.BlockParamCache(jax_device, budget_bytes=None)
+            cache.load(unet_segs.partition_params_for_atoms(params, atoms))
+            pending_store = unet_segs.PendingValueStore(jax_device)
+            call = lambda: unet_segs.unet_forward_segmented(
+                cache, pending_store, compiled, dict(plan.spill_schedule), sample, timestep, enc, added,
+            )
         else:
             block_ids = unet_mod.build_block_ids() if level == "fine" else unet_mod.build_block_ids_coarse()
             partitioned = block_cache_mod.partition_params_by_block(params, block_ids)
@@ -136,6 +150,8 @@ def _benchmark_candidate(
         try:
             if cache is not None:
                 cache.clear()
+            if pending_store is not None:
+                pending_store.clear()
             if device_params is not None:
                 jax.tree.map(lambda p: p.delete() if hasattr(p, "delete") else None, device_params)
             if out is not None:

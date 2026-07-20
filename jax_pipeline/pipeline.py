@@ -144,12 +144,21 @@ class JAXSDXLPipeline:
             phase_manager.enabled if phase_manager is not None else False,
         )
 
-    def _build_unet_execution(self, level: str, params):
+    def _build_unet_execution(self, level: str, params, shape_info=None):
         """Construct the (params_or_cache, forward_fn, block_cache) triple
         for a chosen fusion level. ``block_cache`` is None for "whole"
         (the plain flat-dict + make_forward path — no BlockParamCache
         involved) so the caller knows whether there's a cache to register
         phase_manager cleanup callbacks for.
+
+        ``shape_info`` — ``(latent_h, latent_w, batch, seq_len)`` — is
+        only needed (and required) for ``level == "segmented"``: unlike
+        fine/coarse, whose block registry is shape-independent, the
+        atom-level IR and the Best-Fit segmentation search
+        (jax_pipeline.segment_search) are both built for one specific
+        input shape (see jax_pipeline.unet_segments's module docstring —
+        upsample target_hw / attention residual reshape dims are baked
+        in as compile-time constants, not threaded dynamically).
         """
         from jax_pipeline import host_offload
 
@@ -159,6 +168,28 @@ class JAXSDXLPipeline:
             forward = host_offload.make_forward(self._device, offload_flag)
             self.host_offload = offload_flag
             return placed, forward, None
+
+        if level == "segmented":
+            if shape_info is None:
+                raise ValueError("_build_unet_execution('segmented', ...) requires shape_info")
+            latent_h, latent_w, batch, seq_len = shape_info
+
+            from jax_pipeline import segment_search, unet_segments as segs
+            from jax_pipeline.block_cache import BlockParamCache
+
+            atoms, plan = segment_search.search_unet_segmentation(
+                params, self._device, self.unet_patcher.load_device,
+                latent_h=latent_h, latent_w=latent_w, batch=batch, seq_len=seq_len,
+            )
+            compiled = segs.compile_segments(segment_search.atom_groups_from_plan(atoms, plan))
+
+            cache = BlockParamCache(self._device, budget_bytes=None)
+            cache.load(segs.partition_params_for_atoms(params, atoms))
+            pending_store = segs.PendingValueStore(self._device)
+            state = segs.SegmentedUnetState(cache, pending_store, atoms, compiled, dict(plan.spill_schedule))
+
+            self.host_offload = False
+            return state, segs.segmented_forward, state
 
         from jax_pipeline.block_cache import BlockParamCache, partition_params_by_block
         from jax_pipeline.unet import build_block_ids, build_block_ids_coarse
@@ -206,7 +237,8 @@ class JAXSDXLPipeline:
                 self._raw_params, self._device, self.unet_patcher.load_device,
                 latent_h=H, latent_w=W, batch=B, seq_len=seq_len,
             )
-            params, forward, block_cache = self._build_unet_execution(level, self._raw_params)
+            shape_info = (H, W, B, seq_len) if level == "segmented" else None
+            params, forward, block_cache = self._build_unet_execution(level, self._raw_params, shape_info)
         except Exception as e:
             log.warning(
                 "[JAX Pipeline] ensure_unet_built: autotune/build failed (%s) — "
