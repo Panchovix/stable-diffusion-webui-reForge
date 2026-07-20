@@ -199,9 +199,21 @@ class JAXSDXLPipeline:
                 params, self._device, self.unet_patcher.load_device,
                 latent_h=latent_h, latent_w=latent_w, batch=batch, seq_len=seq_len,
             )
-            compiled = segs.compile_segments(segment_search.atom_groups_from_plan(atoms, plan))
+            atom_groups = segment_search.atom_groups_from_plan(atoms, plan)
+            compiled = segs.compile_segments(atom_groups)
 
-            cache = BlockParamCache(self._device, budget_bytes=None)
+            # BlockParamCache's default budget (None -> 3x the largest
+            # SINGLE atom) is far too small: unet_forward_segmented's
+            # driver stages an ENTIRE segment's blocks onto device before
+            # that segment's fused jit call runs, so the cache must hold
+            # at least one whole segment's cumulative weight bytes
+            # simultaneously -- see unet_segments.compute_segment_cache_
+            # budget's docstring for the "Array has been deleted" crash
+            # an under-sized budget causes here (autotune.py's benchmark
+            # needs this exact same sizing for the same reason).
+            weight_bytes = segs.compute_weight_bytes(params, atoms)
+            cache_budget = int(segs.compute_segment_cache_budget(weight_bytes, atom_groups) * 1.05)
+            cache = BlockParamCache(self._device, budget_bytes=cache_budget)
             cache.load(segs.partition_params_for_atoms(params, atoms))
             pending_store = segs.PendingValueStore(self._device)
             state = segs.SegmentedUnetState(cache, pending_store, atoms, compiled, dict(plan.spill_schedule))

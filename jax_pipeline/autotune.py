@@ -146,8 +146,25 @@ def _benchmark_candidate(
                 f"free_vram={_free_vram_bytes(torch_device_for_vram_query)/1e9:.3f}GB"
             )
             phase = "build (compile segments + load block cache)"
-            compiled = unet_segs.compile_segments(segment_search.atom_groups_from_plan(atoms, plan))
-            cache = block_cache_mod.BlockParamCache(jax_device, budget_bytes=None)
+            atom_groups = segment_search.atom_groups_from_plan(atoms, plan)
+            compiled = unet_segs.compile_segments(atom_groups)
+            # BlockParamCache's default budget (None -> 3x the largest
+            # SINGLE atom) is far too small here: unet_forward_segmented's
+            # driver stages an ENTIRE segment's blocks onto device before
+            # that segment's fused jit call runs, so the cache must be
+            # able to hold at least one whole segment's cumulative weight
+            # bytes simultaneously, not just one atom's -- see
+            # unet_segments.compute_segment_cache_budget's docstring for
+            # the real-hardware "Array has been deleted" crash this fixes
+            # (identical across every regret-loop budget, since the
+            # actual bug was never in the search's own budget at all).
+            weight_bytes = unet_segs.compute_weight_bytes(params, atoms)
+            cache_budget = int(unet_segs.compute_segment_cache_budget(weight_bytes, atom_groups) * 1.05)
+            _debug_profile.note(
+                f"autotune[segmented]: sizing BlockParamCache budget={cache_budget/1e9:.3f}GB "
+                f"(largest segment's cumulative weight bytes + 5% margin)"
+            )
+            cache = block_cache_mod.BlockParamCache(jax_device, budget_bytes=cache_budget)
             cache.load(unet_segs.partition_params_for_atoms(params, atoms))
             pending_store = unet_segs.PendingValueStore(jax_device)
             call = lambda: unet_segs.unet_forward_segmented(
