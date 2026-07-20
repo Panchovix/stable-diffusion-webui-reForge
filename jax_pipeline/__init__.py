@@ -527,6 +527,35 @@ def _install_jax_sampler_hook() -> None:
             if not _built[0]:
                 _built[0] = True
                 try:
+                    # Conditioning is baked into `denoiser` (JAX-side) and
+                    # the whole-loop path never calls back into the real
+                    # torch UNet (unlike apply_model()'s per-step path,
+                    # which can fall back to it for ControlNet) — so the
+                    # torch-side copy Forge just (re)loaded for this
+                    # generation via sampling_prepare() is pure redundant
+                    # VRAM. Evicting it BEFORE ensure_unet_built (not
+                    # after) matters: ensure_unet_built's autotune only
+                    # needs jax_pipe._raw_params (already-converted JAX
+                    # arrays, pinned host on a phase-managed card — see
+                    # convert.py) and the CURRENT free VRAM, never the
+                    # torch copy's live GPU residency, so there is no
+                    # ordering reason to defer this until after the
+                    # denoiser is built. Evicting it too late was a real
+                    # bug: a real-hardware run showed autotune
+                    # benchmarking EVERY candidate while the torch UNet
+                    # (~5.2GB) was still fully resident, leaving only
+                    # ~2.7GB free on an 8GB card — nowhere near enough
+                    # for anything to fit, even though evicting it
+                    # moments later would have freed that whole 5.2GB
+                    # right back up. See git history for the profiler
+                    # trail that caught this. Only bother on VRAM-
+                    # constrained cards; large-VRAM cards have no need to
+                    # pay the reload cost every call.
+                    if phase_manager is not None and phase_manager.enabled:
+                        from jax_pipeline.host_offload import evict_torch_unet_from_gpu
+                        evict_torch_unet_from_gpu(jax_pipe.unet_patcher)
+                        _debug_profile.checkpoint("after torch UNet evicted, before ensure_unet_built (JAX active)")
+
                     # No-op after the first call for this exact latent
                     # shape (and for every later generation at the same
                     # shape) — see JAXSDXLPipeline.ensure_unet_built's
@@ -541,22 +570,9 @@ def _install_jax_sampler_hook() -> None:
                     wrapped_fn = make_jax_func(jax_fn, denoiser)
                     # Cache on the wrapper so it is not rebuilt on re-entry
                     _lazy_func._wrapped = wrapped_fn
-
-                    # Conditioning is now baked into `denoiser` (JAX-side)
-                    # and the whole-loop path never calls back into the
-                    # real torch UNet (unlike apply_model()'s per-step
-                    # path, which can fall back to it for ControlNet) — so
-                    # the torch-side copy Forge just (re)loaded for this
-                    # generation via sampling_prepare() is pure redundant
-                    # VRAM from here until the next generation. Only
-                    # bother on VRAM-constrained cards; large-VRAM cards
-                    # have no need to pay the reload cost every call.
-                    if phase_manager is not None and phase_manager.enabled:
-                        from jax_pipeline.host_offload import evict_torch_unet_from_gpu
-                        evict_torch_unet_from_gpu(jax_pipe.unet_patcher)
-                    _debug_profile.checkpoint("after torch UNet evicted, denoiser built (JAX active)")
+                    _debug_profile.checkpoint("denoiser built (JAX active)")
                 except Exception as build_exc:
-                    from jax_pipeline.host_offload import _is_jax_oom_exception, handle_jax_oom
+                    from jax_pipeline.host_offload import _is_jax_oom_exception, handle_jax_oom, ensure_torch_model_on_gpu
                     if _is_jax_oom_exception(build_exc):
                         handle_jax_oom(phase_manager, "sampler-loop denoiser build", build_exc)  # raises
                     log.warning(
@@ -564,6 +580,15 @@ def _install_jax_sampler_hook() -> None:
                         "falling back to the standard per-step path.", build_exc,
                     )
                     _build_failed[0] = True
+                    # The torch UNet may have just been evicted above (now
+                    # that eviction runs BEFORE ensure_unet_built rather
+                    # than after) — orig_func below is the real torch
+                    # forward path and needs it back on GPU, correctly
+                    # patched, same as every other JAX->torch fallback
+                    # path (see clip.py/vae.py's ensure_torch_model_on_gpu
+                    # call sites for the established pattern).
+                    if phase_manager is not None and phase_manager.enabled:
+                        ensure_torch_model_on_gpu(jax_pipe.unet_patcher)
                     return orig_func(model_wrap_cfg, x_torch, sigmas=sigmas,
                                       extra_args=extra_args, callback=callback,
                                       disable=disable, **kwargs)
