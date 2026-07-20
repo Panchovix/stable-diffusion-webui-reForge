@@ -46,6 +46,30 @@ _RES_TOLERANCE_LATENT_PX = 32   # ~256 real pixels
 _SEQ_TOLERANCE_TOKENS = 154     # 2 CLIP chunks
 _VRAM_TOLERANCE_BYTES = 512 * 1024 * 1024  # 512MB
 
+# Bump this whenever a change to autotune.py/segment_search.py could
+# alter what decision a fresh benchmark/search would produce for an
+# UNCHANGED (component, device, VRAM, shape) point — not just logging or
+# unrelated refactors. compute_signature() folds this into every
+# signature, so a bump makes every PREVIOUSLY saved entry silently stop
+# matching (orphaned in the JSON file, never looked up again) rather
+# than being reused as if nothing changed.
+#
+# This is not a hypothetical concern: a real run hit it directly.
+# jax_pipeline.pipeline's torch-UNet-eviction-ordering fix and
+# segment_search's sampler-VRAM-reserve/regret-loop fix both changed how
+# much VRAM is available to the search and how it responds to a failed
+# attempt -- but a "segmented" decision (a degenerate 1-segment/118-atom
+# plan, saved back when the search had ~7GB with no reserve and no
+# regret) and a "fine" decision (saved when eviction still ran too late)
+# were both already sitting in engine_db.json from before those fixes,
+# under the EXACT SAME signature (device/VRAM/shape never changed across
+# the fix). Every subsequent run silently reused those stale decisions
+# via lookup_exact and never re-ran the search at all -- no autotune
+# logging, no segment_search trace, nothing -- even though the fixes had
+# completely changed the situation. Bumping this version is what makes
+# stale entries like that stop being trusted.
+_SCHEMA_VERSION = "v2"
+
 
 def _load_db() -> List[Dict[str, Any]]:
     try:
@@ -83,7 +107,10 @@ def compute_signature(
     res_h = round(latent_h / 8) * 8
     res_w = round(latent_w / 8) * 8
     seq_bucket = ((max(seq_len, 1) - 1) // 77 + 1) * 77
-    return f"{component}|{device_name}|vram{vram_gb}GB|res{res_h}x{res_w}|b{batch}|seq{seq_bucket}"
+    return (
+        f"{_SCHEMA_VERSION}|{component}|{device_name}|vram{vram_gb}GB|"
+        f"res{res_h}x{res_w}|b{batch}|seq{seq_bucket}"
+    )
 
 
 def lookup_exact(signature: str) -> Optional[Dict[str, Any]]:
@@ -103,10 +130,21 @@ def lookup_closest(
     for another), resolution and sequence length within tolerance,
     picking whichever candidate is numerically closest if several match.
     Returns None if nothing qualifies — caller should benchmark fresh.
+
+    Filters on ``schema_version`` too, same reasoning as ``compute_
+    signature``'s version tag (see its docstring) — this matches on raw
+    entry fields rather than the signature string, so it would otherwise
+    keep fuzzy-matching a stale pre-version-bump entry forever even
+    after ``lookup_exact`` correctly stopped trusting it. Entries saved
+    before this field existed (``schema_version`` absent) are treated as
+    version-mismatched, not specially exempted — they predate this
+    check entirely, so there's no meaningful version to compare against.
     """
     best = None
     best_distance = None
     for entry in _load_db():
+        if entry.get("schema_version") != _SCHEMA_VERSION:
+            continue
         if entry.get("component") != component:
             continue
         if entry.get("device_name") != device_name:
@@ -141,6 +179,7 @@ def save(
     entries = [e for e in entries if e.get("signature") != signature]
     entries.append({
         "signature": signature,
+        "schema_version": _SCHEMA_VERSION,
         "component": component,
         "device_name": device_name,
         "total_vram_bytes": total_vram_bytes,
