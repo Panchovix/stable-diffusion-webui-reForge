@@ -46,6 +46,44 @@ All SDE samplers draw i.i.d. Gaussian noise via ``_NoiseState``.
 
 The ``model`` argument must accept ``(x: jnp.ndarray, sigma: jnp.ndarray)``
 and return ``denoised: jnp.ndarray`` — i.e. a ``JAXCFGDenoiser`` instance.
+
+Synchronization policy: async end to end, no forced per-step sync
+--------------------------------------------------------------------
+Earlier versions of every sampler here called a ``_flush(x)`` helper
+after each step (mirroring ``mlx_pipeline``'s per-step ``mx.eval(x)``),
+purely to bound how far JAX's async dispatch queue could run ahead of
+actual GPU execution — its own docstring said as much: "correctness
+doesn't need this". That's been removed, and nothing replaces it:
+``jax_pipeline.host_offload.PhaseManager``'s device<->host phase moves
+(``activate``/``force_offload_all``/``force_release_all``) are ALSO
+pure async ``jax.device_put`` calls with no explicit
+``block_until_ready`` — the whole generation (CLIP encode, every
+denoising step, VAE decode, every phase transition) forms one
+continuous async dispatch chain from "user clicks generate" through to
+the final image, relying on the same futures model JAX's own reference
+host-offloading pattern uses (moving arrays between memory kinds every
+step in a loop with no extra sync shown as necessary). Each step
+already has a hard DATA dependency on the previous one (step N+1 reads
+step N's ``x``), so XLA/CUDA's own stream-ordering makes the sequential
+compute correct without a host-side wait; forcing one anyway just adds
+a barrier that prevents the GPU from ever running more than one step's
+work at a time.
+
+The practical consequence: since nothing blocks, the Python dispatch
+loop below races through issuing all of a generation's steps far faster
+than the GPU actually executes them — "progress" can no longer be "the
+loop is on iteration i" (meaningless once dispatch outruns execution).
+``_ProgressState`` (using ``jax_pipeline._async.AsyncReadiness`` — an
+epoll-style non-blocking poll, since JAX itself has no native
+``is_ready()``) reports whichever step has ACTUALLY completed on the
+GPU so far, falling back to the last known-good (possibly slightly
+stale) values when nothing new is ready yet rather than blocking to
+force freshness — live preview / progress bars don't need per-step
+real-time accuracy. The interrupt check (``stop_at`` in webui's own
+``callback_state``) is unaffected by any of this: it only reads the
+plain Python step index ``d['i']``, which ``_ProgressState.report``
+always passes through immediately, every step, regardless of whether
+that step's tensor data happens to be ready yet.
 """
 
 from __future__ import annotations
@@ -105,32 +143,58 @@ def _randn_like(noise_state: _NoiseState, x: "Any") -> "Any":
     return noise_state.normal(x.shape, x.dtype)
 
 
-def _flush(x: "Any") -> "Any":
-    """Block until x is materialized — mirrors mlx_pipeline's per-step
-    ``mx.eval(x)`` ("flush graph each step — keeps graph small"). JAX
-    dispatches asynchronously even outside jit, so without this the
-    Python loop can queue many steps' worth of unresolved work before
-    ever synchronizing; each step here has a hard data dependency on the
-    previous one anyway (correctness doesn't need this), but bounding how
-    far dispatch can run ahead does.
+class _ProgressState:
+    """Epoll-style progress reporting for one generation's sampler loop —
+    see this module's "Synchronization policy" docstring for why this
+    exists instead of a plain per-step ``block_until_ready``.
+
+    Exactly one background poll is ever outstanding at a time: submitting
+    a new step's ``(x, denoised)`` before the previous one resolved just
+    abandons the old poll (harmless — its thread finishes on its own,
+    its result is simply never read) in favor of the newer one. The
+    webui callback fires every step regardless of readiness, so
+    interrupt-checking (``d['i']`` / ``stop_at``) and progress-bar step
+    counting stay fully responsive; only the tensor VALUES (``x``/
+    ``denoised``) are sometimes a step or two stale.
     """
-    import jax
-    return jax.block_until_ready(x)
 
+    def __init__(self) -> None:
+        self._last_x_torch: Optional[torch.Tensor] = None
+        self._last_denoised_torch: Optional[torch.Tensor] = None
+        self._pending = None  # Optional["AsyncReadiness"]
 
-def _callback(cb, i: int, sigma_t: torch.Tensor, x: "Any", denoised: "Any"):
-    """Fire a webui progress callback, converting JAX arrays back to torch."""
-    if cb is None:
-        return
-    import jax
-    x, denoised = jax.block_until_ready((x, denoised))
-    cb({
-        "i": i,
-        "sigma": sigma_t,
-        "sigma_hat": sigma_t,
-        "x": _to_torch(x),
-        "denoised": _to_torch(denoised),
-    })
+    def report(
+        self, cb, i: int, sigma_t: torch.Tensor, x: "Any", denoised: "Any",
+        force_sync: bool = False,
+    ) -> None:
+        if cb is None:
+            return
+        import jax
+        from jax_pipeline._async import AsyncReadiness
+
+        # First-ever step (nothing cached to fall back on yet) and the
+        # final step (the report right before returning should reflect
+        # the ACTUAL final state, not a stale one) both force a real
+        # sync; every other step is a non-blocking poll.
+        if force_sync or self._last_x_torch is None:
+            x_r, denoised_r = jax.block_until_ready((x, denoised))
+            self._last_x_torch = _to_torch(x_r)
+            self._last_denoised_torch = _to_torch(denoised_r)
+            self._pending = None
+        else:
+            if self._pending is not None and self._pending.ready():
+                x_r, denoised_r = self._pending.get()
+                self._last_x_torch = _to_torch(x_r)
+                self._last_denoised_torch = _to_torch(denoised_r)
+            self._pending = AsyncReadiness((x, denoised))
+
+        cb({
+            "i": i,
+            "sigma": sigma_t,
+            "sigma_hat": sigma_t,
+            "x": self._last_x_torch,
+            "denoised": self._last_denoised_torch,
+        })
 
 
 def _ancestral_step(sigma: float, sigma_next: float, eta: float = 1.0) -> Tuple[float, float]:
@@ -163,6 +227,7 @@ def sample_euler(
 
     noise_state = noise_state or _NoiseState()
     n = len(sigmas) - 1
+    progress = _ProgressState()
     for i in range(n):
         sigma = float(sigmas[i])
         sigma_next = float(sigmas[i + 1])
@@ -178,9 +243,8 @@ def sample_euler(
         denoised = model(x, sig_jx)
 
         d = (x - denoised) / sigma_hat
-        _callback(callback, i, sigmas[i], x, denoised)
+        progress.report(callback, i, sigmas[i], x, denoised, force_sync=(i == n - 1))
         x = x + d * (sigma_next - sigma_hat)
-        x = _flush(x)
 
     return _to_torch(x)
 
@@ -202,6 +266,7 @@ def sample_euler_ancestral(
 
     noise_state = noise_state or _NoiseState()
     n = len(sigmas) - 1
+    progress = _ProgressState()
     for i in range(n):
         sigma = float(sigmas[i])
         sigma_next = float(sigmas[i + 1])
@@ -210,7 +275,7 @@ def sample_euler_ancestral(
         denoised = model(x, sig_jx)
 
         sigma_down, sigma_up = _ancestral_step(sigma, sigma_next, eta)
-        _callback(callback, i, sigmas[i], x, denoised)
+        progress.report(callback, i, sigmas[i], x, denoised, force_sync=(i == n - 1))
 
         d = (x - denoised) / sigma
         dt = sigma_down - sigma
@@ -218,7 +283,6 @@ def sample_euler_ancestral(
 
         if sigma_next > 0 and sigma_up > 0:
             x = x + _randn_like(noise_state, x) * s_noise * sigma_up
-        x = _flush(x)
 
     return _to_torch(x)
 
@@ -241,6 +305,7 @@ def sample_heun(
 
     noise_state = noise_state or _NoiseState()
     n = len(sigmas) - 1
+    progress = _ProgressState()
     for i in range(n):
         sigma = float(sigmas[i])
         sigma_next = float(sigmas[i + 1])
@@ -255,7 +320,7 @@ def sample_heun(
         denoised = model(x, sig_jx)
 
         d = (x - denoised) / sigma_hat
-        _callback(callback, i, sigmas[i], x, denoised)
+        progress.report(callback, i, sigmas[i], x, denoised, force_sync=(i == n - 1))
         dt = sigma_next - sigma_hat
         x2 = x + d * dt
 
@@ -267,7 +332,6 @@ def sample_heun(
             x = x + d_avg * dt
         else:
             x = x2
-        x = _flush(x)
 
     return _to_torch(x)
 
@@ -286,6 +350,7 @@ def sample_dpmpp_2m(
     old_denoised: Optional[Any] = None
     h_last: Optional[float] = None
     n = len(sigmas) - 1
+    progress = _ProgressState()
 
     for i in range(n):
         sigma = float(sigmas[i])
@@ -293,7 +358,7 @@ def sample_dpmpp_2m(
 
         sig_jx = jnp.array([sigma], dtype=jnp.float32)
         denoised = model(x, sig_jx)
-        _callback(callback, i, sigmas[i], x, denoised)
+        progress.report(callback, i, sigmas[i], x, denoised, force_sync=(i == n - 1))
 
         # t = -log sigma, h = t_next - t = log(sigma / sigma_next)
         t = -math.log(sigma)
@@ -315,7 +380,6 @@ def sample_dpmpp_2m(
 
         old_denoised = denoised
         h_last = h
-        x = _flush(x)
 
     return _to_torch(x)
 
@@ -349,13 +413,14 @@ def sample_dpmpp_sde(
 
     noise_state = noise_state or _NoiseState()
     n = len(sigmas) - 1
+    progress = _ProgressState()
     for i in range(n):
         sigma = float(sigmas[i])
         sigma_next = float(sigmas[i + 1])
 
         sig_jx = jnp.array([sigma], dtype=jnp.float32)
         denoised = model(x, sig_jx)
-        _callback(callback, i, sigmas[i], x, denoised)
+        progress.report(callback, i, sigmas[i], x, denoised, force_sync=(i == n - 1))
 
         if sigma_next == 0:
             x = denoised
@@ -384,7 +449,6 @@ def sample_dpmpp_sde(
             if su2 > 0.0:
                 x = x + _randn_like(noise_state, x) * (su2 * s_noise)
 
-        x = _flush(x)
 
     return _to_torch(x)
 
@@ -423,6 +487,7 @@ def sample_dpmpp_2m_sde(
     old_denoised: Optional[Any] = None
     lam_prev: Optional[float] = None
     n = len(sigmas) - 1
+    progress = _ProgressState()
 
     for i in range(n):
         sigma = float(sigmas[i])
@@ -430,7 +495,7 @@ def sample_dpmpp_2m_sde(
 
         sig_jx = jnp.array([sigma], dtype=jnp.float32)
         denoised = model(x, sig_jx)
-        _callback(callback, i, sigmas[i], x, denoised)
+        progress.report(callback, i, sigmas[i], x, denoised, force_sync=(i == n - 1))
 
         if sigma_next == 0:
             x = denoised
@@ -459,7 +524,6 @@ def sample_dpmpp_2m_sde(
 
         old_denoised = denoised
         lam_prev = lam if sigma_next != 0 else lam_prev
-        x = _flush(x)
 
     return _to_torch(x)
 
@@ -508,6 +572,7 @@ def sample_dpmpp_3m_sde(
     lam_1: Optional[float] = None  # lam from previous step
     lam_2: Optional[float] = None  # lam from two steps ago
     n = len(sigmas) - 1
+    progress = _ProgressState()
 
     for i in range(n):
         sigma = float(sigmas[i])
@@ -515,7 +580,7 @@ def sample_dpmpp_3m_sde(
 
         sig_jx = jnp.array([sigma], dtype=jnp.float32)
         denoised = model(x, sig_jx)
-        _callback(callback, i, sigmas[i], x, denoised)
+        progress.report(callback, i, sigmas[i], x, denoised, force_sync=(i == n - 1))
 
         if sigma_next == 0:
             x = denoised
@@ -555,7 +620,6 @@ def sample_dpmpp_3m_sde(
         D_prev1 = denoised
         lam_2 = lam_1
         lam_1 = lam if sigma_next != 0 else lam_1
-        x = _flush(x)
 
     return _to_torch(x)
 
