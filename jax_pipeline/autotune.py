@@ -38,7 +38,20 @@ from typing import Any, Dict, Optional, Tuple
 
 log = logging.getLogger(__name__)
 
-FUSION_LEVELS: Tuple[str, ...] = ("fine", "coarse", "whole", "segmented")
+#: fine/coarse/whole are fixed points, empirically compared against each
+#: other by benchmarking all three (see autotune_unet). "segmented" is
+#: NOT part of that same comparison loop -- it's already VRAM-aware by
+#: construction (jax_pipeline.segment_search builds it against the
+#: CURRENT free-VRAM budget directly), so autotune_unet tries it FIRST,
+#: standalone, and short-circuits on success rather than ALSO running it
+#: back-to-back with three other full candidate builds. Stacking a 4th
+#: heavy candidate (its own benchmark alone does up to ~118 sequential
+#: fresh JIT compiles for per-atom footprint tracing) onto an already-
+#: tight VRAM-constrained card's benchmarking pass is real, avoidable
+#: extra peak/cumulative memory churn on exactly the hardware this
+#: system exists for -- see git history for a real-hardware OOM this
+#: caused when it was a naive 4th entry in this tuple.
+FUSION_LEVELS: Tuple[str, ...] = ("fine", "coarse", "whole")
 
 _WARMUP_CALLS = 1
 _TIMED_CALLS = 2
@@ -214,8 +227,29 @@ def autotune_unet(
 
         log.info(
             "[JAX Pipeline] autotune: no DB match for unet (sig=%s, %dx%d latent, batch=%d, "
-            "seq=%d) — benchmarking every fusion level with empty tensors...",
+            "seq=%d) — trying the Best-Fit segmentation search first...",
             signature, latent_h, latent_w, batch, seq_len,
+        )
+        segmented_result = _benchmark_candidate(
+            "segmented", params, jax_device, latent_h, latent_w, batch, seq_len, torch_device_for_vram_query,
+        )
+        if segmented_result is not None:
+            peak, avg = segmented_result
+            log.info(
+                "[JAX Pipeline] autotune: level=segmented peak=%.2fGB avg=%.1fms/call — "
+                "accepted outright (already built against the current VRAM budget), "
+                "skipping fine/coarse/whole benchmarking.",
+                peak / 1e9, avg * 1000,
+            )
+            engine_cache.save(
+                "unet", signature, device_name, total_vram, latent_h, latent_w, batch, seq_len,
+                "segmented", {"segmented": {"peak_vram_bytes": peak, "avg_seconds": avg}},
+            )
+            return "segmented"
+
+        log.info(
+            "[JAX Pipeline] autotune: segmented search unavailable for this shape — "
+            "falling back to benchmarking fine/coarse/whole with empty tensors...",
         )
         free_vram = model_management.get_free_memory(torch_device_for_vram_query)
         stats: Dict[str, Tuple[int, float]] = {}
