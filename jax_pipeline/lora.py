@@ -96,7 +96,15 @@ def reload_jax_unet_weights(pipeline, unet_patcher) -> None:
         import jax
         raw_sharding = jax.sharding.SingleDeviceSharding(pipeline._device, memory_kind="pinned_host")
 
-    params = convert.load_weights_from_ldm(unet_patcher.model, report=False, sharding=raw_sharding)
+    # Reuse the SAME compute dtype JAXSDXLPipeline.__init__ already
+    # resolved (hardware-based, so re-deriving would give the identical
+    # answer anyway, but reusing avoids a redundant device-capability
+    # query and keeps this reload trivially consistent with the
+    # already-built streaming cache / denoiser, which were built
+    # assuming this exact dtype).
+    params = convert.load_weights_from_ldm(
+        unet_patcher.model, dtype=pipeline._compute_dtype, report=False, sharding=raw_sharding,
+    )
     pipeline._raw_params = params
 
     if phase_manager is not None and phase_manager.enabled:

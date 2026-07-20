@@ -117,16 +117,27 @@ def _extract_cond_jax(
     cond_obj: Any,
     B: int,
     latent_hw: Tuple[int, int],
+    dtype,
 ) -> Tuple["jnp.ndarray", "jnp.ndarray", "jnp.ndarray"]:
     """Extract encoder_hidden_states [B, S, 2048], text_embeds [B, 1280],
-    and time_ids [B, 6] as JAX bfloat16 / float32 arrays from the raw
-    conditioning object stored in ``sampler_extra_args``.
+    and time_ids [B, 6] as JAX arrays from the raw conditioning object
+    stored in ``sampler_extra_args``.
+
+    ``dtype`` must match whatever the UNet's own params were converted
+    to (``jax_pipeline.dtype_select.select_compute_dtype`` — bfloat16 on
+    Ampere+, fp16 fallback on Turing/Volta) — mixing e.g. fp16
+    activations with bf16 weights (or vice versa) would force XLA to
+    upcast/reconcile the two on every op instead of computing natively
+    in one consistent precision, defeating the whole point of picking a
+    hardware-appropriate dtype in the first place.
 
     Parameters
     ----------
     cond_obj   : ``MulticondLearnedConditioning`` or ``list[list[SPC]]``
     B          : batch size (number of samples)
     latent_hw  : (H, W) of the *latent* — used to build time_ids
+    dtype      : jnp dtype for encoder_hidden_states/text_embeds — the
+                 UNet's own compute dtype, NOT necessarily bfloat16
     """
     import jax.numpy as jnp
 
@@ -142,14 +153,14 @@ def _extract_cond_jax(
             text_embeds_t = po.detach().cpu().float()[:, :1280]
 
     enc_hs = (
-        jnp.asarray(enc_hs_t.expand(B, -1, -1).numpy(), dtype=jnp.bfloat16)
+        jnp.asarray(enc_hs_t.expand(B, -1, -1).numpy(), dtype=dtype)
         if enc_hs_t is not None
-        else jnp.zeros((B, 1, 2048), dtype=jnp.bfloat16)
+        else jnp.zeros((B, 1, 2048), dtype=dtype)
     )
     text_embeds = (
-        jnp.asarray(text_embeds_t.expand(B, -1).numpy(), dtype=jnp.bfloat16)
+        jnp.asarray(text_embeds_t.expand(B, -1).numpy(), dtype=dtype)
         if text_embeds_t is not None
-        else jnp.zeros((B, 1280), dtype=jnp.bfloat16)
+        else jnp.zeros((B, 1280), dtype=dtype)
     )
     h_px = latent_hw[0] * 8
     w_px = latent_hw[1] * 8
@@ -164,10 +175,10 @@ def _extract_cond_jax(
 # -- cond/uncond sequence-length reconciliation ---------------------------------
 # See the module docstring's "cond/uncond sequence-length mismatch" section.
 
-def _empty_prompt_to_jax(empty_torch: "torch.Tensor") -> "jnp.ndarray":
+def _empty_prompt_to_jax(empty_torch: "torch.Tensor", dtype) -> "jnp.ndarray":
     import jax.numpy as jnp
     arr = empty_torch.detach().cpu().float().numpy()
-    return jnp.asarray(arr, dtype=jnp.bfloat16)
+    return jnp.asarray(arr, dtype=dtype)
 
 
 def _get_empty_prompt_embedding(sd_model) -> Optional["torch.Tensor"]:
@@ -249,7 +260,7 @@ def _pad_seq_with_empty(
 
 
 def _reconcile_cond_uncond_seq_len(
-    enc_c: "jnp.ndarray", enc_u: "jnp.ndarray",
+    enc_c: "jnp.ndarray", enc_u: "jnp.ndarray", dtype,
 ) -> Tuple["jnp.ndarray", "jnp.ndarray"]:
     """Make ``enc_c``/``enc_u``'s sequence lengths match, so they CAN be
     batched into a single UNet forward call, by mirroring webui's own
@@ -283,7 +294,7 @@ def _reconcile_cond_uncond_seq_len(
     if v1:
         empty = _get_empty_prompt_embedding(shared.sd_model)
         if empty is not None:
-            return _pad_seq_with_empty(enc_c, enc_u, _empty_prompt_to_jax(empty))
+            return _pad_seq_with_empty(enc_c, enc_u, _empty_prompt_to_jax(empty, dtype))
         return _pad_seq_v0(enc_c, enc_u)  # matches pad_cond_uncond's own fallback
 
     if not _warned_unpadded_mismatch:
@@ -340,6 +351,15 @@ class JAXCFGDenoiser:
                       forward calls instead of one batch=2B call, even when
                       their sequence lengths already match. See the
                       "batch=2B vs two batch=B calls" note below.
+    compute_dtype  : jnp dtype matching the UNet's own converted params
+                      (``jax_pipeline.dtype_select.select_compute_dtype``)
+                      — every activation this denoiser creates (encoder
+                      hidden states, pooled embeddings, the pre-
+                      conditioned latent fed into the UNet) uses this,
+                      NOT a hardcoded bfloat16, so weights and
+                      activations stay in one consistent precision
+                      end to end. Defaults to bfloat16 for any caller
+                      that hasn't been updated to pass it explicitly.
     """
 
     def __init__(
@@ -350,12 +370,14 @@ class JAXCFGDenoiser:
         extra_args: Dict,
         latent_shape: Tuple[int, ...],
         phase_manager: Any = None,
+        compute_dtype: Any = None,
     ) -> None:
         import jax.numpy as jnp
 
         self._forward = forward_fn
         self._params = params
         self._ms = model_sampling
+        self._dtype = compute_dtype if compute_dtype is not None else jnp.bfloat16
         self.cond_scale = float(extra_args.get("cond_scale", 7.5))
         B = latent_shape[0]
         latent_hw = (latent_shape[2], latent_shape[3])  # (H, W)
@@ -363,8 +385,8 @@ class JAXCFGDenoiser:
         cond_list = extra_args.get("cond", [])
         uncond_list = extra_args.get("uncond", [])
 
-        enc_c, te_c, ti = _extract_cond_jax(cond_list, B, latent_hw)
-        enc_u, te_u, _ = _extract_cond_jax(uncond_list, B, latent_hw)
+        enc_c, te_c, ti = _extract_cond_jax(cond_list, B, latent_hw, self._dtype)
+        enc_u, te_u, _ = _extract_cond_jax(uncond_list, B, latent_hw, self._dtype)
 
         # cond/uncond routinely encode to different sequence lengths (see
         # module docstring) — try to reconcile them (respecting the same
@@ -372,7 +394,7 @@ class JAXCFGDenoiser:
         # batched into one [2B, ...] UNet call; if that's not possible
         # (setting disabled), keep them separate and run two forward calls
         # per step instead — see __call__.
-        enc_c, enc_u = _reconcile_cond_uncond_seq_len(enc_c, enc_u)
+        enc_c, enc_u = _reconcile_cond_uncond_seq_len(enc_c, enc_u, self._dtype)
 
         # batch=2B vs two batch=B calls: params are identical either way
         # (shared, not duplicated), but a single 2B-batch UNet forward
@@ -421,12 +443,16 @@ class JAXCFGDenoiser:
         diff = jnp.abs(log_s[:, None] - self._log_sigmas[None, :])  # [B, N]
         return jnp.argmin(diff, axis=1).astype(jnp.float32)          # [B]
 
-    @staticmethod
-    def _calc_input(sigma: "jnp.ndarray", x: "jnp.ndarray") -> "jnp.ndarray":
-        """EPS preconditioning: xc = x / sqrt(sigma^2+1)."""
+    def _calc_input(self, sigma: "jnp.ndarray", x: "jnp.ndarray") -> "jnp.ndarray":
+        """EPS preconditioning: xc = x / sqrt(sigma^2+1).
+
+        Casts back to ``self._dtype`` (the UNet's own compute dtype),
+        not a hardcoded bfloat16 — see the class docstring's
+        ``compute_dtype`` note.
+        """
         import jax.numpy as jnp
         s = sigma.reshape((-1, 1, 1, 1)).astype(jnp.float32)
-        return (x.astype(jnp.float32) / jnp.sqrt(s * s + 1.0)).astype(jnp.bfloat16)
+        return (x.astype(jnp.float32) / jnp.sqrt(s * s + 1.0)).astype(self._dtype)
 
     @staticmethod
     def _calc_denoised(sigma: "jnp.ndarray", model_out: "jnp.ndarray", x: "jnp.ndarray") -> "jnp.ndarray":

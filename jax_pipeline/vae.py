@@ -301,7 +301,7 @@ def should_tile_decode(device, latent_shape, elem_bytes: int = 4, threshold_frac
     return peak > free_bytes * threshold_frac
 
 
-def _jax_tile_decode_fn(decode_jit, params, tile_h: int, tile_w: int):
+def _jax_tile_decode_fn(decode_jit, params, tile_h: int, tile_w: int, dtype=None):
     """Return a decode_fn(tile: torch.Tensor) -> torch.Tensor for
     ldm_patched.modules.utils.tiled_scale to call once per tile.
 
@@ -330,6 +330,8 @@ def _jax_tile_decode_fn(decode_jit, params, tile_h: int, tile_w: int):
     import jax.numpy as jnp
     import torch.nn.functional as F
 
+    compute_dtype = dtype if dtype is not None else jnp.bfloat16
+
     def decode_fn(tile: "torch.Tensor") -> "torch.Tensor":
         _, _, th, tw = tile.shape
         pad_h = max(0, tile_h - th)
@@ -338,7 +340,7 @@ def _jax_tile_decode_fn(decode_jit, params, tile_h: int, tile_w: int):
             tile = F.pad(tile, (0, pad_w, 0, pad_h))  # zero-pad right/bottom only
 
         z_np = tile.detach().float().cpu().numpy()
-        z_jax = jnp.asarray(z_np, dtype=jnp.bfloat16)
+        z_jax = jnp.asarray(z_np, dtype=compute_dtype)
         out = decode_jit(params, z_jax)
         out_np = np.asarray(jnp.asarray(out, dtype=jnp.float32))
         out_t = torch.from_numpy(out_np.copy()).float()
@@ -353,7 +355,7 @@ def _jax_tile_decode_fn(decode_jit, params, tile_h: int, tile_w: int):
 
 def jax_decode_tiled(
     decode_jit, params, z: "torch.Tensor",
-    tile_x: int = None, tile_y: int = None, overlap: int = 16,
+    tile_x: int = None, tile_y: int = None, overlap: int = 16, dtype=None,
 ) -> "torch.Tensor":
     """Tiled VAE decode driven entirely by JAX per tile.
 
@@ -398,7 +400,7 @@ def jax_decode_tiled(
     tile_x = min(tile_x, _JAX_VAE_MAX_TILE)
     tile_y = min(tile_y, _JAX_VAE_MAX_TILE)
 
-    decode_fn = _jax_tile_decode_fn(decode_jit, params, tile_h=tile_y, tile_w=tile_x)
+    decode_fn = _jax_tile_decode_fn(decode_jit, params, tile_h=tile_y, tile_w=tile_x, dtype=dtype)
     return ldm_utils.tiled_scale(z, decode_fn, tile_x, tile_y, overlap, upscale_amount=8, output_device=z.device)
 
 
@@ -466,7 +468,17 @@ def install_vae_hooks(sd_model, forge_objects=None, phase_manager=None) -> bool:
         if phase_manager is not None and phase_manager.enabled:
             import jax
             vae_sharding = jax.sharding.SingleDeviceSharding(phase_manager.device, memory_kind="pinned_host")
-        _state = {"disabled": False, "params": load_vae_params(fst, sharding=vae_sharding)}
+
+        # Hardware-Tensor-Core-aware compute dtype -- same shared decision
+        # function as JAXSDXLPipeline.__init__/install_clip_hooks (see
+        # dtype_select's module docstring). Stored on _state so the
+        # per-call decode hooks below (which convert the INPUT latent to
+        # JAX on every call) stay in the same precision as these params.
+        from jax_pipeline import dtype_select
+        vae_dtype, vae_dtype_name = dtype_select.select_compute_dtype(
+            vae_patcher.load_device if vae_patcher is not None else None,
+        )
+        _state = {"disabled": False, "params": load_vae_params(fst, dtype=vae_dtype, sharding=vae_sharding), "dtype": vae_dtype}
 
         if phase_manager is not None:
             phase_manager.register(
@@ -505,10 +517,10 @@ def install_vae_hooks(sd_model, forge_objects=None, phase_manager=None) -> bool:
                         "decoding tiled via JAX directly (skipping a doomed full-res attempt)",
                         list(z.shape),
                     )
-                    return jax_decode_tiled(decode_jit, _state["params"], z).to(z.device)
+                    return jax_decode_tiled(decode_jit, _state["params"], z, dtype=_state["dtype"]).to(z.device)
 
                 z_np = z.detach().float().cpu().numpy()
-                z_jax = jnp.asarray(z_np, dtype=jnp.bfloat16)
+                z_jax = jnp.asarray(z_np, dtype=_state["dtype"])
                 out = decode_jit(_state["params"], z_jax)
                 out_np = np.asarray(jnp.asarray(out, dtype=jnp.float32))
                 return torch.from_numpy(out_np.copy()).float().to(z.device)

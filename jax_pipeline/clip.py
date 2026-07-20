@@ -336,6 +336,8 @@ def _make_clip_l_hook(clip_state: dict, orig_fn, clip_l_model=None, clip_patcher
                         layer_idx=clip_l_model.layer_idx if clip_l_model.layer_idx is not None else -2,
                         has_text_projection=False,
                         activation=_quick_gelu,
+                        dtype=clip_state.get("dtype"),
+                        sharding=clip_state.get("sharding"),
                     )
                     clip_state["l_sig"] = current_sig
                     if phase_manager is not None and phase_manager.enabled:
@@ -396,6 +398,8 @@ def _make_clip_g_hook(clip_state: dict, orig_fn, clip_g_model=None, clip_patcher
                         has_text_projection=_tp_data is not None,
                         activation=_gelu,
                         text_projection_param=_tp_data,
+                        dtype=clip_state.get("dtype"),
+                        sharding=clip_state.get("sharding"),
                     )
                     clip_state["g_sig"] = current_sig
                     if phase_manager is not None and phase_manager.enabled:
@@ -447,6 +451,7 @@ def install_clip_hooks(sd_model, forge_objects, phase_manager=None) -> bool:
         clip_model = forge_objects.clip.cond_stage_model
         clip_l = clip_model.clip_l  # SDClipModel
         clip_g = clip_model.clip_g  # SDXLClipG
+        clip_patcher = getattr(forge_objects.clip, "patcher", None)
 
         # On a phase-managed (VRAM-constrained) card, convert CLIP-L/G
         # weights DIRECTLY to pinned host instead of the default GPU
@@ -464,11 +469,23 @@ def install_clip_hooks(sd_model, forge_objects, phase_manager=None) -> bool:
             import jax
             clip_sharding = jax.sharding.SingleDeviceSharding(phase_manager.device, memory_kind="pinned_host")
 
+        # Hardware-Tensor-Core-aware compute dtype -- same reasoning and
+        # same shared decision function as JAXSDXLPipeline.__init__ (see
+        # dtype_select's module docstring). Stored in clip_state so the
+        # LoRA-reload closures below (_make_clip_l_hook/_make_clip_g_hook)
+        # rebuild with the SAME dtype rather than silently reverting to
+        # bfloat16 (they previously took no dtype/sharding at all).
+        from jax_pipeline import dtype_select
+        clip_dtype, clip_dtype_name = dtype_select.select_compute_dtype(
+            clip_patcher.load_device if clip_patcher is not None else None,
+        )
+
         jax_clip_l = build_clip_text_encoder(
             clip_l.transformer,
             layer_idx=clip_l.layer_idx if clip_l.layer_idx is not None else -2,
             has_text_projection=False,  # CLIP-L pooled not used in SDXL
             activation=_quick_gelu,
+            dtype=clip_dtype,
             sharding=clip_sharding,
         )
 
@@ -480,14 +497,15 @@ def install_clip_hooks(sd_model, forge_objects, phase_manager=None) -> bool:
             has_text_projection=tp_data is not None,
             activation=_gelu,
             text_projection_param=tp_data,
+            dtype=clip_dtype,
             sharding=clip_sharding,
         )
 
         # Shared mutable holder for both encoders — see _make_clip_l_hook's
         # docstring for why this (rather than two private per-hook dicts)
-        # is what the phase manager registers against.
-        clip_state = {"l": jax_clip_l, "g": jax_clip_g}
-        clip_patcher = getattr(forge_objects.clip, "patcher", None)
+        # is what the phase manager registers against. "dtype"/"sharding"
+        # ride along so the LoRA-reload closures can rebuild consistently.
+        clip_state = {"l": jax_clip_l, "g": jax_clip_g, "dtype": clip_dtype, "sharding": clip_sharding}
 
         # JAX now has its own independent copy of these weights (just
         # built above) — the torch-side CLIP the checkpoint loader force-

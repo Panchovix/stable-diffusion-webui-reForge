@@ -283,7 +283,10 @@ def trace_atom_activation_bytes(
     cache = block_cache_mod.BlockParamCache(jax_device, budget_bytes=None)
     cache.load(partitioned)
 
-    sample, timestep, enc, added = _empty_unet_inputs(latent_h, latent_w, batch, seq_len)
+    # Infer the compute dtype straight from the real params rather than
+    # assuming bfloat16 -- see autotune._empty_unet_inputs's docstring.
+    params_dtype = next(iter(flat_params.values())).dtype if flat_params else None
+    sample, timestep, enc, added = _empty_unet_inputs(latent_h, latent_w, batch, seq_len, dtype=params_dtype)
     pending_store = segs.PendingValueStore(jax_device)
     compiled = segs.compile_segments([[a] for a in atoms])
 

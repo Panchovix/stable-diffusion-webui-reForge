@@ -95,9 +95,21 @@ class JAXSDXLPipeline:
         self.model_sampling = unet_patcher.model.model_sampling
 
         log.info("[JAX Pipeline] Converting SDXL UNet weights to JAX...")
-        from jax_pipeline import convert, host_offload
+        from jax_pipeline import convert, host_offload, dtype_select
 
         self._device = host_offload.get_default_device()
+
+        # Hardware-Tensor-Core-aware compute dtype (falls back from the
+        # bf16 default to fp16 on Turing/Volta, which lack BF16 Tensor
+        # Core support entirely -- see dtype_select's module docstring).
+        # Stored so lora.py's reload_jax_unet_weights can reuse the SAME
+        # decision rather than re-deriving it (harmless either way since
+        # it's a pure function of the hardware, but avoids a redundant
+        # torch.cuda.get_device_capability call and duplicate log line
+        # on every LoRA change).
+        self._compute_dtype, self._compute_dtype_name = dtype_select.select_compute_dtype(
+            unet_patcher.load_device,
+        )
 
         # On a phase-managed (VRAM-constrained) card, self._raw_params is
         # kept resident for the pipeline's ENTIRE lifetime (every
@@ -116,7 +128,9 @@ class JAXSDXLPipeline:
             import jax
             raw_sharding = jax.sharding.SingleDeviceSharding(self._device, memory_kind="pinned_host")
 
-        params = convert.load_weights_from_ldm(unet_patcher.model, report=True, sharding=raw_sharding)
+        params = convert.load_weights_from_ldm(
+            unet_patcher.model, dtype=self._compute_dtype, report=True, sharding=raw_sharding,
+        )
         # Kept for the lifetime of the pipeline (not just __init__) — every
         # (re)build of the streaming execution (ensure_unet_built, LoRA
         # reload) re-partitions/re-loads from this same flat dict, and
@@ -419,13 +433,18 @@ class JAXSDXLPipeline:
             ).expand(text_embeds.shape[0], -1)
 
         # -- 3. Convert to JAX --------------------------------------------------
-        jx_sample = _torch_to_jax(xc)  # [B,4,H,W]
+        # dtype=self._compute_dtype (not _torch_to_jax's own bf16 default) so
+        # activations stay in the SAME precision as the UNet's own params --
+        # see dtype_select.select_compute_dtype's module docstring for why a
+        # bf16/fp16 mismatch between weights and activations is worse than
+        # either alone.
+        jx_sample = _torch_to_jax(xc, dtype=self._compute_dtype)  # [B,4,H,W]
         jx_timestep = _torch_to_jax(timestep, dtype=jnp.float32)  # [B]
         jx_enc_hs = (
-            _torch_to_jax(c_crossattn) if c_crossattn is not None
-            else jnp.zeros((x.shape[0], 1, 2048), dtype=jnp.bfloat16)
+            _torch_to_jax(c_crossattn, dtype=self._compute_dtype) if c_crossattn is not None
+            else jnp.zeros((x.shape[0], 1, 2048), dtype=self._compute_dtype)
         )
-        jx_text_emb = _torch_to_jax(text_embeds)  # [B, 1280]
+        jx_text_emb = _torch_to_jax(text_embeds, dtype=self._compute_dtype)  # [B, 1280]
         jx_time_ids = _torch_to_jax(time_ids, dtype=jnp.float32)  # [B, 6]
 
         added_cond_kwargs = {

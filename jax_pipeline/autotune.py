@@ -62,14 +62,23 @@ _TIMED_CALLS = 2
 _VRAM_SAFETY_FACTOR = 1.35
 
 
-def _empty_unet_inputs(latent_h: int, latent_w: int, batch: int, seq_len: int):
+def _empty_unet_inputs(latent_h: int, latent_w: int, batch: int, seq_len: int, dtype=None):
+    """Dummy empty-tensor inputs for benchmarking. ``dtype`` should match
+    whatever the REAL params were converted to (bfloat16, or the fp16
+    fallback on Turing/Volta — see jax_pipeline.dtype_select) — a
+    mismatched dummy-input dtype would benchmark a different
+    weight/activation precision combination than what real generation
+    actually runs, making the measured peak-VRAM/timing numbers
+    meaningless for the decision they're used to make.
+    """
     import jax.numpy as jnp
 
-    sample = jnp.zeros((batch, 4, latent_h, latent_w), dtype=jnp.bfloat16)
+    compute_dtype = dtype if dtype is not None else jnp.bfloat16
+    sample = jnp.zeros((batch, 4, latent_h, latent_w), dtype=compute_dtype)
     timestep = jnp.zeros((batch,), dtype=jnp.float32)
-    encoder_hidden_states = jnp.zeros((batch, seq_len, 2048), dtype=jnp.bfloat16)
+    encoder_hidden_states = jnp.zeros((batch, seq_len, 2048), dtype=compute_dtype)
     added_cond_kwargs = {
-        "text_embeds": jnp.zeros((batch, 1280), dtype=jnp.bfloat16),
+        "text_embeds": jnp.zeros((batch, 1280), dtype=compute_dtype),
         "time_ids": jnp.zeros((batch, 6), dtype=jnp.float32),
     }
     return sample, timestep, encoder_hidden_states, added_cond_kwargs
@@ -124,7 +133,10 @@ def _benchmark_candidate(
     pending_store = None
     out = None
     try:
-        sample, timestep, enc, added = _empty_unet_inputs(latent_h, latent_w, batch, seq_len)
+        # Infer the compute dtype straight from the real params rather
+        # than assuming bfloat16 -- see _empty_unet_inputs's docstring.
+        params_dtype = next(iter(params.values())).dtype if params else None
+        sample, timestep, enc, added = _empty_unet_inputs(latent_h, latent_w, batch, seq_len, dtype=params_dtype)
 
         if level == "whole":
             phase = "build (stage full params to device)"
