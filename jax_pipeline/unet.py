@@ -124,12 +124,98 @@ def _upsample2x(x: "jnp.ndarray") -> "jnp.ndarray":
 def _softmax_attention(q, k, v, scale: float):
     """Explicit scaled dot-product attention, softmax computed in float32.
 
-    All tensors in [B, heads, seq, dim_per_head] format.
+    All tensors in [B, heads, seq, dim_per_head] format. Materializes the
+    full [B, heads, Sq, Sk] score matrix — fine for small Sk (cross-
+    attention's 77-231 CLIP tokens), but a real memory cost at self-
+    attention's Sk = H*W spatial-token counts on larger resolutions. See
+    ``_chunked_softmax_attention`` for the alternative used there.
     """
     orig_dtype = q.dtype
     attn = jnp.einsum("bhqd,bhkd->bhqk", q, k).astype(jnp.float32) * scale
     attn = jax.nn.softmax(attn, axis=-1).astype(orig_dtype)
     return jnp.einsum("bhqk,bhkd->bhqd", attn, v)
+
+
+def _pick_kv_chunk_size(total: int, target: int = 512, min_chunk: int = 64) -> Optional[int]:
+    """Largest exact divisor of ``total`` that's <= ``target`` and >=
+    ``min_chunk``, or None if none exists (or ``total`` is already <=
+    ``target``, where chunking wouldn't reduce peak memory anyway).
+
+    Requiring an EXACT divisor (rather than padding to a multiple of the
+    chunk size) matches this codebase's existing static-shape philosophy
+    (see unet_segments.py's module docstring) — no remainder handling,
+    no padding/masking logic to get right. SDXL's spatial token counts at
+    every self-attention level are H*W for a repeatedly-/2-downsampled
+    latent, so exact power-of-2-ish divisors are the common case; a
+    latent shape where none of the candidates evenly divide just falls
+    back to unchunked attention (still correct, just the memory cost
+    ``_chunked_softmax_attention`` was meant to avoid).
+    """
+    if total <= target:
+        return None
+    for d in range(min(target, total), min_chunk - 1, -1):
+        if total % d == 0:
+            return d
+    return None
+
+
+def _chunked_softmax_attention(q, k, v, scale: float, block_k: int):
+    """Online-softmax attention, chunked over the key/value sequence axis
+    — mirrors the ALGORITHM PyTorch's SDPA "memory-efficient" backend
+    runs on Turing GPUs (``torch.backends.cuda.can_use_flash_attention()``
+    is False there — flash_attention requires compute capability >= 8.0;
+    efficient_attention's CUTLASS kernels support Turing, and that
+    backend's core idea is exactly this: tile over K/V, keep a running
+    (max, sum, weighted-output) accumulator, never materialize the full
+    [Sq, Sk] score matrix at once).
+
+    This is a plain-jnp software implementation of that algorithm, not a
+    fused CUDA/CUTLASS kernel — JAX has no such kernel available for
+    Turing either (Pallas's Mosaic GPU backend needs Hopper+, its Triton
+    backend only claims support "down to Ampere" and JAX's own docs say
+    it's "not recommended for use" — see jax_pipeline's git history for
+    the research trail). The win here is peak memory: each iteration's
+    score matrix is [B, heads, Sq, block_k] instead of [B, heads, Sq, Sk],
+    independent of how many chunks there are. Whether it's also faster
+    depends on whether the memory-bandwidth savings outweigh
+    ``jax.lax.scan``'s per-iteration dispatch overhead — unconfirmed
+    without a real-hardware run.
+
+    All tensors [B, heads, seq, dim_per_head]. ``k``/``v``'s sequence
+    length must be exactly divisible by ``block_k`` — see
+    ``_pick_kv_chunk_size``, which the caller uses to choose it.
+    """
+    B, H, Sq, Dh = q.shape
+    Sk = k.shape[2]
+    num_blocks = Sk // block_k
+
+    orig_dtype = q.dtype
+    q32 = q.astype(jnp.float32)
+
+    # [num_blocks, B, H, block_k, Dh] — block axis leading, for lax.scan.
+    k_blocks = jnp.moveaxis(k.reshape(B, H, num_blocks, block_k, Dh), 2, 0)
+    v_blocks = jnp.moveaxis(v.reshape(B, H, num_blocks, block_k, Dh), 2, 0)
+
+    m_init = jnp.full((B, H, Sq), -jnp.inf, dtype=jnp.float32)
+    l_init = jnp.zeros((B, H, Sq), dtype=jnp.float32)
+    acc_init = jnp.zeros((B, H, Sq, Dh), dtype=jnp.float32)
+
+    def step(carry, kv_block):
+        m_i, l_i, acc_i = carry
+        k_j, v_j = kv_block
+        s_ij = jnp.einsum("bhqd,bhkd->bhqk", q32, k_j.astype(jnp.float32)) * scale
+        m_ij = jnp.max(s_ij, axis=-1)
+        m_new = jnp.maximum(m_i, m_ij)
+        p_ij = jnp.exp(s_ij - m_new[..., None])
+        l_ij = jnp.sum(p_ij, axis=-1)
+        alpha = jnp.exp(m_i - m_new)  # rescales the OLD accumulator to the new running max
+        l_new = alpha * l_i + l_ij
+        pv = jnp.einsum("bhqk,bhkd->bhqd", p_ij, v_j.astype(jnp.float32))
+        acc_new = alpha[..., None] * acc_i + pv
+        return (m_new, l_new, acc_new), None
+
+    (m_f, l_f, acc_f), _ = jax.lax.scan(step, (m_init, l_init, acc_init), (k_blocks, v_blocks))
+    return (acc_f / l_f[..., None]).astype(orig_dtype)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -194,7 +280,17 @@ def layer_norm(params: Params, prefix: str, x, eps: float = _NORM_EPS):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def attention(params: Params, prefix: str, hidden_states, num_heads: int, encoder_hidden_states=None):
-    """Weight paths: to_q / to_k / to_v / to_out.0 (matches HF Attention)."""
+    """Weight paths: to_q / to_k / to_v / to_out.0 (matches HF Attention).
+
+    Self-attention (``encoder_hidden_states=None``) at larger spatial
+    resolutions has a large enough Sk (=Sq= H*W) that materializing the
+    full score matrix is a real memory cost — chunked via
+    ``_chunked_softmax_attention`` when ``_pick_kv_chunk_size`` finds a
+    usable divisor. Cross-attention's Sk (77-231 CLIP tokens) is always
+    small enough that ``_pick_kv_chunk_size`` returns None, so it keeps
+    using the plain (already cheap) ``_softmax_attention`` path — no
+    caller-side branching needed to get this split correct.
+    """
     B, Sq, D = hidden_states.shape
     context = encoder_hidden_states if encoder_hidden_states is not None else hidden_states
     Sk = context.shape[1]
@@ -208,7 +304,11 @@ def attention(params: Params, prefix: str, hidden_states, num_heads: int, encode
     k = jnp.transpose(k.reshape(B, Sk, num_heads, dh), (0, 2, 1, 3))
     v = jnp.transpose(v.reshape(B, Sk, num_heads, dh), (0, 2, 1, 3))
 
-    out = _softmax_attention(q, k, v, scale=dh ** -0.5)  # [B, H, Sq, dh]
+    block_k = _pick_kv_chunk_size(Sk)
+    if block_k is not None:
+        out = _chunked_softmax_attention(q, k, v, scale=dh ** -0.5, block_k=block_k)
+    else:
+        out = _softmax_attention(q, k, v, scale=dh ** -0.5)  # [B, H, Sq, dh]
 
     out = jnp.transpose(out, (0, 2, 1, 3)).reshape(B, Sq, num_heads * dh)
     return linear(params, f"{prefix}.to_out.0", out)
