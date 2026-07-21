@@ -107,6 +107,95 @@ def handle_jax_oom(phase_manager, component: str, exc: BaseException) -> None:
     ) from exc
 
 
+class JAXNaNError(RuntimeError):
+    """Raised when a JAX computation's output contains NaN/Inf.
+
+    By the time this is raised, the offending component's compute dtype
+    has already been escalated to a numerically safer one for NEXT time
+    (see ``handle_jax_nan``) — the caller should NOT automatically
+    retry THIS attempt; surface this to the user and let them decide
+    whether to try again now that a safer dtype is in effect.
+    """
+
+
+def contains_nan_or_inf(value) -> bool:
+    """True if ``value`` (a single torch tensor OR a single JAX array —
+    whichever framework the caller already has it in) contains NaN or
+    Inf. Forces materialization if it's a JAX array not yet resolved
+    (equivalent to a ``block_until_ready``) — only call this at a point
+    that's already a necessary sync boundary (e.g. right before
+    converting a real result back to torch/numpy for the caller), never
+    inside the mostly-async sampler loop itself (see
+    jax_pipeline.samplers's module docstring on why per-step forced
+    syncs there were removed).
+    """
+    import torch
+    if isinstance(value, torch.Tensor):
+        return bool(torch.isnan(value).any() or torch.isinf(value).any())
+
+    import jax.numpy as jnp
+    return bool(jnp.any(jnp.isnan(value))) or bool(jnp.any(jnp.isinf(value)))
+
+
+def handle_jax_nan(phase_manager, component: str, escalate_cb) -> None:
+    """Escalate ``component``'s compute dtype to a numerically safer one
+    and raise ``JAXNaNError``.
+
+    Call once ``contains_nan_or_inf(...)`` on a component's real output
+    returns True. Always raises — never returns — mirroring
+    ``handle_jax_oom``'s contract; callers should place any
+    NaN-tolerant fallback logic in a separate branch, not after this
+    call.
+
+    ``escalate_cb()`` is the caller-supplied remediation: it must bump
+    that component's OWN stored dtype up ``jax_pipeline.dtype_select
+    .DTYPE_SAFETY_LADDER`` and rebuild/reload whatever params were
+    converted at the old (unsafe) dtype, so the NEXT attempt actually
+    uses the escalated one — ``host_offload`` doesn't know how a given
+    component's params are stored/rebuilt, so it can't do this itself.
+    Returns the new dtype name (for logging) or None if already at the
+    safety ladder's ceiling (float32) with nothing left to escalate to.
+    """
+    new_name = None
+    try:
+        new_name = escalate_cb()
+    except Exception as escalate_exc:
+        log.warning("[JAX Pipeline] Dtype escalation after NaN also failed: %s", escalate_exc)
+
+    if new_name is not None:
+        log.warning(
+            "[JAX Pipeline] NaN/Inf detected in %s output — escalated its compute "
+            "dtype to %s for next time. Aborting this generation (not retrying "
+            "automatically): please try again now.",
+            component, new_name,
+        )
+        message = (
+            f"[JAX Pipeline] {component} produced NaN/Inf output — its compute "
+            f"dtype has been escalated to {new_name} (numerically safer, though "
+            "slower) for next time. Please try again."
+        )
+    else:
+        log.warning(
+            "[JAX Pipeline] NaN/Inf detected in %s output, already at the "
+            "safest available compute dtype (float32) — this isn't a dtype "
+            "problem. Aborting this generation.",
+            component,
+        )
+        message = (
+            f"[JAX Pipeline] {component} produced NaN/Inf output even at "
+            "float32 — this isn't fixed by a safer dtype. Please report this "
+            "as a bug."
+        )
+
+    if phase_manager is not None:
+        try:
+            phase_manager.escape_to_pytorch()
+        except Exception as cleanup_exc:
+            log.warning("[JAX Pipeline] Cleanup after NaN also failed: %s", cleanup_exc)
+
+    raise JAXNaNError(message)
+
+
 def evict_torch_model_from_gpu(patcher, label: str = "model") -> None:
     """Move a torch-side ModelPatcher's weights off GPU via ldm_patched's
     own model_management unload path, once JAX no longer needs to read

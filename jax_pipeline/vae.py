@@ -65,7 +65,7 @@ from __future__ import annotations
 
 import functools
 import logging
-from typing import TYPE_CHECKING, Dict, Tuple
+from typing import TYPE_CHECKING, Dict, Optional, Tuple
 
 import numpy as np
 import torch
@@ -471,14 +471,44 @@ def install_vae_hooks(sd_model, forge_objects=None, phase_manager=None) -> bool:
 
         # Hardware-Tensor-Core-aware compute dtype -- same shared decision
         # function as JAXSDXLPipeline.__init__/install_clip_hooks (see
-        # dtype_select's module docstring). Stored on _state so the
-        # per-call decode hooks below (which convert the INPUT latent to
-        # JAX on every call) stay in the same precision as these params.
+        # dtype_select's module docstring), but with prefer_safety=True:
+        # VAE decode runs ONCE per generation (not once per denoising
+        # step like the UNet), so the fp16 Tensor-Core speedup Turing/
+        # Volta would otherwise get is a much smaller absolute win than
+        # the risk -- a real-hardware run hit exactly this, fp16 VAE
+        # decode producing NaN/Inf output from an already-large-
+        # magnitude latent. Stored on _state (both the jnp dtype AND its
+        # name, the latter for dtype_select.escalate_dtype's ladder) so
+        # the per-call decode hooks below stay in the same precision as
+        # these params, and so handle_jax_nan's escalation callback
+        # knows what to escalate FROM.
         from jax_pipeline import dtype_select
         vae_dtype, vae_dtype_name = dtype_select.select_compute_dtype(
             vae_patcher.load_device if vae_patcher is not None else None,
+            prefer_safety=True,
         )
-        _state = {"disabled": False, "params": load_vae_params(fst, dtype=vae_dtype, sharding=vae_sharding), "dtype": vae_dtype}
+        _state = {
+            "disabled": False,
+            "params": load_vae_params(fst, dtype=vae_dtype, sharding=vae_sharding),
+            "dtype": vae_dtype,
+            "dtype_name": vae_dtype_name,
+        }
+
+        def _escalate_vae_dtype() -> Optional[str]:
+            """handle_jax_nan's remediation callback: bump _state's
+            dtype up dtype_select.DTYPE_SAFETY_LADDER and reconvert the
+            VAE's weights at the new (safer) dtype, so the NEXT decode
+            attempt actually uses it. Returns the new dtype name, or
+            None if already at the ladder's ceiling (float32).
+            """
+            new_name = dtype_select.escalate_dtype(_state["dtype_name"])
+            if new_name is None:
+                return None
+            new_dtype = dtype_select.dtype_by_name(new_name)
+            _state["params"] = load_vae_params(fst, dtype=new_dtype, sharding=vae_sharding)
+            _state["dtype"] = new_dtype
+            _state["dtype_name"] = new_name
+            return new_name
 
         if phase_manager is not None:
             phase_manager.register(
@@ -511,21 +541,30 @@ def install_vae_hooks(sd_model, forge_objects=None, phase_manager=None) -> bool:
                 if phase_manager is not None:
                     phase_manager.activate("vae")
 
+                from jax_pipeline.host_offload import contains_nan_or_inf, handle_jax_nan
+
                 if should_tile_decode(z.device, tuple(z.shape), elem_bytes=z.element_size()):
                     log.info(
                         "[JAX VAE] Latent %s estimated to exceed available VRAM - "
                         "decoding tiled via JAX directly (skipping a doomed full-res attempt)",
                         list(z.shape),
                     )
-                    return jax_decode_tiled(decode_jit, _state["params"], z, dtype=_state["dtype"]).to(z.device)
+                    result = jax_decode_tiled(decode_jit, _state["params"], z, dtype=_state["dtype"]).to(z.device)
+                    if contains_nan_or_inf(result):
+                        handle_jax_nan(phase_manager, "VAE decode (tiled)", _escalate_vae_dtype)  # always raises
+                    return result
 
                 z_np = z.detach().float().cpu().numpy()
                 z_jax = jnp.asarray(z_np, dtype=_state["dtype"])
                 out = decode_jit(_state["params"], z_jax)
+                if contains_nan_or_inf(out):
+                    handle_jax_nan(phase_manager, "VAE decode", _escalate_vae_dtype)  # always raises
                 out_np = np.asarray(jnp.asarray(out, dtype=jnp.float32))
                 return torch.from_numpy(out_np.copy()).float().to(z.device)
             except Exception as e:
-                from jax_pipeline.host_offload import _is_jax_oom_exception, handle_jax_oom
+                from jax_pipeline.host_offload import _is_jax_oom_exception, handle_jax_oom, JAXNaNError
+                if isinstance(e, JAXNaNError):
+                    raise  # already escalated + logged by handle_jax_nan -- don't fall through to the generic disable-and-fallback below
                 if _is_jax_oom_exception(e):
                     handle_jax_oom(phase_manager, "VAE decode", e)  # always raises
 

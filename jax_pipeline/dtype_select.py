@@ -49,6 +49,33 @@ log = logging.getLogger(__name__)
 #: warning three times in a row).
 _warned_fp16_fallback = {"shown": False}
 
+#: Increasing numerical safety (widest-dynamic-range-last), NOT
+#: increasing speed — the order host_offload.handle_jax_nan walks a
+#: component's dtype through after a real NaN/Inf is observed in its
+#: output. float32 is the ceiling: full range AND full precision, no
+#: further escalation possible.
+DTYPE_SAFETY_LADDER: Tuple[str, ...] = ("float16", "bfloat16", "float32")
+
+
+def escalate_dtype(current_name: str) -> Optional[str]:
+    """Return the next-safer dtype name after ``current_name`` on
+    ``DTYPE_SAFETY_LADDER``, or None if already at the safest (float32)
+    — meaning there's nothing left to escalate TO; the caller should
+    treat that as "this component needs a different fix entirely, not
+    just a bigger dtype."
+    """
+    if current_name not in DTYPE_SAFETY_LADDER:
+        return "float32"  # unknown/unrecognized name -- jump straight to the safest
+    idx = DTYPE_SAFETY_LADDER.index(current_name)
+    if idx + 1 >= len(DTYPE_SAFETY_LADDER):
+        return None
+    return DTYPE_SAFETY_LADDER[idx + 1]
+
+
+def dtype_by_name(name: str):
+    import jax.numpy as jnp
+    return {"bfloat16": jnp.bfloat16, "float16": jnp.float16, "float32": jnp.float32}[name]
+
 
 def _cuda_compute_capability(torch_device) -> Optional[Tuple[int, int]]:
     """(major, minor) NVIDIA compute capability for ``torch_device``, or
@@ -73,7 +100,7 @@ def _cuda_compute_capability(torch_device) -> Optional[Tuple[int, int]]:
         return None
 
 
-def select_compute_dtype(torch_device, requested: str = "bfloat16"):
+def select_compute_dtype(torch_device, requested: str = "bfloat16", prefer_safety: bool = False):
     """Return ``(jnp_dtype, dtype_name)`` — the compute dtype to
     actually use for JAX weight conversion, chosen for the ACTUAL
     Tensor Core generation on ``torch_device`` rather than blindly
@@ -81,6 +108,18 @@ def select_compute_dtype(torch_device, requested: str = "bfloat16"):
     reasoning; always logs which dtype was picked and why (the "warn
     the user what dtype is in use, for best performance" half of this
     — not just the fallback-specific warning below).
+
+    ``prefer_safety``: skip the Turing/Volta bf16->fp16 fallback for
+    THIS caller specifically, keeping ``requested`` (bfloat16 by
+    default) even on hardware that would otherwise get the fp16
+    speedup. Intended for components where the narrower fp16 range is
+    a bad trade even before any actual NaN is observed — VAE decode
+    runs ONCE per generation (not once per denoising step like the
+    UNet), so the fp16 Tensor-Core speedup there is a much smaller
+    absolute win than the risk it introduces (real-hardware report:
+    fp16 VAE decode producing NaN/Inf output on Turing from an
+    already-large-magnitude latent). Still overridden by
+    JAX_PIPELINE_COMPUTE_DTYPE if set.
     """
     import os
     import jax.numpy as jnp
@@ -121,6 +160,17 @@ def select_compute_dtype(torch_device, requested: str = "bfloat16"):
             "[JAX Pipeline] Compute dtype: bfloat16 (compute capability %d.%d, "
             "Ampere-or-newer) — native BF16 Tensor Core support: best performance "
             "AND full dynamic range, no trade-off here.",
+            major, minor,
+        )
+        return jnp.bfloat16, "bfloat16"
+
+    if cc_val >= 7.0 and requested == "bfloat16" and prefer_safety:
+        log.info(
+            "[JAX Pipeline] Compute dtype: bfloat16 (compute capability %d.%d, "
+            "Volta/Turing -- pinned to bfloat16 for this component regardless of "
+            "the fp16 Tensor-Core speedup other components use here, since the "
+            "narrower fp16 dynamic range is a worse trade for it -- see "
+            "select_compute_dtype's prefer_safety docstring).",
             major, minor,
         )
         return jnp.bfloat16, "bfloat16"
