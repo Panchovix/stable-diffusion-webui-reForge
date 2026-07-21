@@ -360,6 +360,19 @@ class JAXCFGDenoiser:
                       activations stay in one consistent precision
                       end to end. Defaults to bfloat16 for any caller
                       that hasn't been updated to pass it explicitly.
+    forward_cfg_fn : optional ``jax_pipeline.unet_segments.segmented_forward_cfg``
+                      -like callable — ``(params, sample_c, sample_u,
+                      timestep_c, timestep_u, enc_c, enc_u, added_c,
+                      added_u) -> (out_c, out_u)``. Only the "segmented"
+                      fusion level provides one (see
+                      ``JAXSDXLPipeline._build_unet_execution``); when
+                      given, the unbatched branch below uses it to run
+                      cond+uncond through each segment's residency
+                      window together instead of two independent
+                      ``forward_fn`` calls, which would otherwise walk
+                      (and re-stage) every segment twice per step. None
+                      for every other fusion level — those already fall
+                      back to the plain two-call path unaffected.
     """
 
     def __init__(
@@ -371,10 +384,12 @@ class JAXCFGDenoiser:
         latent_shape: Tuple[int, ...],
         phase_manager: Any = None,
         compute_dtype: Any = None,
+        forward_cfg_fn: Any = None,
     ) -> None:
         import jax.numpy as jnp
 
         self._forward = forward_fn
+        self._forward_cfg = forward_cfg_fn
         self._params = params
         self._ms = model_sampling
         self._dtype = compute_dtype if compute_dtype is not None else jnp.bfloat16
@@ -509,8 +524,20 @@ class JAXCFGDenoiser:
             # (no torch round-trip) is still fully in effect either way.
             added_c = {"text_embeds": self._te_c, "time_ids": self._ti_single}
             added_u = {"text_embeds": self._te_u, "time_ids": self._ti_single}
-            out_c = self._forward(self._params, xc, ts, self._enc_c, added_c).astype(jnp.float32)
-            out_u = self._forward(self._params, xc, ts, self._enc_u, added_u).astype(jnp.float32)
+            if self._forward_cfg is not None:
+                # Segmented fusion level: run cond+uncond through each
+                # segment's residency window together instead of two
+                # independent forward_fn calls — see forward_cfg_fn's
+                # docstring for why the latter re-stages every segment
+                # twice per step on VRAM-constrained cards.
+                out_c, out_u = self._forward_cfg(
+                    self._params, xc, xc, ts, ts, self._enc_c, self._enc_u, added_c, added_u,
+                )
+                out_c = out_c.astype(jnp.float32)
+                out_u = out_u.astype(jnp.float32)
+            else:
+                out_c = self._forward(self._params, xc, ts, self._enc_c, added_c).astype(jnp.float32)
+                out_u = self._forward(self._params, xc, ts, self._enc_u, added_u).astype(jnp.float32)
 
         # CFG: uncond + scale*(cond - uncond)
         #

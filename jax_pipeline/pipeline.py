@@ -154,6 +154,7 @@ class JAXSDXLPipeline:
             self.host_offload = False
             self._params = None
             self._forward = None
+            self._forward_cfg = None
         else:
             # Large-VRAM cards: no fusion-level search needed, "whole"
             # (the single-jit path) is always the right call and doesn't
@@ -163,6 +164,7 @@ class JAXSDXLPipeline:
             self.host_offload: bool = host_offload.should_offload(unet_patcher, params)
             self._params = host_offload.place_params(params, self._device, self.host_offload)
             self._forward = host_offload.make_forward(self._device, self.host_offload)
+            self._forward_cfg = None
 
         # LoRA / DoRA tracking: the ldm_patched patches_uuid (a UUID4
         # regenerated on every LoRA add/remove/strength change) that was in
@@ -177,11 +179,13 @@ class JAXSDXLPipeline:
         )
 
     def _build_unet_execution(self, level: str, params, shape_info=None):
-        """Construct the (params_or_cache, forward_fn, block_cache) triple
-        for a chosen fusion level. ``block_cache`` is None for "whole"
-        (the plain flat-dict + make_forward path — no BlockParamCache
-        involved) so the caller knows whether there's a cache to register
-        phase_manager cleanup callbacks for.
+        """Construct the (params_or_cache, forward_fn, forward_cfg_fn,
+        block_cache) tuple for a chosen fusion level. ``block_cache`` is
+        None for "whole" (the plain flat-dict + make_forward path — no
+        BlockParamCache involved) so the caller knows whether there's a
+        cache to register phase_manager cleanup callbacks for.
+        ``forward_cfg_fn`` is None for every level except "segmented" —
+        see its own branch below for why only that level benefits.
 
         ``shape_info`` — ``(latent_h, latent_w, batch, seq_len)`` — is
         only needed (and required) for ``level == "segmented"``: unlike
@@ -199,7 +203,7 @@ class JAXSDXLPipeline:
             placed = host_offload.place_params(params, self._device, offload_flag)
             forward = host_offload.make_forward(self._device, offload_flag)
             self.host_offload = offload_flag
-            return placed, forward, None
+            return placed, forward, None, None
 
         if level == "segmented":
             if shape_info is None:
@@ -232,7 +236,16 @@ class JAXSDXLPipeline:
             state = segs.SegmentedUnetState(cache, pending_store, atoms, compiled, dict(plan.spill_schedule))
 
             self.host_offload = False
-            return state, segs.segmented_forward, state
+            # segmented_forward_cfg is the CFG-interleaved path
+            # JAXCFGDenoiser's unbatched branch (VRAM-constrained cards)
+            # prefers when available — see its docstring for why calling
+            # segmented_forward twice (once per cond/uncond) instead
+            # doubles block-cache transfer traffic even when the budget
+            # would otherwise be enough to avoid thrashing within one
+            # pass. Only "segmented" exposes this; every other level's
+            # cache is either unbounded (whole) or already sized without
+            # this specific cond/uncond re-walk pattern in mind.
+            return state, segs.segmented_forward, segs.segmented_forward_cfg, state
 
         from jax_pipeline.block_cache import BlockParamCache, partition_params_by_block
         from jax_pipeline.unet import build_block_ids, build_block_ids_coarse
@@ -242,7 +255,7 @@ class JAXSDXLPipeline:
         cache.load(partition_params_by_block(params, block_ids))
         forward = host_offload.make_streaming_forward()
         self.host_offload = False
-        return cache, forward, cache
+        return cache, forward, None, cache
 
     def ensure_unet_built(self, latent_shape, seq_len: int = 77) -> None:
         """Make sure self._params/self._forward are built for
@@ -281,14 +294,14 @@ class JAXSDXLPipeline:
                 latent_h=H, latent_w=W, batch=B, seq_len=seq_len,
             )
             shape_info = (H, W, B, seq_len) if level == "segmented" else None
-            params, forward, block_cache = self._build_unet_execution(level, self._raw_params, shape_info)
+            params, forward, forward_cfg, block_cache = self._build_unet_execution(level, self._raw_params, shape_info)
         except Exception as e:
             log.warning(
                 "[JAX Pipeline] ensure_unet_built: autotune/build failed (%s) — "
                 "falling back to 'fine' directly.", e, exc_info=True,
             )
             level = "fine"
-            params, forward, block_cache = self._build_unet_execution("fine", self._raw_params)
+            params, forward, forward_cfg, block_cache = self._build_unet_execution("fine", self._raw_params)
 
         # Tear down whatever was built for the PREVIOUS shape (if any)
         # before switching to the new one — avoids leaking the old
@@ -298,6 +311,7 @@ class JAXSDXLPipeline:
 
         self._params = params
         self._forward = forward
+        self._forward_cfg = forward_cfg
         self._block_cache = block_cache
         self._fusion_level = level
         self._unet_shape_sig = shape_sig

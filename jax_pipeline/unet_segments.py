@@ -609,6 +609,32 @@ def segmented_forward(state: SegmentedUnetState, sample, timestep, encoder_hidde
     )
 
 
+def segmented_forward_cfg(
+    state: SegmentedUnetState,
+    sample_c, sample_u, timestep_c, timestep_u,
+    encoder_hidden_states_c, encoder_hidden_states_u,
+    added_cond_kwargs_c, added_cond_kwargs_u,
+):
+    """CFG-interleaved counterpart to ``segmented_forward`` — see
+    ``unet_forward_segmented_cfg`` for why this halves block-cache
+    transfer traffic on VRAM-constrained cards.
+
+    Uses two throwaway ``PendingValueStore``s rather than ``state``'s
+    own: cond/uncond skip- and residual-tensors never overlap with the
+    single-ctx path's values and don't need to persist beyond one call,
+    so reusing ``state.pending_store`` for both would just risk one
+    branch's values colliding with the other's under the same value_id.
+    """
+    pending_c = PendingValueStore(state.param_cache.device)
+    pending_u = PendingValueStore(state.param_cache.device)
+    return unet_forward_segmented_cfg(
+        state.param_cache, pending_c, pending_u, state.segments, state.spill_schedule,
+        sample_c, sample_u, timestep_c, timestep_u,
+        encoder_hidden_states_c, encoder_hidden_states_u,
+        added_cond_kwargs_c, added_cond_kwargs_u,
+    )
+
+
 def unet_forward_segmented(
     param_cache,
     pending_store: PendingValueStore,
@@ -678,3 +704,95 @@ def unet_forward_segmented(
                 pending_store.spill(value_id)
 
     return jnp.transpose(ctx["x"], (0, 3, 1, 2))
+
+
+def unet_forward_segmented_cfg(
+    param_cache,
+    pending_store_c: PendingValueStore,
+    pending_store_u: PendingValueStore,
+    segments: List[CompiledSegment],
+    spill_schedule: Dict[int, Tuple[str, ...]],
+    sample_c: "Any", sample_u: "Any",
+    timestep_c: "Any", timestep_u: "Any",
+    encoder_hidden_states_c: "Any", encoder_hidden_states_u: "Any",
+    added_cond_kwargs_c: Dict[str, Any], added_cond_kwargs_u: Dict[str, Any],
+):
+    """CFG-interleaved counterpart to ``unet_forward_segmented``: runs
+    cond AND uncond through the segmented UNet TOGETHER, one segment at
+    a time, instead of two independent back-to-back full passes.
+
+    Why this matters on VRAM-constrained cards: ``unet_forward_segmented``
+    called twice (once for cond, once for uncond — see
+    ``JAXCFGDenoiser.__call__``'s unbatched branch) walks segments
+    1..N, then walks 1..N AGAIN. If ``param_cache``'s budget can't hold
+    2+ segments simultaneously (real-hardware-confirmed: a 2.287GB
+    budget against a 3-segment SDXL UNet), segment 1's blocks are
+    evicted (LRU) while segment 2/3 load during the FIRST (cond) pass,
+    so by the time the uncond pass asks for segment 1 again, it's long
+    gone — every single block, on every single access, across the
+    entire generation, misses (100% miss rate, confirmed via
+    ``_debug_profile``'s per-block timing summary on real hardware).
+
+    This function instead loads each segment's blocks ONCE per
+    denoising step and runs BOTH the cond and uncond compute against
+    that one residency window before moving to the next segment —
+    halving block-cache transfer traffic on any card where this
+    thrashing pattern applies, independent of resolution or sampler.
+
+    Returns ``(out_c, out_u)`` — same [B,4,H,W] NCHW layout as
+    ``unet_forward_segmented``'s single return value, one per branch.
+    """
+    import jax.numpy as jnp
+    from jax_pipeline.unet import _sinusoidal_embedding, _TIME_DIM as _TD
+
+    def _build_ctx(sample, timestep, encoder_hidden_states, added_cond_kwargs):
+        sample = jnp.transpose(sample, (0, 2, 3, 1))
+        timestep_emb = _sinusoidal_embedding(
+            timestep.astype(jnp.float32), _TD, flip_sin_to_cos=True
+        ).astype(sample.dtype)
+        text_embeds = added_cond_kwargs["text_embeds"].astype(sample.dtype)
+        time_ids = added_cond_kwargs["time_ids"].astype(jnp.float32)
+        return {
+            "x": sample,
+            "temb": None,
+            "encoder_hidden_states": encoder_hidden_states,
+            "timestep_emb": timestep_emb,
+            "text_embeds": text_embeds,
+            "time_ids": time_ids,
+            "values": {},
+        }
+
+    ctx_c = _build_ctx(sample_c, timestep_c, encoder_hidden_states_c, added_cond_kwargs_c)
+    ctx_u = _build_ctx(sample_u, timestep_u, encoder_hidden_states_u, added_cond_kwargs_u)
+
+    for seg_idx, segment in enumerate(segments):
+        produced_within = set()
+        consumed_within = set()
+        for atom in segment.atoms:
+            produced_within.update(atom.produces)
+            consumed_within.update(atom.consumes)
+        needed_from_store = consumed_within - produced_within
+
+        for value_id in needed_from_store:
+            ctx_c["values"][value_id] = pending_store_c.get(value_id)
+            ctx_u["values"][value_id] = pending_store_u.get(value_id)
+
+        # Single residency window for this segment's weights -- shared
+        # by both the cond and uncond compute below, unlike calling
+        # unet_forward_segmented twice (which would re-stage them).
+        params_by_block = {bid: param_cache.get(bid) for bid in segment.block_ids}
+        ctx_c = segment.fn(params_by_block, ctx_c)
+        ctx_u = segment.fn(params_by_block, ctx_u)
+
+        for ctx, store in ((ctx_c, pending_store_c), (ctx_u, pending_store_u)):
+            still_pending = dict(ctx["values"])
+            ctx["values"] = {}
+            for value_id, arr in still_pending.items():
+                store.put(value_id, arr)
+            for value_id in spill_schedule.get(seg_idx, ()):
+                if value_id in still_pending:
+                    store.spill(value_id)
+
+    out_c = jnp.transpose(ctx_c["x"], (0, 3, 1, 2))
+    out_u = jnp.transpose(ctx_u["x"], (0, 3, 1, 2))
+    return out_c, out_u
