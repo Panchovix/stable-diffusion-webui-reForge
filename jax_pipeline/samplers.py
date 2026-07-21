@@ -188,6 +188,21 @@ class _ProgressState:
                 self._last_denoised_torch = _to_torch(denoised_r)
             self._pending = AsyncReadiness((x, denoised))
 
+        # The standard PyTorch path updates sampler.last_latent every
+        # step (modules.sd_samplers_cfg_denoiser.CFGDenoiser.forward:
+        # "self.sampler.last_latent = denoised") — that's what
+        # Sampler.launch_sampling returns when InterruptedException
+        # unwinds the loop (see JAXCFGDenoiser.__call__'s interrupt
+        # check). JAXCFGDenoiser bypasses CFGDenoiser.forward entirely,
+        # so nothing else updates it; without this, interrupting mid-
+        # generation would return the untouched initial noisy latent
+        # instead of the actual partial progress. ``cb`` is
+        # KDiffusionSampler.callback_state, a bound method — cb.__self__
+        # is the sampler instance.
+        sampler = getattr(cb, "__self__", None)
+        if sampler is not None:
+            sampler.last_latent = self._last_denoised_torch
+
         cb({
             "i": i,
             "sigma": sigma_t,

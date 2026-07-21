@@ -495,6 +495,22 @@ class JAXCFGDenoiser:
         -> denoised [B, 4, H, W] float32
         """
         import jax.numpy as jnp
+        import modules.shared as shared
+        from modules.sd_samplers_common import InterruptedException
+
+        # The whole-loop JAX sampler path never calls the standard
+        # modules.sd_samplers_cfg_denoiser.CFGDenoiser.forward() (this
+        # class replaces it entirely — see the module docstring), which
+        # is the ONLY place that checks shared.state.interrupted/
+        # .skipped and raises to unwind the sampler loop. Without this
+        # check here, clicking "Interrupt" flips that flag but nothing
+        # in the JAX loop ever reads it, so generation runs to
+        # completion regardless — real-hardware-reported bug. Checked
+        # once per denoiser call (i.e. once or twice per denoising step,
+        # matching the granularity CFGDenoiser.forward() checks at)
+        # before doing any compute, exactly mirroring its own check.
+        if shared.state.interrupted or shared.state.skipped:
+            raise InterruptedException
 
         B = x.shape[0]
 
