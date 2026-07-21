@@ -45,8 +45,9 @@ Set automatically (unless already set by you): ``CUDA_ROOT``,
 platform`` (the only JAX GPU allocator that actually returns freed memory
 to the CUDA driver — without it, PhaseManager's device<->host moves don't
 translate into real free VRAM; see ``_apply_platform_allocator_default``),
-``XLA_FLAGS`` (adds ``--xla_gpu_strict_conv_algorithm_picker=false``). See
-``_apply_*_workaround``/``_apply_*_default`` below for why.
+``XLA_FLAGS`` (adds ``--xla_gpu_strict_conv_algorithm_picker=false`` and
+``--xla_gpu_triton_gemm_any=true``). See ``_apply_*_workaround``/
+``_apply_*_default`` below for why.
 
 Opt-in only (NOT set automatically — see ``_apply_vmm_allocator_default``
 for why): ``JAX_PIPELINE_VMM_ALLOCATOR=1`` switches the GPU allocator to
@@ -255,6 +256,30 @@ def _apply_xla_conv_autotune_workaround() -> None:
     os.environ["XLA_FLAGS"] = f"{existing} {flag}".strip()
 
 
+def _apply_xla_triton_gemm_flag() -> None:
+    """Turn on XLA's Triton-based GEMM emitter for matmul ops.
+
+    Default is False upstream; this package's UNet forward pass is
+    matmul-dominated (attention QKV/out projections, the transformer
+    blocks' linear layers) on a single GPU, which is exactly this flag's
+    documented use case (per JAX's GPU performance tips). The other
+    code-generation-adjacent flags on that page (latency-hiding
+    scheduler, all-gather/reduce-scatter/all-reduce combine thresholds,
+    NCCL buffer-size env vars, ``jax.lax.psend``/``precv``) are all
+    multi-GPU/multi-host specific and don't apply here — this project
+    targets a single JAX device only (see module docstring), so they're
+    deliberately not added.
+
+    Only appends the flag if it isn't already present in XLA_FLAGS, same
+    as ``_apply_xla_conv_autotune_workaround`` above.
+    """
+    flag = "--xla_gpu_triton_gemm_any=true"
+    existing = os.environ.get("XLA_FLAGS", "")
+    if flag in existing:
+        return
+    os.environ["XLA_FLAGS"] = f"{existing} {flag}".strip()
+
+
 _BANNER = """
 ╔══════════════════════════════════════════════════════════════════════╗
 ║           JAX Pipeline Activated                                    ║
@@ -321,6 +346,7 @@ def _jax_probe():
     _apply_platform_allocator_default()
     _apply_vmm_allocator_default()
     _apply_xla_conv_autotune_workaround()
+    _apply_xla_triton_gemm_flag()
     try:
         import jax
     except Exception as e:
