@@ -213,6 +213,19 @@ def _apply_vmm_allocator_default() -> None:
     os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"] = "vmm"
 
 
+def _append_xla_flag(flag: str) -> None:
+    """Append ``flag`` to the ``XLA_FLAGS`` environment variable, unless
+    it's already present — preserving whatever else the user/launcher
+    already set there. Shared by every ``_apply_xla_*`` helper below;
+    each just picks its own flag string and documents why it's needed,
+    this is the one place that actually touches ``os.environ``.
+    """
+    existing = os.environ.get("XLA_FLAGS", "")
+    if flag in existing:
+        return
+    os.environ["XLA_FLAGS"] = f"{existing} {flag}".strip()
+
+
 def _apply_xla_conv_autotune_workaround() -> None:
     """Relax XLA's GPU convolution-algorithm autotuner so it accepts a
     fallback algorithm instead of failing outright.
@@ -228,15 +241,8 @@ def _apply_xla_conv_autotune_workaround() -> None:
     reserved arena to draw the scratch allocation from — exactly the
     tradeoff that setting buys back some of. XLA's own error message
     recommends this exact flag.
-
-    Only appends the flag if it isn't already present in XLA_FLAGS,
-    preserving whatever else the user/launcher already set there.
     """
-    flag = "--xla_gpu_strict_conv_algorithm_picker=false"
-    existing = os.environ.get("XLA_FLAGS", "")
-    if flag in existing:
-        return
-    os.environ["XLA_FLAGS"] = f"{existing} {flag}".strip()
+    _append_xla_flag("--xla_gpu_strict_conv_algorithm_picker=false")
 
 
 def _apply_xla_triton_gemm_flag() -> None:
@@ -252,15 +258,8 @@ def _apply_xla_triton_gemm_flag() -> None:
     multi-GPU/multi-host specific and don't apply here — this project
     targets a single JAX device only (see module docstring), so they're
     deliberately not added.
-
-    Only appends the flag if it isn't already present in XLA_FLAGS, same
-    as ``_apply_xla_conv_autotune_workaround`` above.
     """
-    flag = "--xla_gpu_triton_gemm_any=true"
-    existing = os.environ.get("XLA_FLAGS", "")
-    if flag in existing:
-        return
-    os.environ["XLA_FLAGS"] = f"{existing} {flag}".strip()
+    _append_xla_flag("--xla_gpu_triton_gemm_any=true")
 
 
 _BANNER = """
@@ -441,6 +440,18 @@ def _install_jax_sampler_hook() -> None:
             _profile_step_counter[0] += 1
             _debug_profile.checkpoint(f"step {_profile_step_counter[0]} (JAX active, {funcname})")
             return _profile_orig_callback_state(d)
+
+        # samplers.py's _ProgressState.report reads cb.__self__ to update
+        # sampler.last_latent (needed for Sampler.launch_sampling's
+        # InterruptedException handler to return actual progress instead
+        # of the initial noisy latent — see jax_pipeline/samplers.py).
+        # self.callback_state is normally a bound method, so that works —
+        # but replacing it with this plain wrapper function loses
+        # __self__ entirely (plain functions don't have one), silently
+        # breaking that update for the whole generation whenever
+        # JAX_PIPELINE_PROFILE=1 is set. Attaching __self__ explicitly
+        # here keeps the wrapper's bound-method-like interface intact.
+        _profile_wrapped_callback_state.__self__ = self
 
         if _debug_profile.ENABLED:
             self.callback_state = _profile_wrapped_callback_state
