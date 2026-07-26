@@ -2,7 +2,6 @@
 import torch
 import torch.nn as nn
 from torch import Tensor
-import logging
 try:
     from torchaudio.transforms import MelScale
 except:

@@ -258,7 +258,7 @@ class DiNAT(nn.Module):
 @BACKBONE_REGISTRY.register()
 class D2DiNAT(DiNAT, Backbone):
     def __init__(self, cfg, input_shape):
-        
+
         embed_dim = cfg.MODEL.DiNAT.EMBED_DIM
         mlp_ratio = cfg.MODEL.DiNAT.MLP_RATIO
         depths = cfg.MODEL.DiNAT.DEPTHS

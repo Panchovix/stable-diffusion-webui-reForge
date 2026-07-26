@@ -23,7 +23,7 @@ def get_learned_conditioning(self: sgm.models.diffusion.DiffusionEngine, batch: 
     is_negative_prompt = getattr(batch, 'is_negative_prompt', False)
     aesthetic_score = shared.opts.sdxl_refiner_low_aesthetic_score if is_negative_prompt else shared.opts.sdxl_refiner_high_aesthetic_score
 
-    devices_args = dict(device=self.forge_objects.clip.patcher.model.device, dtype=model_management.text_encoder_dtype())
+    devices_args = dict(device=devices.device, dtype=model_management.text_encoder_dtype())
 
     sdxl_conds = {
         "txt": batch,
@@ -62,6 +62,7 @@ def encode_embedding_init_text(self: sgm.modules.GeneralConditioner, init_text, 
         encoded = embedder.encode_embedding_init_text(init_text, nvpt)
         res.append(encoded)
 
+    res = [t.to(devices.device) for t in res]
     return torch.cat(res, dim=1)
 
 

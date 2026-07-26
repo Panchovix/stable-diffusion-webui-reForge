@@ -2,7 +2,7 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 from annotator.oneformer.detectron2.config import CfgNode as CN
 
-__all__ = ["add_common_config", "add_oneformer_config", "add_swin_config", 
+__all__ = ["add_common_config", "add_oneformer_config", "add_swin_config",
             "add_dinat_config", "add_beit_adapter_config", "add_convnext_config"]
 
 def add_common_config(cfg):
@@ -151,7 +151,7 @@ def add_swin_config(cfg):
     """
     Add config forSWIN Backbone.
     """
-    
+
     # swin transformer backbone
     cfg.MODEL.SWIN = CN()
     cfg.MODEL.SWIN.PRETRAIN_IMG_SIZE = 224
@@ -200,7 +200,7 @@ def add_convnext_config(cfg):
     """
     Add config for ConvNeXt Backbone.
     """
-    
+
     # swin transformer backbone
     cfg.MODEL.CONVNEXT = CN()
     cfg.MODEL.CONVNEXT.IN_CHANNELS = 3

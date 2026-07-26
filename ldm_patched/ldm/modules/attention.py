@@ -89,7 +89,7 @@ def exists(val):
 
 
 def uniq(arr):
-    return{el: True for el in arr}.keys()
+    return dict.fromkeys(arr, True).keys()
 
 
 def default(val, d):
@@ -597,15 +597,15 @@ def attention_sage3(q, k, v, heads, mask=None, attn_precision=None, skip_reshape
                     (q, k, v),
                 )
             return attention_pytorch(q, k, v, heads, mask=mask, skip_reshape=True, skip_output_reshape=skip_output_reshape)
-        
+
         # SageAttention3 expects tensor layout as (batch, heads, seq_len, head_dim)
         if tensor_layout == "NHD":
             q_sa3, k_sa3, v_sa3 = map(lambda t: t.transpose(1, 2), (q, k, v))
         else:
             q_sa3, k_sa3, v_sa3 = q, k, v
-        
+
         out = sageattn_blackwell(q_sa3, k_sa3, v_sa3, attn_mask=mask, is_causal=False, per_block_mean=False)
-        
+
         # Convert back to expected layout
         if tensor_layout == "HND":
             if not skip_output_reshape:

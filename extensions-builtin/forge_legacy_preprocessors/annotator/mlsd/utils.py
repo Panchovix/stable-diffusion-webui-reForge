@@ -9,7 +9,6 @@ Copyright 2021-present NAVER Corp.
 Apache License v2.0
 '''
 
-import os
 import numpy as np
 import cv2
 import torch
@@ -549,7 +548,7 @@ def pred_squares(image,
         score_array = score_array[sorted_idx]
         squares = squares[sorted_idx]
 
-    except Exception as e:
+    except Exception:
         pass
 
     '''return list

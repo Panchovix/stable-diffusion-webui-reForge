@@ -9,12 +9,12 @@ class ModalInterface(gr.Interface):
         self,
         html_content: str,
         open_button_text: str,
-        open_button_classes: List[str] = [],
+        open_button_classes: List[str] = None,
         open_button_extra_attrs: str = ''
     ):
         self.html_content = html_content
         self.open_button_text = open_button_text
-        self.open_button_classes = open_button_classes
+        self.open_button_classes = open_button_classes if open_button_classes is not None else []
         self.open_button_extra_attrs = open_button_extra_attrs
         self.modal_id = ModalInterface.modal_id_counter
         ModalInterface.modal_id_counter += 1
@@ -30,7 +30,7 @@ class ModalInterface(gr.Interface):
                 {self.html_content}
             </div>
         </div>
-        <div id="cnet-modal-open-{self.modal_id}" 
+        <div id="cnet-modal-open-{self.modal_id}"
                 class="cnet-modal-open {' '.join(self.open_button_classes)}"
                 {self.open_button_extra_attrs}
         >{self.open_button_text}</div>

@@ -51,8 +51,9 @@ def create_sampler(name, model, scheduler=None):
 
 def set_samplers():
     global samplers, samplers_for_img2img, samplers_hidden
-
-    samplers_hidden = set(shared.opts.hide_samplers)
+    #This provide some fix
+    # To future me or matainer: The ulimate goal here is solve this by providing determinsict way to say "The class must have something"
+    samplers_hidden = set(shared.opts.hide_samplers) if shared.opts is not None else set()
     samplers = all_samplers
     samplers_for_img2img = all_samplers
 
@@ -157,11 +158,11 @@ def get_sampler_and_scheduler(sampler_name, scheduler_name, *, convert_automatic
             "Karras Dynamic": "karras_dynamic",
             "Align Your Steps Custom": "ays_custom"
         }
-        
+
         if scheduler_name:
             forge_schedulers_lower = {k.lower(): (k, v) for k, v in forge_schedulers.items()}
             scheduler_key_lower = scheduler_name.lower()
-            
+
             if scheduler_key_lower in forge_schedulers_lower:
                 original_key, value = forge_schedulers_lower[scheduler_key_lower]
                 found_scheduler = sd_schedulers.Scheduler(value, original_key, None)

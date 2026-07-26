@@ -5,13 +5,11 @@ import time
 import gradio as gr
 from pydantic import BaseModel, Field
 
-from modules.shared import opts
-
 import modules.shared as shared
 from collections import OrderedDict
 import string
 import random
-from typing import List
+from typing import List, Optional
 
 current_task = None
 pending_tasks = OrderedDict()
@@ -57,7 +55,7 @@ class PendingTasksResponse(BaseModel):
     tasks: List[str] = Field(title="Pending task ids")
 
 class ProgressRequest(BaseModel):
-    id_task: str = Field(default=None, title="Task ID", description="id of the task to get progress for")
+    id_task: Optional[str] = Field(default=None, title="Task ID", description="id of the task to get progress for")
     id_live_preview: int = Field(default=-1, title="Live preview image ID", description="id of last received last preview image")
     live_preview: bool = Field(default=True, title="Include live preview", description="boolean flag indicating whether to include the live preview image")
 
@@ -66,11 +64,11 @@ class ProgressResponse(BaseModel):
     active: bool = Field(title="Whether the task is being worked on right now")
     queued: bool = Field(title="Whether the task is in queue")
     completed: bool = Field(title="Whether the task has already finished")
-    progress: float = Field(default=None, title="Progress", description="The progress with a range of 0 to 1")
-    eta: float = Field(default=None, title="ETA in secs")
-    live_preview: str = Field(default=None, title="Live preview image", description="Current live preview; a data: uri")
-    id_live_preview: int = Field(default=None, title="Live preview image ID", description="Send this together with next request to prevent receiving same image")
-    textinfo: str = Field(default=None, title="Info text", description="Info text used by WebUI.")
+    progress: Optional[float] = Field(default=None, title="Progress", description="The progress with a range of 0 to 1")
+    eta: Optional[float] = Field(default=None, title="ETA in secs")
+    live_preview: Optional[str] = Field(default=None, title="Live preview image", description="Current live preview; a data: uri")
+    id_live_preview: Optional[int] = Field(default=None, title="Live preview image ID", description="Send this together with next request to prevent receiving same image")
+    textinfo: Optional[str] = Field(default=None, title="Info text", description="Info text used by WebUI.")
 
 
 def setup_progress_api(app):
@@ -116,14 +114,14 @@ def progressapi(req: ProgressRequest):
     live_preview = None
     id_live_preview = req.id_live_preview
 
-    if opts.live_previews_enable and req.live_preview:
+    if shared.opts.live_previews_enable and req.live_preview:
         shared.state.set_current_image()
         if shared.state.id_live_preview != req.id_live_preview:
             image = shared.state.current_image
             if image is not None:
                 buffered = io.BytesIO()
 
-                if opts.live_previews_image_format == "png":
+                if shared.opts.live_previews_image_format == "png":
                     # using optimize for large images takes an enormous amount of time
                     if max(*image.size) <= 256:
                         save_kwargs = {"optimize": True}
@@ -133,9 +131,9 @@ def progressapi(req: ProgressRequest):
                 else:
                     save_kwargs = {}
 
-                image.save(buffered, format=opts.live_previews_image_format, **save_kwargs)
+                image.save(buffered, format=shared.opts.live_previews_image_format, **save_kwargs)
                 base64_image = base64.b64encode(buffered.getvalue()).decode('ascii')
-                live_preview = f"data:image/{opts.live_previews_image_format};base64,{base64_image}"
+                live_preview = f"data:image/{shared.opts.live_previews_image_format};base64,{base64_image}"
                 id_live_preview = shared.state.id_live_preview
 
     return ProgressResponse(active=active, queued=queued, completed=completed, progress=progress, eta=eta, live_preview=live_preview, id_live_preview=id_live_preview, textinfo=shared.state.textinfo)

@@ -9,7 +9,6 @@ import gradio as gr
 from modules import images# as imgutil
 from modules.infotext_utils import create_override_settings_dict, parse_generation_parameters
 from modules.processing import Processed, StableDiffusionProcessingImg2Img, process_images
-from modules.shared import opts, state
 from modules.sd_models import get_closet_checkpoint_match
 import modules.shared as shared
 import modules.processing as processing
@@ -36,7 +35,7 @@ def process_batch(p, input, output_dir, inpaint_mask_dir, args, to_scale=False, 
 
     print(f"Will process {len(batch_images)} images, creating {p.n_iter * p.batch_size} new images for each.")
 
-    state.job_count = len(batch_images) * p.n_iter
+    shared.state.job_count = len(batch_images) * p.n_iter
 
     # extract "default" params to use in case getting png info fails
     prompt = p.prompt
@@ -50,11 +49,11 @@ def process_batch(p, input, output_dir, inpaint_mask_dir, args, to_scale=False, 
     batch_results = None
     discard_further_results = False
     for i, image in enumerate(batch_images):
-        state.job = f"{i+1} out of {len(batch_images)}"
-        if state.skipped:
-            state.skipped = False
+        shared.state.job = f"{i+1} out of {len(batch_images)}"
+        if shared.state.skipped:
+            shared.state.skipped = False
 
-        if state.interrupted or state.stopping_generation:
+        if shared.state.interrupted or shared.state.stopping_generation:
             break
 
         try:
@@ -191,8 +190,8 @@ def img2img_function(id_task: str, request: gr.Request, mode: int, prompt: str, 
 
     p = StableDiffusionProcessingImg2Img(
         sd_model=shared.sd_model,
-        outpath_samples=opts.outdir_samples or opts.outdir_img2img_samples,
-        outpath_grids=opts.outdir_grids or opts.outdir_img2img_grids,
+        outpath_samples=shared.opts.outdir_samples or shared.opts.outdir_img2img_samples,
+        outpath_grids=shared.opts.outdir_grids or shared.opts.outdir_img2img_grids,
         prompt=prompt,
         negative_prompt=negative_prompt,
         styles=prompt_styles,
@@ -237,10 +236,10 @@ def img2img_function(id_task: str, request: gr.Request, mode: int, prompt: str, 
     shared.total_tqdm.clear()
 
     generation_info_js = processed.js()
-    if opts.samples_log_stdout:
+    if shared.opts.samples_log_stdout:
         print(generation_info_js)
 
-    if opts.do_not_show_images:
+    if shared.opts.do_not_show_images:
         processed.images = []
 
     return processed.images + processed.extra_images, generation_info_js, plaintext_to_html(processed.info), plaintext_to_html(processed.comments, classname="comments")

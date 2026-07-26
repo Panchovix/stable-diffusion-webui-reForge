@@ -1,7 +1,7 @@
 # Original code from Comfy, https://github.com/comfyanonymous/ComfyUI
 
 
-
+import functools
 import math
 from functools import partial
 
@@ -11,21 +11,22 @@ from torch import nn
 import torchsde
 from tqdm.auto import trange, tqdm
 
-from ldm_patched.modules import utils
 from ldm_patched.k_diffusion import deis
 from ldm_patched.k_diffusion import sa_solver
+import ldm_patched.modules.model_management as model_management
 import ldm_patched.modules.model_patcher
 import ldm_patched.modules.model_sampling
 import torchdiffeq
 import modules.shared
 from torch import no_grad, FloatTensor
-from typing import Protocol, Optional, Dict, Any, TypedDict, NamedTuple, List
+from typing import Protocol, Optional, Dict, Any, TypedDict, NamedTuple
 from itertools import pairwise
 from ldm_patched.modules.model_sampling import CONST
-from modules.shared import opts
+import modules.shared as shared
 import numpy as np
 
 from modules.sd_samplers_kdiffusion_smea import Rescaler
+
 
 def append_zero(x):
     return torch.cat([x, x.new_zeros([1])])
@@ -42,20 +43,20 @@ def get_sigmas_karras(n, sigma_min, sigma_max, rho=7., device='cpu'):
 
 def get_sigmas_exponential(n, sigma_min, sigma_max, device='cpu'):
     """Constructs an exponential noise schedule."""
-    sigmas = torch.linspace(math.log(sigma_max), math.log(sigma_min), n, device=device).exp()
+    sigmas = torch.linspace(math.log(sigma_max), math.log(
+        sigma_min), n, device=device).exp()
     return append_zero(sigmas)
 
 
 def get_sigmas_polyexponential(n, sigma_min, sigma_max, rho=1., device='cpu'):
     """Constructs an polynomial in log sigma noise schedule."""
     ramp = torch.linspace(1, 0, n, device=device) ** rho
-    sigmas = torch.exp(ramp * (math.log(sigma_max) - math.log(sigma_min)) + math.log(sigma_min))
+    sigmas = torch.exp(ramp * (math.log(sigma_max) -
+                       math.log(sigma_min)) + math.log(sigma_min))
     return append_zero(sigmas)
 
-# align your steps
-def get_sigmas_ays(n, sigma_min, sigma_max, is_sdxl=False, device='cpu'):
-    # https://research.nvidia.com/labs/toronto-ai/AlignYourSteps/howto.html
-    def loglinear_interp(t_steps, num_steps):
+
+def loglinear_interp(t_steps, num_steps):
         """
         Performs log-linear interpolation of a given array of decreasing numbers.
         """
@@ -68,66 +69,66 @@ def get_sigmas_ays(n, sigma_min, sigma_max, is_sdxl=False, device='cpu'):
         interped_ys = torch.exp(torch.tensor(new_ys)).numpy()[::-1].copy()
         return interped_ys
 
-    if is_sdxl:
-        sigmas = [sigma_max, sigma_max/2.314, sigma_max/3.875, sigma_max/6.701, sigma_max/10.89, sigma_max/16.954, sigma_max/26.333, sigma_max/38.46, sigma_max/62.457, sigma_max/129.336, 0.029]
-    else:
-        # Default to SD 1.5 sigmas.
-        sigmas = [sigma_max, sigma_max/2.257, sigma_max/3.785, sigma_max/5.418, sigma_max/7.749, sigma_max/10.469, sigma_max/15.176, sigma_max/22.415, sigma_max/36.629, sigma_max/96.151, 0.029]
 
+def get_sigmas_ays_general(sigma_bases, sigma_max, n, device='cpu', is_32steps=False):
+    sigmas = [sigma_max]
+    for i in sigma_bases:
+        sigmas.append(sigma_max/i)
+    if is_32steps:
+        sigmas.append(0.015000000000000000)
+    else:
+        sigmas.append(0.029)
 
     if n != len(sigmas):
-        sigmas = np.append(loglinear_interp(sigmas, n), [0.0])
+        sigmas = np.append(loglinear_interp(sigmas, n), [0, 0])
     else:
         sigmas.append(0.0)
 
     return torch.FloatTensor(sigmas).to(device)
+
+# align your steps
+
+
+def get_sigmas_ays(n, sigma_min, sigma_max, is_sdxl=False, device='cpu'):
+    # https://research.nvidia.com/labs/toronto-ai/AlignYourSteps/howto.html
+    # Hard coded sigma ratios, for AYS
+    sigma_bases = []
+    if is_sdxl:
+        sigma_bases = [2.314, 3.875, 6.701, 10.89,
+            16.954, 26.333, 38.46, 62.457, 129.336]
+    else:
+        sigma_bases = [2.257, 3.785, 5.418, 7.749,
+            10.649, 15.176, 22.415, 36.629, 96.151]
+    return get_sigmas_ays_general(sigma_bases, sigma_max, n, device)
+# TODO: it should be construct as the variant of the AYS
+
 
 def get_sigmas_ays_gits(n, sigma_min, sigma_max, is_sdxl=False, device='cpu'):
-    def loglinear_interp(t_steps, num_steps):
-        xs = torch.linspace(0, 1, len(t_steps))
-        ys = torch.log(torch.tensor(t_steps[::-1]))
-        new_xs = torch.linspace(0, 1, num_steps)
-        new_ys = np.interp(new_xs, xs, ys)
-        interped_ys = torch.exp(torch.tensor(new_ys)).numpy()[::-1].copy()
-        return interped_ys
-
+    sigma_bases = []
     if is_sdxl:
-        sigmas = [sigma_max, sigma_max/3.087, sigma_max/5.693, sigma_max/9.558, sigma_max/14.807, sigma_max/22.415, sigma_max/34.964, sigma_max/54.533, sigma_max/81.648, sigma_max/115.078, 0.029]
-
+        sigma_bases = [3.087, 5.693, 9.558, 14.807,
+            22.415, 34.694, 54.533, 81.648, 115.078]
     else:
-        sigmas = [sigma_max, sigma_max/3.165, sigma_max/5.829, sigma_max/11.824, sigma_max/20.819, sigma_max/36.355, sigma_max/60.895, sigma_max/93.685, sigma_max/140.528, sigma_max/155.478, 0.029]
+        sigma_bases = [3.165, 5.829, 11.824, 20.819,
+            36.355, 60.895, 93.685, 140.528, 155.478]
+    return get_sigmas_ays_general(sigma_bases, sigma_max, n, device)
 
-    if n != len(sigmas):
-        sigmas = np.append(loglinear_interp(sigmas, n), [0.0])
-    else:
-        sigmas.append(0.0)
-
-    return torch.FloatTensor(sigmas).to(device)
 
 def get_sigmas_ays_11steps(n, sigma_min, sigma_max, is_sdxl=False, device='cpu'):
     # This is the same as the original AYS
     return get_sigmas_ays(n, sigma_min, sigma_max, is_sdxl, device)
 
+
 def get_sigmas_ays_32steps(n, sigma_min, sigma_max, is_sdxl=False, device='cpu'):
-    def loglinear_interp(t_steps, num_steps):
-        xs = torch.linspace(0, 1, len(t_steps))
-        ys = torch.log(torch.tensor(t_steps[::-1]))
-        new_xs = torch.linspace(0, 1, num_steps)
-        new_ys = np.interp(new_xs, xs, ys)
-        interped_ys = torch.exp(torch.tensor(new_ys)).numpy()[::-1].copy()
-        return interped_ys
-    
+    sigma_bases = []
     if is_sdxl:
-        sigmas = [sigma_max, sigma_max/1.310860875657935, sigma_max/1.718356235075352, sigma_max/2.252525958180810, sigma_max/2.688026675053433, sigma_max/3.174423075322040, sigma_max/3.748832539417044, sigma_max/4.463856789920335, sigma_max/5.326233593328242, sigma_max/6.355213820679800, sigma_max/7.477672611007930, sigma_max/8.745803592589411, sigma_max/10.228995682978878, sigma_max/11.864653584709637, sigma_max/13.685783347784952, sigma_max/15.786441921021279, sigma_max/18.202564111697559, sigma_max/20.980440157432400, sigma_max/24.182245076323649, sigma_max/27.652401723193991, sigma_max/31.246429590323925, sigma_max/35.307579021272943, sigma_max/40.308138967569972, sigma_max/47.132212095147923, sigma_max/55.111585405517003, sigma_max/65.460441760115945, sigma_max/82.786347724072168, sigma_max/104.698036963744033, sigma_max/138.041693219503482, sigma_max/264.794761864988552, sigma_max/507.935470821253285, 0.015000000000000000]
+        sigma_bases = [1.310860875657935, 1.718356235075352, 2.252525958180810, 2.688026675053433, 3.174423075322040, 3.748832539417044, 4.463856789920335, 5.326233593328242, 6.355213820679800, 7.477672611007930, 8.745803592589411, 10.228995682978878, 11.864653584709637, 13.685783347784952, 15.786441921021279,
+            18.202564111697559, 20.980440157432400, 24.182245076323649, 27.652401723193991, 31.246429590323925, 35.307579021272943, 40.308138967569972, 47.132212095147923, 55.111585405517003, 65.460441760115945, 82.786347724072168, 104.698036963744033, 138.041693219503482, 264.794761864988552, 507.935470821253285]
     else:
-        sigmas = [sigma_max, sigma_max/1.300323183382763, sigma_max/1.690840379611262, sigma_max/2.198638945761486, sigma_max/2.622696705671493, sigma_max/3.098705619671305, sigma_max/3.661108232617473, sigma_max/4.152506637972936, sigma_max/4.662023756728857, sigma_max/5.234059175875519, sigma_max/5.874818853387466, sigma_max/6.593316416277412, sigma_max/7.399687115002039, sigma_max/8.213824943635682, sigma_max/9.050917900247738, sigma_max/9.973321246245751, sigma_max/11.115344803852001, sigma_max/12.529738625194212, sigma_max/14.124109921351757, sigma_max/15.959814856974724, sigma_max/18.099481611774999, sigma_max/20.526004748634670, sigma_max/23.506648288108032, sigma_max/27.541589307433523, sigma_max/32.269132736422456, sigma_max/38.982216080970984, sigma_max/53.219344283057142, sigma_max/72.656173487928834, sigma_max/103.609326413189740, sigma_max/218.693105563304210, sigma_max/461.605857767280530, 0.015000000000000000]
-        
-    if n != len(sigmas):
-        sigmas = np.append(loglinear_interp(sigmas, n), [0.0])
-    else:
-        sigmas.append(0.0)
-    
-    return torch.FloatTensor(sigmas).to(device)
+        sigma_bases = [1.300323183382763, 1.690840379611262, 2.198638945761486, 2.622696705671493, 3.098705619671305, 3.661108232617473, 4.152506637972936, 4.662023756728857, 5.234059175875519, 5.874818853387466, 6.593316416277412, 7.399687115002039, 8.213824943635682, 9.050917900247738, 9.973321246245751,
+            11.115344803852001, 12.529738625194212, 14.124109921351757, 15.959814856974724, 18.099481611774999, 20.526004748634670, 23.506648288108032, 27.541589307433523, 32.269132736422456, 38.982216080970984, 53.219344283057142, 72.656173487928834, 103.609326413189740, 218.693105563304210, 461.605857767280530]
+
+    return get_sigmas_ays_general(sigma_bases, sigma_max, n, device, True)
 
 def cosine_scheduler(n, sigma_min, sigma_max, device='cpu'):
     sigmas = torch.zeros(n, device=device)
@@ -181,7 +182,7 @@ def get_sigmas_karras_dynamic(n, sigma_min, sigma_max, device='cpu'):
     max_inv_rho = sigma_max ** (1 / rho)
     sigmas = torch.zeros_like(ramp)
     for i in range(n):
-        sigmas[i] = (max_inv_rho + ramp[i] * (min_inv_rho - max_inv_rho)) ** (math.cos(i*math.tau/n)*2+rho) 
+        sigmas[i] = (max_inv_rho + ramp[i] * (min_inv_rho - max_inv_rho)) ** (math.cos(i*math.tau/n)*2+rho)
     return torch.cat([sigmas, sigmas.new_zeros([1])])
 
 def get_sigmas_sinusoidal_sf(n, sigma_min, sigma_max, sf=3.5, device='cpu'):
@@ -229,7 +230,7 @@ def to_d(x, sigma, denoised):
 def get_ancestral_step(sigma_from, sigma_to, eta=None):
     """Calculates the noise level (sigma_down) to step down to and the amount
     of noise to add (sigma_up) when doing an ancestral sampling step."""
-    eta = eta if eta is not None else opts.ancestral_eta
+    eta = eta if eta is not None else shared.opts.ancestral_eta
     if not eta:
         return sigma_to, 0.
     sigma_up = min(sigma_to, eta * (sigma_to ** 2 * (sigma_from ** 2 - sigma_to ** 2) / sigma_from ** 2) ** 0.5)
@@ -454,7 +455,7 @@ class BrownianTreeNoiseSampler:
     def __call__(self, sigma, sigma_next):
         t0, t1 = self.transform(torch.as_tensor(sigma)), self.transform(torch.as_tensor(sigma_next))
         return self.tree(t0, t1) / (t1 - t0).abs().sqrt()
-    
+
 def sigma_to_half_log_snr(sigma, model_sampling):
     """Convert sigma to half-logSNR log(alpha_t / sigma_t)."""
     if isinstance(model_sampling, ldm_patched.modules.model_sampling.CONST):
@@ -568,7 +569,8 @@ def sample_euler_ancestral_RF(model, x, sigmas, extra_args=None, callback=None, 
 
 @torch.no_grad()
 def sample_euler_a2(model, x, sigmas, extra_args=None, callback=None, disable=None, noise_sampler=None):
-    """Euler ancestral sampler that averages two noise paths and extrapolates along their mean direction."""
+    """Euler ancestral sampler that averages two noise paths and extrapolates along their mean direction.
+    Assumes Rectified Flow parameterization (alpha=1-sigma, sigma in [0,1]). For FLUX/SD3 (CONST model type)."""
     extra_args = {} if extra_args is None else extra_args
     eta = extra_args.get("eta", modules.shared.opts.euler_a2_eta)
     s_noise = extra_args.get("s_noise", modules.shared.opts.euler_a2_s_noise)
@@ -613,12 +615,54 @@ def sample_euler_a2(model, x, sigmas, extra_args=None, callback=None, disable=No
     return x
 
 @torch.no_grad()
+def sample_euler_a2_edm(model, x, sigmas, extra_args=None, callback=None, disable=None, noise_sampler=None):
+    """Euler A2 for EDM/Karras models (SDXL, SD1.5): x_t = x0 + sigma*noise, no alpha term.
+    Uses get_ancestral_step for correct sigma_down/sigma_up budget, then applies dual-path averaging + extrapolation."""
+    extra_args = {} if extra_args is None else extra_args
+    eta = extra_args.get("eta", modules.shared.opts.euler_a2_eta)
+    s_noise = extra_args.get("s_noise", modules.shared.opts.euler_a2_s_noise)
+    extrapolation = extra_args.get("extrapolation", modules.shared.opts.euler_a2_extrapolation)
+
+    seed = extra_args.get("seed", None)
+    noise_sampler = default_noise_sampler(x, seed=seed) if noise_sampler is None else noise_sampler
+    s_in = x.new_ones([x.shape[0]])
+
+    for i in trange(len(sigmas) - 1, disable=disable):
+        denoised = model(x, sigmas[i] * s_in, **extra_args)
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
+
+        sigma_down, sigma_up = get_ancestral_step(sigmas[i], sigmas[i + 1], eta=eta)
+
+        if sigma_down == 0:
+            x = denoised
+            continue
+
+        d = to_d(x, sigmas[i], denoised)
+        dt = sigma_down - sigmas[i]
+        deterministic_path = x + d * dt
+
+        if eta > 0 and s_noise != 0 and sigma_up > 0:
+            noise_scale = s_noise * sigma_up
+            noise_1 = noise_sampler(sigmas[i], sigmas[i + 1])
+            noise_2 = noise_sampler(sigmas[i], sigmas[i + 1])
+
+            path_1 = deterministic_path + noise_1 * noise_scale
+            path_2 = deterministic_path + noise_2 * noise_scale
+            merged = 0.5 * (path_1 + path_2)
+            direction = merged - deterministic_path
+            x = merged + extrapolation * direction
+        else:
+            x = deterministic_path
+    return x
+
+@torch.no_grad()
 def sample_dpmpp_2s_ancestral_cfg_pp(model, x, sigmas, extra_args=None, callback=None, disable=None, eta=1., s_noise=1., noise_sampler=None):
-    
+
     """Ancestral sampling with DPM-Solver++(2S) second-order steps."""
     extra_args = {} if extra_args is None else extra_args
     noise_sampler = default_noise_sampler(x) if noise_sampler is None else noise_sampler
-    
+
     temp = [0]
     def post_cfg_function(args):
         temp[0] = args["uncond_denoised"]
@@ -953,8 +997,8 @@ class DPMSolver(nn.Module):
 
         return x
 
-    def dpm_solver_adaptive(self, x, t_start, t_end, order=3, rtol=0.05, atol=0.0078, h_init=0.05, 
-                       pcoeff=0., icoeff=1., dcoeff=0., accept_safety=0.81, eta=0., 
+    def dpm_solver_adaptive(self, x, t_start, t_end, order=3, rtol=0.05, atol=0.0078, h_init=0.05,
+                       pcoeff=0., icoeff=1., dcoeff=0., accept_safety=0.81, eta=0.,
                        s_noise=None, noise_sampler=None):
         s_noise = modules.shared.opts.dpm_adaptive_s_noise if s_noise is None else s_noise
         noise_sampler = default_noise_sampler(x, seed=self.extra_args.get("seed", None)) if noise_sampler is None else noise_sampler
@@ -1073,6 +1117,269 @@ def sample_dpmpp_2s_ancestral(model, x, sigmas, extra_args=None, callback=None, 
             x = x + noise_sampler(sigmas[i], sigmas[i + 1]) * s_noise * sigma_up
     return x
 
+def sample_dpmpp_2s_a_sure(model, x, sigmas, extra_args=None, callback=None, disable=None,
+                             noise_sampler=None, eta=1., s_noise=1.,
+                             sure_alpha=0.05, sure_n_mc=1, sure_eps=1e-3,
+                             sure_preheat_steps=-1, sure_jac_interval=-1,
+                             sure_adam_mode='none', sure_adam_beta1=0.9,
+                             sure_adam_beta2=0.999, sure_adam_wd=0.01,
+                             sure_grad_mode='vjp',
+                             sure_alpha_bo_trials=0, sure_alpha_bo_patience=4):
+    """DPM-Solver++(2S) Ancestral with SURE trajectory correction.
+
+    SURE corrects x̂₀ on the first (main) model call at each step.
+    The midpoint call (second evaluation within the 2S step) uses the plain
+    model — it operates at an intermediate sigma where SURE would be unreliable.
+    Ancestral noise is added after each step via get_ancestral_step, matching
+    the paper's stochastic reverse process.
+
+    sure_preheat_steps >= 0 : fixed plain-denoise steps before SURE
+    sure_preheat_steps = -1  : auto (15% of n_steps, min 2)
+    """
+    extra_args = {} if extra_args is None else extra_args
+    seed = extra_args.get("seed", None)
+    noise_sampler = default_noise_sampler(x, seed=seed) if noise_sampler is None else noise_sampler
+    s_in = x.new_ones([x.shape[0]])
+    sigma_fn = lambda t: t.neg().exp()
+    t_fn     = lambda sigma: sigma.log().neg()
+
+    n_steps = len(sigmas) - 1
+    preheat = sure_preheat_steps if sure_preheat_steps >= 0 \
+              else max(2, math.ceil(0.15 * n_steps))
+
+    _dyn_jac_interval: int        = 2 if sure_jac_interval < 1 else sure_jac_interval
+    _jac_ratio_ema:   float | None = None
+    _corr_count: int               = 0
+    _EMA_A = 0.35
+    _adam_state      = {'optimizer': None, 'param': None} if sure_adam_mode in ('adam', 'adamw') else None
+    _alpha_bo_state  = {} if sure_alpha_bo_trials > 0 else None
+
+    _sure_logger.info(
+        "DPM++2Sa-SURE: %d steps  preheat=%d  eta=%.2f  alpha=%.4f  adam=%s  alpha_bo=%d",
+        n_steps, preheat, eta, sure_alpha, sure_adam_mode, sure_alpha_bo_trials,
+    )
+
+    for i in trange(n_steps, disable=disable):
+        sigma      = sigmas[i]
+        sigma_next = sigmas[i + 1]
+        _tag       = f" step={i+1}/{n_steps} sigma={float(sigma):.4f}"
+
+        sigma_down, sigma_up = get_ancestral_step(sigma, sigma_next, eta=eta)
+
+        # ── x̂₀ at current state ──────────────────────────────────────────
+        with torch.no_grad():
+            x0_hat = model(x, sigma * s_in, **extra_args).detach()
+
+        if i < preheat:
+            denoised = x0_hat
+            _sure_logger.info("[preheat%s]", _tag)
+        else:
+            # Algorithm 1: correct x̂₀ in x0-space at estimated residual noise σ̂₀
+            sigma_hat_0 = _pca_noise_estimate(x0_hat, min_sigma=float(sure_eps))
+            _use_jac = (_dyn_jac_interval <= 1) or (_corr_count % _dyn_jac_interval == 0)
+            denoised, _stats = _sure_correct_x0(
+                model, x0_hat, sigma_hat_0, s_in, extra_args,
+                alpha=sure_alpha, n_mc=sure_n_mc, eps_mc=sure_eps,
+                use_jac=_use_jac, sigma_t=sigma,
+                adam_state=_adam_state, adam_mode=sure_adam_mode,
+                adam_beta1=sure_adam_beta1, adam_beta2=sure_adam_beta2,
+                adam_wd=sure_adam_wd, grad_mode=sure_grad_mode,
+                alpha_bo_trials=sure_alpha_bo_trials,
+                alpha_bo_patience=sure_alpha_bo_patience,
+                alpha_bo_state=_alpha_bo_state,
+            )
+            _corr_count += 1
+            _jac_ratio_new = _stats.get('jac_ratio')
+            if _jac_ratio_new is not None:
+                _jac_ratio_ema = _jac_ratio_new if _jac_ratio_ema is None else \
+                    (1.0 - _EMA_A) * _jac_ratio_ema + _EMA_A * _jac_ratio_new
+            if _jac_ratio_ema is not None and _corr_count >= 3:
+                if _jac_ratio_ema < 0.05 and _dyn_jac_interval < 8:
+                    _dyn_jac_interval += 1
+                    _sure_logger.info("[adapt] jac_interval -> %d  (ratio=%.3f < 0.05)",
+                                      _dyn_jac_interval, _jac_ratio_ema)
+                elif _jac_ratio_ema > 0.25 and _dyn_jac_interval > 1:
+                    _dyn_jac_interval -= 1
+                    _sure_logger.info("[adapt] jac_interval -> %d  (ratio=%.3f > 0.25)",
+                                      _dyn_jac_interval, _jac_ratio_ema)
+            _sure_logger.info("[adapt] jac_ratio_ema=%s  dyn_jac_interval=%d",
+                              f"{_jac_ratio_ema:.3f}" if _jac_ratio_ema is not None else "n/a",
+                              _dyn_jac_interval)
+
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigma, 'sigma_hat': sigma, 'denoised': denoised})
+
+        # ── DPM-Solver++(2S) update ───────────────────────────────────────
+        if float(sigma_down) == 0:
+            # Final step: plain Euler to zero
+            d = to_d(x, sigma, denoised)
+            x = x + d * (sigma_down - sigma)
+        else:
+            t, t_next = t_fn(sigma), t_fn(sigma_down)
+            r = 0.5
+            h = t_next - t
+            s_mid = t + r * h
+            # Predictor: step to midpoint using SURE-corrected denoised
+            x_2 = sigma_fn(s_mid) / sigma_fn(t) * x - (-h * r).expm1() * denoised
+            # Corrector: plain model at midpoint sigma (intermediate point, not corrected)
+            with torch.no_grad():
+                denoised_2 = model(x_2, sigma_fn(s_mid) * s_in, **extra_args).detach()
+            # Full step using midpoint denoised
+            x = sigma_fn(t_next) / sigma_fn(t) * x - (-h).expm1() * denoised_2
+
+        # ── Ancestral noise ───────────────────────────────────────────────
+        if float(sigma_next) > 0:
+            x = x + noise_sampler(sigma, sigma_next) * s_noise * sigma_up
+
+    return x
+
+
+def sample_dpmpp_2s_a_sure_adaptive(model, x, sigma_min, sigma_max,
+                                     extra_args=None, callback=None, disable=None,
+                                     noise_sampler=None,
+                                     rtol=0.05, atol=0.0078, h_init=0.05,
+                                     pcoeff=0., icoeff=1., dcoeff=0., accept_safety=0.81,
+                                     eta=1., s_noise=1.,
+                                     sure_alpha=0.05, sure_n_mc=1, sure_eps=1e-3,
+                                     sure_preheat_frac=0.3, sure_jac_interval=2,
+                                     sure_adam_mode='none', sure_adam_beta1=0.9,
+                                     sure_adam_beta2=0.999, sure_adam_wd=0.01, sure_grad_mode='vjp',
+                                     sure_alpha_bo_trials=0, sure_alpha_bo_patience=4):
+    """DPM-Solver++(2S) Ancestral + SURE with adaptive step size (PID).
+
+    Error estimate: compare 1st-order Euler (x_low) vs 2S midpoint (x_high),
+    both on the ODE part to sigma_down. Ancestral noise is added AFTER
+    acceptance so the PID reacts to curvature, not noise variance.
+
+    eta=1.0 — full ancestral SDE (paper intent)
+    eta=0.0 — collapse to deterministic ODE
+    """
+    if sigma_min <= 0 or sigma_max <= 0:
+        raise ValueError('sigma_min and sigma_max must not be 0')
+
+    extra_args = {} if extra_args is None else extra_args
+    seed = extra_args.get("seed", None)
+    noise_sampler = default_noise_sampler(x, seed=seed) if noise_sampler is None else noise_sampler
+    s_in = x.new_ones([x.shape[0]])
+
+    sigma_fn = lambda t: t.neg().exp()
+    t_fn     = lambda sigma: sigma.log().neg()
+
+    t_start   = t_fn(torch.tensor(sigma_max, dtype=x.dtype, device=x.device))
+    t_end     = t_fn(torch.tensor(sigma_min, dtype=x.dtype, device=x.device))
+    t_preheat = t_start + sure_preheat_frac * (t_end - t_start)
+
+    pid    = PIDStepSizeController(h_init, pcoeff, icoeff, dcoeff, order=2,
+                                    accept_safety=accept_safety)
+    atol_t = torch.tensor(atol, dtype=x.dtype, device=x.device)
+    rtol_t = torch.tensor(rtol, dtype=x.dtype, device=x.device)
+
+    _corr_count = 0
+    _adam_state     = {'optimizer': None, 'param': None} if sure_adam_mode in ('adam', 'adamw') else None
+    _alpha_bo_state = {} if sure_alpha_bo_trials > 0 else None
+    info = {'steps': 0, 'nfe': 0, 'n_accept': 0, 'n_reject': 0}
+    x_prev = x.clone()
+    s = t_start.clone()
+
+    _sure_logger.info(
+        "DPM++2Sa-SURE-Adaptive: sigma [%.4f → %.4f]  preheat_frac=%.2f"
+        "  eta=%.2f  alpha=%.4f  jac_interval=%d  adam=%s",
+        sigma_max, sigma_min, sure_preheat_frac, eta, sure_alpha, sure_jac_interval,
+        sure_adam_mode,
+    )
+
+    with tqdm(disable=disable) as pbar:
+        while s < t_end - 1e-5:
+            t_next     = torch.minimum(t_end, s + pid.h)
+            sigma_s    = sigma_fn(s)
+            sigma_next = sigma_fn(t_next)
+
+            # Split proposed step into ODE part (sigma_down) + noise amplitude (sigma_up)
+            sigma_down, sigma_up = get_ancestral_step(sigma_s, sigma_next, eta=eta)
+            t_down = t_fn(sigma_down)
+            h      = t_down - s          # ODE step size in t-space
+
+            in_preheat = float(s) < float(t_preheat)
+            _tag = f" [adap-2sa] sigma={float(sigma_s):.4f}"
+
+            # ── x̂₀ (SURE after preheat) ──────────────────────────────────
+            if in_preheat:
+                with torch.no_grad():
+                    x0_s = model(x, sigma_s * s_in, **extra_args).detach()
+            else:
+                with torch.no_grad():
+                    x0_hat = model(x, sigma_s * s_in, **extra_args).detach()
+                sigma_hat_0 = _pca_noise_estimate(x0_hat, min_sigma=float(sure_eps))
+                _use_jac = (sure_jac_interval <= 1) or (_corr_count % sure_jac_interval == 0)
+                x0_s, _ = _sure_correct_x0(
+                    model, x0_hat, sigma_hat_0, s_in, extra_args,
+                    alpha=sure_alpha, n_mc=sure_n_mc, eps_mc=sure_eps,
+                    use_jac=_use_jac, sigma_t=sigma_s,
+                    adam_state=_adam_state, adam_mode=sure_adam_mode,
+                    adam_beta1=sure_adam_beta1, adam_beta2=sure_adam_beta2,
+                    adam_wd=sure_adam_wd, grad_mode=sure_grad_mode,
+                    alpha_bo_trials=sure_alpha_bo_trials,
+                    alpha_bo_patience=sure_alpha_bo_patience,
+                    alpha_bo_state=_alpha_bo_state,
+                )
+                _corr_count += 1
+
+            # ── 1st-order ODE step to sigma_down (x_low, error estimate) ──
+            eps_s = (x - x0_s) / sigma_s
+            x_low = x - sigma_down * h.expm1() * eps_s
+
+            # ── 2S midpoint step to sigma_down (x_high, error estimate) ───
+            r     = 0.5
+            s_mid = s + r * h
+            sigma_mid = sigma_fn(s_mid)
+            x_2   = sigma_mid / sigma_s * x - (-h * r).expm1() * x0_s
+            with torch.no_grad():
+                x0_mid = model(x_2, sigma_mid * s_in, **extra_args).detach()
+            x_high = sigma_down / sigma_s * x - (-h).expm1() * x0_mid
+
+            # ── PID error (ODE part only, noise excluded) ──────────────────
+            delta  = torch.maximum(atol_t, rtol_t * torch.maximum(x_low.abs(), x_prev.abs()))
+            error  = torch.linalg.norm((x_low - x_high) / delta) / x.numel() ** 0.5
+            accept = pid.propose_step(error)
+
+            if accept:
+                x_prev = x_low
+                x = x_high
+                # Ancestral noise after acceptance
+                if eta > 0 and s_noise > 0 and float(sigma_next) > 0:
+                    x = x + noise_sampler(sigma_s, sigma_next) * s_noise * sigma_up
+                s = t_next
+                info['n_accept'] += 1
+                pbar.update()
+                if callback is not None:
+                    callback({'x': x, 'i': info['steps'], 'sigma': sigma_s,
+                              'sigma_hat': sigma_s, 'denoised': x0_s,
+                              'error': error, 'h': pid.h, **info})
+            else:
+                info['n_reject'] += 1
+
+            info['nfe']   += 2
+            info['steps'] += 1
+
+            _sure_logger.info(
+                "[adap-2sa] step=%d  sigma=%.4f→%.4f  sigma_down=%.4f  error=%.4f"
+                "  h=%.4f  accept=%s  preheat=%s",
+                info['steps'], float(sigma_s), float(sigma_next),
+                float(sigma_down), float(error), float(pid.h), accept, in_preheat,
+            )
+
+            if info['steps'] > 10000:
+                _sure_logger.warning("DPM++2Sa-SURE-Adaptive: step limit reached")
+                break
+
+    _sure_logger.info(
+        "DPM++2Sa-SURE-Adaptive done: %d accepted / %d rejected  nfe=%d",
+        info['n_accept'], info['n_reject'], info['nfe'],
+    )
+
+    return x
+
+
 @torch.no_grad()
 def sample_dpmpp_2s_ancestral_RF(model, x, sigmas, extra_args=None, callback=None, disable=None, eta=1., s_noise=1., noise_sampler=None):
     """Ancestral sampling with DPM-Solver++(2S) second-order steps."""
@@ -1130,7 +1437,7 @@ def sample_dpmpp_sde_classic(model, x, sigmas, extra_args=None, callback=None, d
     eta = modules.shared.opts.dpmpp_sde_og_eta
     s_noise = modules.shared.opts.dpmpp_sde_og_s_noise
     r = modules.shared.opts.dpmpp_sde_og_r
-    
+
     sigma_min, sigma_max = sigmas[sigmas > 0].min(), sigmas.max()
     seed = extra_args.get("seed", None)
     noise_sampler = BrownianTreeNoiseSampler(x, sigma_min, sigma_max, seed=seed, cpu=True) if noise_sampler is None else noise_sampler
@@ -1138,7 +1445,7 @@ def sample_dpmpp_sde_classic(model, x, sigmas, extra_args=None, callback=None, d
     s_in = x.new_ones([x.shape[0]])
     sigma_fn = lambda t: t.neg().exp()
     t_fn = lambda sigma: sigma.log().neg()
-    
+
     for i in trange(len(sigmas) - 1, disable=disable):
         denoised = model(x, sigmas[i] * s_in, **extra_args)
         if callback is not None:
@@ -1174,7 +1481,7 @@ def sample_dpmpp_sde(model, x, sigmas, extra_args=None, callback=None, disable=N
     eta = modules.shared.opts.dpmpp_sde_og_eta
     s_noise = modules.shared.opts.dpmpp_sde_og_s_noise
     r = modules.shared.opts.dpmpp_sde_og_r
-    
+
     sigma_min, sigma_max = sigmas[sigmas > 0].min(), sigmas.max()
     seed = extra_args.get("seed", None)
     noise_sampler = BrownianTreeNoiseSampler(x, sigma_min, sigma_max, seed=seed, cpu=True) if noise_sampler is None else noise_sampler
@@ -1184,7 +1491,7 @@ def sample_dpmpp_sde(model, x, sigmas, extra_args=None, callback=None, disable=N
     sigma_fn = partial(half_log_snr_to_sigma, model_sampling=model_sampling)
     lambda_fn = partial(sigma_to_half_log_snr, model_sampling=model_sampling)
     sigmas = offset_first_sigma_for_snr(sigmas, model_sampling)
-    
+
     for i in trange(len(sigmas) - 1, disable=disable):
         denoised = model(x, sigmas[i] * s_in, **extra_args)
         if callback is not None:
@@ -1233,7 +1540,7 @@ def sample_dpmpp_2m(model, x, sigmas, extra_args=None, callback=None, disable=No
     sigma_fn = lambda t: t.neg().exp()
     t_fn = lambda sigma: sigma.log().neg()
     old_denoised = None
-    
+
     for i in trange(len(sigmas) - 1, disable=disable):
         denoised = model(x, sigmas[i] * s_in, **extra_args)
         if callback is not None:
@@ -1250,13 +1557,305 @@ def sample_dpmpp_2m(model, x, sigmas, extra_args=None, callback=None, disable=No
         old_denoised = denoised
     return x
 
+def sample_dpmpp_2m_sure(model, x, sigmas, extra_args=None, callback=None, disable=None,
+                          sure_alpha=0.05, sure_n_mc=1, sure_eps=1e-3,
+                          sure_preheat_steps=-1, sure_jac_interval=-1,
+                          sure_adam_mode='none', sure_adam_beta1=0.9,
+                          sure_adam_beta2=0.999, sure_adam_wd=0.01, sure_grad_mode='vjp',
+                          sure_alpha_bo_trials=0, sure_alpha_bo_patience=4):
+    """DPM-Solver++(2M) with SURE trajectory correction.
+
+    Fully deterministic ODE — zero noise injection at any step. SURE correction
+    replaces the denoiser x̂₀ after the preheat phase; the DPM++(2M) multistep
+    extrapolation then smooths per-step gradient variance across steps for free.
+
+    Preheat:
+      sure_preheat_steps >= 0  — fixed count of plain-denoise steps before SURE.
+      sure_preheat_steps = -1  — automatic: ceil(15% of n_steps), minimum 2.
+
+    sure_alpha:        SURE gradient step size (default 0.05)
+    sure_n_mc:         Monte Carlo samples for Hutchinson trace (default 1)
+    sure_eps:          finite-difference epsilon (default 1e-3)
+    sure_jac_interval: full Jacobian every N correction steps; -1 = adaptive
+    """
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+    sigma_fn = lambda t: t.neg().exp()
+    t_fn    = lambda sigma: sigma.log().neg()
+
+    n_steps = len(sigmas) - 1
+    preheat = sure_preheat_steps if sure_preheat_steps >= 0 \
+              else max(2, math.ceil(0.15 * n_steps))
+
+    _dyn_jac_interval: int        = 2 if sure_jac_interval < 1 else sure_jac_interval
+    _jac_ratio_ema:   float | None = None
+    _corr_count: int               = 0
+    _EMA_A = 0.35
+    _adam_state     = {'optimizer': None, 'param': None} if sure_adam_mode in ('adam', 'adamw') else None
+    _alpha_bo_state = {} if sure_alpha_bo_trials > 0 else None
+
+    _sure_logger.info(
+        "DPM++2M-SURE: %d steps  preheat=%d  alpha=%.4f  jac_interval=%s  adam=%s",
+        n_steps, preheat, sure_alpha,
+        "adaptive" if sure_jac_interval < 1 else str(sure_jac_interval),
+        sure_adam_mode,
+    )
+
+    # ── CPU-swap buffer for old_denoised ─────────────────────────────────────
+    # On LOW/NORMAL VRAM: park the previous step's denoised estimate in pinned
+    # CPU memory while the UNet runs the next step.  It is prefetched back to
+    # GPU just before the 2nd-order multistep correction needs it.
+    # On HIGH_VRAM: _old_buf is a plain tensor — zero overhead.
+    _old_buf   = None                                    # CPUSwapBuffer | Tensor | None
+    _swap_hist = model_management.should_swap_history()
+
+    for i in trange(n_steps, disable=disable):
+        sigma      = sigmas[i]
+        sigma_next = sigmas[i + 1]
+        _tag       = f" step={i+1}/{n_steps} sigma={float(sigma):.4f}"
+
+        if i < preheat:
+            # ── Preheat: plain denoiser, build history for multistep ─────────
+            with torch.no_grad():
+                denoised = model(x, sigma * s_in, **extra_args).detach()
+            _sure_logger.info("[preheat%s]", _tag)
+        else:
+            # ── Correction: SURE-guided denoiser (x0-space, per paper Alg. 1) ─
+            with torch.no_grad():
+                x0_hat = model(x, sigma * s_in, **extra_args).detach()
+            sigma_hat_0 = _pca_noise_estimate(x0_hat, min_sigma=float(sure_eps))
+            _use_jac = (_dyn_jac_interval <= 1) or (_corr_count % _dyn_jac_interval == 0)
+            denoised, _stats = _sure_correct_x0(
+                model, x0_hat, sigma_hat_0, s_in, extra_args,
+                alpha=sure_alpha, n_mc=sure_n_mc, eps_mc=sure_eps,
+                use_jac=_use_jac, sigma_t=sigma,
+                adam_state=_adam_state, adam_mode=sure_adam_mode,
+                adam_beta1=sure_adam_beta1, adam_beta2=sure_adam_beta2,
+                adam_wd=sure_adam_wd, grad_mode=sure_grad_mode,
+                alpha_bo_trials=sure_alpha_bo_trials,
+                alpha_bo_patience=sure_alpha_bo_patience,
+                alpha_bo_state=_alpha_bo_state,
+            )
+            _corr_count += 1
+
+            _jac_ratio_new = _stats['jac_ratio']
+            if _jac_ratio_new is not None:
+                _jac_ratio_ema = _jac_ratio_new if _jac_ratio_ema is None else \
+                    (1.0 - _EMA_A) * _jac_ratio_ema + _EMA_A * _jac_ratio_new
+            if _jac_ratio_ema is not None and _corr_count >= 3:
+                if _jac_ratio_ema < 0.05 and _dyn_jac_interval < 8:
+                    _dyn_jac_interval += 1
+                    _sure_logger.info("[adapt] jac_interval -> %d  (ratio=%.3f < 0.05)",
+                                      _dyn_jac_interval, _jac_ratio_ema)
+                elif _jac_ratio_ema > 0.25 and _dyn_jac_interval > 1:
+                    _dyn_jac_interval -= 1
+                    _sure_logger.info("[adapt] jac_interval -> %d  (ratio=%.3f > 0.25)",
+                                      _dyn_jac_interval, _jac_ratio_ema)
+            _sure_logger.info("[adapt] jac_ratio_ema=%s  dyn_jac_interval=%d",
+                              f"{_jac_ratio_ema:.3f}" if _jac_ratio_ema is not None else "n/a",
+                              _dyn_jac_interval)
+
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigma, 'sigma_hat': sigma, 'denoised': denoised})
+
+        # ── Restore old_denoised from CPU swap (if any) ───────────────────────
+        old_denoised = (
+            _old_buf.to_device() if isinstance(_old_buf, model_management.CPUSwapBuffer)
+            else _old_buf
+        )
+
+        # ── DPM-Solver++(2M) update ───────────────────────────────────────────
+        t, t_next = t_fn(sigma), t_fn(sigma_next)
+        h = t_next - t
+        if old_denoised is None:
+            # First step: no history yet — 1st-order fallback
+            x = sigma_fn(t_next) / sigma_fn(t) * x - (-h).expm1() * denoised
+        elif float(sigma_next) == 0:
+            # Final step: 1st-order to reach zero
+            x = sigma_fn(t_next) / sigma_fn(t) * x - (-h).expm1() * denoised
+        else:
+            h_last = t - t_fn(sigmas[i - 1])
+            r = h_last / h
+            denoised_d = (1 + 1 / (2 * r)) * denoised - (1 / (2 * r)) * old_denoised
+            x = sigma_fn(t_next) / sigma_fn(t) * x - (-h).expm1() * denoised_d
+
+        del old_denoised  # release GPU ref; _old_buf is the authoritative owner
+
+        # ── Swap current denoised to CPU for next step ────────────────────────
+        if _swap_hist and denoised.device.type == 'cuda':
+            _old_buf = model_management.CPUSwapBuffer(denoised)
+        else:
+            _old_buf = denoised
+
+    return x
+
+
+def sample_dpmpp_2m_sde_sure(model, x, sigmas, extra_args=None, callback=None, disable=None,
+                               noise_sampler=None, eta=1., s_noise=1., solver_type='midpoint',
+                               sure_alpha=0.05, sure_n_mc=1, sure_eps=1e-3,
+                               sure_preheat_steps=-1, sure_jac_interval=-1,
+                               sure_adam_mode='none', sure_adam_beta1=0.9,
+                               sure_adam_beta2=0.999, sure_adam_wd=0.01, sure_grad_mode='vjp',
+                               sure_alpha_bo_trials=0, sure_alpha_bo_patience=4):
+    """DPM-Solver++(2M) SDE with SURE trajectory correction.
+
+    Matches the SURE paper (arxiv 2512.23232) Algorithm 1 which uses a stochastic
+    reverse process: SURE corrects x̂₀, then SDE noise is injected as
+      x_{t-1} ~ N(x̂*_{0|t}, σ²_{t-1}·I)
+    The DPM++2M SDE noise term is the proper Brownian-tree realisation of that
+    Gaussian, more principled than plain sigma_next·ε.
+
+    Parameters:
+      eta:               SDE noise weight (1.0 = full SDE, 0.0 = ODE)
+      s_noise:           global noise scale multiplier
+      solver_type:       '2nd-order multistep corrector: 'midpoint' or 'heun'
+      sure_alpha:        SURE gradient step size
+      sure_n_mc:         Monte Carlo samples for Hutchinson trace
+      sure_eps:          finite-difference epsilon
+      sure_preheat_steps: plain-denoise steps before SURE (-1 = auto 15%)
+      sure_jac_interval: Jacobian every N correction steps (-1 = adaptive)
+    """
+    if len(sigmas) <= 1:
+        return x
+    if solver_type not in {'heun', 'midpoint'}:
+        raise ValueError("solver_type must be 'heun' or 'midpoint'")
+
+    extra_args = {} if extra_args is None else extra_args
+    seed = extra_args.get("seed", None)
+    sigma_min, sigma_max = sigmas[sigmas > 0].min(), sigmas.max()
+    noise_sampler = BrownianTreeNoiseSampler(x, sigma_min, sigma_max, seed=seed, cpu=True) \
+                    if noise_sampler is None else noise_sampler
+    s_in = x.new_ones([x.shape[0]])
+    model_sampling = model.inner_model.model_patcher.get_model_object('model_sampling')
+    lambda_fn = partial(sigma_to_half_log_snr, model_sampling=model_sampling)
+    sigmas = offset_first_sigma_for_snr(sigmas, model_sampling)
+
+    n_steps = len(sigmas) - 1
+    preheat = sure_preheat_steps if sure_preheat_steps >= 0 \
+              else max(2, math.ceil(0.15 * n_steps))
+
+    _dyn_jac_interval: int        = 2 if sure_jac_interval < 1 else sure_jac_interval
+    _jac_ratio_ema:   float | None = None
+    _corr_count: int               = 0
+    _EMA_A = 0.35
+    _adam_state     = {'optimizer': None, 'param': None} if sure_adam_mode in ('adam', 'adamw') else None
+    _alpha_bo_state = {} if sure_alpha_bo_trials > 0 else None
+
+    _sure_logger.info(
+        "DPM++2M-SDE-SURE: %d steps  preheat=%d  eta=%.2f  alpha=%.4f  solver=%s  adam=%s",
+        n_steps, preheat, eta, sure_alpha, solver_type, sure_adam_mode,
+    )
+
+    # ── CPU-swap buffer for old_denoised (same pattern as sample_dpmpp_2m_sure) ─
+    _old_buf   = None
+    _swap_hist = model_management.should_swap_history()
+    h, h_last = None, None
+
+    for i in trange(n_steps, disable=disable):
+        sigma      = sigmas[i]
+        sigma_next = sigmas[i + 1]
+        _tag       = f" step={i+1}/{n_steps} sigma={float(sigma):.4f}"
+
+        # ── x̂₀ at current state ──────────────────────────────────────────
+        with torch.no_grad():
+            x0_hat = model(x, sigma * s_in, **extra_args).detach()
+
+        if i < preheat:
+            # ── Preheat: plain denoiser ───────────────────────────────────────
+            denoised = x0_hat
+            _sure_logger.info("[preheat%s]", _tag)
+        else:
+            # ── Correction: Algorithm 1 — correct x̂₀ in x0-space at σ̂₀ ──────
+            sigma_hat_0 = _pca_noise_estimate(x0_hat, min_sigma=float(sure_eps))
+            _use_jac = (_dyn_jac_interval <= 1) or (_corr_count % _dyn_jac_interval == 0)
+            denoised, _stats = _sure_correct_x0(
+                model, x0_hat, sigma_hat_0, s_in, extra_args,
+                alpha=sure_alpha, n_mc=sure_n_mc, eps_mc=sure_eps,
+                use_jac=_use_jac, sigma_t=sigma,
+                adam_state=_adam_state, adam_mode=sure_adam_mode,
+                adam_beta1=sure_adam_beta1, adam_beta2=sure_adam_beta2,
+                adam_wd=sure_adam_wd, grad_mode=sure_grad_mode,
+                alpha_bo_trials=sure_alpha_bo_trials,
+                alpha_bo_patience=sure_alpha_bo_patience,
+                alpha_bo_state=_alpha_bo_state,
+            )
+            _corr_count += 1
+
+            _jac_ratio_new = _stats.get('jac_ratio')
+            if _jac_ratio_new is not None:
+                _jac_ratio_ema = _jac_ratio_new if _jac_ratio_ema is None else \
+                    (1.0 - _EMA_A) * _jac_ratio_ema + _EMA_A * _jac_ratio_new
+            if _jac_ratio_ema is not None and _corr_count >= 3:
+                if _jac_ratio_ema < 0.05 and _dyn_jac_interval < 8:
+                    _dyn_jac_interval += 1
+                    _sure_logger.info("[adapt] jac_interval -> %d  (ratio=%.3f < 0.05)",
+                                      _dyn_jac_interval, _jac_ratio_ema)
+                elif _jac_ratio_ema > 0.25 and _dyn_jac_interval > 1:
+                    _dyn_jac_interval -= 1
+                    _sure_logger.info("[adapt] jac_interval -> %d  (ratio=%.3f > 0.25)",
+                                      _dyn_jac_interval, _jac_ratio_ema)
+            _sure_logger.info("[adapt] jac_ratio_ema=%s  dyn_jac_interval=%d",
+                              f"{_jac_ratio_ema:.3f}" if _jac_ratio_ema is not None else "n/a",
+                              _dyn_jac_interval)
+
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigma, 'sigma_hat': sigma, 'denoised': denoised})
+
+        # ── Restore old_denoised from CPU swap (if any) ───────────────────────
+        old_denoised = (
+            _old_buf.to_device() if isinstance(_old_buf, model_management.CPUSwapBuffer)
+            else _old_buf
+        )
+
+        # ── DPM-Solver++(2M) SDE update ──────────────────────────────────────
+        if float(sigma_next) == 0:
+            x = denoised
+        else:
+            lambda_s = lambda_fn(sigma)
+            lambda_t = lambda_fn(sigma_next)
+            h = lambda_t - lambda_s
+            h_eta = h * (eta + 1)
+            alpha_t = sigma_next * lambda_t.exp()
+
+            # 1st-order SDE update from SURE-corrected x̂₀
+            x = sigma_next / sigma * (-h * eta).exp() * x \
+                + alpha_t * (-h_eta).expm1().neg() * denoised
+
+            # 2nd-order multistep correction (blends current + previous x̂₀)
+            if old_denoised is not None:
+                if h_last is not None:
+                    r = h_last / h
+                    if solver_type == 'heun':
+                        x = x + alpha_t * ((-h_eta).expm1().neg() / (-h_eta) + 1) \
+                                  * (1 / r) * (denoised - old_denoised)
+                    else:  # midpoint
+                        x = x + 0.5 * alpha_t * (-h_eta).expm1().neg() \
+                                  * (1 / r) * (denoised - old_denoised)
+
+            # Brownian SDE noise — the proper realisation of N(x̂*₀, σ²_{t-1}·I)
+            if eta > 0 and s_noise > 0:
+                x = x + noise_sampler(sigma, sigma_next) \
+                          * sigma_next * (-2 * h * eta).expm1().neg().sqrt() * s_noise
+
+        del old_denoised  # release GPU ref; _old_buf is the authoritative owner
+        h_last = h
+
+        # ── Swap current denoised to CPU for next step ────────────────────────
+        if _swap_hist and denoised.device.type == 'cuda':
+            _old_buf = model_management.CPUSwapBuffer(denoised)
+        else:
+            _old_buf = denoised
+
+    return x
+
+
 @torch.no_grad()
 def sample_dpmpp_2m_sde(model, x, sigmas, extra_args=None, callback=None, disable=None, noise_sampler=None):
     """DPM-Solver++(2M) SDE."""
     eta = modules.shared.opts.dpmpp_2m_sde_og_eta
     s_noise = modules.shared.opts.dpmpp_2m_sde_og_s_noise
     solver_type = modules.shared.opts.dpmpp_2m_sde_og_solver_type
-    
+
     if len(sigmas) <= 1:
         return x
 
@@ -1311,7 +1910,7 @@ def sample_dpmpp_3m_sde(model, x, sigmas, extra_args=None, callback=None, disabl
     """DPM-Solver++(3M) SDE."""
     eta = modules.shared.opts.dpmpp_3m_sde_og_eta
     s_noise = modules.shared.opts.dpmpp_3m_sde_og_s_noise
-    
+
     if len(sigmas) <= 1:
         return x
 
@@ -1367,6 +1966,356 @@ def sample_dpmpp_3m_sde(model, x, sigmas, extra_args=None, callback=None, disabl
         denoised_1, denoised_2 = denoised, denoised_1
         h_1, h_2 = h, h_1
     return x
+
+
+def sample_dpmpp_3m_sde_sure(model, x, sigmas, extra_args=None, callback=None, disable=None,
+                               noise_sampler=None, eta=1., s_noise=1.,
+                               sure_alpha=0.05, sure_n_mc=1, sure_eps=1e-3,
+                               sure_preheat_steps=-1, sure_jac_interval=-1,
+                               sure_adam_mode='none', sure_adam_beta1=0.9,
+                               sure_adam_beta2=0.999, sure_adam_wd=0.01, sure_grad_mode='vjp',
+                               sure_alpha_bo_trials=0, sure_alpha_bo_patience=4):
+    """DPM-Solver++(3M) SDE with SURE trajectory correction.
+
+    Implements Algorithm 1 from arXiv:2512.23232 on top of the 3rd-order multistep
+    SDE solver.  Every step:
+
+      1. x̂₀   = Dθ(xₜ, σₜ)                     — plain denoiser (no_grad)
+      2. σ̂₀   = PCA residual noise estimate       — residual noise in x̂₀
+      3. x̂*₀  = x̂₀ − α·∇SURE(x̂₀, σ̂₀)           — x0-space SURE correction
+      4. ODE update (1st / 2nd / 3rd order)        — deterministic, uses x̂*₀
+      5. Brownian noise injection                   — stochastic reverse process
+
+    The 3rd-order multistep correction blends differences of the last three
+    corrected x̂*₀ estimates (denoised, denoised_1, denoised_2), so the
+    correction propagates naturally through the higher-order history.
+
+    Parameters:
+      eta:               SDE noise weight (1.0 = full SDE, 0.0 = ODE)
+      s_noise:           global noise scale multiplier
+      sure_alpha:        SURE gradient step size
+      sure_n_mc:         Monte Carlo samples for Hutchinson trace
+      sure_eps:          finite-difference epsilon
+      sure_preheat_steps: plain-denoise steps before SURE (-1 = auto 15%)
+      sure_jac_interval: Jacobian every N correction steps (-1 = adaptive)
+    """
+    if len(sigmas) <= 1:
+        return x
+
+    extra_args = {} if extra_args is None else extra_args
+    seed = extra_args.get("seed", None)
+    sigma_min, sigma_max = sigmas[sigmas > 0].min(), sigmas.max()
+    noise_sampler = BrownianTreeNoiseSampler(x, sigma_min, sigma_max, seed=seed, cpu=True) \
+                    if noise_sampler is None else noise_sampler
+    s_in = x.new_ones([x.shape[0]])
+    model_sampling = model.inner_model.model_patcher.get_model_object('model_sampling')
+    lambda_fn = partial(sigma_to_half_log_snr, model_sampling=model_sampling)
+    sigmas = offset_first_sigma_for_snr(sigmas, model_sampling)
+
+    n_steps = len(sigmas) - 1
+    preheat = sure_preheat_steps if sure_preheat_steps >= 0 \
+              else max(2, math.ceil(0.15 * n_steps))
+
+    _dyn_jac_interval: int        = 2 if sure_jac_interval < 1 else sure_jac_interval
+    _jac_ratio_ema:   float | None = None
+    _corr_count: int               = 0
+    _EMA_A = 0.35
+    _adam_state     = {'optimizer': None, 'param': None} if sure_adam_mode in ('adam', 'adamw') else None
+    _alpha_bo_state = {} if sure_alpha_bo_trials > 0 else None
+
+    _sure_logger.info(
+        "DPM++3M-SDE-SURE: %d steps  preheat=%d  eta=%.2f  alpha=%.4f  adam=%s",
+        n_steps, preheat, eta, sure_alpha, sure_adam_mode,
+    )
+
+    # ── CPU-swap buffers for 3M history tensors ───────────────────────────────
+    # denoised_1 and denoised_2 are only needed at the *start* of the next step
+    # for the 2nd/3rd-order correction.  Park them in pinned CPU memory while
+    # the UNet computes the current denoised estimate.
+    # Rotation at end of loop: _d2_buf ← _d1_buf ← current denoised.
+    # Since _d1_buf is already on CPU after the previous step's swap, assigning
+    # it to _d2_buf costs zero transfers.
+    _d1_buf    = None                                    # CPUSwapBuffer | Tensor | None
+    _d2_buf    = None                                    # CPUSwapBuffer | Tensor | None
+    _swap_hist = model_management.should_swap_history()
+    h, h_1, h_2 = None, None, None
+
+    for i in trange(n_steps, disable=disable):
+        sigma      = sigmas[i]
+        sigma_next = sigmas[i + 1]
+        _tag       = f" step={i+1}/{n_steps} sigma={float(sigma):.4f}"
+
+        # ── Step 1: plain denoiser call ───────────────────────────────────────
+        with torch.no_grad():
+            x0_hat = model(x, sigma * s_in, **extra_args).detach()
+
+        if i < preheat:
+            # ── Preheat: use plain x̂₀ directly ──────────────────────────────
+            denoised = x0_hat
+            _sure_logger.info("[preheat%s]", _tag)
+        else:
+            # ── Steps 2–3: SURE correction in x0-space at σ̂₀ ────────────────
+            sigma_hat_0 = _pca_noise_estimate(x0_hat, min_sigma=float(sure_eps))
+            _use_jac = (_dyn_jac_interval <= 1) or (_corr_count % _dyn_jac_interval == 0)
+            denoised, _stats = _sure_correct_x0(
+                model, x0_hat, sigma_hat_0, s_in, extra_args,
+                alpha=sure_alpha, n_mc=sure_n_mc, eps_mc=sure_eps,
+                use_jac=_use_jac, sigma_t=sigma,
+                adam_state=_adam_state, adam_mode=sure_adam_mode,
+                adam_beta1=sure_adam_beta1, adam_beta2=sure_adam_beta2,
+                adam_wd=sure_adam_wd, grad_mode=sure_grad_mode,
+                alpha_bo_trials=sure_alpha_bo_trials,
+                alpha_bo_patience=sure_alpha_bo_patience,
+                alpha_bo_state=_alpha_bo_state,
+            )
+            _corr_count += 1
+
+            _jac_ratio_new = _stats.get('jac_ratio')
+            if _jac_ratio_new is not None:
+                _jac_ratio_ema = _jac_ratio_new if _jac_ratio_ema is None else \
+                    (1.0 - _EMA_A) * _jac_ratio_ema + _EMA_A * _jac_ratio_new
+            if _jac_ratio_ema is not None and _corr_count >= 3:
+                if _jac_ratio_ema < 0.05 and _dyn_jac_interval < 8:
+                    _dyn_jac_interval += 1
+                    _sure_logger.info("[adapt] jac_interval -> %d  (ratio=%.3f < 0.05)",
+                                      _dyn_jac_interval, _jac_ratio_ema)
+                elif _jac_ratio_ema > 0.25 and _dyn_jac_interval > 1:
+                    _dyn_jac_interval -= 1
+                    _sure_logger.info("[adapt] jac_interval -> %d  (ratio=%.3f > 0.25)",
+                                      _dyn_jac_interval, _jac_ratio_ema)
+            _sure_logger.info("[adapt] jac_ratio_ema=%s  dyn_jac_interval=%d",
+                              f"{_jac_ratio_ema:.3f}" if _jac_ratio_ema is not None else "n/a",
+                              _dyn_jac_interval)
+
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigma, 'sigma_hat': sigma, 'denoised': denoised})
+
+        # ── Restore history tensors from CPU swap (if any) ────────────────────
+        denoised_1 = (
+            _d1_buf.to_device() if isinstance(_d1_buf, model_management.CPUSwapBuffer)
+            else _d1_buf
+        )
+        denoised_2 = (
+            _d2_buf.to_device() if isinstance(_d2_buf, model_management.CPUSwapBuffer)
+            else _d2_buf
+        )
+
+        # ── Step 4: DPM-Solver++(3M) SDE update ──────────────────────────────
+        if float(sigma_next) == 0:
+            x = denoised
+        else:
+            lambda_s = lambda_fn(sigma)
+            lambda_t = lambda_fn(sigma_next)
+            h = lambda_t - lambda_s
+            h_eta = h * (eta + 1)
+            alpha_t = sigma_next * lambda_t.exp()
+
+            # 1st-order SDE step from SURE-corrected x̂*₀
+            x = sigma_next / sigma * (-h * eta).exp() * x \
+                + alpha_t * (-h_eta).expm1().neg() * denoised
+
+            if h_2 is not None:
+                # 3rd-order multistep correction
+                r0 = h_1 / h
+                r1 = h_2 / h
+                d1_0 = (denoised - denoised_1) / r0
+                d1_1 = (denoised_1 - denoised_2) / r1
+                d1   = d1_0 + (d1_0 - d1_1) * r0 / (r0 + r1)
+                d2   = (d1_0 - d1_1) / (r0 + r1)
+                phi_2 = h_eta.neg().expm1() / h_eta + 1
+                phi_3 = phi_2 / h_eta - 0.5
+                x = x + alpha_t * phi_2 * d1 - alpha_t * phi_3 * d2
+            elif h_1 is not None:
+                # 2nd-order multistep correction (warm-up)
+                r = h_1 / h
+                d = (denoised - denoised_1) / r
+                phi_2 = h_eta.neg().expm1() / h_eta + 1
+                x = x + alpha_t * phi_2 * d
+
+            # ── Step 5: Brownian SDE noise ────────────────────────────────────
+            if eta > 0 and s_noise > 0:
+                x = x + noise_sampler(sigma, sigma_next) \
+                          * sigma_next * (-2 * h * eta).expm1().neg().sqrt() * s_noise
+
+        del denoised_1, denoised_2  # release GPU refs before swap rotation
+
+        # ── Rotate history into swap buffers ──────────────────────────────────
+        # New _d2_buf is the old _d1_buf (already on CPU if swap was active).
+        # New _d1_buf is the current denoised, optionally swapped to CPU.
+        _d2_buf = _d1_buf
+        if _swap_hist and denoised.device.type == 'cuda':
+            _d1_buf = model_management.CPUSwapBuffer(denoised)
+        else:
+            _d1_buf = denoised
+        h_1, h_2 = h, h_1
+
+    return x
+
+
+def sample_dpmpp_2m_sde_sure_adaptive(model, x, sigma_min, sigma_max,
+                                       extra_args=None, callback=None, disable=None,
+                                       noise_sampler=None,
+                                       rtol=0.05, atol=0.0078, h_init=0.05,
+                                       pcoeff=0., icoeff=1., dcoeff=0., accept_safety=0.81,
+                                       eta=1., s_noise=1.,
+                                       sure_alpha=0.05, sure_n_mc=1, sure_eps=1e-3,
+                                       sure_preheat_frac=0.3, sure_jac_interval=2,
+                                       sure_adam_mode='none', sure_adam_beta1=0.9,
+                                       sure_adam_beta2=0.999, sure_adam_wd=0.01, sure_grad_mode='vjp',
+                                       sure_alpha_bo_trials=0, sure_alpha_bo_patience=4):
+    """DPM-Solver++(2M) SDE with SURE correction and adaptive step size (PID).
+
+    Combines three ideas from the literature:
+      - SURE trajectory correction (arxiv 2512.23232): corrects x̂₀ via gradient of
+        the Stein Unbiased Risk Estimate before each reverse step.
+      - DPM-Solver-2 single-step error estimate: compare 1st vs 2nd order ODE steps
+        (noise excluded) to drive a PID step-size controller.
+      - SDE noise injection (Brownian tree): added AFTER a step is accepted, matching
+        the paper's stochastic reverse process N(x̂*₀, σ²_{t-1}·I).
+
+    The error estimate is computed on the deterministic ODE part only — stochastic
+    noise is NOT included — so the PID reacts to trajectory curvature, not noise.
+    Noise is then added on each accepted step at the proper Brownian variance.
+
+    Parameters:
+      rtol, atol:         PID error tolerances
+      h_init:             initial step size in log-sigma space
+      pcoeff/icoeff/dcoeff: PID gains (default: I-only)
+      accept_safety:      step accepted when PID factor >= this
+      eta:                SDE noise weight (1.0 = full SDE / paper intent; 0.0 = ODE)
+      s_noise:            global noise scale multiplier
+      sure_alpha:         SURE gradient step size
+      sure_n_mc:          Monte Carlo samples for Hutchinson trace
+      sure_eps:           finite-difference epsilon
+      sure_preheat_frac:  fraction of log-sigma range to run without correction
+      sure_jac_interval:  Jacobian every N correction steps (default 2)
+    """
+    if sigma_min <= 0 or sigma_max <= 0:
+        raise ValueError('sigma_min and sigma_max must not be 0')
+
+    extra_args = {} if extra_args is None else extra_args
+    seed = extra_args.get("seed", None)
+    noise_sampler = BrownianTreeNoiseSampler(x, sigma_min, sigma_max, seed=seed, cpu=True) \
+                    if noise_sampler is None else noise_sampler
+    s_in = x.new_ones([x.shape[0]])
+
+    sigma_fn = lambda t: t.neg().exp()
+    t_fn     = lambda sigma: sigma.log().neg()
+
+    t_start   = t_fn(torch.tensor(sigma_max, dtype=x.dtype, device=x.device))
+    t_end     = t_fn(torch.tensor(sigma_min, dtype=x.dtype, device=x.device))
+    t_preheat = t_start + sure_preheat_frac * (t_end - t_start)
+
+    pid    = PIDStepSizeController(h_init, pcoeff, icoeff, dcoeff, order=2,
+                                    accept_safety=accept_safety)
+    atol_t = torch.tensor(atol, dtype=x.dtype, device=x.device)
+    rtol_t = torch.tensor(rtol, dtype=x.dtype, device=x.device)
+
+    _corr_count = 0
+    _adam_state     = {'optimizer': None, 'param': None} if sure_adam_mode in ('adam', 'adamw') else None
+    _alpha_bo_state = {} if sure_alpha_bo_trials > 0 else None
+    info = {'steps': 0, 'nfe': 0, 'n_accept': 0, 'n_reject': 0}
+    x_prev = x.clone()
+    s = t_start.clone()
+
+    _sure_logger.info(
+        "DPM++2M-SDE-SURE-Adaptive: sigma [%.4f → %.4f]  preheat_frac=%.2f"
+        "  eta=%.2f  alpha=%.4f  jac_interval=%d  adam=%s",
+        sigma_max, sigma_min, sure_preheat_frac, eta, sure_alpha, sure_jac_interval,
+        sure_adam_mode,
+    )
+
+    with tqdm(disable=disable) as pbar:
+        while s < t_end - 1e-5:
+            t_next     = torch.minimum(t_end, s + pid.h)
+            sigma_s    = sigma_fn(s)
+            sigma_next = sigma_fn(t_next)
+            h          = t_next - s
+
+            in_preheat = float(s) < float(t_preheat)
+            _tag = f" [adap-sde] sigma={float(sigma_s):.4f}"
+
+            # ── x̂₀ at current state (SURE after preheat) ──────────────────
+            if in_preheat:
+                with torch.no_grad():
+                    x0_s = model(x, sigma_s * s_in, **extra_args).detach()
+            else:
+                with torch.no_grad():
+                    x0_hat = model(x, sigma_s * s_in, **extra_args).detach()
+                sigma_hat_0 = _pca_noise_estimate(x0_hat, min_sigma=float(sure_eps))
+                _use_jac = (sure_jac_interval <= 1) or (_corr_count % sure_jac_interval == 0)
+                x0_s, _ = _sure_correct_x0(
+                    model, x0_hat, sigma_hat_0, s_in, extra_args,
+                    alpha=sure_alpha, n_mc=sure_n_mc, eps_mc=sure_eps,
+                    use_jac=_use_jac, sigma_t=sigma_s,
+                    adam_state=_adam_state, adam_mode=sure_adam_mode,
+                    adam_beta1=sure_adam_beta1, adam_beta2=sure_adam_beta2,
+                    adam_wd=sure_adam_wd, grad_mode=sure_grad_mode,
+                    alpha_bo_trials=sure_alpha_bo_trials,
+                    alpha_bo_patience=sure_alpha_bo_patience,
+                    alpha_bo_state=_alpha_bo_state,
+                )
+                _corr_count += 1
+
+            eps_s = (x - x0_s) / sigma_s
+
+            # ── 1st-order ODE step (x_low, for error estimate) ────────────
+            x_low = x - sigma_next * h.expm1() * eps_s
+
+            # ── 2nd-order ODE midpoint step (x_high, for error estimate) ──
+            r         = 0.5
+            s1        = s + r * h
+            sigma_mid = sigma_fn(s1)
+            u1        = x - sigma_mid * (r * h).expm1() * eps_s
+            with torch.no_grad():
+                x0_mid = model(u1, sigma_mid * s_in, **extra_args).detach()
+            eps_mid = (u1 - x0_mid) / sigma_mid
+            x_high  = x - sigma_next * h.expm1() * eps_s \
+                        - sigma_next / (2 * r) * h.expm1() * (eps_mid - eps_s)
+
+            # ── PID error on ODE part only (noise excluded intentionally) ──
+            delta  = torch.maximum(atol_t, rtol_t * torch.maximum(x_low.abs(), x_prev.abs()))
+            error  = torch.linalg.norm((x_low - x_high) / delta) / x.numel() ** 0.5
+            accept = pid.propose_step(error)
+
+            if accept:
+                x_prev = x_low
+                x = x_high
+                # Inject Brownian SDE noise — proper variance for reverse SDE path
+                if eta > 0 and s_noise > 0:
+                    noise_std = sigma_next * (-2 * h * eta).expm1().neg().sqrt()
+                    x = x + noise_sampler(sigma_s, sigma_next) * noise_std * s_noise
+                s = t_next
+                info['n_accept'] += 1
+                pbar.update()
+                if callback is not None:
+                    callback({'x': x, 'i': info['steps'], 'sigma': sigma_s,
+                              'sigma_hat': sigma_s, 'denoised': x0_s,
+                              'error': error, 'h': pid.h, **info})
+            else:
+                info['n_reject'] += 1
+
+            info['nfe']   += 2
+            info['steps'] += 1
+
+            _sure_logger.info(
+                "[adap-sde] step=%d  sigma=%.4f→%.4f  error=%.4f  h=%.4f"
+                "  accept=%s  preheat=%s  eta=%.2f",
+                info['steps'], float(sigma_s), float(sigma_next),
+                float(error), float(pid.h), accept, in_preheat, eta,
+            )
+
+            if info['steps'] > 10000:
+                _sure_logger.warning("DPM++2M-SDE-SURE-Adaptive: step limit reached")
+                break
+
+    _sure_logger.info(
+        "DPM++2M-SDE-SURE-Adaptive done: %d accepted / %d rejected  nfe=%d",
+        info['n_accept'], info['n_reject'], info['nfe'],
+    )
+
+    return x
+
 
 @torch.no_grad()
 def sample_dpmpp_3m_sde_gpu(model, x, sigmas, extra_args=None, callback=None, disable=None, eta=1., s_noise=1., noise_sampler=None):
@@ -1457,7 +2406,7 @@ def sample_heunpp2(model, x, sigmas, extra_args=None, callback=None, disable=Non
     s_tmin = modules.shared.opts.heunpp2_s_tmin
     s_noise = modules.shared.opts.heunpp2_s_noise
     s_tmax = float('inf')
-    
+
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
     s_end = sigmas[-1]
@@ -1506,7 +2455,7 @@ def sample_heunpp2(model, x, sigmas, extra_args=None, callback=None, disable=Non
 #under Apache 2 license
 def sample_ipndm(model, x, sigmas, extra_args=None, callback=None, disable=None):
     max_order = modules.shared.opts.ipndm_max_order
-    
+
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
     x_next = x
@@ -1542,7 +2491,7 @@ def sample_ipndm(model, x, sigmas, extra_args=None, callback=None, disable=None)
 #under Apache 2 license
 def sample_ipndm_v(model, x, sigmas, extra_args=None, callback=None, disable=None):
     max_order = modules.shared.opts.ipndm_v_max_order
-    
+
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
     x_next = x
@@ -1603,7 +2552,7 @@ def sample_ipndm_v(model, x, sigmas, extra_args=None, callback=None, disable=Non
 def sample_deis(model, x, sigmas, extra_args=None, callback=None, disable=None):
     max_order = modules.shared.opts.deis_max_order
     deis_mode = modules.shared.opts.deis_mode
-    
+
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
     x_next = x
@@ -1760,7 +2709,7 @@ def sample_dpmpp_2s_ancestral_cfg_pp_dyn(model, x, sigmas, extra_args=None, call
     extra_args = {} if extra_args is None else extra_args
     seed = extra_args.get("seed", None)
     noise_sampler = default_noise_sampler(x, seed=seed) if noise_sampler is None else noise_sampler
-    
+
     temp = [0]
     def post_cfg_function(args):
         temp[0] = args["uncond_denoised"]
@@ -1807,7 +2756,7 @@ def sample_dpmpp_2s_ancestral_cfg_pp_intern(model, x, sigmas, extra_args=None, c
     extra_args = {} if extra_args is None else extra_args
     seed = extra_args.get("seed", None)
     noise_sampler = default_noise_sampler(x, seed=seed) if noise_sampler is None else noise_sampler
-    
+
     temp = [0]
     def post_cfg_function(args):
         temp[0] = args["uncond_denoised"]
@@ -1855,7 +2804,7 @@ def sample_dpmpp_2s_ancestral_cfg_pp_intern(model, x, sigmas, extra_args=None, c
             r = 1 / 2
             h = t_next - t
             s = t + r * h
-            mergefactor = min(math.sqrt(i/(len(sigmas) - 2)), 1) 
+            mergefactor = min(math.sqrt(i/(len(sigmas) - 2)), 1)
             print(mergefactor)
             #merge up_den with x
             if mergefactor == 1:
@@ -1869,8 +2818,8 @@ def sample_dpmpp_2s_ancestral_cfg_pp_intern(model, x, sigmas, extra_args=None, c
                 print(up_den.max(), large_denoised.max())
                 up_temp = nn.functional.interpolate(temp[0], scale_factor=2, mode='area')
                 x_2 = (sigma_fn(s) / sigma_fn(t)) * (x + (up_den - up_temp)) - (-h * r).expm1() * up_den
-            
-            
+
+
             denoised_2 = model(x_2, sigma_fn(s) * s_in, **extra_args)
             x = (sigma_fn(t_next) / sigma_fn(t)) * (x + (up_den - temp[0])) - (-h).expm1() * denoised_2
             large_denoised = denoised_2
@@ -1891,7 +2840,7 @@ def sample_dpmpp_2m_cfg_pp(model, x, sigmas, extra_args=None, callback=None, dis
         nonlocal uncond_denoised
         uncond_denoised = args["uncond_denoised"]
         return args["denoised"]
-    
+
     model_options = extra_args.get("model_options", {}).copy()
     extra_args["model_options"] = ldm_patched.modules.model_patcher.set_model_options_post_cfg_function(model_options, post_cfg_function, disable_cfg1_optimization=True)
     for i in trange(len(sigmas) - 1, disable=disable):
@@ -1916,22 +2865,22 @@ def sample_dpmpp_sde_cfg_pp(model, x, sigmas, extra_args=None, callback=None, di
     eta = modules.shared.opts.dpmpp_sde_cfg_pp_eta
     s_noise = modules.shared.opts.dpmpp_sde_cfg_pp_s_noise
     r = modules.shared.opts.dpmpp_sde_cfg_pp_r
-    
+
     if len(sigmas) <= 1:
         return x
 
     sigma_min, sigma_max = sigmas[sigmas > 0].min(), sigmas.max()
     noise_sampler = BrownianTreeNoiseSampler(x, sigma_min, sigma_max, seed=extra_args.get("seed", None), cpu=True) if noise_sampler is None else noise_sampler
     extra_args = {} if extra_args is None else extra_args
-    
+
     temp = [0]
     def post_cfg_function(args):
         temp[0] = args["uncond_denoised"]
         return args["denoised"]
-    
+
     model_options = extra_args.get("model_options", {}).copy()
     extra_args["model_options"] = ldm_patched.modules.model_patcher.set_model_options_post_cfg_function(model_options, post_cfg_function, disable_cfg1_optimization=True)
-    
+
     s_in = x.new_ones([x.shape[0]])
     sigma_fn = lambda t: t.neg().exp()
     t_fn = lambda sigma: sigma.log().neg()
@@ -1940,7 +2889,7 @@ def sample_dpmpp_sde_cfg_pp(model, x, sigmas, extra_args=None, callback=None, di
         denoised = model(x, sigmas[i] * s_in, **extra_args)
         if callback is not None:
             callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
-        
+
         if sigmas[i + 1] == 0:
             # Euler method
             d = to_d(x, sigmas[i], temp[0])
@@ -2539,7 +3488,7 @@ def sample_dpmpp_2m_dy_cfg_pp(
     """DPM-Solver++(2M) with dynamic thresholding and CFG++."""
     s_noise = modules.shared.opts.dpmpp_2m_dy_cfg_pp_s_noise if s_noise is None else s_noise
     s_dy_pow = modules.shared.opts.dpmpp_2m_dy_cfg_pp_s_dy_pow if s_dy_pow is None else s_dy_pow
-    s_extra_steps = modules.shared.opts.dpmpp_2m_dy_cfg_pp_s_extra_steps if s_extra_steps is None else s_extra_steps    
+    s_extra_steps = modules.shared.opts.dpmpp_2m_dy_cfg_pp_s_extra_steps if s_extra_steps is None else s_extra_steps
     """DPM-Solver++(2M)."""
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
@@ -2686,7 +3635,7 @@ def sample_clyb_4m_sde_momentumized(model, x, sigmas, extra_args=None, callback=
         if callback is not None:
             callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
 
-    return 
+    return
 
 class DenoiserModel(Protocol):
   def __call__(self, x: FloatTensor, t: FloatTensor, *args, **kwargs) -> FloatTensor: ...
@@ -2821,7 +3770,7 @@ def _de_second_order(
     a2_1=a2_1,
     b1=b1,
     b2=b2,
-  )  
+  )
 
 def _refined_exp_sosu_step(
   model: DenoiserModel,
@@ -2866,7 +3815,7 @@ def _refined_exp_sosu_step(
   # I will use float to indicate any variables which are scalars.
   h: float = lam_next - lam
   a2_1, b1, b2 = _de_second_order(h=h, c2=c2, simple_phi_calc=simple_phi_calc)
-  
+
   denoised: FloatTensor = model(x, sigma.repeat(x.size(0)), **extra_args)
   # if pbar is not None:
     # pbar.update(0.5)
@@ -2887,7 +3836,7 @@ def _refined_exp_sosu_step(
   vel = diff
 
   x_next: FloatTensor = math.exp(-h)*x + diff
-  
+
   return StepOutput(
     x_next=x_next,
     denoised=denoised,
@@ -2895,7 +3844,7 @@ def _refined_exp_sosu_step(
     vel=vel,
     vel_2=vel_2,
   )
-  
+
 
 @no_grad()
 def sample_refined_exp_s(
@@ -3000,17 +3949,17 @@ def sample_res_solver(model, x, sigmas, extra_args=None, callback=None, disable=
 
 @torch.no_grad()
 def sample_Kohaku_LoNyu_Yog(
-    model, 
-    x, 
-    sigmas, 
-    extra_args=None, 
-    callback=None, 
-    disable=None, 
-    s_churn=None, 
+    model,
+    x,
+    sigmas,
+    extra_args=None,
+    callback=None,
+    disable=None,
+    s_churn=None,
     s_tmin=None,
-    s_tmax=float('inf'), 
-    s_noise=None, 
-    noise_sampler=None, 
+    s_tmax=float('inf'),
+    s_noise=None,
+    noise_sampler=None,
     eta=None
 ):
     """Kohaku_LoNyu_Yog sampler with configurable parameters"""
@@ -3051,17 +4000,17 @@ def sample_Kohaku_LoNyu_Yog(
 
 @torch.no_grad()
 def sample_kohaku_lonyu_yog_cfg_pp(
-    model, 
-    x, 
-    sigmas, 
-    extra_args=None, 
-    callback=None, 
-    disable=None, 
-    s_churn=None, 
+    model,
+    x,
+    sigmas,
+    extra_args=None,
+    callback=None,
+    disable=None,
+    s_churn=None,
     s_tmin=None,
-    s_tmax=float('inf'), 
-    s_noise=None, 
-    noise_sampler=None, 
+    s_tmax=float('inf'),
+    s_noise=None,
+    noise_sampler=None,
     eta=None
 ):
     """Kohaku_LoNyu_Yog sampler with CFG++ implementation"""
@@ -3081,31 +4030,31 @@ def sample_kohaku_lonyu_yog_cfg_pp(
     def post_cfg_function(args):
         temp[0] = args["uncond_denoised"]
         return args["denoised"]
-    
+
     model_options = extra_args.get("model_options", {}).copy()
     extra_args["model_options"] = ldm_patched.modules.model_patcher.set_model_options_post_cfg_function(
         model_options, post_cfg_function, disable_cfg1_optimization=True
     )
-    
+
     s_in = x.new_ones([x.shape[0]])
-    
+
     for i in trange(len(sigmas) - 1, disable=disable):
         gamma = min(s_churn / (len(sigmas) - 1), 2 ** 0.5 - 1) if s_tmin <= sigmas[i] <= s_tmax else 0.
         eps = torch.randn_like(x) * s_noise
         sigma_hat = sigmas[i] * (gamma + 1)
         if gamma > 0:
             x = x + eps * (sigma_hat ** 2 - sigmas[i] ** 2) ** 0.5
-            
+
         denoised = model(x, sigma_hat * s_in, **extra_args)
         d = to_d(x, sigma_hat, temp[0])  # Use uncond_denoised from CFG++
-        
+
         sigma_down, sigma_up = get_ancestral_step(sigmas[i], sigmas[i + 1], eta=eta)
-        
+
         if callback is not None:
             callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigma_hat, 'denoised': denoised})
-            
+
         dt = sigma_down - sigmas[i]
-        
+
         if i <= (len(sigmas) - 1) / 2:
             x2 = -x
             denoised2 = model(x2, sigma_hat * s_in, **extra_args)
@@ -3118,12 +4067,12 @@ def sample_kohaku_lonyu_yog_cfg_pp(
             x = x + noise_sampler(sigmas[i], sigmas[i + 1]) * s_noise * sigma_up
         else:
             x = x + d * dt
-            
+
     return x
 
 def sample_custom(model, x, sigmas, extra_args=None, callback=None, disable=None):
     """Custom sampler that uses configurations from shared options"""
-    
+
     # Get sampler parameters from shared options
     sampler_name = modules.shared.opts.custom_sampler_name
     eta = modules.shared.opts.custom_sampler_eta
@@ -3138,6 +4087,7 @@ def sample_custom(model, x, sigmas, extra_args=None, callback=None, disable=None
             'euler_comfy': sample_euler,
             'euler_ancestral_comfy': sample_euler_ancestral,
             'euler_a2': sample_euler_a2,
+            'euler_a2_edm': sample_euler_a2_edm,
             'heun_comfy': sample_heun,
             'dpmpp_2s_ancestral_comfy': sample_dpmpp_2s_ancestral,
             'dpmpp_sde_comfy': sample_dpmpp_sde,
@@ -3642,4 +4592,3101 @@ def sample_exp_heun_2_x0(model, x, sigmas, extra_args=None, callback=None, disab
 def sample_exp_heun_2_x0_sde(model, x, sigmas, extra_args=None, callback=None, disable=None, eta=1., s_noise=1., noise_sampler=None, solver_type="phi_2"):
     """Stochastic exponential Heun second order method in data prediction (x0) and logSNR time."""
     return sample_seeds_2(model, x, sigmas, extra_args=extra_args, callback=callback, disable=disable, eta=eta, s_noise=s_noise, noise_sampler=noise_sampler, r=1.0, solver_type=solver_type)
+
+
+# ---------------------------------------------------------------------------
+# DC-Solver (ECCV 2024) — Predictor-Corrector with Dynamic Compensation
+# Ported to EDM sigma-space from https://github.com/wl-zhao/DC-Solver
+# DC-Solver corrects predictor-corrector misalignment by interpolating previous
+# model outputs to a fractional time point before each corrector step.
+# ---------------------------------------------------------------------------
+
+def _dc_dynamic_compensation(model_prev_list, sigma_prev_list, ratio, dc_order):
+    """Lagrange polynomial interpolation of past model outputs at fractional sigma."""
+    sigma_prev = sigma_prev_list[-2]
+    sigma_cur  = sigma_prev_list[-1]
+    # interpolate in log-sigma space
+    log_target = (1 - ratio) * sigma_prev.log() + ratio * sigma_cur.log()
+    sigma_target = log_target.exp()
+
+    result = torch.zeros_like(model_prev_list[-1])
+    n = min(dc_order + 1, len(model_prev_list))
+    for i in range(n):
+        term = model_prev_list[-(i + 1)]
+        for j in range(n):
+            if i != j:
+                si = sigma_prev_list[-(i + 1)].log()
+                sj = sigma_prev_list[-(j + 1)].log()
+                coeff = (log_target - sj) / (si - sj)
+                term = term * coeff
+        result = result + term
+    return result
+
+
+@torch.no_grad()
+def sample_dc_solver(model, x, sigmas, extra_args=None, callback=None, disable=None,
+                     order=2, dc_ratios=None):
+    """DC-Solver: multistep predictor-corrector with dynamic compensation in EDM sigma-space.
+
+    dc_ratios: list of floats in [0,1] controlling compensation per step.
+               1.0 = no compensation (pure predictor-corrector).
+               If None, defaults to all 1.0 (equivalent to DPM-Solver++(2M)).
+    """
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+    sigma_fn = lambda t: t.neg().exp()
+    t_fn     = lambda sigma: sigma.log().neg()
+
+    steps = len(sigmas) - 1
+    if dc_ratios is None:
+        dc_ratios = [1.0] * steps
+    dc_ratios = list(dc_ratios)
+
+    model_prev_list  = []
+    sigma_prev_list  = []
+
+    for i in trange(steps, disable=disable):
+        sigma = sigmas[i]
+        sigma_next = sigmas[i + 1]
+
+        # --- dynamic compensation: warp last model output before predictor ---
+        ratio = dc_ratios[i] if i < len(dc_ratios) else 1.0
+        if ratio != 1.0 and len(model_prev_list) >= 2:
+            model_prev_list[-1] = _dc_dynamic_compensation(
+                model_prev_list, sigma_prev_list, ratio, dc_order=order
+            )
+
+        denoised = model(x, sigma * s_in, **extra_args)
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigma, 'sigma_hat': sigma, 'denoised': denoised})
+
+        model_prev_list.append(denoised)
+        sigma_prev_list.append(sigma)
+
+        t, t_next = t_fn(sigma), t_fn(sigma_next)
+        h = t_next - t
+
+        if sigma_next == 0:
+            x = denoised
+        elif len(model_prev_list) == 1 or order == 1:
+            # first-order: Euler in log-sigma space (DPM-Solver++(1))
+            x = (sigma_fn(t_next) / sigma_fn(t)) * x - (-h).expm1() * denoised
+        else:
+            # second-order multistep corrector (DPM-Solver++(2M) style)
+            t_prev = t_fn(sigma_prev_list[-2])
+            h_last = t - t_prev
+            r = h_last / h
+            denoised_d = (1 + 1 / (2 * r)) * denoised - (1 / (2 * r)) * model_prev_list[-2]
+            x = (sigma_fn(t_next) / sigma_fn(t)) * x - (-h).expm1() * denoised_d
+
+        # keep history window at size = order
+        if len(model_prev_list) > order:
+            model_prev_list.pop(0)
+            sigma_prev_list.pop(0)
+
+    return x
+
+
+# ---------------------------------------------------------------------------
+# SURE Guided Posterior Sampling (Dec 2024) — trajectory correction via SURE
+# Based on https://arxiv.org/html/2512.23232v1
+# At each step: denoise → compute SURE gradient on x̂₀ → correct → re-noise.
+# NOTE: requires torch.enable_grad; @torch.no_grad is intentionally omitted.
+# ---------------------------------------------------------------------------
+
+import time as _time
+import logging as _logging
+
+_sure_logger = _logging.getLogger("sure_sampler")
+_sure_logger.setLevel(_logging.INFO)  # TEMP: burn-out debug — remove after diagnosis
+
+
+def _sure_timer(device):
+    """Returns a callable that gives elapsed ms since construction, GPU-accurate on CUDA."""
+    if device.type == "cuda":
+        start = torch.cuda.Event(enable_timing=True)
+        end   = torch.cuda.Event(enable_timing=True)
+        start.record()
+        def elapsed():
+            end.record()
+            torch.cuda.synchronize()
+            return start.elapsed_time(end)  # ms
+    else:
+        t0 = _time.perf_counter()
+        def elapsed():
+            return (_time.perf_counter() - t0) * 1000.0  # ms
+    return elapsed
+
+
+def _repeat_extra_args(extra_args, n):
+    """Repeat batch-dimension of tensor values in extra_args by n times."""
+    if n == 1:
+        return extra_args
+    repeated = {}
+    for k, v in extra_args.items():
+        if isinstance(v, torch.Tensor) and v.dim() >= 1:
+            repeated[k] = v.repeat(n, *([1] * (v.dim() - 1)))
+        else:
+            repeated[k] = v
+    return repeated
+
+def release_cache(device):
+    """Flush the CUDA/MPS allocator pool before a gradient-checkpointed backward.
+
+    Only performs the flush when VRAM is genuinely tight (< 1.5 GiB free).
+    On HIGH/NORMAL VRAM systems the caching allocator reuses freed blocks
+    directly from its own pool — calling empty_cache would only force a
+    round-trip through the driver for no gain.  Gating on should_swap_history()
+    keeps the hot path (high VRAM) a no-op while still giving headroom to the
+    checkpoint backward on memory-constrained cards.
+    """
+    if not model_management.should_swap_history():
+        return
+    if device.type == 'cuda':
+        torch.cuda.empty_cache()
+    elif device.type == 'mps':
+        torch.mps.empty_cache()
+
+@functools.lru_cache
+def _mc_jac_trace_grad(model, x0_hat, sigma_hat, s_in, extra_args, n_mc, eps_mc):
+    """MC Jacobian trace + gradient w.r.t. x0_hat in a single eager forward+backward.
+
+    Strategy
+    --------
+    * Calls the *unwrapped* eager model (model._orig_mod) to stay outside the
+      CUDA-graph pool — no "untracked tensors" error.
+    * Uses gradient checkpointing on the eager forward so activations are
+      recomputed during backward instead of stored.  Since this is eager code,
+      checkpointing is safe and halves the peak activation VRAM.
+    * Differentiates w.r.t. x_noisy_p (the perturbed input) rather than x0_hat
+      to keep the autograd graph short.  The two are related by
+          x_noisy_p = x0_hat + ε·b + σ·noise   (∂x_noisy_p/∂x0_hat = I)
+      so the VJP result is the same, but we avoid repeating x0_hat in the graph.
+
+    Returns (jac_trace_value: float, jac_trace_grad: Tensor on CPU)
+    where jac_trace_grad ≈ (J_D^T b - b) / (ε · n_mc)  as a tensor shaped like x0_hat.
+
+    Memory notes:
+      - noise freed immediately after x_noisy_p is formed (tight lifespan).
+      - x0_rep lives until jacTrace (step 5) — its last use.
+      - jac_trace_t kept on-device through the VJP backward; .item() only after
+        backward completes, avoiding a mid-pipeline D2H sync.
+    """
+    eager_model = getattr(model, '_orig_mod', model)
+    device      = x0_hat.device
+
+    spatial   = [1] * (x0_hat.dim() - 1)
+    x0_detach = x0_hat.detach()
+
+    b         = torch.randn_like(x0_detach.repeat(n_mc, *spatial))
+    noise     = torch.randn_like(b)
+    x0_rep    = x0_detach.repeat(n_mc, *spatial)
+    x_noisy_p = (x0_rep + eps_mc * b + sigma_hat * noise).detach()
+    del noise   # tight lifespan: freed at last use (perturbation step)
+
+    s_in_rep  = s_in.repeat(n_mc)
+    extra_rep = _repeat_extra_args(extra_args, n_mc)
+    sigma_in  = (sigma_hat * s_in_rep).detach()
+
+    # Flush the allocator pool before the expensive backward pass only when VRAM
+    # is genuinely tight.  On HIGH/NORMAL VRAM systems the caching allocator
+    # reuses freed blocks directly — flushing them costs a driver round-trip.
+    release_cache(device)
+
+    with torch.enable_grad():
+        x_noisy_p = x_noisy_p.requires_grad_(True)
+
+        # ── Step 4 [S1]: denoiser2 = Dθ(x_perturbed, σ) ─────────────────────
+        # Checkpointed forward through the eager model — activations are NOT stored;
+        # they are recomputed during backward.  Peak VRAM ≈ one forward, not two.
+        d_perturbed = torch.utils.checkpoint.checkpoint(
+            lambda xp: eager_model(xp, sigma_in, **extra_rep),
+            x_noisy_p,
+            use_reentrant=False,
+        )
+
+        # ── Step 5 [S1]: jacTrace — keep on GPU, defer D2H ──────────────────
+        # SureGPU.computeGrad_d2hSURE_concurrent: do NOT call float() here.
+        # A premature .item()/.float() forces a CUDA sync that stalls the GPU
+        # pipeline before the VJP backward.  Instead we keep jac_trace_t on-device
+        # so the backward (Step 6) can start immediately without any D2H break.
+        # The scalar is pulled to CPU in Step 7 only after the backward is done.
+        # x0_rep: tight finish step = here (last use at jacTrace).
+        jac_trace_t = (b * (d_perturbed.detach() - x0_rep)).sum() \
+                      / (eps_mc * n_mc)                   # span_jt lifespan [5,7)
+        del x0_rep   # tight lifespan: freed at finish step (jacTrace = step 5)
+
+        # ── Step 6 [S1]: computeGrad (VJP backward) ─────────────────────────
+        # VJP: ∂(b·d_perturbed)/∂x_noisy_p = J_D^T b
+        # upstream gradient for d_perturbed is b / (eps_mc * n_mc)
+        (jD_T_b,) = torch.autograd.grad(
+            d_perturbed, x_noisy_p,
+            grad_outputs=b / (eps_mc * n_mc),
+        )
+        # span_xp [3,5) and span_r2 [4,6): d_perturbed freed at finish step 5/6
+        del d_perturbed
+
+    # ── Step 7 [S3]: deferred D2H of jac_trace scalar ────────────────────────
+    # SureGPU.sure_async_d2h_free: pull jac_trace_val AFTER the backward so the
+    # GPU pipeline was not interrupted mid-computation.  In practice the backward
+    # kernels and the scalar transfer share the same stream but the ordering
+    # guarantees that D2H happens after all backward work is complete.
+    jac_trace_val = jac_trace_t.item()         # D2H at step 7 (hidden behind backward)
+    del jac_trace_t                            # span_jt finish step 7
+
+    # ∂jac_trace/∂x0 = J_D^T b / (ε·n) − b / (ε·n)
+    # (the second term comes from d/dx0 of the −x0_rep subtraction)
+    # For n_mc > 1, sum over the MC batch dimension before returning.
+    grad_raw = jD_T_b - b / (eps_mc * n_mc)              # shape (n_mc·B, C, H, W)
+    grad_x0  = grad_raw.view(n_mc, *x0_hat.shape).sum(0) # sum MC samples → (B, C, H, W)
+    result   = jac_trace_val, grad_x0.detach().cpu()
+
+    # Tight-lifespan cleanup: free all remaining intermediates at their finish step.
+    # SureGPU.all_sure_spans_tight — zero wasted device memory after each step.
+    # No empty_cache here: the freed blocks stay in the allocator pool so the
+    # *next* SURE step can reuse them directly without a driver round-trip.
+    del jD_T_b, grad_raw, grad_x0, b, x_noisy_p
+
+    return result
+
+
+def _mc_jac_trace(model, x0_hat, sigma_hat, s_in, extra_args, n_mc, eps_mc):
+    """Batched Monte Carlo Jacobian trace: one model call for all n_mc samples.
+
+    Repeats the batch along dim-0 by n_mc, runs a single forward pass, then
+    reduces — replacing n_mc sequential model calls with one larger call.
+    tr(J) ≈ mean_k [ b_k^T (D(x̂₀ + ε·b_k) - x̂₀) / ε ]
+
+    Memory note: x0_rep freed before the model forward so its VRAM can be reused
+    by the allocator for x0_ref (disjoint lifespans — no simultaneous copies needed).
+    """
+    device  = x0_hat.device
+    spatial = [1] * (x0_hat.dim() - 1)
+
+    t_prep = _sure_timer(device)
+    x0_rep = x0_hat.detach().repeat(n_mc, *spatial)
+    b = torch.randn_like(x0_rep)
+    # Fuse perturb + re-noise; free x0_rep immediately so its VRAM is available
+    # during the model forward (x0_ref allocated after the forward reuses it).
+    x_noisy_p = x0_rep + eps_mc * b + sigma_hat * torch.randn_like(x0_rep)
+    del x0_rep
+    s_in_rep = s_in.repeat(n_mc)
+    extra_rep = _repeat_extra_args(extra_args, n_mc)
+    ms_prep = t_prep()
+
+    t_fwd = _sure_timer(device)
+    d_perturbed = model(x_noisy_p, sigma_hat * s_in_rep, **extra_rep).detach()
+    del x_noisy_p
+    ms_fwd = t_fwd()
+
+    # x0_ref allocated after the forward: allocator can reuse x_noisy_p's block.
+    x0_ref = x0_hat.detach().repeat(n_mc, *spatial)
+
+    t_reduce = _sure_timer(device)
+    jac_trace = (b * (d_perturbed - x0_ref)).sum() / (eps_mc * n_mc)
+    # Tight lifespan: free d_perturbed (span_r2 finish) and x0_ref now.
+    del d_perturbed, x0_ref  # span_r2.disjoint span_sureVal → allocator can reuse
+    ms_reduce = t_reduce()
+
+    _sure_logger.debug(
+        "[MC-jac]  prep=%.1fms  batched-fwd(n_mc=%d)=%.1fms  reduce=%.1fms",
+        ms_prep, n_mc, ms_fwd, ms_reduce,
+    )
+    return jac_trace
+
+
+def _sure_correct(model, x, sigma, s_in, extra_args, alpha=0.1, n_mc=1, eps_mc=1e-3, use_jac=True, _step_tag=""):
+    """Single SURE gradient correction step in EDM sigma-space.
+
+    Computes an unbiased MSE estimate (SURE) of the denoising error and takes
+    one gradient step on x̂₀ to reduce it, then returns the corrected estimate.
+
+    sigma:   current noise level (scalar tensor)
+    alpha:   step size for the SURE gradient descent
+    n_mc:    number of Monte Carlo samples for Jacobian trace estimate (batched)
+    eps_mc:  finite-difference epsilon for Jacobian-vector product
+    """
+    # torch.inference_mode() cannot be overridden by enable_grad(), unlike no_grad().
+    # Detect it by probing whether enable_grad actually re-enables autograd.
+    try:
+        with torch.enable_grad():
+            _probe = torch.tensor(1.0, requires_grad=True)
+            _probe2 = _probe * 2
+        _autograd_available = bool(_probe2.requires_grad)
+    except Exception:
+        _autograd_available = False
+
+    if not _autograd_available:
+        import warnings
+        warnings.warn(
+            "SURE sampler: autograd is unavailable (torch.inference_mode() is active). "
+            "Using analytical gradient: grad = -2 * residual with sigma-adaptive step. "
+            "Pass --no-inference-mode (or omit --inference-mode) to enable exact autograd.",
+            stacklevel=2,
+        )
+
+    _SAT = 4.0
+
+    # --- main denoiser call (compiled path, no grad needed) ---
+    with torch.no_grad():
+        t_denoise = _sure_timer(x.device)
+        x_in  = x.detach()
+        x0_hat = model(x_in, sigma * s_in, **extra_args).detach()
+        ms_denoise = t_denoise()
+
+        residual   = x_in - x0_hat
+        sigma_hat  = sigma.clamp(min=eps_mc)
+        sigma2     = sigma_hat ** 2
+
+        _sat_pct   = (x0_hat.abs() > _SAT).float().mean().item() * 100
+        _ch_sat_x0 = [(x0_hat[0, c].abs() > _SAT).float().mean().item() * 100
+                      for c in range(x0_hat.shape[1])] if x0_hat.dim() >= 2 else []
+        _sure_logger.info(
+            "[sure%s] x0_hat  min=%.4f  max=%.4f  mean=%.4f  std=%.4f  sat%%=%.2f  sat_per_ch=%s  nan=%s  inf=%s",
+            _step_tag,
+            x0_hat.min().item(), x0_hat.max().item(),
+            x0_hat.mean().item(), x0_hat.std().item(), _sat_pct,
+            [f"{v:.1f}%" for v in _ch_sat_x0],
+            bool(torch.isnan(x0_hat).any()), bool(torch.isinf(x0_hat).any()),
+        )
+        _sure_logger.info(
+            "[sure%s] residual  min=%.4f  max=%.4f  mean=%.4f  ||r||²=%.4f",
+            _step_tag,
+            residual.min().item(), residual.max().item(),
+            residual.mean().item(), (residual ** 2).sum().item(),
+        )
+
+    # --- Phase 1: analytic residual gradient (-2·residual), no graph needed ---
+    residual_grad = (-2.0 * residual).detach()
+
+    # --- Phase 2: ∇_x̂₀ tr(J_D) via autograd through the eager (unwrapped) model ---
+    # _mc_jac_trace_grad uses model._orig_mod to bypass torch.compile / CUDA graphs,
+    # so backward() works without the "untracked pool tensors" error.
+    # The grad is CPU-offloaded immediately after backward to keep GPU VRAM flat.
+    jac_grad   = None
+    jac_trace  = None
+    ms_mc      = 0.0
+    ms_grad    = 0.0
+
+    if _autograd_available and use_jac:
+        try:
+            t_mc = _sure_timer(x.device)
+            jac_trace, jac_grad = _mc_jac_trace_grad(
+                model, x0_hat, sigma_hat, s_in, extra_args, n_mc, eps_mc)
+            ms_mc = t_mc()
+            # jac_grad already on CPU, jac_trace already a plain float
+        except Exception as exc:
+            _sure_logger.warning(
+                "[sure%s] autograd jac_trace failed (%s) — falling back to residual-only gradient",
+                _step_tag, exc,
+            )
+            jac_grad  = None
+            jac_trace = None
+    elif not use_jac:
+        _sure_logger.info("[sure%s] jac skipped this step (interval)", _step_tag)
+
+    _sure_logger.info(
+        "[sure%s] jac_trace=%s  sigma2=%.6f  autograd=%s",
+        _step_tag,
+        f"{jac_trace:.4f}" if jac_trace is not None else "n/a",
+        float(sigma2),
+        _autograd_available and jac_grad is not None,
+    )
+
+    # --- combine: full SURE gradient or residual-only fallback ---
+    with torch.no_grad():
+        if jac_grad is not None:
+            grad = residual_grad + 2.0 * float(sigma2) * jac_grad.to(x0_hat.device)
+        else:
+            grad = residual_grad
+
+        x0_std   = x0_hat.std().item()
+        grad_std = grad.std().item()
+        # Std clip: scale so grad std ≤ x0_std (prevents global magnitude blowup from
+        # the 1/eps amplification in jac_grad — at high σ, 2σ²·jac_grad can be ≈1e6)
+        if grad_std > x0_std and grad_std > 0.0:
+            grad = grad * (x0_std / grad_std)
+        # Value clamp: catch heavy-tailed per-pixel outliers after std clip
+        clip_val = 3.0 * x0_std
+        grad = grad.clamp(-clip_val, clip_val)
+
+        _sure_logger.info(
+            "[sure%s] grad  min=%.4f  max=%.4f  mean=%.4f  std=%.4f  nan=%s  inf=%s",
+            _step_tag,
+            grad.min().item(), grad.max().item(),
+            grad.mean().item(), grad.std().item(),
+            bool(torch.isnan(grad).any()), bool(torch.isinf(grad).any()),
+        )
+        _sure_logger.debug(
+            "[sure%s] denoise=%.1fms  mc-jac=%.1fms  backward=%.1fms",
+            _step_tag, ms_denoise, ms_mc, ms_grad,
+        )
+
+        effective_alpha = alpha / (1.0 + sigma_hat.item())
+        x0_corrected = x0_hat - effective_alpha * grad
+
+        # jac contribution ratio: what fraction of the CLIPPED gradient comes from jac.
+        # Computed post-clip to avoid the raw 1/eps amplification making ratio always ~1.
+        # Method: compare grad (with jac) vs resid_only_clipped (without jac) in L2.
+        #   ratio = ||grad - resid_only_clipped|| / (||grad|| + ε)
+        # Near 0 → jac adds negligible correction; near 1 → jac dominates correction.
+        if jac_grad is not None:
+            _resid_only = residual_grad.clone()
+            _ro_std = _resid_only.std().item()
+            if _ro_std > x0_std and _ro_std > 0.0:
+                _resid_only = _resid_only * (x0_std / _ro_std)
+            _resid_only = _resid_only.clamp(-clip_val, clip_val)
+            _jac_delta  = grad - _resid_only          # what jac actually adds post-clip
+            _jac_ratio  = float(_jac_delta.norm() / (grad.norm() + 1e-8))
+        else:
+            _jac_ratio = None
+
+        _ch_sat_corr = [(x0_corrected[0, c].abs() > _SAT).float().mean().item() * 100
+                        for c in range(x0_corrected.shape[1])] if x0_corrected.dim() >= 2 else []
+        _sure_logger.info(
+            "[sure%s] effective_alpha=%.5f  jac_ratio=%.3f  x0_corrected  min=%.4f  max=%.4f  mean=%.4f  std=%.4f  sat_per_ch=%s  nan=%s  inf=%s",
+            _step_tag, effective_alpha,
+            _jac_ratio if _jac_ratio is not None else float('nan'),
+            x0_corrected.min().item(), x0_corrected.max().item(),
+            x0_corrected.mean().item(), x0_corrected.std().item(),
+            [f"{v:.1f}%" for v in _ch_sat_corr],
+            bool(torch.isnan(x0_corrected).any()), bool(torch.isinf(x0_corrected).any()),
+        )
+
+        # --- stats for adaptive control in the outer loop ---
+        _residual_mse = float((residual ** 2).mean())
+        _sigma2_val   = float(sigma2)
+
+        _stats = {
+            'residual_mse':  _residual_mse,
+            'sigma2':        _sigma2_val,
+            'x0_std':        x0_std,
+            'grad_std':      grad_std,
+            'jac_ratio':     _jac_ratio,  # None when jac was skipped or failed
+        }
+
+    return x0_corrected, _stats
+
+@functools.lru_cache
+def _pca_noise_estimate(x0_hat, patch_size=8, min_sigma=1e-3):
+    """PCA noise estimation via Marchenko-Pastur bulk threshold.
+
+    Replaces the old mean≈median heuristic with a theoretically grounded
+    random-matrix estimator.  For a covariance matrix built from n_patches
+    patches of dimension dim, pure-noise eigenvalues lie in the Marchenko-Pastur
+    bulk  [0, σ²·(1+√γ)²]  where γ = dim/n_patches.  We iteratively solve for
+    the noise variance σ² as the mean of the bulk eigenvalues.
+
+    Two additional robustness improvements over the original:
+      • Adaptive patch_size: halves until n_patches > dim (γ < 1), keeping the
+        sample covariance full-rank.  This matters for small latents (SD1.5
+        64×64) where the default patch_size=8 would give γ = 4.
+      • All batch items: estimates are averaged across the batch rather than
+        using only item 0, giving a lower-variance estimate with batch > 1.
+
+    Shape: (B, C, H, W) → scalar float.
+    """
+    estimates = []
+    for b in range(x0_hat.shape[0]):
+        estimates.append(_pca_noise_single(x0_hat[b].detach().float(),
+                                           patch_size, min_sigma))
+    return float(sum(estimates) / len(estimates)) if estimates else min_sigma
+
+
+def _pca_noise_single(img, patch_size=8, min_sigma=1e-3):
+    """Marchenko-Pastur noise estimate for one (C, H, W) tensor."""
+    C, H, W = img.shape
+
+    # ── Adaptive patch_size: ensure n_patches > dim (γ < 1) ─────────────────
+    ps = patch_size
+    while ps > 2:
+        ph = H // ps
+        pw = W // ps
+        if ph * pw > C * ps * ps:   # n_patches > dim → γ < 1, well-conditioned
+            break
+        ps = ps // 2
+
+    ph = H // ps
+    pw = W // ps
+    if ph < 2 or pw < 2:
+        return min_sigma
+
+    n_patches = ph * pw
+    dim       = C * ps * ps
+
+    # ── Non-overlapping patches ───────────────────────────────────────────────
+    cropped = img[:, :ph * ps, :pw * ps]
+    unf     = cropped.unfold(1, ps, ps).unfold(2, ps, ps)
+    patches = unf.permute(1, 2, 0, 3, 4).reshape(n_patches, dim)
+
+    # ── Sample covariance eigenvalues ─────────────────────────────────────────
+    mu      = patches.mean(0, keepdim=True)
+    centered = patches - mu
+    cov     = (centered.T @ centered) / (n_patches - 1)   # (dim, dim)
+    try:
+        eigvals = torch.linalg.eigvalsh(cov).clamp(min=0.0)   # ascending
+    except Exception:
+        return min_sigma
+
+    # ── Marchenko-Pastur bulk threshold ───────────────────────────────────────
+    # γ = dim/n_patches < 1 by construction above.
+    # Bulk upper edge: λ_+ = σ²·(1 + √γ)²
+    # Iterate: σ² ← mean of eigenvalues in [0, λ_+] until convergence.
+    gamma      = dim / n_patches          # < 1
+    mp_edge_k  = (1.0 + gamma ** 0.5) ** 2   # λ_+ = σ² × mp_edge_k
+
+    sigma2 = float(eigvals.mean())        # initial estimate: full mean
+    for _ in range(20):
+        bulk = eigvals[eigvals <= sigma2 * mp_edge_k]
+        if len(bulk) == 0:
+            sigma2 = float(eigvals.min())
+            break
+        sigma2_new = float(bulk.mean())
+        if abs(sigma2_new - sigma2) / (abs(sigma2) + 1e-10) < 1e-5:
+            sigma2 = sigma2_new
+            break
+        sigma2 = sigma2_new
+
+    return max(float(sigma2 ** 0.5), min_sigma)
+
+
+def _sure_effective_alpha(alpha: float, sigma_t, adam_active: bool) -> float:
+    """Effective gradient-descent step size validated by Lean (SURE_verification.lean).
+
+    Lean theorem cond4_step_closer proves descent is guaranteed for any
+    effective_alpha ∈ (0, 1/2).  The formula alpha / (1 + σ_norm) satisfies
+    this bound for all σ_norm ≥ 0 whenever alpha < 1/2 (standard choice).
+
+    Scheduler auto-correction
+    ─────────────────────────
+    Flow-matching / VP schedulers  (σ_t ∈ [0, 1]):
+        σ_norm = σ_t → effective_alpha ∈ [alpha/2, alpha]  ← unchanged.
+
+    EDM / Karras schedulers  (σ_t up to ~80 for long schedules):
+        Without correction: effective_alpha ≈ alpha/80 at early steps →
+        SURE takes near-zero steps despite a valid gradient direction.
+        Auto-detected when σ_t > 1; normaliser capped at 1 so that
+        effective_alpha ≥ alpha/2 throughout all noise levels.
+
+    Lean bound (effectiveAlpha_lt_half): alpha/(1 + min(σ_t, 1)) < 1/2
+    holds for all σ_t ≥ 0 and alpha < 1/2, keeping cond4 always satisfied.
+
+    Gap #2 fix: hard-clamp the result to < 0.5 with a warning.  The Lean proof
+    requires η ∈ (0, 1/2) strictly; if a caller passes alpha ≥ 0.5 the formula
+    can exceed this bound at low noise levels (σ_norm ≈ 0), violating Theorem A.3.
+
+    Adam mode: step magnitude is gradient-normalised internally; sigma
+    scaling would double-suppress early steps and is skipped.
+    """
+    _MAX_SURE_ETA = 0.499   # strict upper bound from Theorem A.3 / cond4_step_closer
+
+    if adam_active:
+        result = float(alpha)
+    elif sigma_t is None or float(sigma_t) <= 0.0:
+        result = float(alpha)
+    else:
+        sigma_t_f = float(sigma_t)
+        # Scheduler auto-detection: σ_t > 1 → EDM/Karras, cap normaliser at 1
+        sigma_norm = min(sigma_t_f, 1.0)
+        result = float(alpha) / (1.0 + sigma_norm)
+
+    # Gap #2: Theorem A.3 (Gaussian preservation) requires η < 1/2.
+    # Clamp with a one-time warning so callers with large alpha values don't
+    # silently violate the descent guarantee.
+    if result >= 0.5:
+        _sure_logger.warning(
+            "[sure] Gap #2: effective_alpha=%.4f ≥ 0.5 (alpha=%.4f, sigma_t=%s); "
+            "clamping to %.3f.  Theorem A.3 requires η < 0.5 for Gaussian "
+            "preservation.  Reduce alpha below 0.5 to silence this warning.",
+            result, float(alpha),
+            f"{float(sigma_t):.4f}" if sigma_t is not None else "None",
+            _MAX_SURE_ETA,
+        )
+        result = _MAX_SURE_ETA
+    return result
+
+
+def _sure_alpha_bo_search(
+    residual,
+    grad,
+    sigma2,
+    jac_trace,
+    alpha_base,
+    alpha_range=None,
+    n_trials=12,
+    patience=4,
+    n_startup=3,
+    prev_study=None,
+    prev_sure=None,
+    prev_prev_sure=None,
+    cur_alpha=None,
+):
+    """Bayesian optimisation over the SURE gradient step size α.
+
+    Objective: quadratic stop-gradient proxy (zero UNet calls per trial):
+        SURE_proxy(α) = −n·σ² + ‖residual − α·grad‖² + 2σ²·jac_trace
+
+    Under this proxy the optimum is the closed-form α* = (r·g)/‖g‖²,
+    used as the analytical fallback when optuna is not installed.
+
+    BO adds value over the closed form when the quadratic approximation is
+    inaccurate (large steps, highly non-linear denoiser) and for cross-step
+    landscape exploration via warm-starting from prev_study.
+
+    When grad is collinear with residual (approx mode), the proxy degenerates
+    and a SURE-monotone P-controller is used instead: alpha grows by 5% when
+    SURE fell last step, shrinks by 30% when SURE rose, and holds otherwise.
+
+    Args:
+        residual:       detached tensor (x0_hat − x_hat)
+        grad:           detached SURE gradient tensor
+        sigma2:         float  σ̂₀²
+        jac_trace:      float or None  — tr{J_D} MC estimate (0.0 if None)
+        alpha_base:     float  user-set sure_alpha (centres the log-scale range)
+        alpha_range:    (lo, hi) or None → auto (alpha_base×0.01, min(alpha_base×20, 0.49))
+        n_trials:       BO trial budget
+        patience:       early-stop after this many non-improving trials
+        n_startup:      TPE random-exploration trials before fitting the model
+        prev_study:     optuna Study from the previous diffusion step (warm-start)
+        prev_sure:      SURE value from the previous diffusion step (P-controller)
+        prev_prev_sure: SURE value from two steps ago (P-controller trend signal)
+        cur_alpha:      alpha used at the previous step (P-controller state)
+
+    Returns:
+        (best_alpha: float, study_or_None)
+    """
+    n = residual.numel()
+    jt = float(jac_trace) if jac_trace is not None else 0.0
+
+    # Auto-range: log-scale around alpha_base; hard-cap at 0.49 (Lean bound)
+    if alpha_range is None:
+        lo = max(alpha_base * 0.01, 1e-5)
+        hi = min(alpha_base * 20.0, 0.49)
+        if lo >= hi:
+            hi = min(lo * 10.0, 0.49)
+    else:
+        lo, hi = float(alpha_range[0]), float(alpha_range[1])
+
+    r_flat = residual.detach().float().reshape(-1)
+    g_flat = grad.detach().float().reshape(-1)
+
+    def _proxy_sure(alpha_val):
+        return float(
+            -n * sigma2
+            + ((r_flat - alpha_val * g_flat) ** 2).sum()
+            + 2.0 * sigma2 * jt
+        )
+
+    # Analytical optimum under the quadratic proxy (closed-form line search)
+    r_sq = float((r_flat * r_flat).sum()) + 1e-12
+    g_sq = float((g_flat * g_flat).sum()) + 1e-12
+    dot  = float((r_flat * g_flat).sum())
+    alpha_analytical = float(max(lo, min(hi, dot / g_sq)))
+
+    # Degenerate proxy guard: when grad is collinear with residual (e.g. approx
+    # mode where grad = coeff·r), the proxy minimum α* = 1/coeff is
+    # sigma-independent and diverges at late low-noise steps.
+    # Use a SURE-monotone P-controller instead: track SURE trend across steps
+    # and shrink alpha when SURE grows, grow it slightly when SURE falls.
+    cos_rg = abs(dot) / (r_sq ** 0.5 * g_sq ** 0.5)
+    if cos_rg > 0.99:
+        _ref = cur_alpha if cur_alpha is not None else alpha_base
+        if prev_sure is not None and prev_prev_sure is not None:
+            if prev_sure > prev_prev_sure * 1.05:      # SURE rose >5% → pull back
+                new_alpha = max(lo, _ref * 0.70)
+            elif prev_sure < prev_prev_sure * 0.95:    # SURE fell >5% → push forward
+                new_alpha = min(hi, _ref * 1.05)
+            else:                                       # stable → hold
+                new_alpha = _ref
+        else:
+            new_alpha = _ref  # insufficient history
+        _sure_logger.info(
+            "[sure_alpha_bo] grad collinear (|cos|=%.4f); P-ctrl: "
+            "sure %.2f→%.2f  alpha %.5f→%.5f",
+            cos_rg,
+            prev_prev_sure if prev_prev_sure is not None else float('nan'),
+            prev_sure      if prev_sure      is not None else float('nan'),
+            _ref, new_alpha,
+        )
+        return new_alpha, None
+
+    try:
+        import optuna as _optuna
+        _optuna.logging.set_verbosity(_optuna.logging.WARNING)
+
+        study = _optuna.create_study(
+            direction='minimize',
+            sampler=_optuna.samplers.TPESampler(
+                seed=42,
+                n_startup_trials=n_startup,
+                multivariate=False,
+            ),
+        )
+
+        # Warm-start: inject previous step's observations without decay
+        if prev_study is not None:
+            for t in prev_study.trials:
+                if t.value is not None and t.value != float('inf'):
+                    try:
+                        study.add_trial(
+                            _optuna.trial.create_trial(
+                                params=t.params,
+                                distributions=t.distributions,
+                                value=t.value,
+                            )
+                        )
+                    except Exception:
+                        pass  # distribution mismatch on first step — skip
+
+        # Seed with the analytical optimum as the first trial
+        study.enqueue_trial({'alpha': alpha_analytical})
+
+        _no_improve = [0]
+        _best_val   = [float('inf')]
+
+        def _bo_callback(study, trial):
+            val = study.best_value
+            if val < _best_val[0]:
+                _best_val[0]   = val
+                _no_improve[0] = 0
+            else:
+                _no_improve[0] += 1
+            if _no_improve[0] >= patience:
+                study.stop()
+
+        def _objective(trial):
+            alpha_val = trial.suggest_float('alpha', lo, hi, log=True)
+            return _proxy_sure(alpha_val)
+
+        study.optimize(
+            _objective,
+            n_trials=n_trials,
+            callbacks=[_bo_callback],
+            show_progress_bar=False,
+        )
+
+        best_alpha = float(study.best_params['alpha'])
+        _sure_logger.info(
+            "[sure_alpha_bo] lo=%.5f  hi=%.5f  analytical=%.5f  bo_best=%.5f  "
+            "sure_proxy=%.4f  trials=%d",
+            lo, hi, alpha_analytical, best_alpha,
+            study.best_value, len(study.trials),
+        )
+        return best_alpha, study
+
+    except ImportError:
+        _sure_logger.warning(
+            "[sure_alpha_bo] optuna not installed — using analytical α*=%.5f. "
+            "Install with: pip install optuna",
+            alpha_analytical,
+        )
+        return alpha_analytical, None
+
+
+def _sure_correct_x0(model, x0_hat, sigma_hat_0, s_in, extra_args,
+                     alpha=0.05, n_mc=1, eps_mc=1e-3, use_jac=True,
+                     sigma_t=None,
+                     adam_state=None, adam_mode='none',
+                     adam_beta1=0.9, adam_beta2=0.999, adam_eps=1e-8,
+                     adam_wd=0.01, grad_mode='vjp',
+                     approx_coeff=2.0,
+                     csv_writer=None, step_idx=None,
+                     alpha_bo_trials=0, alpha_bo_patience=4,
+                     alpha_bo_state=None):
+    """SURE gradient correction per Algorithm 1 of arXiv:2512.23232.
+
+    grad_mode controls how ∇SURE is computed:
+
+      'approx'  — stop-gradient approximation: grad = 2·(xnoisy − x̂)
+                  No backward pass; fast but ignores J_D entirely.
+
+      'vjp'     — exact gradient of ‖xnoisy − x̂‖² via one backward pass:
+                  grad = 2·(I − J_D)^T·(xnoisy − x̂)
+                  Includes the Jacobian correction from the chain rule.
+                  The 2σ²·∇tr{J} term is still omitted (O(σ²) small).
+
+      'full'    — full ∇SURE via two backward passes (through both Dθ(x) and
+                  Dθ(x+εb)). Adds the MC-estimated Jacobian-trace gradient:
+                  grad = 2·(I − J_D)^T·r  +  2σ²·(1/ε)·[J_D(x+εb)^T·b − J_D(x)^T·b]
+                  Requires use_jac=True; falls back to 'vjp' otherwise.
+                  Most expensive (three UNet passes with grad, two backward passes).
+
+      ε       = max(|xnoisy|) / 1000   (paper §2.4 recommended choice)
+      x̂      = Dθ(xnoisy, σ̂₀)
+      tr{J}  ≈ b^T (Dθ(xnoisy + ε·b, σ̂₀) − x̂) · ε^{-1}   [scalar, MC averaged]
+      SURE   = −n·σ̂₀² + ‖xnoisy − x̂‖² + 2·σ̂₀²·tr{J}      [logged only]
+      Note: both denoiser calls use σ̂₀ (not max(ε,σ̂₀)); see SURE_sgps_full.lean §2.1.
+
+    adam_state: dict with keys 'optimizer' (torch.optim instance) and 'param'
+                (leaf tensor) — mutated in-place across steps via optimizer.step().
+                Pass None to use plain gradient descent (default behaviour).
+    adam_mode:  'none' = plain SGD, 'adam' = Adam, 'adamw' = AdamW.
+                RAdam/RAdamW were removed: with β₂=0.999 and only ~60 diffusion
+                steps, ρ_t barely clears the SGD-fallback threshold (ρ_∞=5) by
+                step 6 and the variance-rectification factor rect≈0.021 at that
+                point — effectively zero adaptive correction for the whole run.
+    adam_beta1: first-moment decay (default 0.9).
+    adam_beta2: second-moment decay (default 0.999).
+    adam_eps:   denominator stabiliser (default 1e-8).
+    adam_wd:    weight decay for AdamW only — decoupled from moment updates,
+                shrinks x0_hat toward zero to anchor the correction near T₀.
+    """
+    # ε: paper says max_pixel / 1000; clamp to eps_mc for numerical safety.
+    # clamp on-device before float() to avoid a CPU round-trip via Python max().
+    eps = float(x0_hat.abs().max().clamp(min=eps_mc * 1000.0)) / 1000.0
+
+    device = x0_hat.device
+    sigma_denoiser = torch.tensor(sigma_hat_0, device=device, dtype=x0_hat.dtype)
+    # Use sigma_denoiser for BOTH the base and perturbed calls.
+    # SURE_sgps_full.lean §2.1 (Gap #1) proves that using max(ε, σ̂₀) for the
+    # perturbed call while using σ̂₀ for the base call evaluates two *different*
+    # denoiser functions, introducing a systematic bias of O(|σ_p − σ̂₀|/ε) in
+    # the Hutchinson trace estimate (sigma_inconsistency_bias_structure).
+    # Numerical stability when σ̂₀ is near zero is handled by use_jac=False below
+    # (sigma2 ≤ eps_mc disables the Jacobian call entirely).
+    sigma_p = sigma_denoiser
+    sigma2  = float(sigma_denoiser ** 2)
+    n       = x0_hat.numel()
+    # Opt-2: 2σ²·tr{J} and its gradient vanish quadratically as σ̂₀→0.
+    # Skip the perturbed UNet forward entirely when the contribution is negligible.
+    use_jac = use_jac and (sigma2 > eps_mc)
+
+
+
+    # ── Pre-draw probe vectors ────────────────────────────────────────────────
+    # For 'full' mode draw all n_mc probes BEFORE Pass 1 so their sum can be
+    # folded into a combined scalar (Opt-1), replacing two backward passes with one.
+    need_full_grad = (grad_mode == 'full') and use_jac
+    bs    = [torch.randn_like(x0_hat) for _ in range(n_mc)] if use_jac else []
+    b_sum = torch.stack(bs).sum(0) if need_full_grad else None
+
+    # ── Pass 1: x̂ = Dθ(xnoisy, σ̂₀)  [S1, step 1 — concurrent with genB on S2] ─
+    # 'approx' needs no grad graph; 'vjp'/'full' require enable_grad to override
+    # any outer no_grad context (e.g. CFG wrapper).
+    #
+    # Flush the allocator pool before any grad-enabled forward.  The outer
+    # sampling step ran a no_grad forward whose activations are freed but may
+    # still sit in the MPS private pool / CUDA caching allocator.  Releasing
+    # them here gives back headroom before we store activation graphs.
+    if grad_mode != 'approx':
+        release_cache(device)
+
+    x_in = x0_hat.detach().requires_grad_(grad_mode != 'approx')
+    if grad_mode == 'approx':
+        with torch.no_grad():
+            x_hat = model(x_in, sigma_denoiser * s_in, **extra_args).detach()
+        residual = x_in - x_hat
+        grad = approx_coeff * residual  # stop-gradient approximation
+    else:
+        # Gradient checkpointing: recompute activations during backward instead
+        # of storing them, trading one extra forward pass for ~halved peak VRAM.
+        def _model_ckpt(x):
+            return model(x, sigma_denoiser * s_in, **extra_args)
+
+        with torch.enable_grad():
+            x_hat    = torch.utils.checkpoint.checkpoint(
+                           _model_ckpt, x_in, use_reentrant=False)
+            residual = x_in - x_hat
+            residual_sq = (residual ** 2).sum()
+
+            if need_full_grad:
+                # Opt-1: one backward replaces two.
+                # C = ||r||² − (2σ²/(n_mc·ε))·(b_sum·x̂)
+                # ∂C/∂x = 2(I−J_D)ᵀr − (2σ²/(n_mc·ε))·J_D(x)ᵀ·b_sum
+                # No retain_graph needed; graph freed immediately after this pass.
+                combined = residual_sq - (2.0 * sigma2 / (n_mc * eps)) * (b_sum * x_hat).sum()
+                grad = torch.autograd.grad(combined, x_in)[0]
+                del combined
+            else:
+                # 'vjp': single backward, graph freed immediately.
+                grad = torch.autograd.grad(residual_sq, x_in)[0]
+            residual_sq_val = float(residual_sq)  # Bug-2: save before del
+            del residual_sq
+
+        x_hat    = x_hat.detach()
+        residual = residual.detach()
+        release_cache(device)   # free activation pool after Pass 1 backward(s)
+
+    # ── Pass 2 (optional): tr{J} scalar + optional ∇tr{J} for 'full' mode ────
+    jac_trace = 0.0 if use_jac else None
+    # Bug-2: use saved scalar in vjp/full; recompute cheaply in approx (no graph).
+    if grad_mode == 'approx':
+        sure_val = float(-n * sigma2 + (residual ** 2).sum())
+    else:
+        sure_val = -n * sigma2 + residual_sq_val
+
+    if use_jac:
+        grad_jac_pert_sum = torch.zeros_like(grad) if need_full_grad else None
+
+        for b in bs:
+            x_in_pert = x_in.detach() + eps * b
+
+            if need_full_grad:
+                # Forward through Dθ(x+εb) with grad for VJP.
+                # Flush pool before each grad-enabled perturbed forward.
+                release_cache(device)
+                x_in_pert = x_in_pert.requires_grad_(True)
+                def _model_pert_ckpt(x):
+                    return model(x, sigma_p * s_in, **extra_args)
+                with torch.enable_grad():
+                    x_pert_hat   = torch.utils.checkpoint.checkpoint(
+                                       _model_pert_ckpt, x_in_pert, use_reentrant=False)
+                    jac_scalar_p = (b * x_pert_hat).sum() / eps
+                    gj_pert      = torch.autograd.grad(jac_scalar_p, x_in_pert)[0]
+                # Bug-1 fix: use (x_pert_hat − x_hat) so tr{J} matches the paper formula.
+                jac_trace += float((b * (x_pert_hat - x_hat)).sum().detach()) / eps
+                del x_pert_hat
+                release_cache(device)
+                grad_jac_pert_sum = grad_jac_pert_sum + gj_pert
+                del gj_pert
+            else:
+                with torch.no_grad():
+                    x_pert_hat = model(x_in_pert, sigma_p * s_in, **extra_args).detach()
+                jac_trace += float((b * (x_pert_hat - x_hat)).sum()) / eps
+                del x_pert_hat
+
+        jac_trace /= n_mc
+        jac_contribution = 2.0 * sigma2 * jac_trace
+        sure_val += jac_contribution
+
+        # ── Lean-backed jac reliability gate ───────────────────────────────────
+        # Lean (SURE_verification.lean, cond5_strict_descent) proves descent is
+        # guaranteed with proxy gradient 2·r regardless of jac.
+        #
+        # Gap #6 fix: variance-based Hutchinson floor (3σ bound).
+        # For b ~ N(0,I), Var(b^T J b) = 2‖J‖_F² ≤ 2n (unit operator norm).
+        # With n_mc samples: Std(jac_trace estimate) ≤ sqrt(2n/n_mc).
+        # Floor = 0 − 3·Std = −3·sqrt(2n/n_mc).  This is O(sqrt(n)) tighter
+        # than the old −n/n_mc floor (O(n)), so noise-dominated estimates are
+        # caught much earlier (e.g. n=16384, n_mc=1: −543 vs old −16384).
+        _jac_floor = -3.0 * (2.0 * n / max(n_mc, 1)) ** 0.5
+        if jac_trace < _jac_floor:
+            _sure_logger.warning(
+                "[sure_x0] Gap #6: jac_trace=%.2f < 3σ floor %.2f (n=%d, n_mc=%d); "
+                "Hutchinson estimate noise-dominated (floor = −3·sqrt(2n/n_mc)). "
+                "Rolling back to proxy gradient (Lean: cond5_strict_descent). "
+                "Use n_mc>=8 for reliable jac estimates.",
+                jac_trace, _jac_floor, n, n_mc,
+            )
+            sure_val -= jac_contribution   # undo the unreliable jac contribution
+            jac_trace = None               # mark as unreliable for downstream logging
+
+        if need_full_grad:
+            if jac_trace is not None:
+                # Opt-1: base Jac term already folded into grad via combined scalar in Pass 1.
+                # ∇tr{J} ≈ (1/ε)·Σ J_D(x+εb_i)^T·b_i / n_mc  (no subtraction needed)
+                grad = grad + (2.0 * sigma2 / n_mc) * grad_jac_pert_sum
+            else:
+                # Jac unreliable: discard jac-contaminated grad from Pass 1;
+                # fall back to Lean-proven proxy gradient: 2·(x̂₀ − D_θ(x̂₀)).
+                grad = (2.0 * residual).detach()
+            del grad_jac_pert_sum
+
+    # ── Gap #5: sigma self-consistency bias correction ────────────────────────
+    # SURE is unbiased when σ used in the formula equals the true noise level in
+    # x0_hat.  The PCA estimate σ̂₀ may differ from the residual-implied level
+    # σ_res = sqrt(‖r‖²/n).  The bias (proved in SURE_sgps_full.lean §1, theorem
+    # sure_sigma_bias_exact) is:
+    #   SURE(σ̂₀) − SURE(σ_res) = (σ̂₀² − σ_res²)·(−n + 2·tr_J)
+    # Subtracting it gives a bias-corrected value on the σ_res² basis.
+    # When tr_J is unavailable (use_jac=False or jac rejected), we use 0 as a
+    # conservative lower bound (true tr_J ≥ 0 for contractive denoiser).
+    _sigma_sq_residual = float((residual ** 2).sum()) / max(n, 1)
+    _tr_J_bc = jac_trace if jac_trace is not None else 0.0
+    _sure_bias = (sigma2 - _sigma_sq_residual) * (-float(n) + 2.0 * _tr_J_bc)
+    sure_val_bc = sure_val - _sure_bias
+    if abs(_sure_bias) > 0.1 * (abs(sure_val) + 1.0):
+        _sure_logger.debug(
+            "[sure_x0] Gap #5: sigma_bias_correction=%.4f  sigma_hat_0=%.5f  "
+            "sigma_residual=%.5f  sure_raw=%.4f  sure_bc=%.4f",
+            _sure_bias, sigma_hat_0, _sigma_sq_residual ** 0.5,
+            sure_val, sure_val_bc,
+        )
+
+    x0_std = x0_hat.std().item()
+    gs     = grad.std().item()
+    # Clamp before Adam: Adam's v_t accumulates grad², so a single outlier step
+    # (e.g. huge SURE residual at step 0) inflates v_t and suppresses all future
+    # updates for the rest of the run.  Normalising to x0_std then hard-clamping
+    # to ±3σ keeps v_t in a reliable range without discarding gradient direction.
+    #if gs > x0_std > 0.0:
+        #grad = grad * (x0_std / gs)
+    #grad = grad.clamp(-3.0 * x0_std, 3.0 * x0_std)
+
+    # ── BO alpha search (optional) ────────────────────────────────────────────
+    # Uses the quadratic stop-gradient proxy to evaluate SURE at different α
+    # values without any additional UNet calls.  Warm-starts from the previous
+    # diffusion step's study via alpha_bo_state['study'].
+    if alpha_bo_trials > 0:
+        _abs = alpha_bo_state if alpha_bo_state is not None else {}
+        alpha, _new_alpha_study = _sure_alpha_bo_search(
+            residual.detach(),
+            grad.detach(),
+            sigma2,
+            jac_trace if jac_trace is not None else 0.0,
+            alpha_base=alpha,
+            n_trials=int(alpha_bo_trials),
+            patience=int(alpha_bo_patience),
+            prev_study=_abs.get('study'),
+            prev_sure=_abs.get('prev_sure'),
+            prev_prev_sure=_abs.get('prev_prev_sure'),
+            cur_alpha=_abs.get('cur_alpha', alpha),
+        )
+        if alpha_bo_state is not None:
+            alpha_bo_state['study']     = _new_alpha_study
+            alpha_bo_state['cur_alpha'] = alpha
+
+    # Lean (cond4_step_closer) requires effective_alpha ∈ (0, 1/2).
+    # _sure_effective_alpha auto-detects EDM vs flow-matching from σ_t magnitude
+    # and caps the normaliser at 1 so EDM gets effective_alpha ≥ alpha/2.
+    effective_alpha = _sure_effective_alpha(
+        alpha, sigma_t,
+        adam_active=(adam_state is not None and adam_mode in ('adam', 'adamw')),
+    )
+
+    # --- Adam / AdamW via torch.optim ------------------------------------------
+    # Each diffusion step is one optimizer iteration. torch.optim.Adam/AdamW
+    # owns the moment state; we inject the SURE gradient by assigning .grad
+    # directly and calling .step() — no backward pass required.
+    #
+    # torch.optim.AdamW uses decoupled weight decay (Loshchilov & Hutter 2019):
+    #   param ← param·(1 − lr·wd) − lr·m̂/(√v̂ + ε)
+    # which matches our previous manual formulation exactly.
+    if adam_state is not None and adam_mode in ('adam', 'adamw'):
+        if adam_state['optimizer'] is None:
+            # Lazy init on first step once we know tensor shape and device
+            param = x0_hat.detach().clone().requires_grad_(True)
+            if adam_mode == 'adamw':
+                opt = torch.optim.AdamW(
+                    [param], lr=effective_alpha,
+                    betas=(adam_beta1, adam_beta2),
+                    eps=adam_eps, weight_decay=adam_wd
+                )
+            else:
+                opt = torch.optim.Adam(
+                    [param], lr=effective_alpha,
+                    betas=(adam_beta1, adam_beta2),
+                    eps=adam_eps, weight_decay=0.0, amsgrad=True
+                )
+            adam_state['optimizer'] = opt
+            adam_state['param'] = param
+
+        param = adam_state['param']
+        opt   = adam_state['optimizer']
+
+        # Update lr (effective_alpha can vary per step when sigma scaling is off)
+        for pg in opt.param_groups:
+            pg['lr'] = effective_alpha
+
+        # Load current x0_hat into the persistent leaf tensor, inject gradient
+        param.data.copy_(x0_hat.detach())
+        param.grad = grad.detach()
+
+        x_before = param.data.clone()
+        opt.step()
+        x0_corrected = param.data.detach().clone()
+
+        step_delta = x_before - x0_corrected
+        # step_rms = actual magnitude Adam applied (lr * adaptive_grad per pixel)
+        _step_rms = float((step_delta ** 2).mean().sqrt())
+        # effective_grad for adam_ratio logging: what Adam compressed the raw grad to
+        effective_grad = step_delta / (effective_alpha + 1e-12)
+    else:
+        effective_grad = grad
+        x0_corrected = (x0_hat - effective_alpha * effective_grad).detach()
+        _step_rms = effective_alpha * float((effective_grad ** 2).mean().sqrt())
+
+    _eff_grad_rms  = float((effective_grad ** 2).mean().sqrt())
+    _raw_grad_rms  = float((grad ** 2).mean().sqrt())
+    _residual_rms  = float((residual ** 2).mean().sqrt())
+    _adam_ratio    = _eff_grad_rms / (_raw_grad_rms + 1e-8)
+    _sure_logger.info(
+        "[sure_x0] eps=%.5f  sigma_hat_0=%.5f  sigma_p=%.5f  lr=%.5f  step_rms=%.5f  "
+        "sure=%.4f  sure_bc=%.4f  jac_trace=%s  residual_rms=%.5f  grad_rms=%.5f  "
+        "eff_grad_rms=%.5f  adam_ratio=%.4f",
+        eps, sigma_hat_0, float(sigma_p), effective_alpha, _step_rms,
+        sure_val, sure_val_bc,
+        f"{jac_trace:.4f}" if jac_trace is not None else "n/a",
+        _residual_rms,
+        _raw_grad_rms,
+        _eff_grad_rms,
+        _adam_ratio,
+    )
+
+    if csv_writer is not None and grad_mode == 'approx':
+        csv_writer.writerow([
+            step_idx,
+            f"{sigma_hat_0:.6f}",
+            f"{float(sigma_t):.6f}" if sigma_t is not None else "",
+            f"{approx_coeff:.4f}",
+            f"{_residual_rms:.6f}",
+            f"{sure_val_bc:.6f}",
+            f"{_raw_grad_rms:.6f}",
+            f"{_eff_grad_rms:.6f}",
+            f"{effective_alpha:.6f}",
+            f"{_step_rms:.6f}",
+            f"{_adam_ratio:.6f}",
+        ])
+
+    # Feed bias-corrected SURE to P-controller for more reliable alpha adaptation.
+    # sure_val_bc removes the (σ̂₀²−σ_res²)·(−n+2·tr_J) bias (Gap #5) so the
+    # controller tracks the true MSE trend rather than a sigma-schedule artifact.
+    if alpha_bo_state is not None and alpha_bo_trials > 0:
+        alpha_bo_state['prev_prev_sure'] = alpha_bo_state.get('prev_sure')
+        alpha_bo_state['prev_sure']      = float(sure_val_bc)
+
+    return x0_corrected, {'jac_ratio': None}
+
+
+def _sure_correct_x0_wavelet(model, x0_hat, sigma_hat_0, s_in, extra_args,
+                              alpha=0.05, n_mc=1, eps_mc=1e-3, use_jac=True,
+                              sigma_t=None,
+                              adam_state=None, adam_mode='bo',
+                              adam_beta1=0.9, adam_beta2=0.999, adam_eps=1e-8,
+                              adam_wd=0.01,
+                              wavelet='db4', wavelet_level=3,
+                              approx_coeff=2.0, warmup_steps=0,
+                              lp_frac=1.0,
+                              grad_mode='approx',
+                              alpha_bo_trials=12, alpha_bo_patience=4,
+                              alpha_bo_state=None):
+    """SURE-Wavelet: per-subband SURE gradient correction.
+
+    Decomposes x0_hat into orthogonal 2D wavelet subbands via ptwt.wavedec2,
+    computes SURE residual gradient independently for the approximation (R) and
+    each detail subband (H/V/D at each level L), applies per-subband Adam
+    moment tracking, then reconstructs the corrected x0 via ptwt.waverec2.
+
+    grad_mode controls how the per-subband gradient is computed:
+      'approx'  — stop-gradient approximation: grad = approx_coeff · r_k  (fast, no backward).
+      'vjp'     — one autograd backward on ‖r‖²; pixel-space gradient decomposed into
+                  subbands.  Each subband k receives W_k·2(I−J_D)^T r — this mixes all
+                  subbands' residuals through J_D^T.
+      'vjp_sb'  — per-subband Hutchinson VJP; two no-grad forwards, no backward.
+                  For each subband k: g_k = 2r_k − (2/n_mc)Σ_b(b_k^T r_k)(D_k(x+εb)−D_k(x))/ε
+                  where b_k = W_k b.  Unbiased estimator of 2(I−W_k J_D W_k^T)^T r_k —
+                  truly independent per-subband guidance with no cross-subband Jacobian leakage.
+      'full'    — full ∇SURE: adds 2σ²·∇tr{J_D} term on top of vjp; requires
+                  use_jac=True, falls back to vjp behavior otherwise.
+
+    lp_frac : float in [0.0, 1.0] (default 1.0)
+        Low-pass cutoff fraction over wavelet detail levels.
+        0.0 = correct approximation subband only (structure-only).
+        1.0 = correct all subbands (default behavior).
+        Values between correct approximation + floor(lp_frac × wavelet_level)
+        coarsest detail levels — acts as a low-pass filter over wavelet bands.
+        Detail subbands beyond the cutoff are passed through unchanged.
+
+    Structure of wavelet coefficients (output of wavedec2 at 'level' L):
+      [cA,  (cH_L, cV_L, cD_L),  ...,  (cH_1, cV_1, cD_1)]
+       ^^-- approximation (R)    ^^-- finest detail subbands
+
+    adam_mode: 'none' = plain SGD with fixed alpha (sigma-scaled).
+               'adam' = per-subband Adam moment tracking.
+               'adamw' = per-subband AdamW (decoupled weight decay).
+               'bo'   = Bayesian optimisation for alpha per step (default).
+                        Requires optuna; falls back to Adam with a warning if missing.
+
+    adam_state: dict; per-subband moments stored under 'wavelet_m'/'wavelet_v'/
+                'wavelet_t' keys — built on the first call (Adam/AdamW only).
+
+    alpha_bo_trials:  BO trial budget per step (used when adam_mode='bo').
+    alpha_bo_patience: BO early-stop patience (non-improving trial count).
+    alpha_bo_state:   persistent dict {'study': ...} for cross-step warm-starting.
+
+    Falls back to pixel-space _sure_correct_x0 when ptwt is not installed.
+    """
+    try:
+        import ptwt
+        import pywt as _pywt
+        _sure_logger.debug(
+            "[sure_wavelet] ptwt OK  wavelet=%s  level=%d  x0_shape=%s  device=%s",
+            wavelet, wavelet_level, tuple(x0_hat.shape), str(x0_hat.device),
+        )
+    except ImportError:
+        _sure_logger.warning(
+            "ptwt/pywt not installed — falling back to pixel-space SURE. "
+            "Install with: pip install pytorch-wavelets pywavelets"
+        )
+        return _sure_correct_x0(
+            model, x0_hat, sigma_hat_0, s_in, extra_args,
+            alpha=alpha, n_mc=n_mc, eps_mc=eps_mc, use_jac=use_jac,
+            sigma_t=sigma_t, adam_state=adam_state, adam_mode=adam_mode,
+            adam_beta1=adam_beta1, adam_beta2=adam_beta2, adam_eps=adam_eps,
+            adam_wd=adam_wd, grad_mode=grad_mode,
+        )
+
+    # ── BO mode: check optuna; warn + fall back to Adam if missing ───────────
+    _effective_adam_mode = adam_mode
+    if adam_mode == 'bo':
+        try:
+            import optuna as _optuna_check  # noqa: F401 — availability probe only
+            del _optuna_check
+        except ImportError:
+            _sure_logger.warning(
+                "[sure_wavelet] adam_mode='bo' requires optuna (pip install optuna). "
+                "Falling back to Adam. "
+                "Install optuna to enable per-step Bayesian alpha optimisation."
+            )
+            _effective_adam_mode = 'adam'
+            # Ensure adam_state is initialised for the fallback
+            if adam_state is None:
+                adam_state = {}
+
+    eps            = float(x0_hat.abs().max().clamp(min=eps_mc * 1000.0)) / 1000.0
+    sigma_denoiser = torch.tensor(sigma_hat_0, device=x0_hat.device, dtype=x0_hat.dtype)
+    # Use sigma_denoiser for both base and perturbed calls (same fix as _sure_correct_x0).
+    # SURE_sgps_full.lean §2.1 proves that sigma_p ≠ sigma_denoiser introduces
+    # O(|sigma_p − σ̂₀|/ε) bias in the Hutchinson trace (sigma_inconsistency_bias_structure).
+    sigma_p        = sigma_denoiser
+    sigma2         = float(sigma_denoiser ** 2)
+    # Opt-2: 2σ²·tr{J} vanishes quadratically; skip the perturbed forward when negligible.
+    use_jac = use_jac and (sigma2 > eps_mc)
+    _wav           = _pywt.Wavelet(wavelet)
+
+    _sure_logger.debug(
+        "[sure_wavelet] params  sigma_hat_0=%.5f  sigma2=%.6f  eps=%.5f  "
+        "sigma_p=%.5f  use_jac=%s  adam=%s  grad_mode=%s",
+        sigma_hat_0, sigma2, eps, float(sigma_p), use_jac, adam_mode, grad_mode,
+    )
+
+    # Compute once; reused by the _release_cache closure below.
+    _tight_vram = model_management.should_swap_history()
+
+    def _release_cache():
+        # See release_cache() — only flush when VRAM is genuinely tight so the
+        # allocator pool can be reused directly on well-provisioned systems.
+        if not _tight_vram:
+            return
+        if x0_hat.device.type == 'cuda':
+            torch.cuda.empty_cache()
+        elif x0_hat.device.type == 'mps':
+            torch.mps.empty_cache()
+
+    # ── Pre-draw probe vectors (vjp/full/vjp_sb need them before Pass 1) ────
+    need_full_grad = (grad_mode == 'full') and use_jac
+    bs    = [torch.randn_like(x0_hat) for _ in range(n_mc)] if (use_jac and grad_mode in ('vjp', 'full', 'vjp_sb')) else []
+    b_sum = torch.stack(bs).sum(0) if need_full_grad else None
+
+    # ── Denoiser forward passes ──────────────────────────────────────────────
+    if grad_mode == 'approx':
+        with torch.no_grad():
+            x_hat = model(x0_hat.detach(), sigma_denoiser * s_in, **extra_args).detach()
+
+            # Opt-3: approx grad ignores tr{J} entirely; only compute for debug logging.
+            jac_trace = None
+            if use_jac and _sure_logger.isEnabledFor(_logging.DEBUG):
+                b          = torch.randn_like(x0_hat)
+                x_pert_hat = model(
+                    (x0_hat + eps * b).detach(), sigma_p * s_in, **extra_args,
+                ).detach()
+                jac_trace = float((b * (x_pert_hat - x_hat)).sum()) / eps
+                if n_mc > 1:
+                    for _ in range(n_mc - 1):
+                        b2      = torch.randn_like(x0_hat)
+                        x_pert2 = model(
+                            (x0_hat + eps * b2).detach(), sigma_p * s_in, **extra_args,
+                        ).detach()
+                        jac_trace += float((b2 * (x_pert2 - x_hat)).sum()) / eps
+                    jac_trace /= n_mc
+
+        # pixel-space residual: xnoisy − x̂
+        residual    = x0_hat - x_hat
+        grad_coeffs = None   # per-subband gradient computed as approx_coeff·res_c
+
+    elif grad_mode == 'vjp_sb':
+        # Per-subband Hutchinson VJP — two no-grad forwards, no autograd backward.
+        #
+        # For each subband k the per-subband SURE gradient is:
+        #   ∇_{c_k} ‖r_k‖² = 2r_k − 2 W_k J_D W_k^T r_k
+        #
+        # The cross-subband term W_k J_D W_k^T r_k is estimated via a rank-1
+        # Hutchinson stochastic approximation with global probe b ~ N(0,I):
+        #   E_b[(b_k^T r_k) · W_k J_D b] = W_k J_D W_k^T r_k
+        # where b_k = W_k b (subband k projection of the global probe).
+        #
+        # So:  g_k = 2r_k − (2/n_mc) Σ_b (b_k^T r_k) · (D_k(x+εb)−D_k(x))/ε
+        #
+        # Cost: one base forward + n_mc perturbed forwards — no backward pass.
+        # The scalar jac_trace is recovered for free: Σ_k b_k^T D_diff_k = b^T d_diff.
+        with torch.no_grad():
+            x_hat = model(x0_hat.detach(), sigma_denoiser * s_in, **extra_args).detach()
+        residual = (x0_hat - x_hat).detach()
+
+        # Decompose residual once; reuse across probes
+        _res_coeffs_sb = ptwt.wavedec2(residual, _wav, level=wavelet_level, mode='reflect')
+        _n_levels_sb   = len(_res_coeffs_sb)
+
+        # Initialise per-subband accumulator for Jacobian correction
+        _jac_corr: list | None = None
+        jac_trace = 0.0 if use_jac else None
+
+        for b in bs:
+            with torch.no_grad():
+                _x_pert_hat = model(
+                    (x0_hat.detach() + eps * b), sigma_p * s_in, **extra_args,
+                ).detach()
+            _d_diff = (_x_pert_hat - x_hat) / eps  # ≈ J_D b (pixel space)
+
+            if jac_trace is not None:
+                # Global Hutchinson scalar: b^T (J_D b) = Σ_k b_k^T D_diff_k
+                jac_trace += float((b * _d_diff).sum())
+
+            # Decompose probe and Jacobian-vector product into subbands
+            _b_coeffs  = ptwt.wavedec2(b.detach(), _wav, level=wavelet_level, mode='reflect')
+            _dd_coeffs = ptwt.wavedec2(_d_diff,    _wav, level=wavelet_level, mode='reflect')
+
+            if _jac_corr is None:
+                _jac_corr = [torch.zeros_like(_res_coeffs_sb[0])]
+                for _l in range(1, _n_levels_sb):
+                    _jac_corr.append(tuple(
+                        torch.zeros_like(_res_coeffs_sb[_l][_s]) for _s in range(3)
+                    ))
+
+            # Approximation subband: scale = b_0^T r_0  (scalar dot product)
+            _sc0 = float((_b_coeffs[0] * _res_coeffs_sb[0]).sum())
+            _jac_corr[0] = _jac_corr[0] + _sc0 * _dd_coeffs[0]
+
+            # Detail subbands L1..L
+            for _l in range(1, _n_levels_sb):
+                _updated = []
+                for _s in range(3):
+                    _sc = float((_b_coeffs[_l][_s] * _res_coeffs_sb[_l][_s]).sum())
+                    _updated.append(_jac_corr[_l][_s] + _sc * _dd_coeffs[_l][_s])
+                _jac_corr[_l] = tuple(_updated)
+
+            del _x_pert_hat, _d_diff, _b_coeffs, _dd_coeffs
+
+        if jac_trace is not None and n_mc > 0:
+            jac_trace /= n_mc
+            # Gap #6 fix: variance-based floor (same as pixel-space version).
+            _n_wav = x0_hat.numel()
+            _jac_floor_wav = -3.0 * (2.0 * _n_wav / max(n_mc, 1)) ** 0.5
+            if jac_trace < _jac_floor_wav:
+                _sure_logger.warning(
+                    "[sure_wavelet] Gap #6: jac_trace=%.2f < 3σ floor %.2f "
+                    "(n=%d, n_mc=%d); resetting to None (noise-dominated).",
+                    jac_trace, _jac_floor_wav, _n_wav, n_mc,
+                )
+                jac_trace = None
+
+        # Build per-subband gradient: g_k = 2r_k − (2/n_mc)·jac_corr_k
+        _inv = 2.0 / n_mc if (_jac_corr is not None and n_mc > 0) else 0.0
+        _gc_list = []
+        if _jac_corr is not None:
+            _gc_list.append(2.0 * _res_coeffs_sb[0] - _inv * _jac_corr[0])
+            for _l in range(1, _n_levels_sb):
+                _gc_list.append(tuple(
+                    2.0 * _res_coeffs_sb[_l][_s] - _inv * _jac_corr[_l][_s]
+                    for _s in range(3)
+                ))
+        else:
+            # use_jac=False: pure residual gradient (same as approx with coeff=2)
+            _gc_list.append(2.0 * _res_coeffs_sb[0])
+            for _l in range(1, _n_levels_sb):
+                _gc_list.append(tuple(
+                    2.0 * _res_coeffs_sb[_l][_s] for _s in range(3)
+                ))
+        grad_coeffs = _gc_list
+        del _res_coeffs_sb, _jac_corr
+
+    else:
+        # 'vjp' / 'full' — compute exact ∇‖r‖² via one backward pass through D,
+        # then decompose the pixel-space gradient into wavelet subbands so Adam
+        # tracks the Jacobian-corrected direction per frequency band.
+        _release_cache()
+        x_in = x0_hat.detach().requires_grad_(True)
+
+        def _model_ckpt(x):
+            return model(x, sigma_denoiser * s_in, **extra_args)
+
+        with torch.enable_grad():
+            x_hat       = torch.utils.checkpoint.checkpoint(
+                              _model_ckpt, x_in, use_reentrant=False)
+            residual    = x_in - x_hat
+            residual_sq = (residual ** 2).sum()
+
+            if need_full_grad:
+                # Opt-1: one backward replaces two (same as pixel-space _sure_correct_x0).
+                # C = ||r||² − (2σ²/(n_mc·ε))·(b_sum·x̂)
+                # ∂C/∂x = 2(I−J_D)ᵀr − (2σ²/(n_mc·ε))·J_D(x)ᵀ·b_sum
+                combined   = residual_sq - (2.0 * sigma2 / (n_mc * eps)) * (b_sum * x_hat).sum()
+                grad_pixel = torch.autograd.grad(combined, x_in)[0]
+                del combined
+            else:
+                grad_pixel = torch.autograd.grad(residual_sq, x_in)[0]
+
+        x_hat      = x_hat.detach()
+        residual   = residual.detach()
+        grad_pixel = grad_pixel.detach()
+        _release_cache()
+
+        # Jacobian trace scalar + optional ∇tr{J} for 'full' mode
+        jac_trace = 0.0 if use_jac else None
+        if use_jac:
+            if need_full_grad:
+                grad_jac_pert_sum = torch.zeros_like(grad_pixel)
+                for b in bs:
+                    x_in_pert = x0_hat.detach() + eps * b
+                    _release_cache()
+                    x_in_pert = x_in_pert.requires_grad_(True)
+                    def _model_pert_ckpt(x):  # noqa: E306
+                        return model(x, sigma_p * s_in, **extra_args)
+                    with torch.enable_grad():
+                        x_pert_hat   = torch.utils.checkpoint.checkpoint(
+                                           _model_pert_ckpt, x_in_pert, use_reentrant=False)
+                        jac_scalar_p = (b * x_pert_hat).sum() / eps
+                        gj_pert      = torch.autograd.grad(jac_scalar_p, x_in_pert)[0]
+                    # Bug-1 fix: subtract x_hat so tr{J} matches the paper formula.
+                    jac_trace += float((b * (x_pert_hat - x_hat)).sum().detach()) / eps
+                    del x_pert_hat
+                    _release_cache()
+                    grad_jac_pert_sum = grad_jac_pert_sum + gj_pert
+                    del gj_pert
+                jac_trace /= n_mc
+                # Opt-1: base Jac term already in grad_pixel via combined scalar.
+                grad_pixel = grad_pixel + (2.0 * sigma2 / n_mc) * grad_jac_pert_sum
+                del grad_jac_pert_sum
+            else:
+                # vjp: trace via no-grad MC only (no extra backward needed)
+                for b in bs:
+                    with torch.no_grad():
+                        x_pert_hat = model(
+                            (x0_hat.detach() + eps * b), sigma_p * s_in, **extra_args,
+                        ).detach()
+                    jac_trace += float((b * (x_pert_hat - x_hat)).sum()) / eps
+                    del x_pert_hat
+                jac_trace /= n_mc
+
+        # Clamp pixel-space gradient before wavelet decomposition — same
+        # outlier-suppression as _sure_correct_x0 to keep Adam v_t stable.
+        _x0_std_g = x0_hat.std().item()
+        _gs       = grad_pixel.std().item()
+        #if _gs > _x0_std_g > 0.0:
+            #grad_pixel = grad_pixel * (_x0_std_g / _gs)
+        #grad_pixel = grad_pixel.clamp(-3.0 * _x0_std_g, 3.0 * _x0_std_g)
+
+        # Decompose pixel-space gradient into wavelet subbands — linear transform
+        # commutes with the subband correction, so this is exact.
+        grad_coeffs = ptwt.wavedec2(grad_pixel.detach(), _wav, level=wavelet_level, mode='reflect')
+        del grad_pixel
+    _sure_logger.debug(
+        "[sure_wavelet] denoiser  x_hat range=[%.4f, %.4f]  "
+        "residual_rms=%.5f  residual_max=%.5f  jac_trace=%s",
+        float(x_hat.min()), float(x_hat.max()),
+        float((residual ** 2).mean().sqrt()),
+        float(residual.abs().max()),
+        f"{jac_trace:.4f}" if jac_trace is not None else "n/a",
+    )
+
+    # ── Wavelet decomposition of residual and x0 ────────────────────────────
+    # ptwt.wavedec2 handles [B, C, H, W] directly, orthogonal wavelet ensures
+    # perfect reconstruction and energy preservation across subbands.
+    residual_coeffs = ptwt.wavedec2(residual, _wav, level=wavelet_level, mode='reflect')
+    x0_coeffs       = ptwt.wavedec2(x0_hat,  _wav, level=wavelet_level, mode='reflect')
+
+    _sure_logger.debug(
+        "[sure_wavelet] wavedec2  n_bands=%d  approx_shape=%s",
+        len(residual_coeffs), tuple(residual_coeffs[0].shape),
+    )
+    for _li in range(1, len(residual_coeffs)):
+        _rH, _rV, _rD = residual_coeffs[_li]
+        _sure_logger.debug(
+            "[sure_wavelet]   L%d  shape=%s  res_rms H=%.5f V=%.5f D=%.5f",
+            _li, tuple(_rH.shape),
+            float((_rH ** 2).mean().sqrt()),
+            float((_rV ** 2).mean().sqrt()),
+            float((_rD ** 2).mean().sqrt()),
+        )
+
+    # ── Init per-subband Adam state on first call ────────────────────────────
+    # Index 0 → approximation tensor; indices 1..L → detail tuples (H, V, D)
+    # Stores per-element moments (wavelet_m / wavelet_v) only; correction
+    # magnitude is fixed at base_alpha — no adaptive tier_scale (ts_val) scalar.
+    # ts_val was removed because it adapted via ts_val *= exp(-alpha * ts_step)
+    # where ts_step = -sure_val / (n_elem * σ²).  sure_val is always large-
+    # positive at high σ, so ts_step is always negative → ts_val grew without
+    # bound every step, causing pixel_delta_rms to diverge monotonically.
+    n_sb = len(residual_coeffs)
+    if adam_state is not None and _effective_adam_mode in ('adam', 'adamw'):
+        if 'wavelet_m' not in adam_state:
+            adam_state['wavelet_m'] = [None] * n_sb
+            adam_state['wavelet_v'] = [None] * n_sb
+            adam_state['wavelet_t'] = 0
+            _sure_logger.debug("[sure_wavelet] adam state initialised  n_sb=%d", n_sb)
+        adam_state['wavelet_t'] += 1
+        t_adam = adam_state['wavelet_t']
+        _sure_logger.debug("[sure_wavelet] adam t=%d", t_adam)
+    else:
+        t_adam = 1  # unused when adam is off
+
+    x0_std = x0_hat.std().item()
+
+    # Base alpha: sigma-scaled for plain SGD ('none') only.
+    # Adam's per-element m/v normalisation already handles scale — sigma scaling
+    # would double-suppress early steps and under-correct late steps.
+    # BO mode: alpha is the search-space centre; BO selects the per-step value
+    # without sigma pre-scaling (the proxy geometry already encodes the scale).
+    if sigma_t is not None and _effective_adam_mode == 'none':
+        base_alpha = alpha / (1.0 + float(sigma_t))
+    else:
+        base_alpha = alpha
+
+    _sure_logger.debug(
+        "[sure_wavelet] x0_std=%.5f  base_alpha=%.5f  sigma_t=%s",
+        x0_std, base_alpha,
+        f"{float(sigma_t):.4f}" if sigma_t is not None else "n/a",
+    )
+
+    # ── Inner helper: apply SURE gradient to each subband ────────────────────
+    # Correction magnitude is fixed at base_alpha * warmup_factor.
+    # Adam adapts per-element direction only via m/v moments — no outer scalar.
+    # A scalar tier_scale loop was tried (ts_val) but diverged: its gradient was
+    # derived from sure_val which is always positive at high σ, making the update
+    # always push ts_val in one direction → unbounded exponential growth.
+    # RAdam was also tried as an alternative warmup mechanism: with β₂=0.999 and
+    # ~60 diffusion steps, ρ_t never grows large enough — rect factor ≈ 0.021 at
+    # step 6, effectively zeroing corrections until step ~100 which never arrives.
+    def _correct_coeff(x0_c, res_c, g_c, m_c, v_c):
+        # g_c: pre-computed subband gradient (vjp/full); None → approx_coeff·res_c
+        grad = g_c if g_c is not None else approx_coeff * res_c
+        raw_grad_rms = float((grad ** 2).mean().sqrt())
+
+        if adam_state is not None and _effective_adam_mode in ('adam', 'adamw'):
+            if m_c is None:
+                m_c = torch.zeros_like(grad)
+                v_c = torch.zeros_like(grad)
+            m_c   = m_c.mul(adam_beta1).add((1.0 - adam_beta1) * grad)
+            v_c   = v_c.mul(adam_beta2).add((1.0 - adam_beta2) * grad.pow(2))
+            bc1   = 1.0 - adam_beta1 ** t_adam
+            bc2   = 1.0 - adam_beta2 ** t_adam
+            eff_g = (m_c / bc1) / ((v_c / bc2).sqrt() + adam_eps)
+        else:
+            # 'none' and 'bo' — plain gradient descent
+            # For 'bo' base_alpha is the BO-selected step; moments are not used
+            eff_g = grad
+            m_c   = None
+            v_c   = None
+
+        eff_grad_rms = float((eff_g ** 2).mean().sqrt())
+        adam_ratio   = eff_grad_rms / (raw_grad_rms + 1e-8)
+
+        # Linear warmup: ramps correction from 0 → base_alpha over warmup_steps.
+        # RAdam's built-in warmup (variance rectification) was tried instead but
+        # fails here — ρ_t requires ~100+ steps to rectify fully with β₂=0.999,
+        # and diffusion schedules only have ~60 steps total.
+        warmup_factor = min(1.0, t_adam / warmup_steps) if warmup_steps > 0 else 1.0
+        step = base_alpha * warmup_factor
+        if _effective_adam_mode == 'adamw' and adam_state is not None:
+            corrected = (x0_c * (1.0 - step * adam_wd) - step * eff_g).detach()
+        else:
+            corrected = (x0_c - step * eff_g).detach()
+        return corrected, m_c, v_c, raw_grad_rms, eff_grad_rms, adam_ratio
+
+    # ── Per-subband correction ───────────────────────────────────────────────
+    # lp_frac acts as a low-pass filter: only the approximation subband (idx 0)
+    # and the floor(lp_frac * (n_sb-1)) coarsest detail levels are corrected.
+    # Detail subbands beyond the cutoff are passed through unchanged.
+    _n_detail_correct = int(lp_frac * (n_sb - 1))  # 0 = approx only, n_sb-1 = all
+
+    # ── BO / analytical alpha search over corrected subbands ─────────────────
+    # When adam_mode='bo': concatenate residuals and gradients from corrected
+    # subbands into flat tensors, then find the optimal α with zero UNet calls.
+    #
+    #   alpha_bo_trials > 0 → Optuna TPE with warm-start from previous step.
+    #   alpha_bo_trials = 0 → closed-form analytical line search: α* = (r·g)/‖g‖².
+    #                         Still better than a fixed α; free to compute.
+    if _effective_adam_mode == 'bo':
+        _r_bo = [residual_coeffs[0].reshape(-1)]
+        _g_bo = [(grad_coeffs[0] if grad_coeffs is not None
+                  else approx_coeff * residual_coeffs[0]).reshape(-1)]
+        for _sbi in range(1, min(_n_detail_correct + 1, n_sb)):
+            for _si in range(3):
+                _r_bo.append(residual_coeffs[_sbi][_si].reshape(-1))
+                _g_bo.append((grad_coeffs[_sbi][_si] if grad_coeffs is not None
+                               else approx_coeff * residual_coeffs[_sbi][_si]).reshape(-1))
+        _r_flat = torch.cat(_r_bo).float()
+        _g_flat = torch.cat(_g_bo).float()
+
+        _bs = alpha_bo_state if alpha_bo_state is not None else {}
+        if int(alpha_bo_trials) > 0:
+            base_alpha, _new_study = _sure_alpha_bo_search(
+                _r_flat, _g_flat, sigma2,
+                jac_trace if jac_trace is not None else 0.0,
+                alpha_base=alpha,
+                n_trials=int(alpha_bo_trials),
+                patience=int(alpha_bo_patience),
+                prev_study=_bs.get('study'),
+                prev_sure=_bs.get('prev_sure'),
+                prev_prev_sure=_bs.get('prev_prev_sure'),
+                cur_alpha=_bs.get('cur_alpha', alpha),
+            )
+            if alpha_bo_state is not None:
+                alpha_bo_state['study'] = _new_study
+        else:
+            # Analytical line search — α* = (r·g) / ‖g‖²  (closed-form SURE minimum)
+            # Falls back to P-controller via _sure_alpha_bo_search when grad collinear.
+            _dot  = float((_r_flat * _g_flat).sum())
+            _g_sq = float((_g_flat * _g_flat).sum()) + 1e-12
+            _lo   = max(alpha * 0.01, 1e-5)
+            _hi   = min(alpha * 20.0, 0.49)
+            _r_sq_bo = float((_r_flat * _r_flat).sum()) + 1e-12
+            _cos_bo  = abs(_dot) / (_r_sq_bo ** 0.5 * _g_sq ** 0.5)
+            if _cos_bo > 0.99:
+                # degenerate: delegate to P-controller path
+                _ref = _bs.get('cur_alpha', alpha)
+                _ps  = _bs.get('prev_sure')
+                _pps = _bs.get('prev_prev_sure')
+                if _ps is not None and _pps is not None:
+                    if _ps > _pps * 1.05:
+                        base_alpha = max(_lo, _ref * 0.70)
+                    elif _ps < _pps * 0.95:
+                        base_alpha = min(_hi, _ref * 1.05)
+                    else:
+                        base_alpha = _ref
+                else:
+                    base_alpha = _ref
+                _sure_logger.info(
+                    "[sure_wavelet_bo] grad collinear (|cos|=%.4f); P-ctrl: "
+                    "sure %.2f→%.2f  alpha %.5f→%.5f",
+                    _cos_bo,
+                    _pps if _pps is not None else float('nan'),
+                    _ps  if _ps  is not None else float('nan'),
+                    _ref, base_alpha,
+                )
+            else:
+                base_alpha = float(max(_lo, min(_hi, _dot / _g_sq)))
+
+        del _r_bo, _g_bo, _r_flat, _g_flat
+        if alpha_bo_state is not None:
+            alpha_bo_state['cur_alpha'] = base_alpha
+        _sure_logger.info(
+            "[sure_wavelet_bo] base_alpha=%.5f (was %.5f)  trials=%d",
+            base_alpha, alpha, int(alpha_bo_trials),
+        )
+
+    corrected_coeffs       = []
+    corrected_sure_vals    = []   # SURE only for subbands that are actually corrected
+    passthrough_sure_vals  = []   # SURE for pass-through subbands (diagnostic only)
+
+    for sb_idx in range(n_sb):
+        x0_sb  = x0_coeffs[sb_idx]
+        res_sb = residual_coeffs[sb_idx]
+
+        if sb_idx == 0:
+            # Approximation subband — low-frequency / residual (R)
+            m0 = adam_state['wavelet_m'][0] if (adam_state and 'wavelet_m' in adam_state) else None
+            v0 = adam_state['wavelet_v'][0] if (adam_state and 'wavelet_v' in adam_state) else None
+            sb_sure = float(-res_sb.numel() * sigma2 + (res_sb ** 2).sum())
+            g0      = grad_coeffs[0] if grad_coeffs is not None else None
+            c_corr, m0_new, v0_new, rg_rms, eg_rms, ar = _correct_coeff(x0_sb, res_sb, g0, m0, v0)
+            if adam_state is not None and 'wavelet_m' in adam_state:
+                adam_state['wavelet_m'][0] = m0_new
+                adam_state['wavelet_v'][0] = v0_new
+            corrected_coeffs.append(c_corr)
+            corrected_sure_vals.append(sb_sure)
+            _sure_logger.debug(
+                "[sure_wavelet]   sb=R  shape=%s  res_rms=%.5f  sure=%.4f  "
+                "grad_rms=%.5f  eff_grad_rms=%.5f  adam_ratio=%.3f  delta_rms=%.5f",
+                tuple(res_sb.shape),
+                float((res_sb ** 2).mean().sqrt()),
+                sb_sure, rg_rms, eg_rms, ar,
+                float(((c_corr - x0_sb) ** 2).mean().sqrt()),
+            )
+        else:
+            # Detail subbands at this level — tuple(cH, cV, cD)
+            if sb_idx > _n_detail_correct:
+                # Beyond LP cutoff — pass through unchanged.
+                # SURE is tracked separately: these fine-detail bands have large n_k
+                # (the finest band has 76 800 elements at 160×160 latent) and would
+                # dominate total_sure with large negative values at mid-to-late steps
+                # even though they receive no gradient correction.  Including them in
+                # the primary sure_val metric was causing misleading spikes (e.g. −703
+                # at step 33/35) that masked the corrected-subband signal.
+                corrected_coeffs.append(x0_sb)
+                for sub_i in range(3):
+                    passthrough_sure_vals.append(
+                        float(-res_sb[sub_i].numel() * sigma2 + (res_sb[sub_i] ** 2).sum())
+                    )
+                continue
+
+            prev_m = (adam_state['wavelet_m'][sb_idx]
+                      if (adam_state and 'wavelet_m' in adam_state
+                          and adam_state['wavelet_m'][sb_idx] is not None)
+                      else (None, None, None))
+            prev_v = (adam_state['wavelet_v'][sb_idx]
+                      if (adam_state and 'wavelet_v' in adam_state
+                          and adam_state['wavelet_v'][sb_idx] is not None)
+                      else (None, None, None))
+
+            detail_corr = []
+            new_m       = []
+            new_v       = []
+            _sub_names  = ('H', 'V', 'D')
+            for sub_i in range(3):      # H, V, D
+                sb_sure = float(-res_sb[sub_i].numel() * sigma2 + (res_sb[sub_i] ** 2).sum())
+                g_sb    = grad_coeffs[sb_idx][sub_i] if grad_coeffs is not None else None
+                c_corr, m_new, v_new, rg_rms, eg_rms, ar = _correct_coeff(
+                    x0_sb[sub_i], res_sb[sub_i], g_sb, prev_m[sub_i], prev_v[sub_i],
+                )
+                detail_corr.append(c_corr)
+                new_m.append(m_new)
+                new_v.append(v_new)
+                corrected_sure_vals.append(sb_sure)
+                _sure_logger.debug(
+                    "[sure_wavelet]   sb=L%d_%s  shape=%s  res_rms=%.5f  sure=%.4f  "
+                    "grad_rms=%.5f  eff_grad_rms=%.5f  adam_ratio=%.3f  delta_rms=%.5f",
+                    sb_idx, _sub_names[sub_i],
+                    tuple(res_sb[sub_i].shape),
+                    float((res_sb[sub_i] ** 2).mean().sqrt()),
+                    sb_sure, rg_rms, eg_rms, ar,
+                    float(((c_corr - x0_sb[sub_i]) ** 2).mean().sqrt()),
+                )
+
+            if adam_state is not None and 'wavelet_m' in adam_state:
+                adam_state['wavelet_m'][sb_idx] = tuple(new_m)
+                adam_state['wavelet_v'][sb_idx] = tuple(new_v)
+            corrected_coeffs.append(tuple(detail_corr))
+
+    # ── Reconstruct corrected x0 ─────────────────────────────────────────────
+    x0_raw = ptwt.waverec2(corrected_coeffs, _wav).detach()
+    # Crop to original spatial dims — wavelet padding may add 1 pixel
+    x0_corrected = x0_raw[..., :x0_hat.shape[-2], :x0_hat.shape[-1]]
+
+    # Primary metric: SURE of corrected subbands only.  Negative values at mid-to-
+    # late steps mean ‖r_k‖² < n_k·σ² — the denoiser residual is below the noise
+    # floor, which is expected for a well-trained model (Lean: sure_val_negative_iff_good_denoiser).
+    # Pass-through subbands are excluded: their large n_k would otherwise dominate
+    # this sum with irrelevant negative values (see Supplement C in SURE_verification.lean).
+    corrected_sure = sum(corrected_sure_vals)
+    passthrough_sure = sum(passthrough_sure_vals)
+    if jac_trace is not None:
+        corrected_sure += 2.0 * sigma2 * jac_trace
+
+    # Gap #5: bias-correct corrected_sure using the pixel-space residual.
+    # residual = x0_hat − x_hat was computed above (pixel space).
+    _n_wav_total = x0_hat.numel()
+    _sigma_sq_res_wav = float((residual ** 2).sum()) / max(_n_wav_total, 1)
+    _tr_J_bc_wav = jac_trace if jac_trace is not None else 0.0
+    _sure_bias_wav = (sigma2 - _sigma_sq_res_wav) * (-float(_n_wav_total) + 2.0 * _tr_J_bc_wav)
+    corrected_sure_bc = corrected_sure - _sure_bias_wav
+
+    pixel_delta_rms = float(((x0_corrected - x0_hat) ** 2).mean().sqrt())
+
+    _sure_logger.info(
+        "[wavelet] sure=%.1f  sure_bc=%.1f  pt_sure=%.1f  pixel_δ=%.5f  base_alpha=%.5f",
+        corrected_sure, corrected_sure_bc, passthrough_sure, pixel_delta_rms, base_alpha,
+    )
+
+    # Feed bias-corrected SURE into P-controller (Gap #5 fix).
+    if alpha_bo_state is not None and _effective_adam_mode == 'bo':
+        alpha_bo_state['prev_prev_sure'] = alpha_bo_state.get('prev_sure')
+        alpha_bo_state['prev_sure']      = corrected_sure_bc
+
+    return x0_corrected, {'sure_val': corrected_sure_bc, 'jac_ratio': None,
+                          'pixel_delta_rms': pixel_delta_rms}
+
+
+def sample_sure(model, x, sigmas, extra_args=None, callback=None, disable=None,
+                sure_alpha=0.05, sure_n_mc=1, sure_eps=1e-3,
+                sure_jac_interval=2,
+                sure_adam_mode='none', sure_adam_beta1=0.9,
+                sure_adam_beta2=0.999, sure_adam_wd=0.01, sure_grad_mode='vjp',
+                sure_approx_coeff=2.0, sure_csv_path=None,
+                sure_sigma_ema=0.0,
+                sure_alpha_bo_trials=0, sure_alpha_bo_patience=4):
+    """SURE Guided Posterior Sampling (SGPS) — Euler Ancestral variant.
+
+    Implements Algorithm 1 from arXiv:2512.23232 directly.  Every step:
+
+      1. Denoising + CFG:  x̂₀ = model(xₜ, σₜ)          [deterministic, no noise]
+      2. PCA noise est.:   σ̂₀ = _pca_noise_estimate(x̂₀) [residual noise in x̂₀]
+      3. SURE correction:  x̂*₀ = x̂₀ − α·∇SURE(x̂₀, σ̂₀) [gradient in x0-space]
+      4. Re-add noise:     xₜ₋₁ = x̂*₀ + σₜ₋₁·ε         [Euler Ancestral]
+
+    No preheat — SURE correction is applied at every step from T to 1.
+
+    sure_alpha:        SURE gradient step size
+    sure_n_mc:         Monte Carlo samples for Jacobian trace
+    sure_eps:          finite-difference epsilon for MC Jacobian
+    sure_jac_interval: compute full Jacobian every N steps; adapt from jac_ratio
+    """
+    import csv as _csv
+    extra_args = {} if extra_args is None else extra_args
+    seed = extra_args.get("seed", None)
+    noise_sampler = default_noise_sampler(x, seed=seed)
+    s_in = x.new_ones([x.shape[0]])
+
+    _EMA_A = 0.35
+    _dyn_jac_interval: int        = max(1, sure_jac_interval)
+    _jac_ratio_ema:   float | None = None
+    _adam_state     = {'optimizer': None, 'param': None} if sure_adam_mode in ('adam', 'adamw') else None
+    _alpha_bo_state = {} if sure_alpha_bo_trials > 0 else None
+    _sigma_hat_0_ema: float | None = None   # EMA state for PCA noise estimate
+
+    # CSV setup — only active in approx mode
+    _csv_file   = None
+    _csv_writer = None
+    if sure_csv_path is not None and sure_grad_mode == 'approx':
+        _csv_file = open(sure_csv_path, 'w', newline='')
+        _csv_writer = _csv.writer(_csv_file)
+        _csv_writer.writerow([
+            'step', 'sigma_hat_0', 'sigma_t', 'approx_coeff',
+            'residual_rms', 'sure_val', 'raw_grad_rms', 'eff_grad_rms',
+            'effective_alpha', 'step_rms', 'adam_ratio',
+        ])
+        _sure_logger.info("SURE approx CSV: writing per-step stats to %s", sure_csv_path)
+
+    n_steps = len(sigmas) - 1
+    _sure_logger.info(
+        "SURE sampler: %d steps  alpha=%.4f  n_mc=%d  jac_interval=%d  adam=%s  approx_coeff=%.4f",
+        n_steps, sure_alpha, sure_n_mc, _dyn_jac_interval, sure_adam_mode, sure_approx_coeff,
+    )
+
+    for i in trange(n_steps, disable=disable):
+        sigma      = sigmas[i]
+        sigma_next = sigmas[i + 1]
+        sigma_val  = sigma.item()
+
+        # ── Step 1: Denoising + CFG (deterministic) ───────────────────────────
+        with torch.no_grad():
+            x0_hat = model(x, sigma * s_in, **extra_args).detach()
+
+        # ── Step 2: PCA residual noise estimate (+ ceiling + optional EMA) ──────
+        _sigma_raw = _pca_noise_estimate(x0_hat, min_sigma=float(sure_eps))
+        # Hard ceiling: residual noise in x̂₀ cannot exceed the diffusion noise
+        # added at time t. Without this, the M-P estimator mistakes fine image
+        # detail for noise at late steps (small sigma_t), causing the denoiser
+        # to be called at a wildly wrong sigma and sure_val to blow up negative.
+        _sigma_raw = min(_sigma_raw, float(sigma_val))
+        if sure_sigma_ema > 0.0:
+            if _sigma_hat_0_ema is None:
+                _sigma_hat_0_ema = _sigma_raw
+            else:
+                _sigma_hat_0_ema = sure_sigma_ema * _sigma_hat_0_ema + (1.0 - sure_sigma_ema) * _sigma_raw
+            # EMA memory can lag above the current sigma_t as sigma_t collapses
+            # at late steps — clamp the output too, not just the raw estimate.
+            sigma_hat_0 = min(_sigma_hat_0_ema, float(sigma_val))
+        else:
+            sigma_hat_0 = _sigma_raw
+
+        # ── Step 3: SURE gradient correction on x0_hat at σ̂₀ ─────────────────
+        _use_jac = (_dyn_jac_interval <= 1) or (i % _dyn_jac_interval == 0)
+        x0_corrected, _stats = _sure_correct_x0(
+            model, x0_hat, sigma_hat_0, s_in, extra_args,
+            alpha=sure_alpha, n_mc=sure_n_mc, eps_mc=sure_eps,
+            use_jac=_use_jac, sigma_t=sigma,
+            adam_state=_adam_state, adam_mode=sure_adam_mode,
+            adam_beta1=sure_adam_beta1, adam_beta2=sure_adam_beta2,
+            adam_wd=sure_adam_wd, grad_mode=sure_grad_mode,
+            approx_coeff=sure_approx_coeff,
+            csv_writer=_csv_writer, step_idx=i,
+            alpha_bo_trials=sure_alpha_bo_trials,
+            alpha_bo_patience=sure_alpha_bo_patience,
+            alpha_bo_state=_alpha_bo_state,
+        )
+
+        # Adapt jac_interval from jac_ratio EMA
+        _jac_ratio_new = _stats.get('jac_ratio')
+        if _jac_ratio_new is not None:
+            _jac_ratio_ema = _jac_ratio_new if _jac_ratio_ema is None else \
+                (1.0 - _EMA_A) * _jac_ratio_ema + _EMA_A * _jac_ratio_new
+        if _jac_ratio_ema is not None and i >= 2:
+            if _jac_ratio_ema < 0.05 and _dyn_jac_interval < 8:
+                _dyn_jac_interval += 1
+                _sure_logger.info("[adapt] jac_interval -> %d  (ratio_ema=%.3f < 0.05)",
+                                  _dyn_jac_interval, _jac_ratio_ema)
+            elif _jac_ratio_ema > 0.25 and _dyn_jac_interval > 1:
+                _dyn_jac_interval -= 1
+                _sure_logger.info("[adapt] jac_interval -> %d  (ratio_ema=%.3f > 0.25)",
+                                  _dyn_jac_interval, _jac_ratio_ema)
+
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigma,
+                      'sigma_hat': sigma, 'denoised': x0_corrected})
+
+        # ── Step 4: Ancestral update from SURE-corrected x̂*₀ ────────────────
+        # Mirror Euler Ancestral: split sigma_next into deterministic (sigma_down)
+        # and stochastic (sigma_up) components. Pure re-noise (x0 + sigma_next·ε)
+        # discards the prior state and amplifies the model's latent bias; the
+        # ancestral split keeps the same trajectory dynamics as Euler a.
+        if float(sigma_next) == 0:
+            x = x0_corrected
+        else:
+            sigma_down, sigma_up = get_ancestral_step(sigma, sigma_next, eta=1.0)
+            # Noise direction from current x using the SURE-corrected x0 estimate
+            d = (x - x0_corrected) / sigma
+            # Deterministic step to sigma_down, then inject sigma_up noise
+            x = x + d * (sigma_down - sigma)
+            x = x + sigma_up * noise_sampler(sigma, sigma_next)
+
+    if _csv_file is not None:
+        _csv_file.flush()
+        _csv_file.close()
+        _sure_logger.info("SURE approx CSV: closed %s", sure_csv_path)
+
+    return x
+
+
+def sample_sure_wavelet(model, x, sigmas, extra_args=None, callback=None, disable=None,
+                        sure_alpha=0.05, sure_n_mc=1, sure_eps=1e-3,
+                        sure_jac_interval=2,
+                        sure_adam_mode='bo', sure_adam_beta1=0.9,
+                        sure_adam_beta2=0.999, sure_adam_wd=0.01,
+                        sure_wavelet='db4', sure_wavelet_level=3,
+                        sure_approx_coeff=2.0, sure_csv_path=None,
+                        sure_sigma_ema=0.0, sure_wavelet_warmup_steps=0,
+                        sure_wavelet_lp_frac=1.0,
+                        sure_grad_mode='vjp',
+                        sure_alpha_bo_trials=12, sure_alpha_bo_patience=4):
+    """SURE-Wavelet — Euler Ancestral variant.
+
+    Identical control flow to sample_sure, but replaces pixel-space SURE
+    correction with SURE-Wavelet:
+
+      1. Denoising + CFG:   x̂₀ = model(xₜ, σₜ)
+      2. PCA noise est.:    σ̂₀ = _pca_noise_estimate(x̂₀)
+      3. Wavelet decomp.:   {cA, (cH_L,cV_L,cD_L), …} = wavedec2(x̂₀)
+      4. Per-subband SURE:  correct each subband independently with its own
+                            Adam moment state (freq-adaptive step size)
+      5. Reconstruct:       x̂*₀ = waverec2(corrected subbands)
+      6. Ancestral noise:   xₜ₋₁ = x̂*₀ + σₜ₋₁·ε
+
+    sure_wavelet       : PyWavelets orthogonal wavelet name (default 'db4').
+    sure_wavelet_level : number of DWT decomposition levels (default 3).
+    sure_grad_mode     : gradient mode passed to _sure_correct_x0_wavelet.
+                         'approx'  — stop-grad, no backward; grad = approx_coeff·r_k.
+                         'vjp'     — one autograd backward on ‖r‖²; pixel gradient
+                                     decomposed to subbands (cross-subband J_D mixing).
+                         'vjp_sb'  — per-subband Hutchinson VJP; two no-grad forwards,
+                                     no backward.  g_k = 2r_k − (2/n_mc)Σ(b_k^T r_k)·D_diff_k/ε.
+                                     Unbiased estimator of 2(I−W_k J_D W_k^T)^T r_k —
+                                     true per-subband independence. Default 'vjp_sb'.
+                         'full'    — vjp + 2σ²·∇tr{J_D} trace term.
+    """
+    import csv as _csv
+    extra_args    = {} if extra_args is None else extra_args
+    seed          = extra_args.get("seed", None)
+    noise_sampler = default_noise_sampler(x, seed=seed)
+    s_in          = x.new_ones([x.shape[0]])
+
+    _EMA_A = 0.35
+    _dyn_jac_interval: int         = max(1, sure_jac_interval)
+    _jac_ratio_ema:   float | None = None
+    _adam_state     = {} if sure_adam_mode in ('adam', 'adamw') else None
+    _alpha_bo_state = {} if sure_adam_mode == 'bo' else None
+    _sigma_hat_0_ema: float | None = None
+
+    # CSV output (aggregate per-step metrics, wavelet mode)
+    _csv_fh     = None
+    _csv_writer = None
+    if sure_csv_path:
+        _csv_fh = open(sure_csv_path, 'w', newline='')
+        _csv_writer = _csv.writer(_csv_fh)
+        _csv_writer.writerow([
+            'step', 'sigma_hat_0', 'sigma_t', 'approx_coeff',
+            'sure_val', 'pixel_delta_rms', 'effective_alpha',
+        ])
+
+    n_steps = len(sigmas) - 1
+    _sure_logger.info(
+        "SURE-Wavelet sampler: %d steps  alpha=%.4f  n_mc=%d  jac_interval=%d  "
+        "wavelet=%s  level=%d  lp_frac=%.2f  adam=%s  grad_mode=%s  "
+        "approx_coeff=%.2f  sigma_ema=%.2f  warmup=%d",
+        n_steps, sure_alpha, sure_n_mc, _dyn_jac_interval,
+        sure_wavelet, sure_wavelet_level, sure_wavelet_lp_frac,
+        sure_adam_mode, sure_grad_mode,
+        sure_approx_coeff, sure_sigma_ema, sure_wavelet_warmup_steps,
+    )
+
+    for i in trange(n_steps, disable=disable):
+        sigma      = sigmas[i]
+        sigma_next = sigmas[i + 1]
+        sigma_val  = sigma.item()
+
+        # ── Step 1: Denoising + CFG ───────────────────────────────────────────
+        with torch.no_grad():
+            x0_hat = model(x, sigma * s_in, **extra_args).detach()
+
+        # ── Step 2: PCA residual noise estimate + sigma_t ceiling + EMA ──────
+        _sigma_raw = _pca_noise_estimate(x0_hat, min_sigma=float(sure_eps))
+        # Clamp 1 — hard ceiling: M-P bulk eigenvalue can exceed sigma_t at late
+        # steps where the denoised x̂₀ contains fine detail the estimator mistakes
+        # for noise.  Without this, the SURE denoiser call uses a wrong σ̂₀ and
+        # sure_val blows up negative, destabilising Adam's moment state.
+        _sigma_raw = min(_sigma_raw, sigma_val)
+        if sure_sigma_ema > 0.0:
+            if _sigma_hat_0_ema is None:
+                _sigma_hat_0_ema = _sigma_raw
+            else:
+                _sigma_hat_0_ema = sure_sigma_ema * _sigma_hat_0_ema + (1.0 - sure_sigma_ema) * _sigma_raw
+            # Clamp 2 — EMA lag: the smoothed estimate can remain above sigma_t
+            # for several steps after sigma_t collapses near the end of sampling.
+            # Clamping the EMA output (not just the raw input) closes that gap.
+            sigma_hat_0 = min(_sigma_hat_0_ema, sigma_val)
+        else:
+            sigma_hat_0 = _sigma_raw
+
+        # ── Steps 3-5: SURE-Wavelet correction ───────────────────────────────
+        _use_jac = (_dyn_jac_interval <= 1) or (i % _dyn_jac_interval == 0)
+        x0_corrected, _stats = _sure_correct_x0_wavelet(
+            model, x0_hat, sigma_hat_0, s_in, extra_args,
+            alpha=sure_alpha, n_mc=sure_n_mc, eps_mc=sure_eps,
+            use_jac=_use_jac, sigma_t=sigma,
+            adam_state=_adam_state, adam_mode=sure_adam_mode,
+            adam_beta1=sure_adam_beta1, adam_beta2=sure_adam_beta2,
+            adam_wd=sure_adam_wd,
+            wavelet=sure_wavelet, wavelet_level=sure_wavelet_level,
+            approx_coeff=sure_approx_coeff,
+            warmup_steps=sure_wavelet_warmup_steps,
+            lp_frac=sure_wavelet_lp_frac,
+            grad_mode=sure_grad_mode,
+            alpha_bo_trials=sure_alpha_bo_trials,
+            alpha_bo_patience=sure_alpha_bo_patience,
+            alpha_bo_state=_alpha_bo_state,
+        )
+
+        if _csv_writer is not None:
+            _csv_writer.writerow([
+                i, f"{sigma_hat_0:.6f}", f"{sigma_val:.6f}",
+                f"{sure_approx_coeff:.4f}",
+                f"{_stats['sure_val']:.6f}",
+                f"{_stats['pixel_delta_rms']:.6f}",
+                f"{sure_alpha:.6f}",
+            ])
+            _csv_fh.flush()
+        # jac_ratio adaptation is not applicable here — wavelet correction does
+        # not produce a scalar jac_ratio signal; jac_interval is fixed.
+
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigma,
+                      'sigma_hat': sigma, 'denoised': x0_corrected})
+
+        # ── Step 6: Ancestral update from SURE-Wavelet-corrected x̂*₀ ─────────
+        if float(sigma_next) == 0:
+            x = x0_corrected
+        else:
+            sigma_down, sigma_up = get_ancestral_step(sigma, sigma_next, eta=1.0)
+            d = (x - x0_corrected) / sigma
+            x = x + d * (sigma_down - sigma)
+            x = x + sigma_up * noise_sampler(sigma, sigma_next)
+
+    if _csv_fh is not None:
+        _csv_fh.close()
+
+    return x
+
+
+def _sure_score_config(snapshots, wav_name, level, lp_frac):
+    """Sum SURE score for one (wavelet, level, lp_frac) config over pre-computed snapshots.
+
+    snapshots: list of (residual_tensor, sigma2_float) pairs collected during
+               calibration — one per denoising step.  All expensive model forwards
+               are already done; this function only performs cheap DWT arithmetic.
+
+    Returns a single float: sum of per-snapshot SURE values for the given config.
+    """
+    try:
+        import ptwt
+        import pywt as _pywt
+    except ImportError:
+        return float('inf')
+
+    try:
+        _wav = _pywt.Wavelet(wav_name)
+        total = 0.0
+        for residual, sigma2 in snapshots:
+            res_coeffs = ptwt.wavedec2(residual, _wav, level=level, mode='reflect')
+            n_sb       = len(res_coeffs)
+            n_detail   = int(lp_frac * (n_sb - 1))
+            total += float(-res_coeffs[0].numel() * sigma2 + (res_coeffs[0] ** 2).sum())
+            for sb_idx in range(1, n_detail + 1):
+                for sub_i in range(3):
+                    total += float(
+                        -res_coeffs[sb_idx][sub_i].numel() * sigma2
+                        + (res_coeffs[sb_idx][sub_i] ** 2).sum()
+                    )
+        return total
+    except Exception:
+        return float('inf')
+
+
+def sample_sure_wavelet_auto(model, x, sigmas, extra_args=None, callback=None, disable=None,
+                              sure_alpha=0.05, sure_n_mc=1, sure_eps=1e-3,
+                              sure_jac_interval=2,
+                              sure_adam_mode='bo', sure_adam_beta1=0.9,
+                              sure_adam_beta2=0.999, sure_adam_wd=0.01,
+                              sure_approx_coeff=2.0, sure_csv_path=None,
+                              sure_sigma_ema=0.0, sure_wavelet_warmup_steps=0,
+                              sure_grad_mode='vjp',
+                              sure_wavelet_cal_steps=5,
+                              sure_wavelet_cal_wavelets=('haar', 'db2', 'db4', 'db6', 'sym4'),
+                              sure_wavelet_cal_levels=(1, 6),
+                              sure_wavelet_bo_trials=40,
+                              sure_wavelet_bo_patience=8,
+                              sure_wavelet_bo_cv_warn=0.4,
+                              sure_alpha_bo_trials=12, sure_alpha_bo_patience=4):
+    """SURE-Wavelet Auto — Bayesian-optimised wavelet config, then SURE-Wavelet.
+
+    Search space (mixed discrete/continuous):
+      wavelet  — suggest_categorical from sure_wavelet_cal_wavelets
+      level    — suggest_int over [lvl_min, lvl_max] from sure_wavelet_cal_levels
+      lp_frac  — suggest_float over [0.0, 1.0]  (continuous; no fixed grid)
+
+    Phase 1 (data collection): Run sure_wavelet_cal_steps denoising steps on an
+    independent copy of x.  Each step yields one (residual, sigma2) snapshot.
+    sure_wavelet_cal_steps model forwards total — no extra cost per BO trial.
+
+    Phase 2 (BO search): Optuna TPE minimises summed SURE score across snapshots.
+    Each trial is cheap (only DWT arithmetic).  Early-stop fires when the best
+    value has not improved for sure_wavelet_bo_patience consecutive trials.
+
+    Phase 3 (advisory): Compute coefficient of variation (std/|mean|) of the
+    winner's per-step SURE values.  High CV → noisy objective → log a warning
+    recommending more cal_steps.
+
+    Falls back to an exhaustive grid search when optuna is not installed.
+
+    sure_wavelet_cal_levels : (min, max) int tuple for suggest_int, or a sequence
+        of ints whose min/max is used.  Default (1, 6) searches all valid levels.
+    """
+    extra_args    = {} if extra_args is None else extra_args
+    s_in          = x.new_ones([x.shape[0]])
+    noise_sampler = default_noise_sampler(x, seed=extra_args.get('seed', None))
+    n_steps       = len(sigmas) - 1
+    cal_steps     = min(int(sure_wavelet_cal_steps), n_steps)
+
+    # Resolve level range
+    _lvls  = list(sure_wavelet_cal_levels)
+    lvl_min, lvl_max = (min(_lvls), max(_lvls)) if len(_lvls) >= 2 else (_lvls[0], _lvls[0])
+    cal_wavelet_list  = list(sure_wavelet_cal_wavelets)
+
+    _sure_logger.info(
+        "SURE-Wavelet Auto: collecting %d calibration snapshots  "
+        "wavelets=%s  level=[%d,%d]  bo_trials=%d  bo_patience=%d",
+        cal_steps, cal_wavelet_list, lvl_min, lvl_max,
+        int(sure_wavelet_bo_trials), int(sure_wavelet_bo_patience),
+    )
+
+    # ── Phase 1: collect (residual, sigma2) snapshots ───────────────────────
+    snapshots = []
+    x_cal     = x.clone()
+    for i in range(cal_steps):
+        sigma      = sigmas[i]
+        sigma_next = sigmas[i + 1]
+        sigma_val  = sigma.item()
+
+        with torch.no_grad():
+            x0_hat = model(x_cal, sigma * s_in, **extra_args).detach()
+
+        sigma_hat_0 = min(
+            _pca_noise_estimate(x0_hat, min_sigma=float(sure_eps)),
+            sigma_val,
+        )
+        residual = (x_cal - x0_hat).detach()
+        snapshots.append((residual, sigma_hat_0 ** 2))
+
+        if float(sigma_next) > 0:
+            sigma_down, sigma_up = get_ancestral_step(sigma, sigma_next, eta=1.0)
+            d     = (x_cal - x0_hat) / sigma
+            x_cal = x_cal + d * (sigma_down - sigma)
+            x_cal = x_cal + sigma_up * noise_sampler(sigma, sigma_next)
+
+    del x_cal
+
+    # ── Phase 2: Bayesian optimisation (or grid fallback) ────────────────────
+    best_wavelet = cal_wavelet_list[0]
+    best_level   = max(1, min(3, lvl_max))
+    best_lp_frac = 1.0
+    n_trials_run = 0
+
+    try:
+        import optuna as _optuna
+        _optuna.logging.set_verbosity(_optuna.logging.WARNING)
+
+        _no_improve = [0]
+        _best_val   = [float('inf')]
+
+        def _bo_callback(study, trial):
+            val = study.best_value
+            if val < _best_val[0]:
+                _best_val[0]   = val
+                _no_improve[0] = 0
+            else:
+                _no_improve[0] += 1
+            if _no_improve[0] >= int(sure_wavelet_bo_patience):
+                study.stop()
+
+        def _objective(trial):
+            wav   = trial.suggest_categorical('wavelet', cal_wavelet_list)
+            level = trial.suggest_int('level', lvl_min, lvl_max)
+            lpf   = trial.suggest_float('lp_frac', 0.0, 1.0)
+            return _sure_score_config(snapshots, wav, level, lpf)
+
+        study = _optuna.create_study(
+            direction='minimize',
+            sampler=_optuna.samplers.TPESampler(seed=42, n_startup_trials=10),
+        )
+        study.optimize(
+            _objective,
+            n_trials=int(sure_wavelet_bo_trials),
+            callbacks=[_bo_callback],
+            show_progress_bar=False,
+        )
+
+        best         = study.best_params
+        best_wavelet = best['wavelet']
+        best_level   = best['level']
+        best_lp_frac = best['lp_frac']
+        n_trials_run = len(study.trials)
+
+        # Log top-3
+        ranked = sorted(
+            [t for t in study.trials if t.value is not None],
+            key=lambda t: t.value,
+        )
+        for rank, t in enumerate(ranked[:3], 1):
+            p = t.params
+            _sure_logger.info(
+                "SURE-Wavelet Auto  #%d: wavelet=%s  level=%d  lp_frac=%.3f  sure=%.2f",
+                rank, p['wavelet'], p['level'], p['lp_frac'], t.value,
+            )
+
+    except ImportError:
+        # Fallback: exhaustive grid over wavelets × integer levels × fixed lp_frac list
+        _sure_logger.warning(
+            "optuna not installed — falling back to grid search. "
+            "Install with: pip install optuna"
+        )
+        import itertools
+        _lp_grid   = [0.0, 0.25, 0.5, 0.75, 1.0]
+        _grid      = list(itertools.product(
+            cal_wavelet_list,
+            range(lvl_min, lvl_max + 1),
+            _lp_grid,
+        ))
+        _scores    = [_sure_score_config(snapshots, w, lv, lf) for w, lv, lf in _grid]
+        _best_idx  = int(min(range(len(_scores)), key=lambda j: _scores[j]))
+        best_wavelet, best_level, best_lp_frac = _grid[_best_idx]
+        n_trials_run = len(_grid)
+
+        ranked_grid = sorted(range(len(_scores)), key=lambda j: _scores[j])
+        for rank, idx in enumerate(ranked_grid[:3], 1):
+            w, lv, lf = _grid[idx]
+            _sure_logger.info(
+                "SURE-Wavelet Auto (grid)  #%d: wavelet=%s  level=%d  lp_frac=%.2f  "
+                "sure=%.2f", rank, w, lv, lf, _scores[idx],
+            )
+
+    _sure_logger.info(
+        "SURE-Wavelet Auto: using wavelet=%s  level=%d  lp_frac=%.3f  "
+        "(%d evaluations)",
+        best_wavelet, best_level, best_lp_frac, n_trials_run,
+    )
+
+    # ── Phase 3: advisory — check if cal_steps was sufficient ───────────────
+    if len(snapshots) > 1:
+        import math as _math
+        import statistics as _stat
+        per_step = [
+            _sure_score_config([snap], best_wavelet, best_level, best_lp_frac)
+            for snap in snapshots
+        ]
+        finite = [v for v in per_step if _math.isfinite(v)]
+        if len(finite) >= 2:
+            cv = _stat.stdev(finite) / (abs(_stat.mean(finite)) + 1e-8)
+            if cv > float(sure_wavelet_bo_cv_warn):
+                _sure_logger.warning(
+                    "SURE-Wavelet Auto: winner SURE CV=%.3f > %.2f — "
+                    "objective is noisy across calibration steps; consider increasing "
+                    "sure_wavelet_cal_steps (current=%d) for more reliable selection.",
+                    cv, float(sure_wavelet_bo_cv_warn), cal_steps,
+                )
+            else:
+                _sure_logger.info(
+                    "SURE-Wavelet Auto: winner CV=%.3f — calibration stable.",
+                    cv,
+                )
+        else:
+            _sure_logger.warning(
+                "SURE-Wavelet Auto: all per-step SURE scores are non-finite — "
+                "CV advisory skipped. Verify pywt/ptwt are installed correctly.",
+            )
+
+    # ── Phase 4: main sampling from original x with winning config ───────────
+    return sample_sure_wavelet(
+        model, x, sigmas,
+        extra_args=extra_args, callback=callback, disable=disable,
+        sure_alpha=sure_alpha, sure_n_mc=sure_n_mc, sure_eps=sure_eps,
+        sure_jac_interval=sure_jac_interval,
+        sure_adam_mode=sure_adam_mode, sure_adam_beta1=sure_adam_beta1,
+        sure_adam_beta2=sure_adam_beta2, sure_adam_wd=sure_adam_wd,
+        sure_wavelet=best_wavelet, sure_wavelet_level=best_level,
+        sure_wavelet_lp_frac=best_lp_frac,
+        sure_approx_coeff=sure_approx_coeff, sure_csv_path=sure_csv_path,
+        sure_sigma_ema=sure_sigma_ema,
+        sure_wavelet_warmup_steps=sure_wavelet_warmup_steps,
+        sure_grad_mode=sure_grad_mode,
+        sure_alpha_bo_trials=sure_alpha_bo_trials,
+        sure_alpha_bo_patience=sure_alpha_bo_patience,
+    )
+
+
+def sample_sure_wavelet_converge(
+    model, x, sigmas, extra_args=None, callback=None, disable=None,
+    sure_alpha=0.05, sure_n_mc=1, sure_eps=1e-3,
+    sure_jac_interval=2,
+    sure_adam_mode='bo', sure_adam_beta1=0.9,
+    sure_adam_beta2=0.999, sure_adam_wd=0.01,
+    sure_wavelet='db4', sure_wavelet_level=3,
+    sure_approx_coeff=2.0, sure_csv_path=None,
+    sure_sigma_ema=0.0, sure_wavelet_warmup_steps=0,
+    sure_wavelet_lp_frac=1.0,
+    sure_grad_mode='vjp',
+    sure_inner_steps=4,
+    sure_inner_tol=1e-4,
+    sure_alpha_bo_trials=12, sure_alpha_bo_patience=4,
+):
+    """SURE-Wavelet with convergence-driven inner loop per sigma stage.
+
+    At each sigma σᵢ, instead of a single SURE correction, iterates up to
+    sure_inner_steps times — stopping early when the correction step
+    (pixel_delta_rms) falls below sure_inner_tol.  A divergence guard stops
+    the inner loop if SURE value rises more than 10% vs. the previous inner step.
+
+    Cost per sigma stage (approx mode): 1 outer + N_inner_done model calls.
+    Cost per sigma stage (vjp/vjp_sb): 1 outer + N_inner_done × (1+n_mc) calls.
+
+    Per-sigma Adam state is reset each stage so the inner steps form a clean
+    gradient-descent sequence toward the SURE minimum at that noise level.
+
+    sure_inner_steps: max SURE correction iterations per sigma stage (default 4)
+    sure_inner_tol:   pixel_delta_rms early-stop threshold; 0 = always run all steps
+    """
+    extra_args    = {} if extra_args is None else extra_args
+    seed          = extra_args.get("seed", None)
+    noise_sampler = default_noise_sampler(x, seed=seed)
+    s_in          = x.new_ones([x.shape[0]])
+
+    n_steps    = len(sigmas) - 1
+    _max_inner = max(1, int(sure_inner_steps))
+    _sigma_hat_0_ema: float | None = None
+    _alpha_bo_state: dict | None   = {} if sure_adam_mode == 'bo' else None
+
+    _sure_logger.info(
+        "SURE-Wavelet-Converge: %d steps  alpha=%.4f  n_mc=%d  wavelet=%s  "
+        "level=%d  lp_frac=%.2f  adam=%s  grad_mode=%s  "
+        "inner_steps=%d  inner_tol=%.2e",
+        n_steps, sure_alpha, sure_n_mc, sure_wavelet, sure_wavelet_level,
+        sure_wavelet_lp_frac, sure_adam_mode, sure_grad_mode,
+        _max_inner, float(sure_inner_tol),
+    )
+
+    for i in trange(n_steps, disable=disable):
+        sigma      = sigmas[i]
+        sigma_next = sigmas[i + 1]
+        sigma_val  = sigma.item()
+
+        # ── ONE outer model call: get x̂₀ ────────────────────────────────────
+        with torch.no_grad():
+            x0_hat = model(x, sigma * s_in, **extra_args).detach()
+
+        # ── PCA noise estimate + ceiling + optional EMA ──────────────────────
+        _sigma_raw = _pca_noise_estimate(x0_hat, min_sigma=float(sure_eps))
+        _sigma_raw = min(_sigma_raw, sigma_val)
+        if sure_sigma_ema > 0.0:
+            if _sigma_hat_0_ema is None:
+                _sigma_hat_0_ema = _sigma_raw
+            else:
+                _sigma_hat_0_ema = (sure_sigma_ema * _sigma_hat_0_ema
+                                    + (1.0 - sure_sigma_ema) * _sigma_raw)
+            sigma_hat_0 = min(_sigma_hat_0_ema, sigma_val)
+        else:
+            sigma_hat_0 = _sigma_raw
+
+        # ── Inner SURE convergence loop ──────────────────────────────────────
+        # Fresh Adam state per sigma stage so inner steps are a clean gradient-
+        # descent sequence toward the SURE minimum at this noise level.
+        # BO state persists across sigma stages for cross-step warm-starting.
+        _inner_adam  = {} if sure_adam_mode in ('adam', 'adamw') else None
+        _use_jac     = (sure_jac_interval <= 1) or (i % max(1, sure_jac_interval) == 0)
+        _prev_sure   = float('inf')
+        _inner_done  = 0
+        _stats: dict = {'sure_val': 0.0, 'pixel_delta_rms': 0.0}
+
+        for inner_i in range(_max_inner):
+            x0_hat, _stats = _sure_correct_x0_wavelet(
+                model, x0_hat, sigma_hat_0, s_in, extra_args,
+                alpha=sure_alpha, n_mc=sure_n_mc, eps_mc=sure_eps,
+                use_jac=_use_jac, sigma_t=sigma,
+                adam_state=_inner_adam, adam_mode=sure_adam_mode,
+                adam_beta1=sure_adam_beta1, adam_beta2=sure_adam_beta2,
+                adam_wd=sure_adam_wd,
+                wavelet=sure_wavelet, wavelet_level=sure_wavelet_level,
+                approx_coeff=sure_approx_coeff,
+                warmup_steps=sure_wavelet_warmup_steps,
+                lp_frac=sure_wavelet_lp_frac,
+                grad_mode=sure_grad_mode,
+                alpha_bo_trials=sure_alpha_bo_trials,
+                alpha_bo_patience=sure_alpha_bo_patience,
+                alpha_bo_state=_alpha_bo_state,
+            )
+            _inner_done = inner_i + 1
+            _sure_val   = _stats['sure_val']
+            _delta_rms  = _stats['pixel_delta_rms']
+
+            # Convergence: step size is negligible
+            if sure_inner_tol > 0 and _delta_rms < float(sure_inner_tol):
+                _sure_logger.debug(
+                    "[converge] sigma=%.4f  inner=%d/%d  converged  "
+                    "pixel_delta_rms=%.2e < tol=%.2e",
+                    sigma_val, _inner_done, _max_inner, _delta_rms, float(sure_inner_tol),
+                )
+                break
+
+            if _prev_sure < float('inf'):
+                # Log zero-crossing: SURE went negative for the first time this stage.
+                # The correction has passed through the SURE minimum — the gradient
+                # now points away from the data manifold (opposite direction).
+                if _prev_sure >= 0 and _sure_val < 0:
+                    _sure_logger.debug(
+                        "[converge] sigma=%.4f  inner=%d/%d  SURE crossed zero: %.2f → %.2f  "
+                        "(overshoot candidate — watching next step)",
+                        sigma_val, _inner_done, _max_inner, _prev_sure, _sure_val,
+                    )
+
+                # Positive divergence: SURE rising (correction destabilising in positive direction)
+                if _prev_sure >= 0 and _sure_val > _prev_sure * 1.1:
+                    _sure_logger.debug(
+                        "[converge] sigma=%.4f  inner=%d/%d  +diverge-stop  "
+                        "sure_val=%.2f  prev=%.2f",
+                        sigma_val, _inner_done, _max_inner, _sure_val, _prev_sure,
+                    )
+                    break
+
+                # Negative divergence: SURE already negative and going more extreme.
+                # Both corrections apply the same gradient direction; once the SURE
+                # minimum is behind us the gradient flips sign conceptually, so each
+                # further step moves x̂₀ further from the data manifold.
+                # prev_sure * 1.1 is more negative than prev_sure → flags a >10% drift.
+                if _prev_sure < 0 and _sure_val < _prev_sure * 1.1:
+                    _sure_logger.debug(
+                        "[converge] sigma=%.4f  inner=%d/%d  -diverge-stop  "
+                        "sure_val=%.2f  prev=%.2f  (drifting more negative)",
+                        sigma_val, _inner_done, _max_inner, _sure_val, _prev_sure,
+                    )
+                    break
+
+            _prev_sure = _sure_val
+
+        _sure_logger.info(
+            "[converge] sigma=%.4f  inner=%d/%d  sure_val=%.2f  pixel_delta_rms=%.2e",
+            sigma_val, _inner_done, _max_inner,
+            _stats['sure_val'], _stats['pixel_delta_rms'],
+        )
+
+        x0_corrected = x0_hat
+
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigma,
+                      'sigma_hat': sigma, 'denoised': x0_corrected})
+
+        # ── Ancestral step from converged x̂*₀ ───────────────────────────────
+        if float(sigma_next) == 0:
+            x = x0_corrected
+        else:
+            sigma_down, sigma_up = get_ancestral_step(sigma, sigma_next, eta=1.0)
+            d = (x - x0_corrected) / sigma
+            x = x + d * (sigma_down - sigma)
+            x = x + sigma_up * noise_sampler(sigma, sigma_next)
+
+    return x
+
+
+def sample_sure_wavelet_auto_converge(
+    model, x, sigmas, extra_args=None, callback=None, disable=None,
+    sure_alpha=0.05, sure_n_mc=1, sure_eps=1e-3,
+    sure_jac_interval=2,
+    sure_adam_mode='bo', sure_adam_beta1=0.9,
+    sure_adam_beta2=0.999, sure_adam_wd=0.01,
+    sure_approx_coeff=2.0, sure_csv_path=None,
+    sure_sigma_ema=0.0, sure_wavelet_warmup_steps=0,
+    sure_grad_mode='vjp',
+    sure_wavelet_cal_steps=5,
+    sure_wavelet_cal_wavelets=('haar', 'db2', 'db4', 'db6', 'sym4'),
+    sure_wavelet_cal_levels=(1, 6),
+    sure_wavelet_bo_trials=40,
+    sure_wavelet_bo_patience=8,
+    sure_wavelet_bo_cv_warn=0.4,
+    sure_inner_steps=4,
+    sure_inner_tol=1e-4,
+    sure_alpha_bo_trials=12, sure_alpha_bo_patience=4,
+):
+    """SURE-Wavelet Auto + convergence loop.
+
+    Phase 1-3: Same Bayesian-optimised wavelet-config search as
+    sample_sure_wavelet_auto (collect snapshots → BO/grid → CV advisory).
+
+    Phase 4: Run sample_sure_wavelet_converge with the winning config,
+    so each sigma stage iterates SURE corrections until convergence rather
+    than applying a single fixed correction.
+    """
+    extra_args    = {} if extra_args is None else extra_args
+    s_in          = x.new_ones([x.shape[0]])
+    noise_sampler = default_noise_sampler(x, seed=extra_args.get('seed', None))
+    n_steps       = len(sigmas) - 1
+    cal_steps     = min(int(sure_wavelet_cal_steps), n_steps)
+
+    _lvls  = list(sure_wavelet_cal_levels)
+    lvl_min, lvl_max = (min(_lvls), max(_lvls)) if len(_lvls) >= 2 else (_lvls[0], _lvls[0])
+    cal_wavelet_list  = list(sure_wavelet_cal_wavelets)
+
+    _sure_logger.info(
+        "SURE-Wavelet Auto-Converge: collecting %d calibration snapshots  "
+        "wavelets=%s  level=[%d,%d]  bo_trials=%d  bo_patience=%d  "
+        "inner_steps=%d  inner_tol=%.2e",
+        cal_steps, cal_wavelet_list, lvl_min, lvl_max,
+        int(sure_wavelet_bo_trials), int(sure_wavelet_bo_patience),
+        int(sure_inner_steps), float(sure_inner_tol),
+    )
+
+    # ── Phase 1: collect (residual, sigma2) snapshots ───────────────────────
+    snapshots = []
+    x_cal     = x.clone()
+    for i in range(cal_steps):
+        sigma      = sigmas[i]
+        sigma_next = sigmas[i + 1]
+        sigma_val  = sigma.item()
+
+        with torch.no_grad():
+            x0_hat = model(x_cal, sigma * s_in, **extra_args).detach()
+
+        sigma_hat_0 = min(
+            _pca_noise_estimate(x0_hat, min_sigma=float(sure_eps)),
+            sigma_val,
+        )
+        residual = (x_cal - x0_hat).detach()
+        snapshots.append((residual, sigma_hat_0 ** 2))
+
+        if float(sigma_next) > 0:
+            sigma_down, sigma_up = get_ancestral_step(sigma, sigma_next, eta=1.0)
+            d     = (x_cal - x0_hat) / sigma
+            x_cal = x_cal + d * (sigma_down - sigma)
+            x_cal = x_cal + sigma_up * noise_sampler(sigma, sigma_next)
+
+    del x_cal
+
+    # ── Phase 2: Bayesian optimisation (or grid fallback) ────────────────────
+    best_wavelet = cal_wavelet_list[0]
+    best_level   = max(1, min(3, lvl_max))
+    best_lp_frac = 1.0
+    n_trials_run = 0
+
+    try:
+        import optuna as _optuna
+        _optuna.logging.set_verbosity(_optuna.logging.WARNING)
+
+        _no_improve = [0]
+        _best_val   = [float('inf')]
+
+        def _bo_callback(study, trial):
+            val = study.best_value
+            if val < _best_val[0]:
+                _best_val[0]   = val
+                _no_improve[0] = 0
+            else:
+                _no_improve[0] += 1
+            if _no_improve[0] >= int(sure_wavelet_bo_patience):
+                study.stop()
+
+        def _objective(trial):
+            wav   = trial.suggest_categorical('wavelet', cal_wavelet_list)
+            level = trial.suggest_int('level', lvl_min, lvl_max)
+            lpf   = trial.suggest_float('lp_frac', 0.0, 1.0)
+            return _sure_score_config(snapshots, wav, level, lpf)
+
+        study = _optuna.create_study(
+            direction='minimize',
+            sampler=_optuna.samplers.TPESampler(seed=42, n_startup_trials=10),
+        )
+        study.optimize(
+            _objective,
+            n_trials=int(sure_wavelet_bo_trials),
+            callbacks=[_bo_callback],
+            show_progress_bar=False,
+        )
+
+        best         = study.best_params
+        best_wavelet = best['wavelet']
+        best_level   = best['level']
+        best_lp_frac = best['lp_frac']
+        n_trials_run = len(study.trials)
+
+        ranked = sorted(
+            [t for t in study.trials if t.value is not None],
+            key=lambda t: t.value,
+        )
+        for rank, t in enumerate(ranked[:3], 1):
+            p = t.params
+            _sure_logger.info(
+                "SURE-Wavelet Auto-Converge  #%d: wavelet=%s  level=%d  lp_frac=%.3f  sure=%.2f",
+                rank, p['wavelet'], p['level'], p['lp_frac'], t.value,
+            )
+
+    except ImportError:
+        _sure_logger.warning(
+            "optuna not installed — falling back to grid search. "
+            "Install with: pip install optuna"
+        )
+        import itertools
+        _lp_grid   = [0.0, 0.25, 0.5, 0.75, 1.0]
+        _grid      = list(itertools.product(
+            cal_wavelet_list,
+            range(lvl_min, lvl_max + 1),
+            _lp_grid,
+        ))
+        _scores    = [_sure_score_config(snapshots, w, lv, lf) for w, lv, lf in _grid]
+        _best_idx  = int(min(range(len(_scores)), key=lambda j: _scores[j]))
+        best_wavelet, best_level, best_lp_frac = _grid[_best_idx]
+        n_trials_run = len(_grid)
+
+        ranked_grid = sorted(range(len(_scores)), key=lambda j: _scores[j])
+        for rank, idx in enumerate(ranked_grid[:3], 1):
+            w, lv, lf = _grid[idx]
+            _sure_logger.info(
+                "SURE-Wavelet Auto-Converge (grid)  #%d: wavelet=%s  level=%d  lp_frac=%.2f  "
+                "sure=%.2f", rank, w, lv, lf, _scores[idx],
+            )
+
+    _sure_logger.info(
+        "SURE-Wavelet Auto-Converge: using wavelet=%s  level=%d  lp_frac=%.3f  "
+        "(%d evaluations)",
+        best_wavelet, best_level, best_lp_frac, n_trials_run,
+    )
+
+    # ── Phase 3: advisory — check if cal_steps was sufficient ───────────────
+    if len(snapshots) > 1:
+        import math as _math
+        import statistics as _stat
+        per_step = [
+            _sure_score_config([snap], best_wavelet, best_level, best_lp_frac)
+            for snap in snapshots
+        ]
+        finite = [v for v in per_step if _math.isfinite(v)]
+        if len(finite) >= 2:
+            cv = _stat.stdev(finite) / (abs(_stat.mean(finite)) + 1e-8)
+            if cv > float(sure_wavelet_bo_cv_warn):
+                _sure_logger.warning(
+                    "SURE-Wavelet Auto-Converge: winner SURE CV=%.3f > %.2f — "
+                    "objective is noisy; consider increasing sure_wavelet_cal_steps (current=%d).",
+                    cv, float(sure_wavelet_bo_cv_warn), cal_steps,
+                )
+            else:
+                _sure_logger.info(
+                    "SURE-Wavelet Auto-Converge: winner CV=%.3f — calibration stable.", cv,
+                )
+
+    # ── Phase 4: main sampling with winning config + convergence loop ────────
+    return sample_sure_wavelet_converge(
+        model, x, sigmas,
+        extra_args=extra_args, callback=callback, disable=disable,
+        sure_alpha=sure_alpha, sure_n_mc=sure_n_mc, sure_eps=sure_eps,
+        sure_jac_interval=sure_jac_interval,
+        sure_adam_mode=sure_adam_mode, sure_adam_beta1=sure_adam_beta1,
+        sure_adam_beta2=sure_adam_beta2, sure_adam_wd=sure_adam_wd,
+        sure_wavelet=best_wavelet, sure_wavelet_level=best_level,
+        sure_wavelet_lp_frac=best_lp_frac,
+        sure_approx_coeff=sure_approx_coeff, sure_csv_path=sure_csv_path,
+        sure_sigma_ema=sure_sigma_ema,
+        sure_wavelet_warmup_steps=sure_wavelet_warmup_steps,
+        sure_grad_mode=sure_grad_mode,
+        sure_inner_steps=sure_inner_steps,
+        sure_inner_tol=sure_inner_tol,
+        sure_alpha_bo_trials=sure_alpha_bo_trials,
+        sure_alpha_bo_patience=sure_alpha_bo_patience,
+    )
+
+
+def sample_sure_adaptive(model, x, sigma_min, sigma_max, extra_args=None, callback=None, disable=None,
+                          rtol=0.05, atol=0.0078, h_init=0.05,
+                          pcoeff=0., icoeff=1., dcoeff=0., accept_safety=0.81,
+                          sure_alpha=0.05, sure_n_mc=1, sure_eps=1e-3,
+                          sure_preheat_frac=0.3, sure_jac_interval=2,
+                          sure_adam_mode='none', sure_adam_beta1=0.9,
+                          sure_adam_beta2=0.999, sure_adam_wd=0.01, sure_grad_mode='vjp',
+                          sure_alpha_bo_trials=0, sure_alpha_bo_patience=4):
+    """SURE sampler with adaptive step size (PID controller on DPM-Solver-2 error).
+
+    Combines:
+    - DPM-Solver-2 local truncation error for step size control (via PID)
+    - SURE trajectory correction applied after the preheat phase
+
+    The sigma schedule is computed automatically — only sigma_min and sigma_max
+    are required (no steps parameter).
+
+    Step size control:
+      rtol, atol:      error tolerances for PID controller
+      h_init:          initial step size in log-sigma space
+      pcoeff/icoeff/dcoeff: PID gains (default: I-only)
+      accept_safety:   step accepted if PID factor >= this
+
+    SURE correction:
+      sure_alpha:        gradient step size
+      sure_n_mc:         Monte Carlo samples for Jacobian trace
+      sure_eps:          finite-difference epsilon
+      sure_preheat_frac: fraction of t-range to run without correction (default 0.3)
+      sure_jac_interval: run full Jacobian every N correction steps (default 2)
+    """
+    if sigma_max <= 0:
+        raise ValueError('sigma_max must be > 0')
+    # sigma_min=0 is valid for zero-SNR models (e.g. Illustrious).
+    # Log-space integration requires sigma > 0, so clamp to a small floor.
+    _sigma_min_log = max(float(sigma_min), 1e-6)
+    if sigma_min <= 0:
+        _sure_logger.warning(
+            "SURE-Adaptive: sigma_min=0 (zero-SNR model) — clamping "
+            "log-space endpoint to 1e-6; final denoised output is unaffected"
+        )
+
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+
+    # Work in log-sigma space: t = -log(sigma), sigma = exp(-t)
+    # t increases as sigma decreases (t_start < t_end)
+    sigma_fn = lambda t: t.neg().exp()
+    t_fn     = lambda sigma: sigma.log().neg()
+
+    t_start = t_fn(torch.tensor(sigma_max,      dtype=x.dtype, device=x.device))
+    t_end   = t_fn(torch.tensor(_sigma_min_log, dtype=x.dtype, device=x.device))
+    t_preheat = t_start + sure_preheat_frac * (t_end - t_start)
+
+    pid    = PIDStepSizeController(h_init, pcoeff, icoeff, dcoeff, order=2, accept_safety=accept_safety)
+    atol_t = torch.tensor(atol, dtype=x.dtype, device=x.device)
+    rtol_t = torch.tensor(rtol, dtype=x.dtype, device=x.device)
+
+    info = {'steps': 0, 'nfe': 0, 'n_accept': 0, 'n_reject': 0}
+    x_prev = x.clone()
+    s = t_start.clone()
+
+    _sure_logger.info(
+        "SURE-Adaptive: sigma [%.4f → %.4f]  preheat_frac=%.2f  alpha=%.4f  jac_interval=%d",
+        sigma_max, sigma_min, sure_preheat_frac, sure_alpha, sure_jac_interval,
+    )
+
+    # jac_interval tracking (fixed for adaptive sampler — not adaptive, to keep control predictable)
+    _corr_count = 0
+    _adam_state     = {'optimizer': None, 'param': None} if sure_adam_mode in ('adam', 'adamw') else None
+    _alpha_bo_state = {} if sure_alpha_bo_trials > 0 else None
+
+    with tqdm(disable=disable) as pbar:
+        while s < t_end - 1e-5:
+            t_next = torch.minimum(t_end, s + pid.h)
+            sigma_s    = sigma_fn(s)
+            sigma_next = sigma_fn(t_next)
+
+            in_preheat = float(s) < float(t_preheat)
+            _tag = f" [adap] sigma={float(sigma_s):.4f}"
+
+            # --- Primary x̂₀ at current state (with SURE after preheat) ---
+            if in_preheat:
+                with torch.no_grad():
+                    x0_s = model(x, sigma_s * s_in, **extra_args).detach()
+            else:
+                with torch.no_grad():
+                    x0_hat = model(x, sigma_s * s_in, **extra_args).detach()
+                sigma_hat_0 = _pca_noise_estimate(x0_hat, min_sigma=float(sure_eps))
+                _use_jac = (sure_jac_interval <= 1) or (_corr_count % sure_jac_interval == 0)
+                x0_s, _ = _sure_correct_x0(
+                    model, x0_hat, sigma_hat_0, s_in, extra_args,
+                    alpha=sure_alpha, n_mc=sure_n_mc, eps_mc=sure_eps,
+                    use_jac=_use_jac, sigma_t=sigma_s,
+                    adam_state=_adam_state, adam_mode=sure_adam_mode,
+                    adam_beta1=sure_adam_beta1, adam_beta2=sure_adam_beta2,
+                    adam_wd=sure_adam_wd, grad_mode=sure_grad_mode,
+                    alpha_bo_trials=sure_alpha_bo_trials,
+                    alpha_bo_patience=sure_alpha_bo_patience,
+                    alpha_bo_state=_alpha_bo_state,
+                )
+                _corr_count += 1
+
+            # --- DPM-Solver-1 step (low order) ---
+            # eps_s = (x - x̂₀_s) / sigma_s
+            # x_low = x - sigma_next * expm1(h) * eps_s   where h = t_next - s
+            h = t_next - s
+            eps_s = (x - x0_s) / sigma_s
+            x_low = x - sigma_next * h.expm1() * eps_s
+
+            # --- DPM-Solver-2 midpoint step (high order) ---
+            # midpoint t: s1 = s + h/2, sigma_mid = sigma_fn(s1)
+            r = 0.5
+            s1 = s + r * h
+            sigma_mid = sigma_fn(s1)
+            u1 = x - sigma_mid * (r * h).expm1() * eps_s
+            with torch.no_grad():
+                x0_mid = model(u1, sigma_mid * s_in, **extra_args).detach()
+            eps_mid = (u1 - x0_mid) / sigma_mid
+            # 2nd-order correction term
+            x_high = x - sigma_next * h.expm1() * eps_s \
+                       - sigma_next / (2 * r) * h.expm1() * (eps_mid - eps_s)
+
+            # --- PID error estimate ---
+            delta = torch.maximum(atol_t, rtol_t * torch.maximum(x_low.abs(), x_prev.abs()))
+            error = torch.linalg.norm((x_low - x_high) / delta) / x.numel() ** 0.5
+
+            accept = pid.propose_step(error)
+            if accept:
+                x_prev = x_low
+                x = x_high
+                s = t_next
+                info['n_accept'] += 1
+                pbar.update()
+                if callback is not None:
+                    callback({'x': x, 'i': info['steps'], 'sigma': sigma_s, 'sigma_hat': sigma_s,
+                              'denoised': x0_s, 'error': error, 'h': pid.h, **info})
+            else:
+                info['n_reject'] += 1
+
+            info['nfe']   += 2   # x0_s + x0_mid (SURE counts more internally but we log 2)
+            info['steps'] += 1
+
+            _sure_logger.info(
+                "[adap] step=%d  sigma=%.4f→%.4f  error=%.4f  h=%.4f  accept=%s  preheat=%s",
+                info['steps'], float(sigma_s), float(sigma_next),
+                float(error), float(pid.h), accept, in_preheat,
+            )
+
+            if info['steps'] > 10000:
+                _sure_logger.warning("SURE-Adaptive: step limit reached, stopping early")
+                break
+
+    _sure_logger.info(
+        "SURE-Adaptive done: %d accepted / %d rejected  nfe=%d",
+        info['n_accept'], info['n_reject'], info['nfe'],
+    )
+
+    return x
+
+
+# ---------------------------------------------------------------------------
+# SURE-guided Restart Sampler
+# ---------------------------------------------------------------------------
+# Combines the Restart sampler (arXiv:2301.12503) with SURE trajectory
+# monitoring.  Instead of blindly restarting at fixed sigma thresholds, the
+# SURE residual ratio
+#
+#   r_ratio = sqrt( mean( (x − Dθ(x, σ))² ) ) / σ
+#
+# is computed at each step from the already-available denoised output (zero
+# extra model calls on non-restart steps).  The ratio equals ~1 for a healthy
+# reverse-diffusion trajectory and rises above threshold when the sampler has
+# drifted off-manifold.
+#
+# Mathematical connection to SURE (stop-gradient approximation):
+#   SURE_approx(x, σ) = ‖x − Dθ(x, σ)‖² − n·σ²
+#   SURE_approx / (n·σ²) = r_ratio² − 1
+# So r_ratio > T  ↔  SURE_approx / (n·σ²) > T²−1.
+# This is the normalised, Jacobian-free SURE estimate of the denoising MSE.
+# The Lean theorem `cond4_step_closer` (SURE_verification.lean) guarantees
+# that a positive SURE_approx signals correctable denoising error, making a
+# restart productive rather than wasteful.
+# ---------------------------------------------------------------------------
+
+@torch.no_grad()
+def sample_sure_restart(
+    model, x, sigmas,
+    extra_args=None, callback=None, disable=None,
+    s_noise=1.,
+    sure_threshold=1.5,
+    restart_max_times=2,
+    restart_steps=9,
+    restart_scale=2.0,
+    sure_preheat_steps=3,
+):
+    """SURE-guided restart sampler.
+
+    Uses Heun (2nd-order) steps as the base integrator.  At each step the
+    SURE residual ratio
+
+        r_ratio = residual_rms / σ   where   residual_rms = sqrt(mean((x − Dθ)²))
+
+    is computed for free from the first denoiser call that the Heun step
+    already needs.  When r_ratio > sure_threshold the sampler:
+
+      1. Re-injects Gaussian noise to bring x to
+             σ_restart = min(σ_cur × restart_scale, σ_max)
+      2. Runs restart_steps Heun steps on a Karras sub-schedule from
+         σ_restart back to σ_cur.
+      3. Refreshes the denoised estimate and continues with the main step.
+
+    Restarts are capped at restart_max_times total and are skipped during the
+    first sure_preheat_steps steps where r_ratio is naturally noisy.
+
+    Parameters
+    ----------
+    sure_threshold : float
+        r_ratio above which a restart is triggered (default 1.5).
+        Equivalent to SURE_approx/(n·σ²) > T²−1 = 1.25.
+    restart_max_times : int
+        Total restart budget for the entire trajectory (default 2).
+    restart_steps : int
+        Heun steps in each restart sub-trajectory (default 9).
+    restart_scale : float
+        σ_restart = min(σ_cur × scale, σ_max) (default 2.0).
+    sure_preheat_steps : int
+        Initial steps where the SURE check is skipped (default 3).
+    """
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+    step_id = 0
+    restarts_remaining = restart_max_times
+    n_steps = len(sigmas) - 1
+    sigma_max = float(sigmas[0])
+
+    _sure_logger.info(
+        "SURE-Restart: %d steps  threshold=%.3f  max_restarts=%d  "
+        "restart_steps=%d  restart_scale=%.2f  preheat=%d",
+        n_steps, sure_threshold, restart_max_times,
+        restart_steps, restart_scale, sure_preheat_steps,
+    )
+
+    def heun_step(x, old_sigma, new_sigma, second_order=True):
+        """Inner Heun step used for both the main trajectory and restart sub-steps."""
+        nonlocal step_id
+        denoised = model(x, old_sigma * s_in, **extra_args)
+        d = to_d(x, old_sigma, denoised)
+        if callback is not None:
+            callback({'x': x, 'i': step_id, 'sigma': new_sigma,
+                      'sigma_hat': old_sigma, 'denoised': denoised})
+        dt = new_sigma - old_sigma
+        if float(new_sigma) == 0 or not second_order:
+            x = x + d * dt
+        else:
+            x_2 = x + d * dt
+            denoised_2 = model(x_2, new_sigma * s_in, **extra_args)
+            d_2 = to_d(x_2, new_sigma, denoised_2)
+            x = x + (d + d_2) / 2 * dt
+        step_id += 1
+        return x
+
+    for i in trange(n_steps, disable=disable):
+        sigma_cur  = sigmas[i]
+        sigma_next = sigmas[i + 1]
+        sigma_f    = float(sigma_cur)
+
+        # ── First model eval: shared between SURE check and the main Heun step ─
+        denoised = model(x, sigma_cur * s_in, **extra_args)
+
+        # ── SURE residual ratio ─────────────────────────────────────────────────
+        # r_ratio = residual_rms / σ, computed for free from denoised.
+        # Healthy trajectory: r_ratio ≈ 1 (residual ≈ injected noise).
+        # Deviated trajectory: r_ratio > sure_threshold → restart.
+        r_ratio = 0.0
+        if sigma_f > 0.0:
+            residual_rms = float((x - denoised).pow(2).mean().sqrt())
+            r_ratio = residual_rms / sigma_f
+
+        # ── SURE-guided restart ─────────────────────────────────────────────────
+        if (i >= sure_preheat_steps
+                and r_ratio > sure_threshold
+                and restarts_remaining > 0
+                and float(sigma_next) > 0.0):
+            restarts_remaining -= 1
+            sigma_restart_f = min(sigma_f * restart_scale, sigma_max)
+
+            # Forward diffusion: re-add noise to reach σ_restart.
+            # Δσ² = σ_restart² − σ_cur²  ensures the correct marginal variance.
+            noise_var = sigma_restart_f ** 2 - sigma_f ** 2
+            if noise_var > 0.0:
+                x = x + torch.randn_like(x) * (s_noise * math.sqrt(noise_var))
+
+            # Karras sub-schedule: restart_steps Heun steps from σ_restart → σ_cur.
+            # get_sigmas_karras(n, σ_min, σ_max) returns n+1 values ending with 0.
+            # With n = restart_steps + 1, after [:-1] we have restart_steps + 1
+            # monotone-decreasing values giving restart_steps consecutive pairs.
+            restart_sigmas = get_sigmas_karras(
+                restart_steps + 1, sigma_f, sigma_restart_f, device=x.device,
+            )[:-1]
+
+            for j in range(restart_steps):
+                x = heun_step(x, restart_sigmas[j], restart_sigmas[j + 1])
+
+            # Refresh denoised at σ_cur after the restart sub-trajectory.
+            denoised = model(x, sigma_cur * s_in, **extra_args)
+
+            _sure_logger.info(
+                "[SURE-Restart] step=%d  sigma=%.4f  r_ratio=%.4f  "
+                "restarted_to=%.4f  restarts_left=%d",
+                i, sigma_f, r_ratio, sigma_restart_f, restarts_remaining,
+            )
+
+        # ── Main Heun step using (potentially refreshed) denoised ──────────────
+        d = to_d(x, sigma_cur, denoised)
+        if callback is not None:
+            callback({'x': x, 'i': step_id, 'sigma': sigma_next,
+                      'sigma_hat': sigma_cur, 'denoised': denoised})
+        dt = sigma_next - sigma_cur
+        if float(sigma_next) == 0:
+            x = x + d * dt
+        else:
+            x_2 = x + d * dt
+            denoised_2 = model(x_2, sigma_next * s_in, **extra_args)
+            d_2 = to_d(x_2, sigma_next, denoised_2)
+            x = x + (d + d_2) / 2 * dt
+
+        step_id += 1
+
+    return x
+
+
+def sample_sure_attention(model, x, sigmas, extra_args=None, callback=None, disable=None,
+                           sure_alpha=0.05, sure_n_mc=1, sure_eps=1e-3,
+                           sure_preheat_steps=-1, sure_jac_interval=-1,
+                           sure_adam_mode='none', sure_adam_beta1=0.9,
+                           sure_adam_beta2=0.999, sure_adam_wd=0.01,
+                           sure_grad_mode='approx',
+                           sure_attn_weight=1.0,
+                           sure_attn_blocks='all'):  # noqa: kept for API compat — use SURE Attention Guidance extension instead
+    raise NotImplementedError(
+        "sample_sure_attention has been removed. "
+        "Enable 'SURE Attention Guidance' in the Extensions accordion instead."
+    )
+
+
+# ── CLPC samplers ─────────────────────────────────────────────────────────────
+
+def sample_clpc_ode(model, x, sigmas, extra_args=None, callback=None, disable=None,
+                    predictor="implicit_adams",
+                    use_chebyshev=True, use_kalman=True,
+                    w_ode=1.0, w_ot=0.5, w_sure=0.0, w_cfg=0.3,
+                    atol=1e-4, rtol=1e-3,
+                    pid_pcoeff=0.4, pid_icoeff=0.3, pid_dcoeff=0.0,
+                    max_steps=1000, pece_sigma_threshold=4.0):
+    from ldm_patched.k_diffusion.clpc_sampler import sample_clpc_ode as _impl
+    return _impl(model, x, sigmas, extra_args=extra_args, callback=callback, disable=disable,
+                 predictor=predictor,
+                 use_chebyshev=use_chebyshev, use_kalman=use_kalman,
+                 w_ode=w_ode, w_ot=w_ot, w_sure=w_sure, w_cfg=w_cfg,
+                 atol=atol, rtol=rtol,
+                 pid_pcoeff=pid_pcoeff, pid_icoeff=pid_icoeff, pid_dcoeff=pid_dcoeff,
+                 max_steps=max_steps, pece_sigma_threshold=pece_sigma_threshold)
+
+
+def sample_clpc_sde(model, x, sigmas, extra_args=None, callback=None, disable=None,
+                    predictor="implicit_adams",
+                    use_chebyshev=True, use_kalman=True,
+                    w_ode=1.0, w_ot=0.5, w_sure=0.0, w_cfg=0.3,
+                    atol=1e-4, rtol=1e-3,
+                    pid_pcoeff=0.4, pid_icoeff=0.3, pid_dcoeff=0.0,
+                    max_steps=1000, pece_sigma_threshold=4.0,
+                    tau_eta=1.0, s_noise=1.0, adaptive_noise=True,
+                    noise_sampler=None):
+    from ldm_patched.k_diffusion.clpc_sampler import sample_clpc_sde as _impl
+    return _impl(model, x, sigmas, extra_args=extra_args, callback=callback, disable=disable,
+                 predictor=predictor,
+                 use_chebyshev=use_chebyshev, use_kalman=use_kalman,
+                 w_ode=w_ode, w_ot=w_ot, w_sure=w_sure, w_cfg=w_cfg,
+                 atol=atol, rtol=rtol,
+                 pid_pcoeff=pid_pcoeff, pid_icoeff=pid_icoeff, pid_dcoeff=pid_dcoeff,
+                 max_steps=max_steps, pece_sigma_threshold=pece_sigma_threshold,
+                 tau_eta=tau_eta, s_noise=s_noise, adaptive_noise=adaptive_noise)
 

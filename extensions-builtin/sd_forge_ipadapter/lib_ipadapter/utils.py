@@ -143,12 +143,12 @@ def ipadapter_model_loader(file):
     elif "adapter_modules" in model.keys():
         model["ip_adapter"] = model.pop("adapter_modules")
 
-    if not "ip_adapter" in model.keys() or not model["ip_adapter"]:
+    if "ip_adapter" not in model.keys() or not model["ip_adapter"]:
         raise Exception("invalid IPAdapter model {}".format(file))
 
     if 'plusv2' in file.lower():
         model["faceidplusv2"] = True
-    
+
     if 'unnorm' in file.lower():
         model["portraitunnorm"] = True
 
@@ -158,7 +158,7 @@ def insightface_loader(provider, model_name='buffalo_l'):
     try:
         from insightface.app import FaceAnalysis
     except ImportError as e:
-        raise Exception(e)
+        raise Exception(e) from e
 
     path = os.path.join(ldm_patched.utils.path_utils.models_dir, "insightface")
     model = FaceAnalysis(name=model_name, root=path, providers=[provider + 'ExecutionProvider',])
@@ -171,11 +171,11 @@ def split_tiles(embeds, num_split):
     for x in embeds:
         x = x.unsqueeze(0)
         h, w = H // num_split, W // num_split
-        x_split = torch.cat([x[:, i*h:(i+1)*h, j*w:(j+1)*w, :] for i in range(num_split) for j in range(num_split)], dim=0)    
+        x_split = torch.cat([x[:, i*h:(i+1)*h, j*w:(j+1)*w, :] for i in range(num_split) for j in range(num_split)], dim=0)
         out.append(x_split)
-    
+
     x_split = torch.stack(out, dim=0)
-    
+
     return x_split
 
 def merge_hiddenstates(x, tiles):
@@ -195,19 +195,19 @@ def merge_hiddenstates(x, tiles):
         patch_embeds = embeds[:, 1:, :]  # Shape: [num_tiles, tile_size^2, embeds[-1]]
         reshaped = patch_embeds.reshape(grid_size, grid_size, tile_size, tile_size, embeds.shape[-1])
 
-        merged = torch.cat([torch.cat([reshaped[i, j] for j in range(grid_size)], dim=1) 
+        merged = torch.cat([torch.cat([reshaped[i, j] for j in range(grid_size)], dim=1)
                             for i in range(grid_size)], dim=0)
-        
+
         merged = merged.unsqueeze(0)  # Shape: [1, grid_size*tile_size, grid_size*tile_size, embeds[-1]]
-        
+
         # Pool to original size
         pooled = torch.nn.functional.adaptive_avg_pool2d(merged.permute(0, 3, 1, 2), (tile_size, tile_size)).permute(0, 2, 3, 1)
         flattened = pooled.reshape(1, tile_size*tile_size, embeds.shape[-1])
-        
+
         # Add back the class token
         with_class = torch.cat([avg_class_token, flattened], dim=1)  # Shape: original shape
         out.append(with_class)
-    
+
     out = torch.cat(out, dim=0)
 
     return out
@@ -222,19 +222,19 @@ def merge_embeddings(x, tiles): # TODO: this needs so much testing that I don't 
         grid_size = int(num_tiles ** 0.5)
         tile_size = int(embeds.shape[1] ** 0.5)
         reshaped = embeds.reshape(grid_size, grid_size, tile_size, tile_size)
-        
+
         # Merge the tiles
-        merged = torch.cat([torch.cat([reshaped[i, j] for j in range(grid_size)], dim=1) 
+        merged = torch.cat([torch.cat([reshaped[i, j] for j in range(grid_size)], dim=1)
                             for i in range(grid_size)], dim=0)
-        
+
         merged = merged.unsqueeze(0)  # Shape: [1, grid_size*tile_size, grid_size*tile_size]
-        
+
         # Pool to original size
         pooled = torch.nn.functional.adaptive_avg_pool2d(merged, (tile_size, tile_size))  # pool to [1, tile_size, tile_size]
         pooled = pooled.flatten(1)  # flatten to [1, tile_size^2]
         out.append(pooled)
     out = torch.cat(out, dim=0)
-    
+
     return out
 
 def encode_image_masked(clip_vision, image, mask=None, batch_size=0, tiles=1, ratio=1.0, clipvision_size=224):

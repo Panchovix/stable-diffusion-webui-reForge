@@ -15,7 +15,7 @@ class BaseDiscriminator(nn.Module):
         Predict scores and get intermediate activations. Useful for feature matching loss
         :return tuple (scores, list of intermediate activations)
         """
-        raise NotImplemented()
+        raise NotImplementedError()
 
 
 def get_conv_block_ctor(kind='default'):
@@ -24,7 +24,7 @@ def get_conv_block_ctor(kind='default'):
     if kind == 'default':
         return nn.Conv2d
     if kind == 'depthwise':
-        return DepthWiseSeperableConv   
+        return DepthWiseSeperableConv
     if kind == 'multidilated':
         return MultidilatedConv
     raise ValueError(f'Unknown convolutional block kind {kind}')
@@ -66,15 +66,15 @@ class SimpleMultiStepGenerator(nn.Module):
 
 def deconv_factory(kind, ngf, mult, norm_layer, activation, max_features):
     if kind == 'convtranspose':
-        return [nn.ConvTranspose2d(min(max_features, ngf * mult), 
-                    min(max_features, int(ngf * mult / 2)), 
+        return [nn.ConvTranspose2d(min(max_features, ngf * mult),
+                    min(max_features, int(ngf * mult / 2)),
                     kernel_size=3, stride=2, padding=1, output_padding=1),
                     norm_layer(min(max_features, int(ngf * mult / 2))), activation]
     elif kind == 'bilinear':
         return [nn.Upsample(scale_factor=2, mode='bilinear'),
-                DepthWiseSeperableConv(min(max_features, ngf * mult), 
-                    min(max_features, int(ngf * mult / 2)), 
-                    kernel_size=3, stride=1, padding=1), 
+                DepthWiseSeperableConv(min(max_features, ngf * mult),
+                    min(max_features, int(ngf * mult / 2)),
+                    kernel_size=3, stride=1, padding=1),
                 norm_layer(min(max_features, int(ngf * mult / 2))), activation]
     else:
         raise Exception(f"Invalid deconv kind: {kind}")

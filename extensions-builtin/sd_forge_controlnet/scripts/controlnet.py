@@ -1,5 +1,5 @@
 import os
-from typing import Dict, Optional, Tuple, List, Union
+from typing import Optional, Tuple
 
 import cv2
 import torch
@@ -7,7 +7,6 @@ import torch
 import modules.scripts as scripts
 from modules import shared, script_callbacks, masking, images
 from modules.ui_components import InputAccordion
-from modules.api.api import decode_base64_to_image
 import gradio as gr
 import time
 
@@ -81,7 +80,7 @@ class ControlNetForForgeOfficial(scripts.Script):
         elem_id_tabname = gen_type + "_controlnet"
         default_unit = ControlNetUnit(enabled=False, module="None", model="None")
         with gr.Group(elem_id=elem_id_tabname):
-            with gr.Accordion(f"ControlNet Integrated", open=False, elem_id="controlnet",
+            with gr.Accordion("ControlNet Integrated", open=False, elem_id="controlnet",
                               elem_classes=["controlnet"]):
                 photopea = (
                     Photopea()
@@ -464,11 +463,11 @@ class ControlNetForForgeOfficial(scripts.Script):
             hr_option = HiResFixOption.BOTH
 
         if has_high_res_fix and is_hr_pass and (not hr_option.high_res_enabled):
-            logger.info(f"ControlNet Skipped High-res pass.")
+            logger.info("ControlNet Skipped High-res pass.")
             return
 
         if has_high_res_fix and (not is_hr_pass) and (not hr_option.low_res_enabled):
-            logger.info(f"ControlNet Skipped Low-res pass.")
+            logger.info("ControlNet Skipped Low-res pass.")
             return
 
         if is_hr_pass:
@@ -623,7 +622,7 @@ def on_ui_settings():
     shared.opts.add_option("control_net_model_cache_size", shared.OptionInfo(
         5, "Model cache size (requires restart)", gr.Slider, {"minimum": 1, "maximum": 10, "step": 1}, section=section))
     shared.opts.add_option("control_net_ipadapter_cache_size", shared.OptionInfo(
-        5, "IPAdapter cache size (requires restart)", gr.Slider, {"minimum": 1, "maximum": 10, "step": 1}, section=section))    
+        5, "IPAdapter cache size (requires restart)", gr.Slider, {"minimum": 1, "maximum": 10, "step": 1}, section=section))
     shared.opts.add_option("control_net_no_detectmap", shared.OptionInfo(
         False, "Do not append detectmap to output", gr.Checkbox, {"interactive": True}, section=section))
     shared.opts.add_option("control_net_detectmap_autosaving", shared.OptionInfo(

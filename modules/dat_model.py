@@ -2,12 +2,13 @@ import os
 import re
 from functools import lru_cache
 from modules import modelloader, devices, errors
-from modules.shared import cmd_opts, opts, hf_endpoint
+from modules.shared import hf_endpoint
+import modules.shared as shared
 from modules.upscaler import Upscaler, UpscalerData
 from modules.upscaler_utils import upscale_with_model
 from modules_forge.forge_util import prepare_free_memory
 
-PREFER_HALF = opts.prefer_fp16_upscalers
+PREFER_HALF = shared.opts.prefer_fp16_upscalers
 if PREFER_HALF:
     print("[Upscalers] Prefer Half-Precision:", PREFER_HALF)
 
@@ -34,7 +35,7 @@ class UpscalerDAT(Upscaler):
             self.scalers.append(scaler_data)
 
         for model in get_dat_models(self):
-            if model.name in opts.dat_enabled_models:
+            if model.name in shared.opts.dat_enabled_models:
                 self.scalers.append(model)
 
     def do_upscale(self, img, path):
@@ -48,8 +49,8 @@ class UpscalerDAT(Upscaler):
         return upscale_with_model(
             model=model,
             img=img,
-            tile_size=opts.DAT_tile,
-            tile_overlap=opts.DAT_tile_overlap,
+            tile_size=shared.opts.DAT_tile,
+            tile_overlap=shared.opts.DAT_tile_overlap,
         )
 
     @lru_cache(maxsize=4)

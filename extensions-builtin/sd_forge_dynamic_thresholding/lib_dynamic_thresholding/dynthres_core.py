@@ -1,7 +1,8 @@
 # https://github.com/mcmonkeyprojects/sd-dynamic-thresholding
 
 
-import torch, math
+import torch
+import math
 
 ######################### DynThresh Core #########################
 

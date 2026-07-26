@@ -33,8 +33,10 @@ import ldm_patched.modules.lora
 import ldm_patched.modules.model_management
 import ldm_patched.modules.patcher_extension
 import ldm_patched.modules.utils
+from ldm_patched.ldm.models.autoencoder import AutoencoderKL
 from ldm_patched.modules.types import UnetWrapperFunction
 from ldm_patched.modules.patcher_extension import CallbacksMP, PatcherInjection, WrappersMP
+
 
 extra_weight_calculators = {}
 
@@ -202,7 +204,7 @@ class MemoryCounter:
         self.value -= used
 
 class ModelPatcher:
-    def __init__(self, model, load_device, offload_device, size=0, weight_inplace_update=False):
+    def __init__(self, model: AutoencoderKL, load_device, offload_device, size=0, weight_inplace_update=False):
         self.size = size
         self.model = model
         if not hasattr(self.model, 'device'):

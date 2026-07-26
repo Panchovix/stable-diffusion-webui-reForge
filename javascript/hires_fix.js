@@ -8,8 +8,6 @@ function onCalcResolutionHires(enable, width, height, hr_scale, hr_resize_x, hr_
     var hrResizeY = gradioApp().getElementById('txt2img_hr_resize_y');
     var hrCfgScale = gradioApp().getElementById('txt2img_hr_cfg');
 
-    gradioApp().getElementById('txt2img_hires_fix_row2').style.display = opts.use_old_hires_fix_width_height ? "none" : "";
-
     setInactive(hrUpscaleBy, opts.use_old_hires_fix_width_height || hr_resize_x > 0 || hr_resize_y > 0);
     setInactive(hrResizeX, opts.use_old_hires_fix_width_height || hr_resize_x == 0);
     setInactive(hrResizeY, opts.use_old_hires_fix_width_height || hr_resize_y == 0);
@@ -35,7 +33,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (input) {
             input.addEventListener('input', updateHrCfgScaleState);
             input.addEventListener('change', updateHrCfgScaleState);
-            
+
             updateHrCfgScaleState();
         }
     }

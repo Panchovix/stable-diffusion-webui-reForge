@@ -1,0 +1,28 @@
+# Optional dependency for --forge-jax-pipeline (see jax_pipeline/).
+# Not installed by default — only needed if you pass --forge-jax-pipeline.
+#
+# Cross-checked against requirements_versions.txt: this repo pins
+# numpy==1.26.4 exactly (gradio==3.41.2 requires numpy<2) and supports
+# Python 3.10-3.13. jax==0.4.35 / jaxlib==0.4.34 both only require
+# numpy>=1.24, so numpy==1.26.4 is safe, and jaxlib 0.4.34 ships wheels for
+# cp310-cp313 on Linux/macOS/Windows.
+#
+# jaxlib is pinned to 0.4.34, NOT 0.4.35: jax==0.4.35's own "cuda12" extra
+# requires jaxlib==0.4.34 exactly (a JAX packaging quirk for this release —
+# the CUDA plugin build stayed on 0.4.34 while the pure jaxlib wheel moved
+# to 0.4.35). Pinning 0.4.34 here keeps the CPU-only and CUDA install paths
+# on the identical jaxlib build instead of silently diverging.
+#
+# CPU only:
+#   pip install -r requirements_jax.txt
+#
+# NVIDIA CUDA 12 (let pip resolve jaxlib/jax-cuda12-plugin via the extra
+# rather than hand-pinning jaxlib, so it always matches what jax==0.4.35
+# actually declares):
+#   pip install "jax[cuda12]==0.4.35" "numpy==1.26.4"
+#
+# AMD ROCm / Google TPU: see https://jax.readthedocs.io/en/latest/installation.html
+# for the correct wheel index for your platform (keep the numpy==1.26.4 pin).
+numpy==1.26.4
+jax==0.4.35
+jaxlib==0.4.34

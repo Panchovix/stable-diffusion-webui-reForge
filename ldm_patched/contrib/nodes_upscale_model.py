@@ -2,7 +2,6 @@
 
 
 
-import os
 from ldm_patched.pfn import model_loading
 from ldm_patched.modules import model_management
 import torch

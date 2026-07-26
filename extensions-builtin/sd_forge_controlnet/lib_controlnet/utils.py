@@ -6,7 +6,6 @@ from modules.api import api
 from lib_controlnet import external_code
 from lib_controlnet.external_code import InputMode, ControlNetUnit
 
-from modules_forge.forge_util import HWC3
 
 from PIL import Image, ImageFilter, ImageOps
 from lib_controlnet.lvminthin import lvmin_thin, nake_nms

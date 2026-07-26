@@ -14,7 +14,6 @@ import torch
 from torch import Tensor
 from torch.utils.checkpoint import checkpoint
 import math
-import logging
 
 try:
     from typing import Optional, NamedTuple, List, Protocol

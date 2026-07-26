@@ -64,7 +64,10 @@ device_codeformer: torch.device = model_management.get_torch_device()  # will be
 device_rcan: torch.device = model_management.get_torch_device()  # will be managed by memory management system
 device_plksr: torch.device = model_management.get_torch_device()  # will be managed by memory management system
 dtype: torch.dtype = model_management.unet_dtype()
-dtype_vae: torch.dtype = model_management.vae_dtype()
+dtype_vae: torch.dtype = model_management.vae_dtype(
+    model_management.get_torch_device(),
+    [torch.bfloat16, torch.float32],  # BF16 safe on Ampere+/non-AMD; AMD excluded inside vae_dtype
+)
 dtype_unet: torch.dtype = model_management.unet_dtype()
 dtype_inference: torch.dtype = model_management.unet_dtype()
 unet_needs_upcast = False
@@ -109,3 +112,13 @@ def test_for_nans(x, where):
 
 def first_time_calculation():
     return
+
+def synchornize():
+    # This function act like router to the device sync event
+    if device.type == "cuda":
+        torch.cuda.synchronize()
+    elif has_mps:
+        torch.mps.synchronize()
+
+    # No match meaning either is CPU or is not needed
+

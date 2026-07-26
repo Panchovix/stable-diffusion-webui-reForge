@@ -1,6 +1,4 @@
 from __future__ import annotations
-import gradio as gr
-import logging
 import os
 import re
 
@@ -11,7 +9,7 @@ import network
 import torch
 from typing import Union
 
-from modules import shared, sd_models, errors, scripts
+from modules import shared, sd_models, errors, scripts, devices
 from ldm_patched.modules.utils import load_torch_file
 from ldm_patched.modules.sd import load_lora_for_models
 
@@ -72,7 +70,7 @@ def load_networks(names, te_multipliers=None, unet_multipliers=None, dyn_dims=No
         list_available_networks()
         networks_on_disk = [available_networks.get(name, None) if name.lower() in forbidden_network_aliases else available_network_aliases.get(name, None) for name in names]
 
-    for i, (network_on_disk, name) in enumerate(zip(networks_on_disk, names)):
+    for _, (network_on_disk, name) in enumerate(zip(networks_on_disk, names, strict=False)):
         try:
             net = load_network(name, network_on_disk)
         except Exception as e:
@@ -83,7 +81,7 @@ def load_networks(names, te_multipliers=None, unet_multipliers=None, dyn_dims=No
         loaded_networks.append(net)
 
     compiled_lora_targets = []
-    for a, b, c in zip(networks_on_disk, unet_multipliers, te_multipliers):
+    for a, b, c in zip(networks_on_disk, unet_multipliers, te_multipliers, strict=False):
         compiled_lora_targets.append([a.filename, b, c])
 
     compiled_lora_targets_hash = str(compiled_lora_targets)

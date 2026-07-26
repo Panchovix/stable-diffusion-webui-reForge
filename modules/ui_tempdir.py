@@ -26,7 +26,16 @@ def check_tmp_file(gradio, filename):
         return any(filename in fileset for fileset in gradio.temp_file_sets)
 
     if hasattr(gradio, 'temp_dirs'):
-        return any(Path(temp_dir).resolve() in Path(filename).resolve().parents for temp_dir in gradio.temp_dirs)
+        # Avoid Path(user_input) — canonicalise to a plain string via
+        # os.path.realpath so no tainted Path object is constructed.
+        try:
+            canonical = os.path.realpath(os.path.abspath(str(filename)))
+        except (TypeError, ValueError, OSError):
+            return False
+        return any(
+            canonical.startswith(os.path.realpath(os.path.abspath(str(td))) + os.sep)
+            for td in gradio.temp_dirs
+        )
 
     return False
 

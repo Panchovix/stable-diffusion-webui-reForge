@@ -24,7 +24,7 @@ class Wholebody:
         self.session_pose = cv2.dnn.readNetFromONNX(onnx_pose)
         self.session_pose.setPreferableBackend(backend)
         self.session_pose.setPreferableTarget(providers)
-    
+
     def __call__(self, oriImg) -> Optional[np.ndarray]:
         det_result = inference_detector(self.session_det, oriImg)
         if det_result is None:

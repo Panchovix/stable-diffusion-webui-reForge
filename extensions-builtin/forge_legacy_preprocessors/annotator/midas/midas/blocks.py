@@ -5,7 +5,6 @@ from .vit import (
     _make_pretrained_vitb_rn50_384,
     _make_pretrained_vitl16_384,
     _make_pretrained_vitb16_384,
-    forward_vit,
 )
 
 def _make_encoder(backbone, features, use_pretrained, groups=1, expand=False, exportable=True, hooks=None, use_vit_only=False, use_readout="ignore",):
@@ -35,14 +34,14 @@ def _make_encoder(backbone, features, use_pretrained, groups=1, expand=False, ex
         )  # ViT-B/16 - 84.6% Top1 (backbone)
     elif backbone == "resnext101_wsl":
         pretrained = _make_pretrained_resnext101_wsl(use_pretrained)
-        scratch = _make_scratch([256, 512, 1024, 2048], features, groups=groups, expand=expand)     # efficientnet_lite3  
+        scratch = _make_scratch([256, 512, 1024, 2048], features, groups=groups, expand=expand)     # efficientnet_lite3
     elif backbone == "efficientnet_lite3":
         pretrained = _make_pretrained_efficientnet_lite3(use_pretrained, exportable=exportable)
-        scratch = _make_scratch([32, 48, 136, 384], features, groups=groups, expand=expand)  # efficientnet_lite3     
+        scratch = _make_scratch([32, 48, 136, 384], features, groups=groups, expand=expand)  # efficientnet_lite3
     else:
         print(f"Backbone '{backbone}' not implemented")
         assert False
-        
+
     return pretrained, scratch
 
 
@@ -96,7 +95,7 @@ def _make_efficientnet_backbone(effnet):
     pretrained.layer4 = nn.Sequential(*effnet.blocks[5:9])
 
     return pretrained
-    
+
 
 def _make_resnet_backbone(resnet):
     pretrained = nn.Module()
@@ -247,7 +246,7 @@ class ResidualConvUnit_custom(nn.Module):
         self.conv1 = nn.Conv2d(
             features, features, kernel_size=3, stride=1, padding=1, bias=True, groups=self.groups
         )
-        
+
         self.conv2 = nn.Conv2d(
             features, features, kernel_size=3, stride=1, padding=1, bias=True, groups=self.groups
         )
@@ -269,12 +268,12 @@ class ResidualConvUnit_custom(nn.Module):
         Returns:
             tensor: output
         """
-        
+
         out = self.activation(x)
         out = self.conv1(out)
         if self.bn==True:
             out = self.bn1(out)
-       
+
         out = self.activation(out)
         out = self.conv2(out)
         if self.bn==True:
@@ -309,12 +308,12 @@ class FeatureFusionBlock_custom(nn.Module):
         out_features = features
         if self.expand==True:
             out_features = features//2
-        
+
         self.out_conv = nn.Conv2d(features, out_features, kernel_size=1, stride=1, padding=0, bias=True, groups=1)
 
         self.resConfUnit1 = ResidualConvUnit_custom(features, activation, bn)
         self.resConfUnit2 = ResidualConvUnit_custom(features, activation, bn)
-        
+
         self.skip_add = nn.quantized.FloatFunctional()
 
     def forward(self, *xs):

@@ -151,10 +151,13 @@ class BaseModel(torch.nn.Module):
         self.memory_usage_factor_conds = ()
 
     def apply_model(self, x, t, c_concat=None, c_crossattn=None, control=None, transformer_options={}, **kwargs):
+        _wrappers = ldm_patched.modules.patcher_extension.get_all_wrappers(ldm_patched.modules.patcher_extension.WrappersMP.APPLY_MODEL, transformer_options)
+        if _wrappers:
+            logging.debug("[model_base] apply_model dispatching wrappers=%s", [getattr(w, '__name__', repr(w)) for w in _wrappers])
         return ldm_patched.modules.patcher_extension.WrapperExecutor.new_class_executor(
             self._apply_model,
             self,
-            ldm_patched.modules.patcher_extension.get_all_wrappers(ldm_patched.modules.patcher_extension.WrappersMP.APPLY_MODEL, transformer_options)
+            _wrappers
         ).execute(x, t, c_concat, c_crossattn, control, transformer_options, **kwargs)
 
     def _apply_model(self, x, t, c_concat=None, c_crossattn=None, control=None, transformer_options={}, **kwargs):
@@ -441,6 +444,26 @@ class SDXL(BaseModel):
         super().__init__(model_config, model_type, device=device)
         self.embedder = Timestep(256)
         self.noise_augmentor = CLIPEmbeddingNoiseAugmentation(**{"noise_schedule_config": {"timesteps": 1000, "beta_schedule": "squaredcos_cap_v2"}, "timestep_dim": 1280})
+
+    def extra_conds(self, **kwargs):
+        out = super().extra_conds(**kwargs)
+        # Store raw ADM components alongside the pre-embedded 'y' so the
+        # Diffusers pipeline path can build added_cond_kwargs without
+        # having to invert the Fourier embedding of encode_adm().
+        clip_pooled = sdxl_pooled(kwargs, self.noise_augmentor)
+        width = kwargs.get("width", 768)
+        height = kwargs.get("height", 768)
+        crop_w = kwargs.get("crop_w", 0)
+        crop_h = kwargs.get("crop_h", 0)
+        target_width = kwargs.get("target_width", width)
+        target_height = kwargs.get("target_height", height)
+        time_ids = torch.tensor(
+            [[height, width, crop_h, crop_w, target_height, target_width]],
+            dtype=clip_pooled.dtype,
+        ).repeat(clip_pooled.shape[0], 1)
+        out["adm_text_embeds"] = ldm_patched.modules.conds.CONDRegular(clip_pooled)
+        out["adm_time_ids"] = ldm_patched.modules.conds.CONDRegular(time_ids)
+        return out
 
     def encode_adm(self, **kwargs):
         clip_pooled = sdxl_pooled(kwargs, self.noise_augmentor)
@@ -1018,7 +1041,7 @@ class CosmosVideo(BaseModel):
             latent_image = latent_image + noise
         latent_image = self.model_sampling.calculate_input(torch.tensor([sigma_noise_augmentation], device=latent_image.device, dtype=latent_image.dtype), latent_image)
         return latent_image * ((sigma ** 2 + self.model_sampling.sigma_data ** 2) ** 0.5)
-    
+
 class CosmosPredict2(BaseModel):
     def __init__(self, model_config, model_type=ModelType.FLOW_COSMOS, image_to_video=False, device=None):
         super().__init__(model_config, model_type, device=device, unet_model=ldm_patched.ldm.cosmos.predict2.MiniTrainDIT)
@@ -1100,7 +1123,7 @@ class WAN21(BaseModel):
 
         if not self.image_to_video or extra_channels == image.shape[1]:
             return image
-        
+
         if image.shape[1] > (extra_channels - 4):
             image = image[:, :(extra_channels - 4)]
 
@@ -1135,7 +1158,7 @@ class WAN21(BaseModel):
             out['time_dim_concat'] = ldm_patched.modules.conds.CONDRegular(self.process_latent_in(time_dim_concat))
 
         return out
-    
+
 class WAN21_Vace(WAN21):
     def __init__(self, model_config, model_type=ModelType.FLOW, image_to_video=False, device=None):
         super(WAN21, self).__init__(model_config, model_type, device=device, unet_model=ldm_patched.modules.ldm.wan.model.VaceWanModel)
@@ -1169,7 +1192,7 @@ class WAN21_Vace(WAN21):
         vace_strength = kwargs.get("vace_strength", [1.0] * len(vace_frames_out))
         out['vace_strength'] = ldm_patched.modules.conds.CONDConstant(vace_strength)
         return out
-    
+
 class WAN21_Camera(WAN21):
     def __init__(self, model_config, model_type=ModelType.FLOW, image_to_video=False, device=None):
         super(WAN21, self).__init__(model_config, model_type, device=device, unet_model=ldm_patched.modules.ldm.wan.model.CameraWanModel)
@@ -1196,7 +1219,7 @@ class Hunyuan3Dv2(BaseModel):
         if guidance is not None:
             out['guidance'] = ldm_patched.modules.conds.CONDRegular(torch.FloatTensor([guidance]))
         return out
-    
+
 class HiDream(BaseModel):
     def __init__(self, model_config, model_type=ModelType.FLOW, device=None):
         super().__init__(model_config, model_type, device=device, unet_model=ldm_patched.ldm.hidream.model.HiDreamImageTransformer2DModel)
@@ -1248,7 +1271,7 @@ class ACEStep(BaseModel):
         out['speaker_embeds'] = ldm_patched.modules.conds.CONDRegular(torch.zeros(noise.shape[0], 512, device=noise.device, dtype=noise.dtype))
         out['lyrics_strength'] = ldm_patched.modules.conds.CONDConstant(kwargs.get("lyrics_strength", 1.0))
         return out
-    
+
 class Omnigen2(BaseModel):
     def __init__(self, model_config, model_type=ModelType.FLOW, device=None):
         super().__init__(model_config, model_type, device=device, unet_model=ldm_patched.ldm.omnigen.omnigen2.OmniGen2Transformer2DModel)

@@ -1,6 +1,21 @@
 [tool.ruff]
 
-target-version = "py39"
+target-version = "py311"
+
+exclude = [
+	"extensions",
+	"extensions-disabled",
+	"modules",
+	"modules_forge",
+	"ldm_patched",
+	"repositories",
+	"lean_proofs",
+	# third-party annotator/model libs bundled inside extensions-builtin preprocessors
+	"extensions-builtin/forge_legacy_preprocessors/annotator",
+	"extensions-builtin/forge_preprocessor_inpaint/annotator",
+	"extensions-builtin/forge_preprocessor_normalbae/annotator",
+	"extensions-builtin/forge_preprocessor_marigold/marigold",
+]
 
 [tool.ruff.lint]
 
@@ -9,15 +24,6 @@ extend-select = [
   "C",
   "I",
   "W",
-]
-
-exclude = [
-	"extensions",
-	"extensions-disabled",
-	"modules_forge",
-	"modules",
-	"ldm_patched",
-	"extensions-builtin",
 ]
 
 ignore = [
@@ -33,10 +39,19 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "webui.py" = ["E402"]  # Module level import not at top of file
+"k_diff/**" = ["F401", "B023", "B028", "B904"]  # upstream k-diffusion code
+"mlx_pipeline/**" = ["F821"]  # mx/torch are optional runtime imports on Apple Silicon
+"typings/**" = ["F821"]  # type stubs — semver etc. are runtime-only names
+"extensions-builtin/forge_legacy_preprocessors/legacy_preprocessors/preprocessor_compiled.py" = ["F403", "F405"]  # star-import by design
+"extensions-builtin/sd_forge_latent_modifier/**" = ["E402"]  # intentional late imports
+"extensions-builtin/sd_forge_multidiffusion/**" = ["E402", "F811"]  # intentional late imports
 
 [tool.ruff.lint.flake8-bugbear]
 # Allow default arguments like, e.g., `data: List[str] = fastapi.Query(None)`.
-extend-immutable-calls = ["fastapi.Depends", "fastapi.security.HTTPBasic"]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.security.HTTPBasic", "fastapi.Body"]
 
 [tool.pytest.ini_options]
 base_url = "http://127.0.0.1:7860"
+filterwarnings = [
+    "ignore::pytest.PytestConfigWarning:_pytest.config",
+]

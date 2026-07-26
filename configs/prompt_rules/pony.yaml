@@ -1,0 +1,30 @@
+# Pony Diffusion V6 XL preset — this is an OVERLAY, meant to be loaded
+# together with danbooru.yaml (Pony is trained on Danbooru-tagged data plus
+# its own score/source/rating tag system layered on top). It only adds
+# Pony-specific patterns; it does not repeat Danbooru's own tag conventions.
+#
+# See configs/prompt_rules/danbooru.yaml for the pattern syntax and the
+# TAG_CLASSES this engine recognizes.
+
+# --- META: Pony's score-based quality-conditioning tags (score_9 down to
+#     score_4_up form a monotone quality ladder used as a training-time
+#     signal; all are global quality reference, no image-region effect) ---
+"score_9": [META]
+"score_8_up": [META]
+"score_7_up": [META]
+"score_6_up": [META]
+"score_5_up": [META]
+"score_4_up": [META]
+
+# --- META: Pony's source/rating tag system ---
+"source_pony": [META]
+"source_furry": [META]
+"source_anime": [META]
+"source_cartoon": [META]
+"rating_safe": [META]
+"rating_questionable": [META]
+"rating_explicit": [META]
+
+# --- OBJECT: Pony's furry/anthro extensions to the base entity set ---
+"anthro": [OBJECT]
+"feral": [OBJECT]

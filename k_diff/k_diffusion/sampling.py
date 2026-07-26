@@ -273,7 +273,7 @@ def sample_lms(model, x, sigmas, extra_args=None, callback=None, disable=None, o
             callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
         cur_order = min(i + 1, order)
         coeffs = [linear_multistep_coeff(cur_order, sigmas_cpu, i, j) for j in range(cur_order)]
-        x = x + sum(coeff * d for coeff, d in zip(coeffs, reversed(ds)))
+        x = x + sum(coeff * d for coeff, d in zip(coeffs, reversed(ds), strict=False))
     return x
 
 

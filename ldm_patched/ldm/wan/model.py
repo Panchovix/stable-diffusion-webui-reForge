@@ -217,7 +217,7 @@ class WanAttentionBlock(nn.Module):
         y = self.ffn(self.norm2(x) * (1 + e[4]) + e[3])
         x = x + y * e[5]
         return x
-    
+
 class VaceWanAttentionBlock(WanAttentionBlock):
     def __init__(
             self,
@@ -244,7 +244,7 @@ class VaceWanAttentionBlock(WanAttentionBlock):
         c = super().forward(c, **kwargs)
         c_skip = self.after_proj(c)
         return c_skip, c
-    
+
 class WanCamAdapter(nn.Module):
     def __init__(self, in_dim, out_dim, kernel_size, stride, num_residual_blocks=1, operation_settings={}):
         super(WanCamAdapter, self).__init__()
@@ -337,7 +337,7 @@ class MLPProj(torch.nn.Module):
             operation_settings.get("operations").LayerNorm(in_dim, device=operation_settings.get("device"), dtype=operation_settings.get("dtype")), operation_settings.get("operations").Linear(in_dim, in_dim, device=operation_settings.get("device"), dtype=operation_settings.get("dtype")),
             torch.nn.GELU(), operation_settings.get("operations").Linear(in_dim, out_dim, device=operation_settings.get("device"), dtype=operation_settings.get("dtype")),
             operation_settings.get("operations").LayerNorm(out_dim, device=operation_settings.get("device"), dtype=operation_settings.get("dtype")))
-        
+
         if flf_pos_embed_token_number is not None:
             self.emb_pos = nn.Parameter(torch.empty((1, flf_pos_embed_token_number, in_dim), device=operation_settings.get("device"), dtype=operation_settings.get("dtype")))
         else:
@@ -698,7 +698,7 @@ class VaceWanModel(WanModel):
         # unpatchify
         x = self.unpatchify(x, grid_sizes)
         return x
-    
+
 class CameraWanModel(WanModel):
     r"""
     Wan diffusion backbone supporting both text-to-video and image-to-video.

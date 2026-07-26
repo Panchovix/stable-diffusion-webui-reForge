@@ -25,7 +25,6 @@ import sys
 import platform
 import weakref
 import gc
-import logging
 
 class VRAMState(Enum):
     DISABLED = 0    #No vram present: no need to move models to vram
@@ -212,7 +211,7 @@ def get_total_memory(dev=None, torch_total_too=False):
         return (mem_total, mem_total_torch)
     else:
         return mem_total
-    
+
 def mac_version():
     try:
         return tuple(int(n) for n in platform.mac_ver()[0].split("."))
@@ -319,9 +318,38 @@ except:
 
 
 if ENABLE_PYTORCH_ATTENTION:
+    _sdp_enabled = []
+
+    # Math SDP: always available as universal fallback
     torch.backends.cuda.enable_math_sdp(True)
-    torch.backends.cuda.enable_flash_sdp(True)
-    torch.backends.cuda.enable_mem_efficient_sdp(True)
+    _sdp_enabled.append("Math")
+
+    # Flash Attention: fast, low-memory; requires sm80+ (Ampere) on CUDA or supported ROCm arch
+    try:
+        if torch.backends.cuda.is_flash_attention_available():
+            torch.backends.cuda.enable_flash_sdp(True)
+            _sdp_enabled.append("Flash")
+        else:
+            torch.backends.cuda.enable_flash_sdp(False)
+    except Exception:
+        torch.backends.cuda.enable_flash_sdp(True)   # older PyTorch: no probe API, enable optimistically
+        _sdp_enabled.append("Flash (unverified)")
+
+    # Memory-Efficient Attention: xformers-style kernel; wider hw support than Flash
+    try:
+        torch.backends.cuda.enable_mem_efficient_sdp(True)
+        _sdp_enabled.append("MemEfficient")
+    except Exception:
+        pass
+
+    # cuDNN Attention: available since PyTorch 2.3 on Hopper (H100) and select Ampere configs
+    try:
+        torch.backends.cuda.enable_cudnn_sdp(True)
+        _sdp_enabled.append("cuDNN")
+    except AttributeError:
+        pass  # PyTorch < 2.3 — cuDNN SDP not present
+
+    print("SDP attention backends enabled: {}".format(", ".join(_sdp_enabled)))
 
 
 PRIORITIZE_FP16 = False  # TODO: remove and replace with something that shows exactly which dtype is faster than the other
@@ -407,7 +435,7 @@ DISABLE_SMART_MEMORY = args.disable_smart_memory
 if DISABLE_SMART_MEMORY:
     # logging.info("Disabling smart memory management")
     print("Always pin shared GPU memory")
-    
+
 
 def get_torch_device_name(device):
     if hasattr(device, 'type'):
@@ -433,7 +461,7 @@ try:
     device_name = get_torch_device_name(current_device)
     # logging.info("Device: {}".format(device_name))
     print("Device: {}".format(device_name))
-    
+
     # Check if it's an RTX device and provide hints
     if 'rtx' in device_name.lower():
         if not args.pin_shared_memory:
@@ -447,6 +475,22 @@ except:
 
 
 current_loaded_models = []
+
+# Callbacks invoked by free_memory() after standard model unloading when VRAM
+# is still insufficient.  DiffPipeline registers a callback here so the LRU
+# block cache can be flushed when VAE or CLIP need GPU memory post-sampling.
+_vram_pressure_hooks: list = []
+
+def register_vram_pressure_hook(fn) -> None:
+    """Register *fn(device)* to be called when VRAM is short after model unloads."""
+    if fn not in _vram_pressure_hooks:
+        _vram_pressure_hooks.append(fn)
+
+def unregister_vram_pressure_hook(fn) -> None:
+    try:
+        _vram_pressure_hooks.remove(fn)
+    except ValueError:
+        pass
 
 def module_size(module):
     module_mem = 0
@@ -610,6 +654,21 @@ def free_memory(memory_required, device, keep_loaded=[]):
             mem_free_total, mem_free_torch = get_free_memory(device, torch_free_too=True)
             if mem_free_torch > mem_free_total * 0.25:
                 soft_empty_cache(force=True)
+
+    # If VRAM is still short after standard model unloading, call registered
+    # pressure hooks (e.g. DiffPipeline LRU block eviction).  This lets the
+    # LRU block cache release GPU memory for VAE/CLIP without being tracked in
+    # current_loaded_models.
+    if _vram_pressure_hooks and memory_required > 0:
+        free_mem = get_free_memory(device)
+        if free_mem < memory_required:
+            for hook in list(_vram_pressure_hooks):
+                try:
+                    hook(device)
+                except Exception as _e:
+                    logging.warning("VRAM pressure hook failed: %s", _e)
+            soft_empty_cache(force=True)
+
     return unloaded_models
 
 def enable_ipadapter_layer_cache():
@@ -646,16 +705,23 @@ def load_models_gpu(models, memory_required=0, force_patch_weights=False, minimu
                 logging.info(f"Requested to load {x.model.__class__.__name__}")
             models_to_load.append(loaded_model)
 
+    _detached_clones = False
     for loaded_model in models_to_load:
         to_unload = []
         for i in range(len(current_loaded_models)):
             if loaded_model.model.is_clone(current_loaded_models[i].model):
                 to_unload = [i] + to_unload
+        if to_unload:
+            _detached_clones = True
         for i in to_unload:
             current_loaded_models.pop(i).model.detach(unpatch_all=False)
 
-    # Force memory cleanup before loading new models
-    soft_empty_cache(force=True)
+    # Only flush the allocator pool when clones were actually detached.
+    # An unconditional empty_cache here evicts cached blocks that the
+    # upcoming model-load could reuse directly — net loss on every generation
+    # where no clone swap occurred (the common case).
+    if _detached_clones:
+        soft_empty_cache(force=True)
 
     total_memory_required = {}
     for loaded_model in models_to_load:
@@ -739,7 +805,7 @@ def cleanup_models_gc():
             if cur.is_dead():
                 print("WARNING, memory leak with model {}. It will be removed from the model list.".format(cur.real_model().__class__.__name__))
                 to_delete.append(i)
-        
+
         if to_delete:
             for i in sorted(to_delete, reverse=True):
                 current_loaded_models.pop(i)
@@ -1347,7 +1413,7 @@ def should_use_bf16(device=None, model_params=0, prioritize_performance=True, ma
 def supports_fp8_compute(device=None):
     if SUPPORT_FP8_OPS:
         return True
-    
+
     if not is_nvidia():
         return False
 
@@ -1378,16 +1444,90 @@ def extended_fp16_support():
 def soft_empty_cache(force=False):
     global cpu_state
     if cpu_state == CPUState.MPS:
+        # Agree the state first
+        torch.mps.synchronize()
         torch.mps.empty_cache()
     elif is_intel_xpu():
+        torch.xpu.synchronize()
         torch.xpu.empty_cache()
     elif is_ascend_npu():
         torch.npu.empty_cache()
     elif is_mlu():
         torch.mlu.empty_cache()
     elif torch.cuda.is_available():
+        torch.cuda.synchronize()
         torch.cuda.empty_cache()
         torch.cuda.ipc_collect()
+
+
+class CPUSwapBuffer:
+    """Async-offload a CUDA tensor to pinned CPU memory; prefetch back on demand.
+
+    Acts as a per-step 'swap file' for sampler history tensors
+    (``old_denoised``, ``denoised_1``/``denoised_2``, …) that sit idle on the
+    GPU while the UNet processes the *current* step.  On LOW/NORMAL VRAM cards
+    this recovers 1–4 MB per tensor (scales with latent resolution) at near-zero
+    throughput cost because:
+
+    * D→H and H→D copies use DMA; the GPU compute pipeline keeps running.
+    * ``pin_memory()`` gives DMA-able host pages for the fastest possible H2D.
+    * A ``torch.cuda.Event`` serialises the D2H copy so ``to_device()`` can
+      prefetch without a global device sync.
+
+    On HIGH_VRAM machines or non-CUDA devices the class is transparent: the
+    tensor is stored on-device and ``to_device()`` returns it directly.
+
+    Usage::
+
+        buf = CPUSwapBuffer(old_denoised)   # D→H (non-blocking)
+        ...                                 # UNet forward on GPU
+        old_denoised = buf.to_device()      # H→D (non-blocking, returns GPU tensor)
+    """
+    __slots__ = ('_cpu', '_device', '_event')
+
+    def __init__(self, tensor: torch.Tensor, non_blocking: bool = True):
+        self._device = tensor.device
+        if tensor.device.type == 'cuda':
+            # Allocate in CPU pinned memory for DMA-able transfers.
+            self._cpu = tensor.detach().to('cpu', non_blocking=non_blocking).pin_memory()
+            if non_blocking:
+                # Record an event on the copy stream so to_device() can
+                # synchronise before issuing the H2D transfer.
+                self._event = torch.cuda.Event()
+                self._event.record(torch.cuda.current_stream(tensor.device))
+            else:
+                self._event = None
+        else:
+            # MPS / CPU: no-op path — hold the tensor directly.
+            self._cpu   = tensor.detach()
+            self._event = None
+
+    def to_device(self, non_blocking: bool = True) -> torch.Tensor:
+        """Return the tensor on its original device (async H2D for CUDA)."""
+        if self._event is not None:
+            self._event.synchronize()          # ensure D2H copy completed
+        if self._device.type == 'cuda':
+            return self._cpu.to(self._device, non_blocking=non_blocking)
+        return self._cpu
+
+
+def should_swap_history() -> bool:
+    """Return ``True`` when VRAM pressure warrants CPU-swapping sampler history.
+
+    Conservative threshold (1.5 GiB free): only triggers when the next UNet
+    forward would likely exhaust the remaining budget.  Returns ``False`` on
+    HIGH_VRAM machines and non-CUDA devices so there is zero overhead on
+    well-provisioned systems.
+    """
+    global vram_state
+    if vram_state == VRAMState.HIGH_VRAM:
+        return False
+    if not torch.cuda.is_available():
+        return False
+    dev = get_torch_device()
+    if is_device_cpu(dev):
+        return False
+    return get_free_memory(dev) < 1_572_864_000   # 1.5 GiB
 
 def unload_all_models():
     free_memory(1e30, get_torch_device())
@@ -1425,4 +1565,4 @@ def throw_exception_if_processing_interrupted():
         if interrupt_processing:
             interrupt_processing = False
             raise InterruptProcessingException()
-        
+

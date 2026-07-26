@@ -1,43 +1,22 @@
 let promptTokenCountUpdateFunctions = {};
 
-function update_txt2img_tokens(...args) {
-    // Called from Gradio
-    update_token_counter("txt2img_token_button");
-    update_token_counter("txt2img_negative_token_button");
-    if (args.length == 2) {
-        return args[0];
-    }
-    return args;
-}
-
-function update_img2img_tokens(...args) {
-    // Called from Gradio
-    update_token_counter("img2img_token_button");
-    update_token_counter("img2img_negative_token_button");
-    if (args.length == 2) {
-        return args[0];
-    }
-    return args;
-}
-
 function update_token_counter(button_id) {
     promptTokenCountUpdateFunctions[button_id]?.();
 }
-
 
 function recalculatePromptTokens(name) {
     promptTokenCountUpdateFunctions[name]?.();
 }
 
 function recalculate_prompts_txt2img() {
-    // Called from Gradio
+    // Called from Gradio after paste operations to refresh token counts
     recalculatePromptTokens('txt2img_prompt');
     recalculatePromptTokens('txt2img_neg_prompt');
     return Array.from(arguments);
 }
 
 function recalculate_prompts_img2img() {
-    // Called from Gradio
+    // Called from Gradio after paste operations to refresh token counts
     recalculatePromptTokens('img2img_prompt');
     recalculatePromptTokens('img2img_neg_prompt');
     return Array.from(arguments);
@@ -46,7 +25,6 @@ function recalculate_prompts_img2img() {
 function setupTokenCounting(id, id_counter, id_button) {
     var prompt = gradioApp().getElementById(id);
     var counter = gradioApp().getElementById(id_counter);
-    var textarea = gradioApp().querySelector(`#${id} > label > textarea`);
 
     if (counter.parentElement == prompt.parentElement) {
         return;
@@ -55,11 +33,12 @@ function setupTokenCounting(id, id_counter, id_button) {
     prompt.parentElement.insertBefore(counter, prompt);
     prompt.parentElement.style.position = "relative";
 
-    var func = onEdit(id, textarea, 800, function() {
+    // Kept for recalculate_prompts_* calls (e.g. after paste); typing is handled by Python .change()
+    var func = function() {
         if (counter.classList.contains("token-counter-visible")) {
             gradioApp().getElementById(id_button)?.click();
         }
-    });
+    };
     promptTokenCountUpdateFunctions[id] = func;
     promptTokenCountUpdateFunctions[id_button] = func;
 }

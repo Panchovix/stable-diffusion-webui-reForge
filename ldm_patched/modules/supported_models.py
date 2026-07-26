@@ -19,10 +19,10 @@ import ldm_patched.modules.text_encoders.lumina2
 import ldm_patched.modules.text_encoders.wan
 import ldm_patched.modules.text_encoders.ace
 import ldm_patched.modules.text_encoders.omnigen2
-
-from modules.shared import opts
+import modules.shared as shared
 
 from . import supported_models_base
+from .supported_models_base import apply_checkpoint_sampling_params
 from . import latent_formats
 
 from . import diffusers_convert
@@ -167,7 +167,7 @@ class SDXLRefiner(supported_models_base.BASE):
         state_dict = utils.clip_text_transformers_convert(state_dict, "clip_g.", "clip_g.transformer.")
         state_dict = utils.state_dict_key_replace(state_dict, keys_to_replace)
         if (
-            not getattr(opts, 'use_old_clip_g_load_and_ztsnr_application', False)
+            not getattr(shared.opts, 'use_old_clip_g_load_and_ztsnr_application', False)
             and 'clip_g.text_projection' not in state_dict
             and 'clip_g.transformer.text_projection.weight' in state_dict
         ):
@@ -200,7 +200,17 @@ class SDXL(supported_models_base.BASE):
 
     memory_usage_factor = 0.8
 
-    def model_type(self, state_dict, prefix=""):
+    def model_type(self, state_dict, prefix="", metadata=None):
+        # SAI ModelSpec header takes precedence when present
+        if metadata:
+            pred = metadata.get("modelspec.prediction_type", "")
+            if pred == "v_prediction":
+                if metadata.get("modelspec.ztsnr", "") == "true" or "ztsnr" in state_dict:
+                    self.sampling_settings["zsnr"] = True
+                return model_base.ModelType.V_PREDICTION
+            elif pred == "epsilon":
+                return model_base.ModelType.EPS
+
         if 'edm_mean' in state_dict and 'edm_std' in state_dict: #Playground V2.5
             self.latent_format = latent_formats.SDXL_Playground_2_5()
             self.sampling_settings["sigma_data"] = 0.5
@@ -220,9 +230,23 @@ class SDXL(supported_models_base.BASE):
             return model_base.ModelType.EPS
 
     def get_model(self, state_dict, prefix="", device=None):
-        out = model_base.SDXL(self, model_type=self.model_type(state_dict, prefix), device=device)
+        model_t = self.model_type(state_dict, prefix)
+        out = model_base.SDXL(self, model_type=model_t, device=device)
         if self.inpaint_model():
             out.set_inpaint()
+        ztsnr_detected = apply_checkpoint_sampling_params(out, state_dict)
+        if ztsnr_detected and not out.model_sampling.zsnr:
+            # alphas_cumprod[-1] < 1e-5 signals ZTSNR even without explicit 'ztsnr' key
+            out.model_sampling.zsnr = True
+            print(
+                f"[SDXL.get_model] ZTSNR detected from alphas_cumprod content — "
+                f"stamped zsnr=True  sigma_max={float(out.model_sampling.sigma_max):.2f}"
+            )
+        print(
+            f"[SDXL.get_model] model_type={model_t}  zsnr={out.model_sampling.zsnr}"
+            f"  sigma_min={float(out.model_sampling.sigma_min):.5f}"
+            f"  sigma_max={float(out.model_sampling.sigma_max):.4f}"
+        )
         return out
 
     def process_clip_state_dict(self, state_dict):
@@ -236,7 +260,7 @@ class SDXL(supported_models_base.BASE):
         state_dict = utils.state_dict_key_replace(state_dict, keys_to_replace)
         state_dict = utils.clip_text_transformers_convert(state_dict, "clip_g.", "clip_g.transformer.")
         if (
-            not getattr(opts, 'use_old_clip_g_load_and_ztsnr_application', False)
+            not getattr(shared.opts, 'use_old_clip_g_load_and_ztsnr_application', False)
             and 'clip_g.text_projection' not in state_dict
             and 'clip_g.transformer.text_projection.weight' in state_dict
         ):
@@ -473,7 +497,7 @@ class Stable_Cascade_C(supported_models_base.BASE):
         return state_dict
 
     def process_clip_state_dict(self, state_dict):
-        state_dict = utils.state_dict_prefix_replace(state_dict, {k: "" for k in self.text_encoder_key_prefix}, filter_keys=True)
+        state_dict = utils.state_dict_prefix_replace(state_dict, dict.fromkeys(self.text_encoder_key_prefix, ""), filter_keys=True)
         if "clip_g.text_projection" in state_dict:
             state_dict["clip_g.transformer.text_projection.weight"] = state_dict.pop("clip_g.text_projection").transpose(0, 1)
         return state_dict
@@ -531,7 +555,7 @@ class SDXL_instructpix2pix(SDXL):
 
     def get_model(self, state_dict, prefix="", device=None):
         return model_base.SDXL_instructpix2pix(self, model_type=self.model_type(state_dict, prefix), device=device)
-    
+
 class LotusD(SD20):
     unet_config = {
         "model_channels": 320,
@@ -932,7 +956,7 @@ class CosmosI2V(CosmosT2V):
     def get_model(self, state_dict, prefix="", device=None):
         out = model_base.CosmosVideo(self, image_to_video=True, device=device)
         return out
-    
+
 class CosmosT2IPredict2(supported_models_base.BASE):
     unet_config = {
         "image_model": "cosmos_predict2",
@@ -1047,7 +1071,7 @@ class WAN21_I2V(WAN21_T2V):
     def get_model(self, state_dict, prefix="", device=None):
         out = model_base.WAN21(self, image_to_video=True, device=device)
         return out
-    
+
 class WAN21_FunControl2V(WAN21_T2V):
     unet_config = {
         "image_model": "wan2.1",
@@ -1058,7 +1082,7 @@ class WAN21_FunControl2V(WAN21_T2V):
     def get_model(self, state_dict, prefix="", device=None):
         out = model_base.WAN21(self, image_to_video=False, device=device)
         return out
-    
+
 class WAN21_Camera(WAN21_T2V):
     unet_config = {
         "image_model": "wan2.1",
@@ -1069,7 +1093,7 @@ class WAN21_Camera(WAN21_T2V):
     def get_model(self, state_dict, prefix="", device=None):
         out = model_base.WAN21_Camera(self, image_to_video=False, device=device)
         return out
-    
+
 class WAN21_Vace(WAN21_T2V):
     unet_config = {
         "image_model": "wan2.1",
@@ -1107,7 +1131,7 @@ class Hunyuan3Dv2(supported_models_base.BASE):
     def get_model(self, state_dict, prefix="", device=None):
         out = model_base.Hunyuan3Dv2(self, device=device)
         return out
-    
+
     def clip_target(self, state_dict={}):
         return None
 

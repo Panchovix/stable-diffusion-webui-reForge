@@ -1,8 +1,17 @@
-# Stable Diffusion WebUI Forge/reForge
+# Stable Diffusion WebUI reForge-Exp
 
-Stable Diffusion WebUI Forge/reForge is a platform on top of [Stable Diffusion WebUI](https://github.com/AUTOMATIC1111/stable-diffusion-webui) (based on [Gradio](https://www.gradio.app/)) to make development easier, optimize resource management, speed up inference, and study experimental features.
+Stable Diffusion WebUI reForge-Exp is a platform on top of [Stable Diffusion WebUI reForge](https://github.com/AUTOMATIC1111/stable-diffusion-webui) (based on [Gradio](https://www.gradio.app/)) that targets to clean up the original implementation, study experimental features, and bring better performance on all platforms, including MacOS.
+The postfix "Exp" means: Expedition, Exploration. The repo will target more aggressive optimization for generation.
 
-The name "Forge" is inspired from "Minecraft Forge". This project is aimed at becoming SD WebUI's Forge.
+# Features
+- SURE SGPS Guidance samplers (a trajectory optimization sampler)
+- Apple MLX support (much faster than MPS and BP16 model support)
+- DIffuser pipline (proper compile support and wider model support)
+- 
+# Notice of usage of AI
+reForge-Exp uses Claude Code as a coding agent; you may see Claude Code co-author some commits.
+Currently, Claude Code is used to clean up the Forge framework design for better maintainability and to prototype new technology. 
+I will run the repo almost daily to confirm it's working, the PR and issue are managed by me since I haven't trusted Claude for auto repair. 
 
 # Suggested repos instead of reForge for stability
 
@@ -11,33 +20,87 @@ The name "Forge" is inspired from "Minecraft Forge". This project is aimed at be
 It is a continuation of Forge2 (so Flux, fp8, gguf, etc) but with more features (wan 2.2, Qwen Image, Nunchaku, etc), aimed on optimizations and new features.
 * ersatzForge: https://github.com/DenOfEquity/ersatzForge, from DenOfEquity, based on Forge2, but as he says, with (experimental, opinionated) changes to Forge2 webUI.
 
-Thanks!
 
-# Forge2/reForge2
 
-* newmain_newforge: Based on latest forge2 (gradio4, flux, etc) with some small changes that I plan to add very slowly. For now it has python 3.12 support, sage/flash attention support, all the samplers and schedulers from reForge (1), and recently, support for CFG++ samplers.
-
-# Other branches:
-* main: Main branch with multiple changes and updates. But not stable as main-old branch.
+# reForge-Exp branches:
+* main: Main branch with multiple changes and updates. This is default codebase 
+# Orginal reForge branches
 * dev: Similar to main but with more unstable changes. I.e. using comfy/ldm_patched backend for sd1.x and sdxl instead of A1111.
 * dev2: More unstable than dev, for now same as dev.
 * experimental: same as dev2 but with gradio 4.
 * main-old: Branch with old forge backend. Possibly the most stable and older one (2025-03)
 
 # Installing Forge/reForge
+## Special Notice for regions that have a slow or dead GitHub connection
+Seeing the repo page doesn't mean you have a stable connection to clone it. The script (all files ending in .bat and .sh) assumes you have a stable connection to clone the repo.
+For this, you may need to use a VPN that supports TUN mode, or clone the repo with GitHub Desktop first. 
+Please also notice that during installation, Python also needs to install packages to run this repo.
 
-### (Suggested) Clean install.
-
-For this, you will need Python (Python 3.7 up to 3.12 works fine, 3.13 still has some issues)
-If you know what you are doing, you can install Forge/reForge using same method as SD-WebUI. (Install Git, Python, Git Clone the reForge repo `https://github.com/Panchovix/stable-diffusion-webui-reForge.git` and then run webui-user.bat):
-
+### (Suggested) Clean install
+If you come from another WebUI, you may preserve the models folder. I highly suggest you manually remove the venv folder( .venv or venv), to avoid conflict in dependency. 
+## First step, all OS must do this
+Use any git tool, including GitHub Desktop, to clone this repo's code
+If you are using git, here are the commands
 ```bash
 git clone https://github.com/Panchovix/stable-diffusion-webui-reForge.git
 cd stable-diffusion-webui-reForge
 git checkout main
 ```
-Then run webui-user.bat (Windows) or webui-user.sh (Linux, for this one make sure to uncomment the lines according of your folder, paths and setting you need).
+In the future, the WebUI script will be able to do this for you.
 
+## Windows(7+)
+You will need a working Python 3.11+ release. Python 3.14 is the current target; 3.11–3.13 also work fine. 
+Python can be downloaded from here: 
+Open PowerShell or Command Line Prompt. I recommend using the right-click menu's "Open with Terminal" entry to open it directly in Terminal. If you can't find it, use cd to change directory to repo.
+Now check if you are using NVIDIA GPU. If not, in cmd arg, you add following line.
+```bash
+--skip-cuda-test
+```
+For NVIDIA GPU user, you now need to go to following link to know what kind of SM version you have.
+SM Check out:
+After that, go to Following link for cuDDN and CUDA runtime
+CUDA:
+cuDDN:
+Notice that cuDDN require a developer account, you will need to register one, it's free and will grant you access to other libs that may need for other features.
+Reboot your computer after install, these libs need reboot so Windows understand you just installed them.
+Run webui.bat. Script will handle all initalization for you. 
+
+# Linux
+You will need a working Python 3.11+ release. Python 3.14 is the current target; 3.11–3.13 also work fine. The exact installation depends on your distro; search your distro's documentation for this step. 
+Open your distro's terminal and change into repo dictory.
+Now check if you are using NVIDIA GPU. If not, in cmd arg, you add following line.
+```bash
+--skip-cuda-test
+```
+Run webui.sh. Script will handle all initalization for you. 
+
+## MacOS(M series chip)
+You will need a working python 3.7+ release. Currently 3.11 is fine. 
+Python can be download from here: 
+Or use brew
+```bash
+brew install python@3.14
+```
+Open terminal, change into repo dictory
+Run webui.sh, wait for initalazation, Control+C after it says "WebUI Started". We will kill the server to install MLX.
+Now input command
+```bash
+source ./venv/bin/activate
+```
+After hit Enter, you should see your terminal change into
+```bash
+(venv) > 
+```
+Now within the venv, use following command to install MLX 
+```bash
+python -m pip install mlx
+```
+After install complete, use following command to exist venv
+```bash
+deactivate
+```
+Now boot the WebUI again, this time you should see a banner says MLX activate.
+## To update this repo
 When you want to update:
 ```bash
 cd stable-diffusion-webui-reForge
@@ -87,8 +150,14 @@ If you got stuck in a merge to resolve conflicts, you can go back with `git merg
 
 -------
 
-Pre-done package is planned, but I'm not sure how to do it. Any PR or help with this is appreciated.
+Pre-done or Pre-install package is planned, it will target for Windows user handle CUDA runtime issue. 
 
+# reForge-Exp command line
+reForge-Exp currently use command line args ADD function on top of reForge. If there is nothing in the following is specfic, it bahave like reForge (other than the MLX pipline, that is enable by default to avoid exterme slow MPS ops)
+1. `--forge-diffusers-pipeline` This flag enable reForge-Exp's Diffuser pipline. The orginal Forge is trying to implement Diffuser and other webUI like SD.NEXT is based on Diffuser. This enable wider support of the model like FLUX and proper LoRA support of PyTorch compile (reForge given up to handle it). Performance wise, this also allows mmap loading of the model. Recommend add it after first generation is completed.
+2. `--forge-diffusers-offload` When using `--forge-diffusers-pipeline`, move the whole HF UNet back to CPU after each sampling step to save VRAM. Adds one full transfer per step. Most aggressively save VRAM
+3. `--forge-diffusers-sequential-offload` When using --forge-diffusers-pipeline, use accelerate per-block CPU offload: each UNet block moves to GPU just before its forward pass and returns to CPU immediately after (peak VRAM ≈ largest single block). Slower than --forge-diffusers-offload but uses significantly less VRAM. Takes precedence over --forge-diffusers-offload if both are set.
+4. 
 # Forge/reForge Backend
 
 Forge/reForge backend removes all WebUI's codes related to resource management and reworked everything. All previous CMD flags like `medvram, lowvram, medvram-sdxl, precision full, no half, no half vae, attention_xxx, upcast unet`, ... are all **REMOVED**. Adding these flags will not cause error but they will not do anything now.
@@ -197,7 +266,7 @@ Since the UI got really cluttered with built it extensions, I have removed some 
 
 # Last "Old" Forge commit (https://github.com/lllyasviel/stable-diffusion-webui-forge/commit/bfee03d8d9415a925616f40ede030fe7a51cbcfd) before forge2.
 
-# Support
+# Support(For OG reForge author)
 
 Some people have been asking how to donate or support the project, and I'm really grateful for that! I did this buymeacoffe link from some suggestions!
 

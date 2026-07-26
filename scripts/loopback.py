@@ -4,7 +4,6 @@ import gradio as gr
 import modules.scripts as scripts
 from modules import deepbooru, images, processing, shared
 from modules.processing import Processed
-from modules.shared import opts, state
 
 
 class Script(scripts.Script):
@@ -43,7 +42,7 @@ class Script(scripts.Script):
         original_init_image = p.init_images
         original_prompt = p.prompt
         original_inpainting_fill = p.inpainting_fill
-        state.job_count = loops * batch_count
+        shared.state.job_count = loops * batch_count
 
         initial_color_corrections = [processing.setup_color_correction(p.init_images[0])]
 
@@ -80,7 +79,7 @@ class Script(scripts.Script):
                 p.batch_size = 1
                 p.do_not_save_grid = True
 
-                if opts.img2img_color_correction:
+                if shared.opts.img2img_color_correction:
                     p.color_corrections = initial_color_corrections
 
                 if append_interrogation != "None":
@@ -90,12 +89,12 @@ class Script(scripts.Script):
                     elif append_interrogation == "DeepBooru":
                         p.prompt += deepbooru.model.tag(p.init_images[0])
 
-                state.job = f"Iteration {i + 1}/{loops}, batch {n + 1}/{batch_count}"
+                shared.state.job = f"Iteration {i + 1}/{loops}, batch {n + 1}/{batch_count}"
 
                 processed = processing.process_images(p)
 
                 # Generation cancelled.
-                if state.interrupted or state.stopping_generation:
+                if shared.state.interrupted or shared.state.stopping_generation:
                     break
 
                 if initial_seed is None:
@@ -105,7 +104,7 @@ class Script(scripts.Script):
                 p.seed = processed.seed + 1
                 p.denoising_strength = calculate_denoising_strength(i + 1)
 
-                if state.skipped:
+                if shared.state.skipped:
                     break
 
                 last_image = processed.images[0]
@@ -116,21 +115,21 @@ class Script(scripts.Script):
                     history.append(last_image)
                     all_images.append(last_image)
 
-            if batch_count > 1 and not state.skipped and not state.interrupted:
+            if batch_count > 1 and not shared.state.skipped and not shared.state.interrupted:
                 history.append(last_image)
                 all_images.append(last_image)
 
             p.inpainting_fill = original_inpainting_fill
 
-            if state.interrupted or state.stopping_generation:
+            if shared.state.interrupted or shared.state.stopping_generation:
                 break
 
         if len(history) > 1:
             grid = images.image_grid(history, rows=1)
-            if opts.grid_save:
-                images.save_image(grid, p.outpath_grids, "grid", initial_seed, p.prompt, opts.grid_format, info=info, short_filename=not opts.grid_extended_filename, grid=True, p=p)
+            if shared.opts.grid_save:
+                images.save_image(grid, p.outpath_grids, "grid", initial_seed, p.prompt, shared.opts.grid_format, info=info, short_filename=not shared.opts.grid_extended_filename, grid=True, p=p)
 
-            if opts.return_grid:
+            if shared.opts.return_grid:
                 grids.append(grid)
 
         all_images = grids + all_images

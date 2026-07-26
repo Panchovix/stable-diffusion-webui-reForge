@@ -1,5 +1,6 @@
 import logging
 import sys
+import traceback
 import gradio as gr
 from modules import scripts, script_callbacks
 from RescaleCFG.nodes_RescaleCFG import RescaleCFG

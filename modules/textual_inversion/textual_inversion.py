@@ -154,7 +154,7 @@ class EmbeddingDatabase:
         devices.torch_npu_set_device()
         vec = shared.sd_model.cond_stage_model.encode_embedding_init_text(",", 1)
         return vec.shape[1]
-    
+
     def read_embedding_from_image(self, path, name):
         try:
             ondisk_mtime = os.path.getmtime(path)
@@ -721,4 +721,3 @@ def save_embedding(embedding, optimizer, checkpoint, embedding_name, filename, r
         embedding.name = old_embedding_name
         embedding.cached_checksum = old_cached_checksum
         raise
-    

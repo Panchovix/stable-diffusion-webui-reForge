@@ -3,7 +3,6 @@
 """CLIP guided sampling from k-diffusion models."""
 
 import argparse
-import math
 
 import accelerate
 import clip
@@ -12,7 +11,7 @@ from resize_right import resize
 import torch
 from torch.nn import functional as F
 from torchvision import transforms
-from tqdm import trange, tqdm
+from tqdm import tqdm
 
 import k_diffusion as K
 

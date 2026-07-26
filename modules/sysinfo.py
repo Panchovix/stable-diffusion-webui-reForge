@@ -98,14 +98,14 @@ def get_packages():
             return sorted([f"{package.metadata['Name']}=={package.version}" for package in packages])
         except Exception as e2:
             return {'error pip': pip_error, 'error importlib': str(e2)}
-        
+
 def get_dict():
     config = get_config()
-    
+
     # Check if config is a string (error message) and convert to dict
     if isinstance(config, str):
         config = {'error': config}
-    
+
     disabled_extensions = config.get('disabled_extensions', []) if isinstance(config, dict) else []
 
     res = {
@@ -177,7 +177,7 @@ def run_git(path, *args):
 def git_status(path):
     if (Path(path) / '.git').is_dir():
         return run_git(paths_internal.script_path, 'status')
-    
+
 def get_info_from_repo_path(path: Path):
     is_repo = (path / '.git').is_dir()
     return {

@@ -1,5 +1,6 @@
 import logging
 import sys
+import traceback
 import gradio as gr
 from modules import scripts, script_callbacks
 from mahiro.nodes_mahiro import Mahiro
@@ -45,7 +46,7 @@ class MahiroCFGScript(scripts.Script):
 
         # Always start with a fresh clone of the original unet
         unet = p.sd_model.forge_objects.unet.clone()
-        
+
         if not self.enabled:
             # Reset the unet to its original state
             p.sd_model.forge_objects.unet = unet

@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python tools/analyze.py symbols ldm_patched/modules/model_base.py)",
+      "Bash(python tools/analyze.py symbols diff_pipeline/pipeline.py)",
+      "mcp__context7__query-docs"
+    ]
+  }
+}

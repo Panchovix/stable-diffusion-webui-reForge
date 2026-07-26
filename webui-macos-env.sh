@@ -12,7 +12,7 @@ export PYTORCH_ENABLE_MPS_FALLBACK=1
 if [[ "$(sysctl -n machdep.cpu.brand_string)" =~ ^.*"Intel".*$ ]]; then
     export TORCH_COMMAND="pip install torch==2.3.1 torchvision==0.18.1"
 else
-    export TORCH_COMMAND="pip install torch==2.4.0 torchvision==0.19.0"
+    export TORCH_COMMAND="pip install torch==2.11.0 torchvision==0.26.0"
 fi
 
 ####################################################################

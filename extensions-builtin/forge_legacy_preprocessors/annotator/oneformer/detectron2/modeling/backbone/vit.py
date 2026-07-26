@@ -463,7 +463,7 @@ class SimpleFeaturePyramid(Backbone):
                 self._out_feature_strides["p{}".format(s + 1)] = 2 ** (s + 1)
 
         self._out_features = list(self._out_feature_strides.keys())
-        self._out_feature_channels = {k: out_channels for k in self._out_features}
+        self._out_feature_channels = dict.fromkeys(self._out_features, out_channels)
         self._size_divisibility = strides[-1]
         self._square_pad = square_pad
 

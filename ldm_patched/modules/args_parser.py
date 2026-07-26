@@ -91,8 +91,8 @@ parser.add_argument("--disable-ipex-hijack", action="store_true")
 
 parser.add_argument("--torch-compile", action='store_true', help="Enable torch.compile for potential speedups")
 parser.add_argument("--torch-compile-backend", type=str, default="inductor", choices=["inductor", "cudagraphs"], help="Backend for torch.compile")
-parser.add_argument("--torch-compile-mode", type=str, default="default", 
-                    choices=["default", "reduce-overhead", "max-autotune", "max-autotune-no-cudagraphs"], 
+parser.add_argument("--torch-compile-mode", type=str, default="default",
+                    choices=["default", "reduce-overhead", "max-autotune", "max-autotune-no-cudagraphs"],
                     help="Compilation mode for torch.compile. Only applies to inductor backend")
 parser.add_argument("--torch-compile-epilogue-fusion", action='store_true', help="Enable epilogue fusion (requires max-autotune)")
 parser.add_argument("--torch-compile-max-autotune", action='store_true', help="Enable max autotune")
@@ -207,4 +207,3 @@ logging_level = logging.INFO
 if args.debug_mode:
     logging_level = logging.DEBUG
     logging.basicConfig(format="%(message)s", level=logging_level)
-    

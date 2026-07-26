@@ -162,7 +162,7 @@ class DatasetMapper:
         # USER: Write your own image loading if it's not from a file
         image = utils.read_image(dataset_dict["file_name"], format=self.image_format)
         utils.check_image_size(dataset_dict, image)
-        
+
         task = f"The task is {self.task}"
         dataset_dict["task"] = task
 

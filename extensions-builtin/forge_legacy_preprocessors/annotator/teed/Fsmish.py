@@ -7,7 +7,6 @@ Wang, Xueliang, Honge Ren, and Achuan Wang.
 
 # import pytorch
 import torch
-import torch.nn.functional as F
 
 
 @torch.jit.script

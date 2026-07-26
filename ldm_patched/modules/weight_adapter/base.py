@@ -61,6 +61,10 @@ class WeightAdapterTrainBase(nn.Module):
 
 def weight_decompose(dora_scale, weight, lora_diff, alpha, strength, intermediate_dtype, function):
     dora_scale = ldm_patched.modules.model_management.cast_to_device(dora_scale, weight.device, intermediate_dtype)
+    # DoRA files (A1111/kohya format) store magnitude as [1, out_dim]; squeeze to [out_dim]
+    # so shape[0] correctly matches weight.shape[0] (output channels).
+    if dora_scale.dim() > 1 and dora_scale.shape[0] == 1:
+        dora_scale = dora_scale.squeeze(0)
     lora_diff *= alpha
     weight_calc = weight + function(lora_diff).type(weight.dtype)
 

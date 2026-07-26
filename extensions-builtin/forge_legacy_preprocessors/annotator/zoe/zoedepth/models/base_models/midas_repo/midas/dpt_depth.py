@@ -43,7 +43,7 @@ class DPT(BaseModel):
 
         self.channels_last = channels_last
 
-        # For the Swin, Swin 2, LeViT and Next-ViT Transformers, the hierarchical architectures prevent setting the 
+        # For the Swin, Swin 2, LeViT and Next-ViT Transformers, the hierarchical architectures prevent setting the
         # hooks freely. Instead, the hooks have to be chosen according to the ranges specified in the comments.
         hooks = {
             "beitl16_512": [5, 11, 17, 23],

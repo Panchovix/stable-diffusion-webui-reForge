@@ -15,17 +15,18 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-      - name: Set up Python 3.10
-        uses: actions/setup-python@v5
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
         with:
-          python-version: 3.10.6
+          python-version: "3.14"
+          allow-prereleases: true
           cache: pip
           cache-dependency-path: |
             **/requirements*txt
             launch.py
       - name: Cache models
         id: cache-models
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: models
           key: "2023-12-30"
@@ -84,7 +85,7 @@ jobs:
           2>&1 | tee output.txt &
       - name: Run tests
         run: |
-          wait-for-it --service 127.0.0.1:7860 -t 20
+          wait-for-it --service 127.0.0.1:7860 -t 60
           python -m pytest -vv --junitxml=test/results.xml --cov . --cov-report=xml --verify-base-url test
       # TODO(huchenlei): Enable ControlNet tests. Currently it is too slow to run these tests on CPU with
       # real SD model. We need to find a way to load empty SD model.
@@ -98,7 +99,8 @@ jobs:
       #     ./extensions-builtin/sd_forge_controlnet/tests
       - name: Kill test server
         if: always()
-        run: curl -vv -XPOST http://127.0.0.1:7860/sdapi/v1/server-stop && sleep 10
+        # Use || true so a connection-refused (server never started) doesn't fail CI
+        run: curl -sf -XPOST http://127.0.0.1:7860/sdapi/v1/server-stop && sleep 10 || true
       - name: Upload main app output
         uses: actions/upload-artifact@v4
         if: always()

@@ -2146,17 +2146,17 @@ def load_custom_node(module_path: str, ignore=set(), module_parent="custom_nodes
         # except Exception as e:
         #     logging.warning(f"Unable to parse pyproject.toml due to lack dependency pydantic-settings, please run 'pip install -r requirements.txt': {e}")
 
-        if hasattr(module, "WEB_DIRECTORY") and getattr(module, "WEB_DIRECTORY") is not None:
-            web_dir = os.path.abspath(os.path.join(module_dir, getattr(module, "WEB_DIRECTORY")))
+        if hasattr(module, "WEB_DIRECTORY") and module.WEB_DIRECTORY is not None:
+            web_dir = os.path.abspath(os.path.join(module_dir, module.WEB_DIRECTORY))
             if os.path.isdir(web_dir):
                 EXTENSION_WEB_DIRS[module_name] = web_dir
 
-        if hasattr(module, "NODE_CLASS_MAPPINGS") and getattr(module, "NODE_CLASS_MAPPINGS") is not None:
+        if hasattr(module, "NODE_CLASS_MAPPINGS") and module.NODE_CLASS_MAPPINGS is not None:
             for name, node_cls in module.NODE_CLASS_MAPPINGS.items():
                 if name not in ignore:
                     NODE_CLASS_MAPPINGS[name] = node_cls
                     node_cls.RELATIVE_PYTHON_MODULE = "{}.{}".format(module_parent, get_module_name(module_path))
-            if hasattr(module, "NODE_DISPLAY_NAME_MAPPINGS") and getattr(module, "NODE_DISPLAY_NAME_MAPPINGS") is not None:
+            if hasattr(module, "NODE_DISPLAY_NAME_MAPPINGS") and module.NODE_DISPLAY_NAME_MAPPINGS is not None:
                 NODE_DISPLAY_NAME_MAPPINGS.update(module.NODE_DISPLAY_NAME_MAPPINGS)
             return True
         else:

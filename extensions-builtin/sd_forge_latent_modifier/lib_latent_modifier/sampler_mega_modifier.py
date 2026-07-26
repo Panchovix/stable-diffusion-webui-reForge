@@ -17,7 +17,7 @@ def min_(tensor_list):
     x = torch.stack(tensor_list)
     mn = x.min(axis=0)[0]
     return mn#torch.clamp(mn, min=-1)
-    
+
 def max_(tensor_list):
     # return the element-wise max of the tensor list.
     x = torch.stack(tensor_list)
@@ -25,7 +25,6 @@ def max_(tensor_list):
     return mx#torch.clamp(mx, max=1)
 def contrast_adaptive_sharpening(image, amount):
     img = F.pad(image, pad=(1, 1, 1, 1))
-    absmean = torch.abs(image.mean())
 
     a = img[..., :-2, :-2]
     b = img[..., :-2, 1:-1]
@@ -36,18 +35,18 @@ def contrast_adaptive_sharpening(image, amount):
     g = img[..., 2:, :-2]
     h = img[..., 2:, 1:-1]
     i = img[..., 2:, 2:]
-    
+
     # Computing contrast
     cross = (b, d, e, f, h)
     mn = min_(cross)
     mx = max_(cross)
-    
+
     diag = (a, c, g, i)
     mn2 = min_(diag)
     mx2 = max_(diag)
     mx = mx + mx2
     mn = mn + mn2
-    
+
     # Computing local weight
     inv_mx = torch.reciprocal(mx)
     amp = inv_mx * torch.minimum(mn, (2 - mx))
@@ -56,7 +55,7 @@ def contrast_adaptive_sharpening(image, amount):
     amp = torch.copysign(torch.sqrt(torch.abs(amp)), amp)
     w = - amp * (amount * (1/5 - 1/8) + 1/8)
     div = torch.reciprocal(1 + 4*w).clamp(-10, 10)
-    
+
     output = ((b + d + f + h)*w + e) * div
     output = torch.nan_to_num(output)
 
@@ -489,7 +488,7 @@ def add_cads_noise(y, timestep, cads_schedule_start, cads_schedule_end, cads_noi
         gamma = 1.0
     elif timestep_as_float > cads_schedule_end:
         gamma = 0.0
-    else: 
+    else:
         gamma = (cads_schedule_end - timestep_as_float) / (cads_schedule_end - cads_schedule_start)
 
     y_mean, y_std = torch.mean(y), torch.std(y)
@@ -511,7 +510,7 @@ def add_cads_custom_noise(y, noise, timestep, cads_schedule_start, cads_schedule
         gamma = 1.0
     elif timestep_as_float > cads_schedule_end:
         gamma = 0.0
-    else: 
+    else:
         gamma = (cads_schedule_end - timestep_as_float) / (cads_schedule_end - cads_schedule_start)
 
     y_mean, y_std = torch.mean(y), torch.std(y)
@@ -601,7 +600,6 @@ def center_latent(tensor): #https://birchlabs.co.uk/machine-learning#combating-m
 
 def center_0channel(tensor): #https://birchlabs.co.uk/machine-learning#combating-mean-drift-in-cfg
     """Centers on 0 to combat CFG drift."""
-    std_dev_0 = tensor[:, [0]].std()
     mean_0 = tensor[:, [0]].mean()
     mean_12 = tensor[:, [1,2]].mean()
     mean_3 = tensor[:, [3]].mean()
@@ -671,15 +669,15 @@ def divisive_normalization(image_tensor, neighborhood_size, threshold=1e-6):
     # Compute the local mean and local variance
     local_mean = F.avg_pool2d(image_tensor, neighborhood_size, stride=1, padding=neighborhood_size // 2, count_include_pad=False)
     local_mean_squared = local_mean**2
-    
+
     local_variance = F.avg_pool2d(image_tensor**2, neighborhood_size, stride=1, padding=neighborhood_size // 2, count_include_pad=False) - local_mean_squared
-    
+
     # Add a small value to prevent division by zero
     local_variance = local_variance + threshold
-    
+
     # Apply divisive normalization
     normalized_tensor = image_tensor / torch.sqrt(local_variance)
-    
+
     return normalized_tensor
 
 def decorrelate_data(data):
@@ -707,7 +705,7 @@ def decorrelate_data(data):
     # Decorrelate the data
     decorrelated_data = torch.matmul(data_reshaped.transpose(1, 2), sqrt_inv_cov_matrix.transpose(2, 3))
     decorrelated_data = decorrelated_data.transpose(2, 3)
-    
+
     # Reshape back to the original shape
     decorrelated_data = decorrelated_data.view(num_samples, num_channels, height, width)
 
@@ -716,7 +714,7 @@ def decorrelate_data(data):
 def get_low_frequency_noise(image: Tensor, threshold: float):
     # Convert image to Fourier domain
     fourier = torch.fft.fft2(image, dim=(-2, -1))  # Apply FFT along Height and Width dimensions
- 
+
     # Compute the power spectrum
     power_spectrum = torch.abs(fourier) ** 2
 
@@ -725,16 +723,16 @@ def get_low_frequency_noise(image: Tensor, threshold: float):
     # Drop low-frequency components
     mask = (power_spectrum < threshold).float()
     filtered_fourier = fourier * mask
-    
+
     # Inverse transform back to spatial domain
     inverse_transformed = torch.fft.ifft2(filtered_fourier, dim=(-2, -1))  # Apply IFFT along Height and Width dimensions
-    
+
     return inverse_transformed.real.to(image.device)
 
 def spectral_modulation(image: Tensor, modulation_multiplier: float, spectral_mod_percentile: float): # Reference implementation by Clybius, 2023 :tm::c::r: (jk idc who uses it :3)
     # Convert image to Fourier domain
     fourier = torch.fft.fft2(image, dim=(-2, -1))  # Apply FFT along Height and Width dimensions
- 
+
     log_amp = torch.log(torch.sqrt(fourier.real ** 2 + fourier.imag ** 2))
 
     quantile_low = torch.quantile(
@@ -742,7 +740,7 @@ def spectral_modulation(image: Tensor, modulation_multiplier: float, spectral_mo
         spectral_mod_percentile * 0.01,
         dim = 2
     ).unsqueeze(-1).unsqueeze(-1).expand(log_amp.shape)
-    
+
     quantile_high = torch.quantile(
         log_amp.abs().flatten(2),
         1 - (spectral_mod_percentile * 0.01),
@@ -754,16 +752,16 @@ def spectral_modulation(image: Tensor, modulation_multiplier: float, spectral_mo
     # Decrease high-frequency components
     mask_high = ((log_amp < quantile_high).float()).clamp_(min=0.5) # If lower than high 5% quantile, set to 1, otherwise 0.5
     filtered_fourier = fourier * ((mask_low * mask_high) ** modulation_multiplier) # Effectively
-    
+
     # Inverse transform back to spatial domain
     inverse_transformed = torch.fft.ifft2(filtered_fourier, dim=(-2, -1))  # Apply IFFT along Height and Width dimensions
-    
+
     return inverse_transformed.real.to(image.device)
 
 def spectral_modulation_soft(image: Tensor, modulation_multiplier: float, spectral_mod_percentile: float): # Modified for soft quantile adjustment using a novel:tm::c::r: method titled linalg.
     # Convert image to Fourier domain
     fourier = torch.fft.fft2(image, dim=(-2, -1))  # Apply FFT along Height and Width dimensions
- 
+
     log_amp = torch.log(torch.sqrt(fourier.real ** 2 + fourier.imag ** 2))
 
     quantile_low = torch.quantile(
@@ -771,7 +769,7 @@ def spectral_modulation_soft(image: Tensor, modulation_multiplier: float, spectr
         spectral_mod_percentile * 0.01,
         dim = 2
     ).unsqueeze(-1).unsqueeze(-1).expand(log_amp.shape)
-    
+
     quantile_high = torch.quantile(
         log_amp.abs().flatten(2),
         1 - (spectral_mod_percentile * 0.01),
@@ -792,7 +790,7 @@ def spectral_modulation_soft(image: Tensor, modulation_multiplier: float, spectr
         1 - ((log_amp - quantile_high) / (quantile_max - quantile_high)).clamp_(max=0.5), # (1) - (0-1), where 0 is 95th %ile and 1 is 100%ile
         torch.tensor(1.0)
     )
-    
+
 
     # Increase low-frequency components
     mask_low = log_amp < quantile_low
@@ -801,14 +799,14 @@ def spectral_modulation_soft(image: Tensor, modulation_multiplier: float, spectr
         1 + (1 - (log_amp / quantile_low)).clamp_(max=0.5), # (1) + (0-1), where 0 is 5th %ile and 1 is 0%ile
         torch.tensor(1.0)
     )
-    
+
     mask_mult = ((additive_mult_low * additive_mult_high) ** modulation_multiplier).clamp_(min=0.05, max=20)
     #print(mask_mult)
     filtered_fourier = fourier * mask_mult
-    
+
     # Inverse transform back to spatial domain
     inverse_transformed = torch.fft.ifft2(filtered_fourier, dim=(-2, -1))  # Apply IFFT along Height and Width dimensions
-    
+
     return inverse_transformed.real.to(image.device)
 
 def pyramid_noise_like(x, discount=0.9, generator=None, rand_source=random):
@@ -816,10 +814,11 @@ def pyramid_noise_like(x, discount=0.9, generator=None, rand_source=random):
   u = torch.nn.Upsample(size=(w, h), mode='nearest-exact')
   noise = gen_like(torch.randn, x, generator=generator)
   for i in range(10):
-    r = rand_source.random()*2+2 # Rather than always going 2x, 
+    r = rand_source.random()*2+2 # Rather than always going 2x,
     w, h = max(1, int(w/(r**i))), max(1, int(h/(r**i)))
     noise += u(torch.randn(b, c, w, h, generator=generator).to(x)) * discount**i
-    if w==1 or h==1: break # Lowest resolution is 1x1
+    if w==1 or h==1:
+      break # Lowest resolution is 1x1
   return noise/noise.std() # Scaled back to roughly unit variance
 
 import math
@@ -928,8 +927,6 @@ class ModelSamplerLatentMegaModifier:
             cond = ((x - (x_input - cond)) * (sigma ** 2 + 1.0) ** 0.5) / (sigma)
             uncond = ((x - (x_input - uncond)) * (sigma ** 2 + 1.0) ** 0.5) / (sigma)
 
-            noise_pred = (cond - uncond)
-
             # Extra noise
             if extra_noise_multiplier > 0:
                 match extra_noise_type:
@@ -961,7 +958,7 @@ class ModelSamplerLatentMegaModifier:
                         extra_noise.sub_(mean).div_(std)
                     case "pyramid":
                         extra_noise = pyramid_noise_like(cond)
-                
+
                 if extra_noise_lowpass > 0:
                     extra_noise = get_low_frequency_noise(extra_noise, extra_noise_lowpass)
 
@@ -1059,7 +1056,7 @@ class ModelSamplerLatentMegaModifier:
 
                         noise_pred_degraded *= noise_pred_vector_magnitude
                     case "quantile":
-                        s: FloatTensor = torch.quantile(
+                        s: torch.FloatTensor = torch.quantile(
                             (uncond + noise_pred_degraded * cond_scale).flatten(start_dim=1).abs(),
                             tonemap_percentile / 100,
                             dim = -1
@@ -1075,7 +1072,7 @@ class ModelSamplerLatentMegaModifier:
                         flattened = latent.flatten(2)
                         means = flattened.mean(dim=2).unsqueeze(2)
                         centered_magnitudes = (flattened - means).abs().max() # Get highest magnitude of full CFG
-                        
+
                         flattened_pred = (noise_pred_degraded / latent_scale).flatten(2)
 
                         floor = 3.0560
@@ -1150,7 +1147,7 @@ class ModelSamplerLatentMegaModifier:
                 match combat_method:
                     case "subtract":
                         combat_drift_func = center_latent_perchannel
-                        alpha *= combat_cfg_drift 
+                        alpha *= combat_cfg_drift
                     case "subtract_channels":
                         combat_drift_func = center_0channel
                         alpha *= combat_cfg_drift
@@ -1161,7 +1158,7 @@ class ModelSamplerLatentMegaModifier:
                         combat_drift_func = channel_sharpen
                         alpha *= combat_cfg_drift
                 x_final = combat_drift_func(x_final) * alpha + x_final * (1.0 - alpha) # Mix the modified latent with the existing latent by the alpha
-            
+
             if divisive_norm_multiplier > 0:
                 alpha = 1. - (timestep / 999.0)[:, None, None, None].clone()
                 alpha ** 0.025 # Alpha might as well be 1, but we want to protect the beginning steps (?).

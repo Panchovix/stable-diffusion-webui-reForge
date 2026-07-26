@@ -463,66 +463,66 @@ options_templates.update(options_section(('sampler-params', "Sampler parameters"
 options_templates.update(options_section(('sampler-params', "Scheduler parameters", "sd"), {
     "A1111_schedulers_group": OptionHTML("""<br><h2 style='text-align: center'>Scheduler configuration for A1111 samplers</h2>
         Configuration options for schedulers for A1111 samplers (DPM++ SDE, Euler a, Euler, DPM++ 2M, Euler SMEA/DY, Kohaku_LoNyu_Yog, up to normal UniPC below DDIM)"""),
-    
+
     "karras_rho": OptionInfo(7.0, "Karras scheduler - rho", gr.Slider, {"minimum": 1.0, "maximum": 20.0, "step": 0.1}, infotext='Karras scheduler rho').info('Default = 7.0; controls the shape of the noise schedule'),
-    
+
     "exponential_shrink_factor": OptionInfo(0.0, "Exponential scheduler - shrink factor", gr.Slider, {"minimum": -1.0, "maximum": 1.0, "step": 0.01}, infotext='Exponential scheduler shrink factor').info('Default = 0.0; controls the rate of decay in the noise schedule'),
-    
+
     "polyexponential_rho": OptionInfo(1.0, "Polyexponential scheduler - rho", gr.Slider, {"minimum": 0.1, "maximum": 5.0, "step": 0.1}, infotext='Polyexponential scheduler rho').info('Default = 1.0; controls the curvature of the noise schedule'),
-    
+
     "sinusoidal_sf_factor": OptionInfo(3.5, "Sinusoidal SF scheduler - factor", gr.Slider, {"minimum": 0.1, "maximum": 10.0, "step": 0.1}, infotext='Sinusoidal SF scheduler factor').info('Default = 3.5; controls the shape of the sinusoidal curve'),
-    
+
     "invcosinusoidal_sf_factor": OptionInfo(3.5, "Invcosinusoidal SF scheduler - factor", gr.Slider, {"minimum": 0.1, "maximum": 10.0, "step": 0.1}, infotext='Invcosinusoidal SF scheduler factor').info('Default = 3.5; controls the shape of the inverse cosinusoidal curve'),
-    
+
     "react_cosinusoidal_dynsf_factor": OptionInfo(2.15, "React Cosinusoidal DynSF scheduler - factor", gr.Slider, {"minimum": 0.1, "maximum": 10.0, "step": 0.05}, infotext='React Cosinusoidal DynSF scheduler factor').info('Default = 2.15; controls the dynamic scaling factor'),
-    
+
     "beta_dist_alpha": OptionInfo(0.6, "Beta scheduler - alpha", gr.Slider, {"minimum": 0.01, "maximum": 2.0, "step": 0.01}, infotext='Beta scheduler alpha').info('Default = 0.6; the alpha parameter of the beta distribution used in Beta sampling'),
     "beta_dist_beta": OptionInfo(0.6, "Beta scheduler - beta", gr.Slider, {"minimum": 0.01, "maximum": 2.0, "step": 0.01}, infotext='Beta scheduler beta').info('Default = 0.6; the beta parameter of the beta distribution used in Beta sampling'),
-    
+
     "cosine_sf_factor": OptionInfo(1.0, "Cosine scheduler - scale factor", gr.Slider, {"minimum": 0.1, "maximum": 5.0, "step": 0.1}, infotext='Cosine scheduler scale factor').info('Default = 1.0; controls the scaling of the cosine curve'),
-    
+
     "cosexpblend_exp_decay": OptionInfo(0.9, "Cosine-exponential Blend scheduler - exponential decay", gr.Slider, {"minimum": 0.1, "maximum": 0.99, "step": 0.01}, infotext='Cosine-exponential Blend scheduler exponential decay').info('Default = 0.9; controls the rate of exponential decay'),
-    
+
     "phi_power": OptionInfo(2.0, "Phi scheduler - power", gr.Slider, {"minimum": 1.0, "maximum": 5.0, "step": 0.1}, infotext='Phi scheduler power').info('Default = 2.0; controls the power of the phi-based curve'),
-    
+
     "laplace_mu": OptionInfo(0.0, "Laplace scheduler - mu", gr.Slider, {"minimum": -1.0, "maximum": 1.0, "step": 0.1}, infotext='Laplace scheduler mu').info('Default = 0.0; controls the location parameter of the Laplace distribution'),
     "laplace_beta": OptionInfo(0.5, "Laplace scheduler - beta", gr.Slider, {"minimum": 0.1, "maximum": 2.0, "step": 0.1}, infotext='Laplace scheduler beta').info('Default = 0.5; controls the scale parameter of the Laplace distribution'),
-    
+
     "karras_dynamic_rho": OptionInfo(7.0, "Karras Dynamic scheduler - base rho", gr.Slider, {"minimum": 1.0, "maximum": 20.0, "step": 0.1}, infotext='Karras Dynamic scheduler base rho').info('Default = 7.0; controls the base shape of the dynamic noise schedule'),
-    
+
     "ays_custom_sigmas": OptionInfo("[14.615, 6.315, 3.771, 2.181, 1.342, 0.862, 0.555, 0.380, 0.234, 0.113, 0.029]", "Align Your Steps Custom - sigma values", gr.Textbox, {}, infotext='AYS Custom sigmas').info('Custom sigma values for the A1111 AYS custom scheduler. Modify to create your own schedule.'),
 
     "reforge_schedulers_group": OptionHTML("""<br><h2 style='text-align: center'>Scheduler configuration for reForge samplers</h2>
         Configuration options for schedulers for reforge samplers (All the rest, CFG++ Samplers, DPM++ SDE Comfy, Euler Ancestral Comfy, ODE, DPM++ 2M DY, DDPM, etc)"""),
-    
+
     "reforge_karras_rho": OptionInfo(7.0, "Reforge Karras scheduler - rho", gr.Slider, {"minimum": 1.0, "maximum": 20.0, "step": 0.1}, infotext='Reforge Karras scheduler rho').info('Default = 7.0; controls the shape of the noise schedule for reforge Karras scheduler'),
-    
+
     "reforge_exponential_shrink_factor": OptionInfo(0.0, "Reforge Exponential scheduler - shrink factor", gr.Slider, {"minimum": -1.0, "maximum": 1.0, "step": 0.01}, infotext='Reforge Exponential scheduler shrink factor').info('Default = 0.0; controls the rate of decay in the noise schedule for reforge Exponential scheduler'),
-    
+
     "reforge_polyexponential_rho": OptionInfo(1.0, "Reforge Polyexponential scheduler - rho", gr.Slider, {"minimum": 0.1, "maximum": 5.0, "step": 0.1}, infotext='Reforge Polyexponential scheduler rho').info('Default = 1.0; controls the curvature of the noise schedule for reforge Polyexponential scheduler'),
-    
+
     "reforge_ays_custom_sigmas": OptionInfo("[14.615, 6.315, 3.771, 2.181, 1.342, 0.862, 0.555, 0.380, 0.234, 0.113, 0.029]", "Reforge Align Your Steps Custom - sigma values", gr.Textbox, {}, infotext='Reforge AYS Custom sigmas').info('Custom sigma values for the reforge AYS custom scheduler. Modify to create your own schedule.'),
-    
+
     "reforge_normal_sgm": OptionInfo(False, "Reforge Normal scheduler - use SGM", gr.Checkbox, {}, infotext='Reforge Normal scheduler SGM').info('If checked, uses SGM uniform sampling for the reforge Normal scheduler'),
-    
+
     "reforge_beta_dist_alpha": OptionInfo(0.6, "Reforge Beta scheduler - alpha", gr.Slider, {"minimum": 0.01, "maximum": 2.0, "step": 0.01}, infotext='Reforge Beta scheduler alpha').info('Default = 0.6; the alpha parameter of the beta distribution used in reforge Beta sampling'),
     "reforge_beta_dist_beta": OptionInfo(0.6, "Reforge Beta scheduler - beta", gr.Slider, {"minimum": 0.01, "maximum": 2.0, "step": 0.01}, infotext='Reforge Beta scheduler beta').info('Default = 0.6; the beta parameter of the beta distribution used in reforge Beta sampling'),
-    
+
     "reforge_cosine_sf_factor": OptionInfo(1.0, "Reforge Cosine scheduler - scale factor", gr.Slider, {"minimum": 0.1, "maximum": 5.0, "step": 0.1}, infotext='Reforge Cosine scheduler scale factor').info('Default = 1.0; controls the scaling of the cosine curve for reforge Cosine scheduler'),
-    
+
     "reforge_cosexpblend_exp_decay": OptionInfo(0.9, "Reforge Cosine-exponential Blend scheduler - exponential decay", gr.Slider, {"minimum": 0.1, "maximum": 0.99, "step": 0.01}, infotext='Reforge Cosine-exponential Blend scheduler exponential decay').info('Default = 0.9; controls the rate of exponential decay for reforge Cosine-exponential Blend scheduler'),
-    
+
     "reforge_phi_power": OptionInfo(2.0, "Reforge Phi scheduler - power", gr.Slider, {"minimum": 1.0, "maximum": 5.0, "step": 0.1}, infotext='Reforge Phi scheduler power').info('Default = 2.0; controls the power of the phi-based curve for reforge Phi scheduler'),
-    
+
     "reforge_laplace_mu": OptionInfo(0.0, "Reforge Laplace scheduler - mu", gr.Slider, {"minimum": -1.0, "maximum": 1.0, "step": 0.1}, infotext='Reforge Laplace scheduler mu').info('Default = 0.0; controls the location parameter of the Laplace distribution for reforge Laplace scheduler'),
     "reforge_laplace_beta": OptionInfo(0.5, "Reforge Laplace scheduler - beta", gr.Slider, {"minimum": 0.1, "maximum": 2.0, "step": 0.1}, infotext='Reforge Laplace scheduler beta').info('Default = 0.5; controls the scale parameter of the Laplace distribution for reforge Laplace scheduler'),
-    
+
     "reforge_karras_dynamic_rho": OptionInfo(7.0, "Reforge Karras Dynamic scheduler - base rho", gr.Slider, {"minimum": 1.0, "maximum": 20.0, "step": 0.1}, infotext='Reforge Karras Dynamic scheduler base rho').info('Default = 7.0; controls the base shape of the dynamic noise schedule for reforge Karras Dynamic scheduler'),
-    
+
     "reforge_sinusoidal_sf_factor": OptionInfo(3.5, "Reforge Sinusoidal SF scheduler - factor", gr.Slider, {"minimum": 0.1, "maximum": 10.0, "step": 0.1}, infotext='Reforge Sinusoidal SF scheduler factor').info('Default = 3.5; controls the shape of the sinusoidal curve for reforge Sinusoidal SF scheduler'),
-    
+
     "reforge_invcosinusoidal_sf_factor": OptionInfo(3.5, "Reforge Invcosinusoidal SF scheduler - factor", gr.Slider, {"minimum": 0.1, "maximum": 10.0, "step": 0.1}, infotext='Reforge Invcosinusoidal SF scheduler factor').info('Default = 3.5; controls the shape of the inverse cosinusoidal curve for reforge Invcosinusoidal SF scheduler'),
-    
+
     "reforge_react_cosinusoidal_dynsf_factor": OptionInfo(2.15, "Reforge React Cosinusoidal DynSF scheduler - factor", gr.Slider, {"minimum": 0.1, "maximum": 10.0, "step": 0.05}, infotext='Reforge React Cosinusoidal DynSF scheduler factor').info('Default = 2.15; controls the dynamic scaling factor for reforge React Cosinusoidal DynSF scheduler'),
 }))
 
@@ -533,7 +533,7 @@ options_templates.update(options_section(('sampler-params', "reForge Sampler Par
 
     "ancestral_group": OptionHTML("<br><h3>Ancestral Eta Setting</h3>"),
     "ancestral_eta": OptionInfo(1.0, "Ancestral sampling eta", gr.Slider, {"minimum": -1.0, "maximum": 3.0, "step": 0.01}, infotext='Ancestral eta').info("Controls noise levels in ancestral sampling. 0 = no noise, 1 = default, higher values = more noise. Applies only to ancestral samplers"),
-    
+
     # Euler Parameters
     "euler_group": OptionHTML("<br><h3>Euler Settings</h3>"),
     "euler_og_s_churn": OptionInfo(0.0, "Euler - s_churn", gr.Slider, {"minimum": -1.0, "maximum": 2.0, "step": 0.01}, infotext='Euler s_churn'),
@@ -648,7 +648,7 @@ options_templates.update(options_section(('sampler-params', "reForge Sampler Par
     # # Kohaku LoNyu CFG++ Parameters
     # "kohaku_lonyugroup": OptionHTML("<br><h3>Kohaku LoNyu CFG++ Settings</h3>"),
     # "kohaku_lonyu_yog_s_cfgpp_churn": OptionInfo(0.0, "Kohaku LoNyu Yog - s_churn", gr.Slider, {"minimum": -1.0, "maximum": 2.0, "step": 0.01}, infotext='Kohaku LoNyu Yog CFG++ s_churn').info('Default = 0.0; amount of noise to add during sampling'),
-    # "kohaku_lonyu_yog_s_cfgpp_tmin": OptionInfo(0.0, "Kohaku LoNyu Yog - s_tmin", gr.Slider, {"minimum": -1.0, "maximum": 2.0, "step": 0.01}, infotext='Kohaku LoNyu Yog CFG++ s_tmin').info('Default = 0.0; minimum sigma threshold for noise'), 
+    # "kohaku_lonyu_yog_s_cfgpp_tmin": OptionInfo(0.0, "Kohaku LoNyu Yog - s_tmin", gr.Slider, {"minimum": -1.0, "maximum": 2.0, "step": 0.01}, infotext='Kohaku LoNyu Yog CFG++ s_tmin').info('Default = 0.0; minimum sigma threshold for noise'),
     # "kohaku_lonyu_yog_s_cfgpp_noise": OptionInfo(1.0, "Kohaku LoNyu Yog - s_noise", gr.Slider, {"minimum": -1.0, "maximum": 2.0, "step": 0.1}, infotext='Kohaku LoNyu Yog CFG++ s_noise').info('Default = 1.0; noise scaling factor'),
     # "kohaku_lonyu_yog_cfgpp_eta": OptionInfo(1.0, "Kohaku LoNyu Yog - eta", gr.Slider, {"minimum": -1.0, "maximum": 2.0, "step": 0.01}, infotext='Kohaku LoNyu Yog CFG++ eta').info('Default = 1.0; eta parameter'),
 
@@ -780,13 +780,48 @@ options_templates.update(options_section(('sampler-params', "reForge Sampler Par
     "dpm_adaptive_s_noise": OptionInfo(1.0, "DPM Adaptive s_noise", gr.Slider, {"minimum": 0.0, "maximum": 2.0, "step": 0.01}),
     "dpm2_ancestral_s_noise": OptionInfo(1.0, "DPM2 Ancestral s_noise", gr.Slider, {"minimum": 0.0, "maximum": 2.0, "step": 0.01}),
 
+    # SURE Sampler Parameters
+    "sure_group": OptionHTML("<br><h3>SURE Sampler Settings</h3>"),
+    "sure_alpha": OptionInfo(0.05, "SURE - alpha (gradient step size)", gr.Slider, {"minimum": 0.0, "maximum": 1.0, "step": 0.001}, infotext='SURE alpha').info('Default = 0.05; SURE gradient step size — controls how strongly SURE corrects x̂₀ each step'),
+    "sure_n_mc": OptionInfo(1, "SURE - n_mc (Monte Carlo samples)", gr.Slider, {"minimum": 1, "maximum": 16, "step": 1}, infotext='SURE n_mc').info('Default = 1; number of Monte Carlo samples for Hutchinson trace estimate; higher = more accurate but slower'),
+    "sure_eps": OptionInfo(1e-3, "SURE - eps (finite-difference epsilon)", gr.Slider, {"minimum": 1e-5, "maximum": 0.1, "step": 1e-5}, infotext='SURE eps').info('Default = 0.001; finite-difference epsilon for Jacobian MC estimate'),
+    "sure_jac_interval": OptionInfo(2, "SURE - jac_interval (Jacobian every N steps)", gr.Slider, {"minimum": -1, "maximum": 16, "step": 1}, infotext='SURE jac_interval').info('Default = 2; compute full Jacobian every N correction steps; -1 = adaptive'),
+    "sure_preheat_steps": OptionInfo(-1, "SURE - preheat_steps (plain steps before correction)", gr.Slider, {"minimum": -1, "maximum": 50, "step": 1}, infotext='SURE preheat_steps').info('Default = -1 (auto: 15% of steps, min 2); number of plain denoising steps before SURE correction begins'),
+    "sure_grad_mode": OptionInfo("vjp", "SURE - grad_mode (gradient computation)", gr.Radio, {"choices": ["approx", "vjp", "vjp_sb", "full"]}, infotext='SURE grad_mode').info('approx = stop-grad 2·r (fast, no backward); vjp = exact ∇‖x−x̂‖² via one backward pass (default); vjp_sb = per-subband Hutchinson VJP (two no-grad forwards, no backward); full = full ∇SURE including MC Jacobian-trace gradient (2 extra backward passes, requires jac enabled)'),
+    "sure_adam_mode": OptionInfo("bo", "SURE - adam_mode (step-size optimiser)", gr.Radio, {"choices": ["none", "adam", "adamw", "bo"]}, infotext='SURE adam_mode').info('none = plain SGD; adam = Adam; adamw = Adam + decoupled WD; bo = Bayesian optimisation for α per step (default for Wavelet samplers — requires optuna, falls back to Adam if missing)'),
+    "sure_adam_beta1": OptionInfo(0.9, "SURE - adam_beta1 (first-moment decay)", gr.Slider, {"minimum": 0.5, "maximum": 0.999, "step": 0.001}, infotext='SURE adam_beta1').info('Default = 0.9; momentum decay for running gradient mean — higher = more inertia across steps'),
+    "sure_adam_beta2": OptionInfo(0.999, "SURE - adam_beta2 (second-moment decay)", gr.Slider, {"minimum": 0.9, "maximum": 0.9999, "step": 0.0001}, infotext='SURE adam_beta2').info('Default = 0.999; decay for running gradient variance — controls per-pixel step-size adaptation'),
+    "sure_adam_wd": OptionInfo(0.01, "SURE - adam_wd (AdamW weight decay)", gr.Slider, {"minimum": 0.0, "maximum": 0.1, "step": 0.001}, infotext='SURE adam_wd').info('Default = 0.01; AdamW only — decoupled weight decay pulling x̂₀ toward zero each step; has no effect when adam_mode is none or adam'),
+    "sure_approx_coeff": OptionInfo(2.0, "SURE - approx_coeff (grad = coeff · residual)", gr.Slider, {"minimum": 0.1, "maximum": 8.0, "step": 0.1}, infotext='SURE approx_coeff').info('Default = 2.0 (SURE-exact for Gaussian noise); only active when grad_mode=approx. Tune this using the CSV data written by sure_csv_path to find the best coefficient for your model/schedule.'),
+    "sure_csv_path": OptionInfo("", "SURE - csv_path (per-step CSV output, approx mode only)", gr.Textbox, {}, infotext='SURE csv_path').info('Path to write per-step CSV (step, sigma, residual_rms, sure_val, grad_rms, step_rms, approx_coeff …). Only written when grad_mode=approx and path is non-empty. Leave blank to disable.'),
+    "sure_sigma_ema": OptionInfo(0.0, "SURE - sigma_ema (EMA smoothing of σ̂₀ across steps)", gr.Slider, {"minimum": 0.0, "maximum": 0.95, "step": 0.05}, infotext='SURE sigma_ema').info('Default = 0.0 (disabled). Exponential moving average of the PCA noise estimate across denoising steps: σ̂₀ ← ema·σ̂₀_prev + (1−ema)·σ̂₀_raw. Reduces per-step variance in the estimate; 0.5 ≈ 2-step window, 0.7 ≈ 3-step window. Recommended range for SDXL 32+ steps: 0.4–0.6.'),
+    "sure_wavelet": OptionInfo("db4", "SURE-Wavelet - wavelet (PyWavelets orthogonal wavelet)", gr.Dropdown, {"choices": ["haar", "db2", "db4", "db6", "db8", "sym4", "sym6", "bior2.2", "bior4.4"]}, infotext='SURE wavelet').info('Orthogonal wavelet for SURE-Wavelet sampler; db4 is a good default — haar = sharpest but blocky, higher db/sym = smoother frequency separation'),
+    "sure_wavelet_level": OptionInfo(3, "SURE-Wavelet - level (decomposition levels)", gr.Slider, {"minimum": 1, "maximum": 6, "step": 1}, infotext='SURE wavelet_level').info('Default = 3; number of DWT levels — more levels = finer frequency band separation; each level halves spatial resolution of the approximation'),
+    "sure_wavelet_warmup_steps": OptionInfo(0, "SURE-Wavelet - warmup_steps (linear LR ramp)", gr.Slider, {"minimum": 0, "maximum": 20, "step": 1}, infotext='SURE wavelet_warmup_steps').info('Default = 0 (disabled). Linearly ramps the per-subband correction from 0 to full alpha over this many Adam steps; prevents large early-step corrections when using a higher alpha. Recommended: 5–10 for alpha > 0.05.'),
+    "sure_wavelet_lp_frac": OptionInfo(1.0, "SURE-Wavelet - lp_frac (low-pass cutoff fraction)", gr.Slider, {"minimum": 0.0, "maximum": 1.0, "step": 0.05}, infotext='SURE wavelet_lp_frac').info('Default = 1.0 (correct all subbands). 0.0 = correct approximation subband only (structure-only). Values between correct approximation + floor(frac × level) coarsest detail levels — acts as a low-pass filter over wavelet bands.'),
+    "sure_wavelet_cal_steps": OptionInfo(5, "SURE-Wavelet Auto - cal_steps (calibration snapshot steps)", gr.Slider, {"minimum": 1, "maximum": 20, "step": 1}, infotext='SURE wavelet_cal_steps').info('Default = 5; denoising steps used to collect (residual, sigma²) snapshots for Bayesian optimisation. More steps = more reliable objective, but slower calibration.'),
+    "sure_wavelet_cal_wavelets": OptionInfo("haar,db2,db4,db6,sym4", "SURE-Wavelet Auto - wavelets (BO search space)", gr.Textbox, {}, infotext='SURE wavelet_cal_wavelets').info('Comma-separated wavelet names for the BO categorical search. Default: haar,db2,db4,db6,sym4'),
+    "sure_wavelet_cal_levels": OptionInfo("1,6", "SURE-Wavelet Auto - level range (min,max for BO)", gr.Textbox, {}, infotext='SURE wavelet_cal_levels').info('Two comma-separated integers: min and max DWT level for Bayesian suggest_int search. Default: 1,6 (full range). Single value = fixed level (BO skips this dimension).'),
+    "sure_wavelet_bo_trials": OptionInfo(40, "SURE-Wavelet Auto - bo_trials (max BO evaluations)", gr.Slider, {"minimum": 10, "maximum": 200, "step": 5}, infotext='SURE wavelet_bo_trials').info('Default = 40; max Optuna TPE trials. lp_frac is searched continuously; actual trials may be fewer if early-stop fires. Each trial is cheap (DWT arithmetic only, no model forward).'),
+    "sure_wavelet_bo_patience": OptionInfo(8, "SURE-Wavelet Auto - bo_patience (early-stop patience)", gr.Slider, {"minimum": 3, "maximum": 30, "step": 1}, infotext='SURE wavelet_bo_patience').info('Default = 8; stop BO after this many consecutive trials with no improvement in best SURE value.'),
+    "sure_wavelet_bo_cv_warn": OptionInfo(0.4, "SURE-Wavelet Auto - bo_cv_warn (CV advisory threshold)", gr.Slider, {"minimum": 0.1, "maximum": 1.0, "step": 0.05}, infotext='SURE wavelet_bo_cv_warn').info("Default = 0.4; if the winner's per-step SURE coefficient of variation (std/|mean|) exceeds this, a warning is logged recommending more cal_steps for reliable selection."),
+    "sure_inner_steps": OptionInfo(4, "SURE-Wavelet Converge - inner_steps (max corrections per sigma stage)", gr.Slider, {"minimum": 1, "maximum": 16, "step": 1}, infotext='SURE inner_steps').info('Default = 4; max SURE correction iterations per sigma stage in the Converge samplers. Each inner step calls the denoiser once (approx mode) or 1+n_mc times (vjp/vjp_sb). Early-stop fires when pixel_delta_rms < inner_tol or SURE diverges.'),
+    "sure_inner_tol": OptionInfo(1e-4, "SURE-Wavelet Converge - inner_tol (pixel_delta_rms convergence threshold)", gr.Slider, {"minimum": 0.0, "maximum": 0.005, "step": 1e-5}, infotext='SURE inner_tol').info('Default = 1e-4; stop the inner correction loop when pixel_delta_rms drops below this. 0 = always run all inner_steps iterations (no early stop).'),
+    "sure_alpha_bo_trials": OptionInfo(0, "SURE - alpha_bo_trials (BO trials for step size α)", gr.Slider, {"minimum": 0, "maximum": 40, "step": 1}, infotext='SURE alpha_bo_trials').info('Default = 0. For pixel-space samplers: 0 = disabled; >0 activates BO. For Wavelet samplers with adam_mode=bo: 0 = free analytical α* = (r·g)/‖g‖² (closed-form, zero cost); >0 = full Bayesian TPE search warm-started across steps. Each trial evaluates the quadratic SURE proxy — no extra UNet calls. Recommended: 8–16 for BO; 0 for analytical-only.'),
+    "sure_alpha_bo_patience": OptionInfo(4, "SURE - alpha_bo_patience (early-stop patience for α BO)", gr.Slider, {"minimum": 2, "maximum": 20, "step": 1}, infotext='SURE alpha_bo_patience').info('Default = 4; stop α BO early after this many consecutive non-improving trials. Lower = faster per-step search; higher = more thorough exploration. Only active when sure_alpha_bo_trials > 0.'),
+
+    # DC-Solver Parameters
+    "dc_solver_group": OptionHTML("<br><h3>DC-Solver Settings</h3>"),
+    "dc_solver_order": OptionInfo(2, "DC-Solver - order", gr.Slider, {"minimum": 1, "maximum": 3, "step": 1}, infotext='DC-Solver order').info('Default = 2; multistep predictor-corrector order (1 = Euler/DPM-Solver++(1), 2 = DPM-Solver++(2M) style)'),
+    "dc_solver_ratio": OptionInfo(0.5, "DC-Solver - compensation ratio", gr.Slider, {"minimum": 0.0, "maximum": 1.0, "step": 0.01}, infotext='DC-Solver ratio').info('Default = 0.5; dynamic compensation ratio applied uniformly to all steps; 1.0 = no compensation (pure DPM-Solver++(2M)), 0.0 = full compensation'),
+
     }))
 
 options_templates.update(options_section(('sampler-params', "Custom Sampler Parameters", "sd"), {
     # Common sampler parameters
     "custom_sampler_name": OptionInfo("euler_comfy", "Custom Sampler - Type", gr.Dropdown, {
         "choices": [
-            "euler_comfy", "euler_ancestral_comfy", "euler_a2", "heun_comfy", 
+            "euler_comfy", "euler_ancestral_comfy", "euler_a2", "euler_a2_edm", "heun_comfy",
             "dpmpp_2s_ancestral_comfy", "dpmpp_sde_comfy", "dpmpp_2m_comfy",
             "dpmpp_2m_sde_comfy", "dpmpp_3m_sde_comfy", "euler_ancestral_turbo",
             "dpmpp_2m_turbo", "dpmpp_2m_sde_turbo", "ddpm", "heunpp2",
@@ -804,16 +839,16 @@ options_templates.update(options_section(('sampler-params', "Custom Sampler Para
 
     # Sampler specific parameters
     "custom_sampler_eta": OptionInfo(1.0, "Custom Sampler - eta", gr.Slider, {"minimum": -2.0, "maximum": 2.0, "step": 0.01}, infotext='Custom sampler eta').info('Default = 1.0; Controls the scheduler randomness/noise level'),
-    
+
     "custom_sampler_s_noise": OptionInfo(1.0, "Custom Sampler - s_noise", gr.Slider, {"minimum": -2.0, "maximum": 3.0, "step": 0.1}, infotext='Custom sampler s_noise').info('Default = 1.0; Controls the noise level during sampling'),
-    
+
     "custom_sampler_solver_type": OptionInfo("midpoint", "Custom Sampler - solver type", gr.Dropdown, {"choices": ["midpoint", "heun"]}, infotext='Custom sampler solver type').info('Default = midpoint; The type of solver to use'),
-    
+
     "custom_sampler_r": OptionInfo(0.5, "Custom Sampler - r value", gr.Slider, {"minimum": -2.0, "maximum": 2.0, "step": 0.1}, infotext='Custom sampler r').info('Default = 0.5; Controls the step size ratio'),
 
-    # CFG parameters  
+    # CFG parameters
     "custom_cfg_conds": OptionInfo(8.0, "Custom Sampler - CFG scale", gr.Slider, {"minimum": -2.0, "maximum": 100.0, "step": 0.1}, infotext='Custom CFG scale').info('Default = 8.0; Controls the strength of the guidance'),
-    
+
     "custom_cfg_cond2_negative": OptionInfo(8.0, "Custom Sampler - Secondary CFG scale", gr.Slider, {"minimum": -2.0, "maximum": 100.0, "step": 0.1}, infotext='Custom secondary CFG scale').info('Default = 8.0; Controls the strength of the secondary guidance'),
 }))
 
@@ -823,6 +858,61 @@ options_templates.update(options_section(('postprocessing', "Postprocessing", "p
     'postprocessing_operation_order': OptionInfo([], "Postprocessing operation order", ui_components.DropdownMulti, lambda: {"choices": [x.name for x in shared_items.postprocessing_scripts(filter_out_main_ui_only=True)]}),
     'upscaling_max_images_in_cache': OptionInfo(5, "Maximum number of images in upscaling cache", gr.Slider, {"minimum": 0, "maximum": 10, "step": 1}),
     'postprocessing_existing_caption_action': OptionInfo("Ignore", "Action for existing captions", gr.Radio, {"choices": ["Ignore", "Keep", "Prepend", "Append"]}).info("when generating captions using postprocessing; Ignore = use generated; Keep = use original; Prepend/Append = combine both"),
+}))
+
+def _reinit_gpu_temp_sensor(*_args):
+    from modules import gpu_temperature
+    gpu_temperature.reinitialize()
+
+
+_gpu_temp_sensor_choices = ["NVIDIA - nvidia-smi", "AMD - ROCm-smi", "NVIDIA & AMD - OpenHardwareMonitor"]
+_gpu_temp_plateau_actions = ["warn_and_continue", "abort_generation"]
+
+options_templates.update(options_section(('gpu_temperature', "GPU Temperature Protection", "system"), {
+    "gpu_temp_enable": OptionInfo(False, "Enable GPU temperature protection").info(
+        "pauses generation when the GPU core temperature exceeds the sleep threshold"),
+    "gpu_temp_sensor": OptionInfo(
+        "NVIDIA - nvidia-smi", "Temperature sensor", gr.Radio,
+        {"choices": _gpu_temp_sensor_choices}, _reinit_gpu_temp_sensor,
+    ).info("nvidia-smi: Windows + Linux | ROCm-smi: Linux only | OpenHardwareMonitor: Windows only"),
+    "gpu_temp_device_index": OptionInfo(0, "GPU device index (nvidia-smi)", gr.Number, {"precision": 0}).info(
+        "for multi-GPU systems; 0-based index of the GPU to monitor"),
+    "gpu_temp_ohm_gpu_name": OptionInfo("", "GPU name filter (OpenHardwareMonitor)").info(
+        "substring of the GPU name shown in OpenHardwareMonitor; leave blank to pick the first GPU"),
+    "gpu_temp_print": OptionInfo(True, "Print temperature log while paused"),
+    "gpu_temp_min_interval": OptionInfo(5.0, "Minimum check interval (seconds)", gr.Number).info(
+        "temperature is not re-checked until this many seconds have elapsed since the last check"),
+    "gpu_temp_sleep_step": OptionInfo(1.0, "Poll interval while paused (seconds)", gr.Number).info(
+        "how long to wait between temperature reads during a pause"),
+    "gpu_temp_max_sleep": OptionInfo(60.0, "Maximum pause duration (seconds)", gr.Number).info(
+        "give up waiting and resume after this many seconds; 0 = unlimited"),
+    "gpu_temp_sleep_temp": OptionInfo(83.0, "Sleep threshold (°C)", gr.Slider, {"minimum": 0, "maximum": 125}).info(
+        "generation pauses when the GPU temperature (or its Kalman prediction) exceeds this value"),
+    "gpu_temp_wake_temp": OptionInfo(75.0, "Wake threshold (°C)", gr.Slider, {"minimum": 0, "maximum": 125}).info(
+        "generation resumes once the GPU temperature drops below this value"),
+}))
+
+options_templates.update(options_section(('gpu_temperature', "GPU Temperature — Kalman Prediction", "system"), {
+    "gpu_temp_kalman_enable": OptionInfo(True, "Enable Kalman predictive protection").info(
+        "tracks temperature rate-of-change and pre-emptively pauses before the threshold is hit"),
+    "gpu_temp_kalman_q_pos": OptionInfo(0.1, "Kalman process noise — temperature (q_pos)", gr.Number).info(
+        "how much the true temperature can change unpredictably per second; "
+        "higher → trusts raw readings more, lower → smoother estimate"),
+    "gpu_temp_kalman_q_vel": OptionInfo(0.05, "Kalman process noise — rate (q_vel)", gr.Number).info(
+        "how quickly the heating/cooling rate can shift; "
+        "higher → adapts faster to sudden load changes"),
+    "gpu_temp_kalman_r": OptionInfo(2.0, "Kalman measurement noise (R)", gr.Number).info(
+        "expected sensor noise in °C; higher → smoother but slower to react"),
+    "gpu_temp_kalman_horizon": OptionInfo(10.0, "Prediction horizon (seconds)", gr.Number).info(
+        "if the predicted temperature at this many seconds from now exceeds the sleep threshold, "
+        "generation pauses immediately"),
+    "gpu_temp_plateau_timeout": OptionInfo(30.0, "Thermal plateau timeout (seconds)", gr.Number).info(
+        "if the temperature stays above the wake threshold and is not dropping for this many seconds "
+        "the GPU has saturated its passive heat exchange and the plateau action is triggered; 0 = disabled"),
+    "gpu_temp_plateau_action": OptionInfo(
+        "warn_and_continue", "Thermal plateau action", gr.Radio,
+        {"choices": _gpu_temp_plateau_actions},
+    ).info("warn_and_continue: log a warning and let generation resume; abort_generation: interrupt the current job"),
 }))
 
 options_templates.update(options_section((None, "Hidden options"), {

@@ -7,7 +7,7 @@ import gradio as gr
 
 from modules import sd_samplers, errors, sd_models
 from modules.processing import Processed, process_images
-from modules.shared import state
+import modules.shared as shared
 
 
 def process_model_tag(tag):
@@ -153,13 +153,13 @@ class Script(scripts.Script):
         if (checkbox_iterate or checkbox_iterate_batch) and p.seed == -1:
             p.seed = int(random.randrange(4294967294))
 
-        state.job_count = job_count
+        shared.state.job_count = job_count
 
         images = []
         all_prompts = []
         infotexts = []
         for args in jobs:
-            state.job = f"{state.job_no + 1} out of {state.job_count}"
+            shared.state.job = f"{shared.state.job_no + 1} out of {shared.state.job_count}"
 
             copy_p = copy.copy(p)
             for k, v in args.items():

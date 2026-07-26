@@ -1,0 +1,202 @@
+\documentclass{article}
+\usepackage{amsmath,amssymb,geometry,booktabs,xcolor}
+\geometry{margin=2cm}
+\title{SURE Gradient --- Symbolic CAS Results\\{\large arXiv:2512.23232 \quad \texttt{sure\_gradient\_symbolic.m}}}
+\date{\today}
+\begin{document}
+\maketitle
+
+\noindent All expressions below are exact outputs of MATLAB Symbolic
+Math Toolbox.  No manual simplification has been applied.
+
+\section{Scalar case ($n=1$)}
+
+\noindent\textbf{SURE formula  (n=1)}
+\begin{align}
+  {\left(x-D\left(x\right)\right)}^2+2\,\sigma ^2\,\frac{\partial }{\partial x} D\left(x\right)-\sigma ^2 \tag{\texttt{sure-scalar}}
+\end{align}
+
+\noindent\textbf{Full $\nabla_x \mathrm{SURE}$  (n=1, gradient())}
+\begin{align}
+  2\,\sigma ^2\,\frac{\partial ^2}{\partial x^2} D\left(x\right)-2\,\left(x-D\left(x\right)\right)\,\left(\frac{\partial }{\partial x} D\left(x\right)-1\right) \tag{\texttt{grad-sure-scalar-full}}
+\end{align}
+
+\noindent\textbf{Residual part $\nabla\|r\|^2$  (n=1)}
+\begin{align}
+  -2\,\left(x-D\left(x\right)\right)\,\left(\frac{\partial }{\partial x} D\left(x\right)-1\right) \tag{\texttt{grad-res-scalar}}
+\end{align}
+
+\noindent\textbf{Trace part $\nabla(2\sigma^2 \operatorname{tr}\{J_D\})$  (n=1)}
+\begin{align}
+  2\,\sigma ^2\,\frac{\partial ^2}{\partial x^2} D\left(x\right) \tag{\texttt{grad-tr-scalar}}
+\end{align}
+
+\noindent\textbf{[approx] mode gradient  (n=1): $2r$}
+\begin{align}
+  2\,x-2\,D\left(x\right) \tag{\texttt{grad-approx-scalar}}
+\end{align}
+
+\noindent\textbf{[vjp] mode gradient  (n=1): $2(1-J)r$}
+\begin{align}
+  -2\,\left(x-D\left(x\right)\right)\,\left(\frac{\partial }{\partial x} D\left(x\right)-1\right) \tag{\texttt{grad-vjp-scalar}}
+\end{align}
+
+\noindent\textbf{[full]$-$[vjp]  (n=1):  $2\sigma^2 D''(x)$}
+\begin{align}
+  2\,\sigma ^2\,\frac{\partial ^2}{\partial x^2} D\left(x\right) \tag{\texttt{diff-full-vjp-scalar}}
+\end{align}
+
+\noindent\textbf{[vjp]$-$[approx]  (n=1):  $-2J \cdot r$}
+\begin{align}
+  -2\,\frac{\partial }{\partial x} D\left(x\right)\,\left(x-D\left(x\right)\right) \tag{\texttt{diff-vjp-approx-scalar}}
+\end{align}
+
+\section{Vector case ($n=2$)}
+
+\noindent\textbf{SURE formula  (n=2)}
+\begin{align}
+  2\,\sigma ^2\,\left(\frac{\partial }{\partial x_{1}} D_{1}\left(x_{1},x_{2}\right)+\frac{\partial }{\partial x_{2}} D_{2}\left(x_{1},x_{2}\right)\right)+{\left(x_{1}-D_{1}\left(x_{1},x_{2}\right)\right)}^2+{\left(x_{2}-D_{2}\left(x_{1},x_{2}\right)\right)}^2-2\,\sigma ^2 \tag{\texttt{sure-vec}}
+\end{align}
+
+\noindent\textbf{Full $\nabla_x \mathrm{SURE}$  (n=2, gradient())}
+\begin{align}
+  2\,\sigma ^2\,\left(\frac{\partial ^2}{\partial {x_{1}}^2} D_{1}\left(x_{1},x_{2}\right)+\frac{\partial }{\partial x_{2}} \frac{\partial }{\partial x_{1}} D_{2}\left(x_{1},x_{2}\right)\right)-2\,\left(x_{1}-D_{1}\left(x_{1},x_{2}\right)\right)\,\left(\frac{\partial }{\partial x_{1}} D_{1}\left(x_{1},x_{2}\right)-1\right)-2\,\left(x_{2}-D_{2}\left(x_{1},x_{2}\right)\right)\,\frac{\partial }{\partial x_{1}} D_{2}\left(x_{1},x_{2}\right) \\
+  2\,\sigma ^2\,\left(\frac{\partial }{\partial x_{2}} \frac{\partial }{\partial x_{1}} D_{1}\left(x_{1},x_{2}\right)+\frac{\partial ^2}{\partial {x_{2}}^2} D_{2}\left(x_{1},x_{2}\right)\right)-2\,\left(x_{2}-D_{2}\left(x_{1},x_{2}\right)\right)\,\left(\frac{\partial }{\partial x_{2}} D_{2}\left(x_{1},x_{2}\right)-1\right)-2\,\left(x_{1}-D_{1}\left(x_{1},x_{2}\right)\right)\,\frac{\partial }{\partial x_{2}} D_{1}\left(x_{1},x_{2}\right)
+  \tag{\texttt{grad-sure-vec-full}}
+\end{align}
+
+\noindent\textbf{$\nabla\|r\|^2 = 2(I-J_D)^\top r$  (n=2)}
+\begin{align}
+  -2\,\left(x_{1}-D_{1}\left(x_{1},x_{2}\right)\right)\,\left(\frac{\partial }{\partial x_{1}} D_{1}\left(x_{1},x_{2}\right)-1\right)-2\,\left(x_{2}-D_{2}\left(x_{1},x_{2}\right)\right)\,\frac{\partial }{\partial x_{1}} D_{2}\left(x_{1},x_{2}\right) \\
+  -2\,\left(x_{2}-D_{2}\left(x_{1},x_{2}\right)\right)\,\left(\frac{\partial }{\partial x_{2}} D_{2}\left(x_{1},x_{2}\right)-1\right)-2\,\left(x_{1}-D_{1}\left(x_{1},x_{2}\right)\right)\,\frac{\partial }{\partial x_{2}} D_{1}\left(x_{1},x_{2}\right)
+  \tag{\texttt{grad-res-vec}}
+\end{align}
+
+\noindent\textbf{$\nabla(2\sigma^2\operatorname{tr}\{J_D\})$  (n=2)}
+\begin{align}
+  2\,\sigma ^2\,\left(\frac{\partial ^2}{\partial {x_{1}}^2} D_{1}\left(x_{1},x_{2}\right)+\frac{\partial }{\partial x_{2}} \frac{\partial }{\partial x_{1}} D_{2}\left(x_{1},x_{2}\right)\right) \\
+  2\,\sigma ^2\,\left(\frac{\partial }{\partial x_{2}} \frac{\partial }{\partial x_{1}} D_{1}\left(x_{1},x_{2}\right)+\frac{\partial ^2}{\partial {x_{2}}^2} D_{2}\left(x_{1},x_{2}\right)\right)
+  \tag{\texttt{grad-tr-vec}}
+\end{align}
+
+\noindent\textbf{Verification: $\nabla\|r\|^2 - 2(I-J_D)^\top r$  (should be $\mathbf{0}$)}
+\begin{align}
+  0 \\
+  0
+  \tag{\texttt{check-res-vec}}
+\end{align}
+
+\noindent\textbf{[full] mode gradient  (n=2)}
+\begin{align}
+  2\,\sigma ^2\,\left(\frac{\partial ^2}{\partial {x_{1}}^2} D_{1}\left(x_{1},x_{2}\right)+\frac{\partial }{\partial x_{2}} \frac{\partial }{\partial x_{1}} D_{2}\left(x_{1},x_{2}\right)\right)-2\,\left(x_{1}-D_{1}\left(x_{1},x_{2}\right)\right)\,\left(\frac{\partial }{\partial x_{1}} D_{1}\left(x_{1},x_{2}\right)-1\right)-2\,\left(x_{2}-D_{2}\left(x_{1},x_{2}\right)\right)\,\frac{\partial }{\partial x_{1}} D_{2}\left(x_{1},x_{2}\right) \\
+  2\,\sigma ^2\,\left(\frac{\partial }{\partial x_{2}} \frac{\partial }{\partial x_{1}} D_{1}\left(x_{1},x_{2}\right)+\frac{\partial ^2}{\partial {x_{2}}^2} D_{2}\left(x_{1},x_{2}\right)\right)-2\,\left(x_{2}-D_{2}\left(x_{1},x_{2}\right)\right)\,\left(\frac{\partial }{\partial x_{2}} D_{2}\left(x_{1},x_{2}\right)-1\right)-2\,\left(x_{1}-D_{1}\left(x_{1},x_{2}\right)\right)\,\frac{\partial }{\partial x_{2}} D_{1}\left(x_{1},x_{2}\right)
+  \tag{\texttt{grad-full-vec}}
+\end{align}
+
+\noindent\textbf{Verification: exact$-$full  (should be $\mathbf{0}$)}
+\begin{align}
+  0 \\
+  0
+  \tag{\texttt{check-full-vec}}
+\end{align}
+
+\section{MC trace approximation (Hutchinson estimator)}
+
+\noindent\textbf{MC trace estimate $b^\top J_D b$ (Taylor)}
+\begin{align}
+  b_{1}\,\left(b_{1}\,\frac{\partial }{\partial x_{1}} D_{1}\left(x_{1},x_{2}\right)+b_{2}\,\frac{\partial }{\partial x_{1}} D_{2}\left(x_{1},x_{2}\right)\right)+b_{2}\,\left(b_{1}\,\frac{\partial }{\partial x_{2}} D_{1}\left(x_{1},x_{2}\right)+b_{2}\,\frac{\partial }{\partial x_{2}} D_{2}\left(x_{1},x_{2}\right)\right) \tag{\texttt{mc-trace-taylor}}
+\end{align}
+
+\noindent\textbf{$\mathbb{E}_b[b^\top J_D b]$  (substitute $\mathbb{E}[b_i b_j]=\delta_{ij}$)}
+\begin{align}
+  \frac{\partial }{\partial x_{1}} D_{1}\left(x_{1},x_{2}\right)+\frac{\partial }{\partial x_{2}} D_{2}\left(x_{1},x_{2}\right) \tag{\texttt{mc-trace-expected}}
+\end{align}
+
+\noindent\textbf{Verification: $\mathbb{E}[b^\top J_D b] - \operatorname{tr}\{J_D\}$  (should be $0$)}
+\begin{align}
+  0 \tag{\texttt{check-mc-trace}}
+\end{align}
+
+\section{Gradient of $\operatorname{tr}\{J_D\}$ --- ``full'' mode second term}
+
+\noindent\textbf{$\nabla_x \operatorname{tr}\{J_D\}$  via gradient()  (exact)}
+\begin{align}
+  \frac{\partial ^2}{\partial {x_{1}}^2} D_{1}\left(x_{1},x_{2}\right)+\frac{\partial }{\partial x_{2}} \frac{\partial }{\partial x_{1}} D_{2}\left(x_{1},x_{2}\right) \\
+  \frac{\partial }{\partial x_{2}} \frac{\partial }{\partial x_{1}} D_{1}\left(x_{1},x_{2}\right)+\frac{\partial ^2}{\partial {x_{2}}^2} D_{2}\left(x_{1},x_{2}\right)
+  \tag{\texttt{grad-tr-exact}}
+\end{align}
+
+\noindent\textbf{MC finite-difference  $(1/\varepsilon)[J_D(x{+}\varepsilon b)^\top{-}J_D(x)^\top]b$  (Taylor, $\varepsilon$ cancelled)}
+\begin{align}
+  {b_{1}}^2\,\frac{\partial ^2}{\partial {x_{1}}^2} D_{1}\left(x_{1},x_{2}\right)+b_{1}\,b_{2}\,\frac{\partial ^2}{\partial {x_{1}}^2} D_{2}\left(x_{1},x_{2}\right)+b_{1}\,b_{2}\,\frac{\partial }{\partial x_{2}} \frac{\partial }{\partial x_{1}} D_{1}\left(x_{1},x_{2}\right)+{b_{2}}^2\,\frac{\partial }{\partial x_{2}} \frac{\partial }{\partial x_{1}} D_{2}\left(x_{1},x_{2}\right) \\
+  {b_{1}}^2\,\frac{\partial }{\partial x_{2}} \frac{\partial }{\partial x_{1}} D_{1}\left(x_{1},x_{2}\right)+b_{1}\,b_{2}\,\frac{\partial }{\partial x_{2}} \frac{\partial }{\partial x_{1}} D_{2}\left(x_{1},x_{2}\right)+b_{1}\,b_{2}\,\frac{\partial ^2}{\partial {x_{2}}^2} D_{1}\left(x_{1},x_{2}\right)+{b_{2}}^2\,\frac{\partial ^2}{\partial {x_{2}}^2} D_{2}\left(x_{1},x_{2}\right)
+  \tag{\texttt{grad-tr-mc-raw}}
+\end{align}
+
+\noindent\textbf{$\mathbb{E}_b[\text{MC grad trace}]$  (substitute $\mathbb{E}[b_i b_j]=\delta_{ij}$)}
+\begin{align}
+  \frac{\partial ^2}{\partial {x_{1}}^2} D_{1}\left(x_{1},x_{2}\right)+\frac{\partial }{\partial x_{2}} \frac{\partial }{\partial x_{1}} D_{2}\left(x_{1},x_{2}\right) \\
+  \frac{\partial }{\partial x_{2}} \frac{\partial }{\partial x_{1}} D_{1}\left(x_{1},x_{2}\right)+\frac{\partial ^2}{\partial {x_{2}}^2} D_{2}\left(x_{1},x_{2}\right)
+  \tag{\texttt{grad-tr-mc-expected}}
+\end{align}
+
+\noindent\textbf{Verification: $\mathbb{E}[\text{MC grad}] - \nabla\operatorname{tr}\{J_D\}$  (should be $\mathbf{0}$)}
+\begin{align}
+  0 \\
+  0
+  \tag{\texttt{check-tr-grad}}
+\end{align}
+
+\section{Linear denoiser $D(x)=Wx$ (closed-form special case)}
+
+\noindent\textbf{SURE for linear denoiser $D(x)=Wx$}
+\begin{align}
+  {\left(w_{11}\,x_{1}-x_{1}+w_{12}\,x_{2}\right)}^2+{\left(w_{21}\,x_{1}-x_{2}+w_{22}\,x_{2}\right)}^2+2\,\sigma ^2\,\left(w_{11}+w_{22}\right)-2\,\sigma ^2 \tag{\texttt{sure-linear}}
+\end{align}
+
+\noindent\textbf{$\nabla\mathrm{SURE}$ for linear $D$  via gradient()}
+\begin{align}
+  2\,\left(w_{11}-1\right)\,\left(w_{11}\,x_{1}-x_{1}+w_{12}\,x_{2}\right)+2\,w_{21}\,\left(w_{21}\,x_{1}-x_{2}+w_{22}\,x_{2}\right) \\
+  2\,\left(w_{22}-1\right)\,\left(w_{21}\,x_{1}-x_{2}+w_{22}\,x_{2}\right)+2\,w_{12}\,\left(w_{11}\,x_{1}-x_{1}+w_{12}\,x_{2}\right)
+  \tag{\texttt{grad-sure-linear}}
+\end{align}
+
+\noindent\textbf{$\nabla\mathrm{SURE}$ factored: $2(I-W)^\top(I-W)x$}
+\begin{align}
+  x_{1}\,\left(2\,{w_{21}}^2+\left(2\,w_{11}-2\right)\,\left(w_{11}-1\right)\right)+x_{2}\,\left(w_{12}\,\left(2\,w_{11}-2\right)+2\,w_{21}\,\left(w_{22}-1\right)\right) \\
+  x_{2}\,\left(2\,{w_{12}}^2+\left(2\,w_{22}-2\right)\,\left(w_{22}-1\right)\right)+x_{1}\,\left(w_{21}\,\left(2\,w_{22}-2\right)+2\,w_{12}\,\left(w_{11}-1\right)\right)
+  \tag{\texttt{grad-sure-linear-factored}}
+\end{align}
+
+\noindent\textbf{$\nabla\operatorname{tr}\{J_D\}$ for linear $D$  (should be $\mathbf{0}$)}
+\begin{align}
+  0 \\
+  0
+  \tag{\texttt{grad-tr-linear}}
+\end{align}
+
+\noindent\textbf{[vjp]$-$[approx] for linear $D$: $-2W^\top(I-W)x$}
+\begin{align}
+  2\,{w_{11}}^2\,x_{1}-2\,w_{21}\,x_{2}-2\,w_{11}\,x_{1}+2\,{w_{21}}^2\,x_{1}+2\,w_{11}\,w_{12}\,x_{2}+2\,w_{21}\,w_{22}\,x_{2} \\
+  2\,{w_{12}}^2\,x_{2}-2\,w_{22}\,x_{2}-2\,w_{12}\,x_{1}+2\,{w_{22}}^2\,x_{2}+2\,w_{11}\,w_{12}\,x_{1}+2\,w_{21}\,w_{22}\,x_{1}
+  \tag{\texttt{diff-vjp-approx-linear}}
+\end{align}
+
+\section{Effective step size ($\alpha$ controller perspective)}
+
+\noindent\textbf{Effective step size $\alpha_\mathrm{eff} = \alpha/(1+\sigma_t)$}
+\begin{align}
+  \frac{\alpha }{\sigma _{t}+1} \tag{\texttt{alpha-eff}}
+\end{align}
+
+\noindent\textbf{KL contraction factor $(1 - \beta_t \mu)$,  $\beta_t = \alpha\hat{\sigma}_0^2$}
+\begin{align}
+  1-\alpha \,\mu \,{\hat{\sigma }_{0}}^2 \tag{\texttt{contraction}}
+\end{align}
+
+\noindent\textbf{Upper bound on $\alpha$ from $\beta_t \le 1/(2L)$}
+\begin{align}
+  \frac{1}{2\,L\,{\hat{\sigma }_{0}}^2} \tag{\texttt{alpha-upper}}
+\end{align}
+
+\end{document}

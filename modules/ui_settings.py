@@ -3,16 +3,15 @@ import gradio as gr
 from modules import ui_common, shared, script_callbacks, scripts, sd_models, sysinfo, timer, shared_items
 from modules.call_queue import wrap_gradio_call_no_job
 from modules.options import options_section
-from modules.shared import opts
 from modules.ui_components import FormRow
 from modules.ui_gradio_extensions import reload_javascript
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 def get_value_for_setting(key):
-    value = getattr(opts, key)
+    value = getattr(shared.opts, key)
 
-    info = opts.data_labels[key]
+    info = shared.opts.data_labels[key]
     args = info.component_args() if callable(info.component_args) else info.component_args or {}
     args = {k: v for k, v in args.items() if k not in {'precision'}}
 
@@ -21,9 +20,9 @@ def get_value_for_setting(key):
 
 def create_setting_component(key, is_quicksettings=False):
     def fun():
-        return opts.data[key] if key in opts.data else opts.data_labels[key].default
+        return shared.opts.data[key] if key in shared.opts.data else shared.opts.data_labels[key].default
 
-    info = opts.data_labels[key]
+    info = shared.opts.data_labels[key]
     t = type(info.default)
 
     args = info.component_args() if callable(info.component_args) else info.component_args
@@ -72,32 +71,32 @@ class UiSettings:
     def run_settings(self, *args):
         changed = []
 
-        for key, value, comp in zip(opts.data_labels.keys(), args, self.components):
-            assert comp == self.dummy_component or opts.same_type(value, opts.data_labels[key].default), f"Bad value for setting {key}: {value}; expecting {type(opts.data_labels[key].default).__name__}"
+        for key, value, comp in zip(shared.opts.data_labels.keys(), args, self.components):
+            assert comp == self.dummy_component or shared.opts.same_type(value, shared.opts.data_labels[key].default), f"Bad value for setting {key}: {value}; expecting {type(shared.opts.data_labels[key].default).__name__}"
 
-        for key, value, comp in zip(opts.data_labels.keys(), args, self.components):
+        for key, value, comp in zip(shared.opts.data_labels.keys(), args, self.components):
             if comp == self.dummy_component:
                 continue
 
-            if opts.set(key, value):
+            if shared.opts.set(key, value):
                 changed.append(key)
 
         try:
-            opts.save(shared.config_filename)
+            shared.opts.save(shared.config_filename)
         except RuntimeError:
-            return opts.dumpjson(), f'{len(changed)} settings changed without save: {", ".join(changed)}.'
-        return opts.dumpjson(), f'{len(changed)} settings changed{": " if changed else ""}{", ".join(changed)}.'
+            return shared.opts.dumpjson(), f'{len(changed)} settings changed without save: {", ".join(changed)}.'
+        return shared.opts.dumpjson(), f'{len(changed)} settings changed{": " if changed else ""}{", ".join(changed)}.'
 
     def run_settings_single(self, value, key):
-        if not opts.same_type(value, opts.data_labels[key].default):
-            return gr.update(visible=True), opts.dumpjson()
+        if not shared.opts.same_type(value, shared.opts.data_labels[key].default):
+            return gr.update(visible=True), shared.opts.dumpjson()
 
-        if value is None or not opts.set(key, value):
-            return gr.update(value=getattr(opts, key)), opts.dumpjson()
+        if value is None or not shared.opts.set(key, value):
+            return gr.update(value=getattr(shared.opts, key)), shared.opts.dumpjson()
 
-        opts.save(shared.config_filename)
+        shared.opts.save(shared.config_filename)
 
-        return get_value_for_setting(key), opts.dumpjson()
+        return get_value_for_setting(key), shared.opts.dumpjson()
 
     def register_settings(self):
         script_callbacks.ui_settings_callback()
@@ -110,11 +109,11 @@ class UiSettings:
         shared.settings_components = self.component_dict
 
         # we add this as late as possible so that scripts have already registered their callbacks
-        opts.data_labels.update(options_section(('callbacks', "Callbacks", "system"), {
+        shared.opts.data_labels.update(options_section(('callbacks', "Callbacks", "system"), {
             **shared_items.callbacks_order_settings(),
         }))
 
-        opts.reorder()
+        shared.opts.reorder()
 
         with gr.Blocks(analytics_enabled=False) as settings_interface:
             with gr.Row():
@@ -125,7 +124,7 @@ class UiSettings:
 
             self.result = gr.HTML(elem_id="settings_result")
 
-            self.quicksettings_names = opts.quicksettings_list
+            self.quicksettings_names = shared.opts.quicksettings_list
             self.quicksettings_names = {x: i for i, x in enumerate(self.quicksettings_names) if x != 'quicksettings'}
 
             self.quicksettings_list = []
@@ -134,7 +133,7 @@ class UiSettings:
             current_tab = None
             current_row = None
             with gr.Tabs(elem_id="settings"):
-                for i, (k, item) in enumerate(opts.data_labels.items()):
+                for i, (k, item) in enumerate(shared.opts.data_labels.items()):
                     section_must_be_skipped = item.section[0] is None
 
                     if previous_section != item.section and not section_must_be_skipped:
@@ -206,7 +205,7 @@ class UiSettings:
 
                 self.search_input = gr.Textbox(value="", elem_id="settings_search", max_lines=1, placeholder="Search...", show_label=False)
 
-                self.text_settings = gr.Textbox(elem_id="settings_json", value=lambda: opts.dumpjson(), visible=False)
+                self.text_settings = gr.Textbox(elem_id="settings_json", value=lambda: shared.opts.dumpjson(), visible=False)
 
             def call_func_and_return_text(func, text):
                 def handler():
@@ -217,7 +216,7 @@ class UiSettings:
                     return f'{text} in {t.total:.1f}s'
 
                 return handler
-            
+
             def get_max_model_index():
                 # Get maximum valid index, default to 0 if no models loaded
                 return max(0, len(sd_models.model_data.loaded_sd_models) - 1)
@@ -330,7 +329,7 @@ class UiSettings:
 
         for _i, k, _item in self.quicksettings_list:
             component = self.component_dict[k]
-            info = opts.data_labels[k]
+            info = shared.opts.data_labels[k]
 
             if isinstance(component, gr.Textbox):
                 methods = [component.submit, component.blur]
@@ -355,7 +354,7 @@ class UiSettings:
             outputs=[self.component_dict['sd_model_checkpoint'], self.text_settings],
         )
 
-        component_keys = [k for k in opts.data_labels.keys() if k in self.component_dict]
+        component_keys = [k for k in shared.opts.data_labels.keys() if k in self.component_dict]
 
         def get_settings_values():
             return [get_value_for_setting(key) for key in component_keys]

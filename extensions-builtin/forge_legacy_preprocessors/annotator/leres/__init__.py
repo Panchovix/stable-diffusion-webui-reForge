@@ -37,7 +37,7 @@ def apply_leres(input_image, thr_a, thr_b, boost=False):
     if model is None:
         model_path = os.path.join(base_model_path, "res101.pth")
         old_model_path = os.path.join(old_modeldir, "res101.pth")
-        
+
         if os.path.exists(old_model_path):
             model_path = old_model_path
         elif not os.path.exists(model_path):
@@ -66,7 +66,7 @@ def apply_leres(input_image, thr_a, thr_b, boost=False):
         pix2pixmodel.save_dir = base_model_path
         pix2pixmodel.load_networks('latest')
         pix2pixmodel.eval()
-    
+
     if devices.get_device_for("controlnet").type != 'mps':
         model = model.to(devices.get_device_for("controlnet"))
 
@@ -91,7 +91,7 @@ def apply_leres(input_image, thr_a, thr_b, boost=False):
             out = max_val * (depth - depth_min) / (depth_max - depth_min)
         else:
             out = np.zeros(depth.shape)
-        
+
         # single channel, 16 bit image
         depth_image = out.astype("uint16")
 
@@ -100,7 +100,7 @@ def apply_leres(input_image, thr_a, thr_b, boost=False):
 
         # remove near
         if thr_a != 0:
-            thr_a = ((thr_a/100)*255) 
+            thr_a = ((thr_a/100)*255)
             depth_image = cv2.threshold(depth_image, thr_a, 255, cv2.THRESH_TOZERO)[1]
 
         # invert image

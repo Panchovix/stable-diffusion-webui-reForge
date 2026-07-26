@@ -4,8 +4,6 @@ import sys
 from modules import devices, sd_samplers_common, sd_samplers_timesteps_impl
 from modules.sd_samplers_cfg_denoiser import CFGDenoiser
 from modules.script_callbacks import ExtraNoiseParams, extra_noise_callback
-
-from modules.shared import opts
 import modules.shared as shared
 from modules_forge.forge_sampler import sampling_prepare, sampling_cleanup
 
@@ -89,7 +87,7 @@ class CompVisSampler(sd_samplers_common.Sampler):
 
     def get_timesteps(self, p, steps):
         discard_next_to_last_sigma = self.config is not None and self.config.options.get('discard_next_to_last_sigma', False)
-        if opts.always_discard_next_to_last_sigma and not discard_next_to_last_sigma:
+        if shared.opts.always_discard_next_to_last_sigma and not discard_next_to_last_sigma:
             discard_next_to_last_sigma = True
             p.extra_generation_params["Discard penultimate sigma"] = True
 
@@ -116,12 +114,12 @@ class CompVisSampler(sd_samplers_common.Sampler):
 
         xi = x.to(noise) * sqrt_alpha_cumprod + noise * sqrt_one_minus_alpha_cumprod
 
-        if opts.img2img_extra_noise > 0:
-            p.extra_generation_params["Extra noise"] = opts.img2img_extra_noise
+        if shared.opts.img2img_extra_noise > 0:
+            p.extra_generation_params["Extra noise"] = shared.opts.img2img_extra_noise
             extra_noise_params = ExtraNoiseParams(noise, x, xi)
             extra_noise_callback(extra_noise_params)
             noise = extra_noise_params.noise
-            xi += noise * opts.img2img_extra_noise * sqrt_alpha_cumprod
+            xi += noise * shared.opts.img2img_extra_noise * sqrt_alpha_cumprod
 
         extra_params_kwargs = self.initialize(p)
         parameters = inspect.signature(self.func).parameters

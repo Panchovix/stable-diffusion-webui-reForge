@@ -8,7 +8,6 @@ import torch.nn as nn
 import torch.utils.checkpoint as checkpoint
 from einops import rearrange
 from einops.layers.torch import Rearrange
-from torch import Tensor
 from torch.nn import functional as F
 
 from .timm.drop import DropPath

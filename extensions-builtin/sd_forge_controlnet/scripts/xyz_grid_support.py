@@ -197,7 +197,7 @@ class ListParser():
         if not is_same_length(start_indices, end_indices):
             raise ValueError(f"Lengths of {start_indices} and {end_indices} are different.")
         # Restore the structure of a list.
-        for i, j in zip(reversed(start_indices), reversed(end_indices)):
+        for i, j in zip(reversed(start_indices), reversed(end_indices), strict=False):
             self.my_list[i:j] = [self.my_list[i:j]]
         return self
 
@@ -324,7 +324,7 @@ def add_axis_options(xyz_grid):
     # Define a function to pass to the AxisOption class from here.
     #
     ################################################
-  
+
     ################################################
     # Set this function as the type attribute of the AxisOption class.
     # To skip the following processing of xyz_grid module.
@@ -334,7 +334,7 @@ def add_axis_options(xyz_grid):
     #
     def identity(x):
         return x
- 
+
     def enable_script_control():
         shared.opts.data["control_net_allow_script_control"] = True
 

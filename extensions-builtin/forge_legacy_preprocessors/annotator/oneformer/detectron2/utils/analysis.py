@@ -65,7 +65,7 @@ class FlopCountAnalysis(fvcore.nn.FlopCountAnalysis):
         """
         wrapper = TracingAdapter(model, inputs, allow_non_tensor=True)
         super().__init__(wrapper, wrapper.flattened_inputs)
-        self.set_op_handle(**{k: None for k in _IGNORED_OPS})
+        self.set_op_handle(**dict.fromkeys(_IGNORED_OPS))
 
 
 def flop_count_operators(model: nn.Module, inputs: list) -> typing.DefaultDict[str, float]:

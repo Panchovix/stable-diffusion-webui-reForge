@@ -6,7 +6,6 @@ from PIL import Image
 
 from modules import processing, shared, images, devices
 from modules.processing import Processed
-from modules.shared import opts, state
 
 
 class Script(scripts.Script):
@@ -37,7 +36,7 @@ class Script(scripts.Script):
         seed = p.seed
 
         init_img = p.init_images[0]
-        init_img = images.flatten(init_img, opts.img2img_background_color)
+        init_img = images.flatten(init_img, shared.opts.img2img_background_color)
 
         if upscaler.name != "None":
             img = upscaler.scaler.upscale(init_img, scale_factor, upscaler.data_path)
@@ -61,9 +60,9 @@ class Script(scripts.Script):
                 work.append(tiledata[2])
 
         batch_count = math.ceil(len(work) / batch_size)
-        state.job_count = batch_count * upscale_count
+        shared.state.job_count = batch_count * upscale_count
 
-        print(f"SD upscaling will process a total of {len(work)} images tiled as {len(grid.tiles[0][2])}x{len(grid.tiles)} per upscale in a total of {state.job_count} batches.")
+        print(f"SD upscaling will process a total of {len(work)} images tiled as {len(grid.tiles[0][2])}x{len(grid.tiles)} per upscale in a total of {shared.state.job_count} batches.")
 
         result_images = []
         for n in range(upscale_count):
@@ -75,7 +74,7 @@ class Script(scripts.Script):
                 p.batch_size = batch_size
                 p.init_images = work[i * batch_size:(i + 1) * batch_size]
 
-                state.job = f"Batch {i + 1 + n * batch_count} out of {state.job_count}"
+                shared.state.job = f"Batch {i + 1 + n * batch_count} out of {shared.state.job_count}"
                 processed = processing.process_images(p)
 
                 if initial_info is None:
@@ -93,8 +92,8 @@ class Script(scripts.Script):
             combined_image = images.combine_grid(grid)
             result_images.append(combined_image)
 
-            if opts.samples_save:
-                images.save_image(combined_image, p.outpath_samples, "", start_seed, p.prompt, opts.samples_format, info=initial_info, p=p)
+            if shared.opts.samples_save:
+                images.save_image(combined_image, p.outpath_samples, "", start_seed, p.prompt, shared.opts.samples_format, info=initial_info, p=p)
 
         processed = Processed(p, result_images, seed, initial_info)
 

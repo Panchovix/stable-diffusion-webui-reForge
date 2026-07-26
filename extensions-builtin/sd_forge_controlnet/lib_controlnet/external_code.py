@@ -7,12 +7,6 @@ from lib_controlnet.logging import logger
 from lib_controlnet.enums import InputMode, HiResFixOption
 from modules.api import api
 
-from lib_controlnet.enums import (
-    InputMode,
-    HiResFixOption,
-    PuLIDMode,
-    ControlNetUnionControlType,
-)
 
 
 def get_api_version() -> int:
@@ -50,7 +44,7 @@ class ResizeMode(Enum):
             return 1
         elif self == ResizeMode.OUTER_FIT:
             return 2
-        assert False, "NOTREACHED"
+        raise AssertionError("NOTREACHED")
 
 
 resize_mode_aliases = {
@@ -64,9 +58,9 @@ ipa_block_weight_presets = {
     "Default"               : "1, 1, 1, 1, 1.0, 1, 1, 1, 1, 1, 1",
     "Style"                 : "0, 0, 1, 0, 0.0, 0, 1, 0, 0, 0, 0",
     "Style (Strong)"        : "1, 1, 1, 0, 0.0, 0, 1, 1, 1, 1, 1",
-    "Composition"           : "0, 0, 0, 0, 0.0, 1, 0, 0, 0, 0, 0", 
-    "Composition (Strong)"  : "0, 0, 0, 1, 0.0, 1, 0, 0, 0, 0, 0", 
-    "Style+Composition"     : "0, 0, 1, 1, 0.0, 1, 1, 0, 0, 0, 0", 
+    "Composition"           : "0, 0, 0, 0, 0.0, 1, 0, 0, 0, 0, 0",
+    "Composition (Strong)"  : "0, 0, 0, 1, 0.0, 1, 0, 0, 0, 0, 0",
+    "Style+Composition"     : "0, 0, 1, 1, 0.0, 1, 1, 0, 0, 0, 0",
     "Custom"                : "",
 }
 
@@ -101,7 +95,7 @@ def control_mode_from_value(value: Union[str, int, ControlMode]) -> ControlMode:
             return ControlMode.BALANCED
     elif isinstance(value, int):
         try:
-            return [e for e in ControlMode][value]
+            return list(ControlMode)[value]
         except IndexError:
             print(f'Unrecognized ControlMode int value {value}. Fall back to BALANCED.')
             return ControlMode.BALANCED
@@ -161,7 +155,7 @@ def pixel_perfect_resolution(
     else:
         estimation = max(k0, k1) * float(min(raw_H, raw_W))
 
-    logger.debug(f"Pixel Perfect Computation:")
+    logger.debug("Pixel Perfect Computation:")
     logger.debug(f"resize_mode = {resize_mode}")
     logger.debug(f"raw_H = {raw_H}")
     logger.debug(f"raw_W = {raw_W}")

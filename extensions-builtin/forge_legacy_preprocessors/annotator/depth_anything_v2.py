@@ -7,9 +7,9 @@ try:
 except ImportError:
     print("Installing depth_anything_v2...")
     subprocess.check_call([
-        sys.executable, 
-        "-m", 
-        "pip", 
+        sys.executable,
+        "-m",
+        "pip",
         "install",
         "https://github.com/MackinationsAi/UDAV2-ControlNet/releases/download/v1.0.0/depth_anything_v2-2024.7.1.0-py2.py3-none-any.whl"
     ])

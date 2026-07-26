@@ -20,7 +20,7 @@ class MultiDiffusionForForge(scripts.Script):
     def ui(self, *args, **kwargs):
         with gr.Accordion(open=False, label=self.title()):
             enabled = gr.Checkbox(label='Enabled', value=False)
-            method = gr.Radio(label='Method', 
+            method = gr.Radio(label='Method',
                             choices=['MultiDiffusion', 'Mixture of Diffusers', 'SpotDiffusion'],
                             value='Mixture of Diffusers')
             with gr.Row():
@@ -30,7 +30,7 @@ class MultiDiffusionForForge(scripts.Script):
                 tile_overlap = gr.Slider(label='Tile Overlap', minimum=0, maximum=2048, step=32, value=64)
                 tile_batch_size = gr.Slider(label='Tile Batch Size', minimum=1, maximum=8192, step=1, value=4)
             with gr.Row():
-                shift_method = gr.Radio(label='Shift Method (SpotDiffusion)', 
+                shift_method = gr.Radio(label='Shift Method (SpotDiffusion)',
                                       choices=['random', 'sorted', 'fibonacci'],
                                       value='random',
                                       visible=True)
@@ -69,4 +69,3 @@ class MultiDiffusionForForge(scripts.Script):
         ))
 
         return
-    

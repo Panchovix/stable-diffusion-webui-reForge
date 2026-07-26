@@ -1,0 +1,32 @@
+name: "Dependency Review"
+
+on:
+  pull_request:
+    branches: ["main", "dev"]
+    paths:
+      - "requirements*.txt"
+      - "setup.py"
+      - "setup.cfg"
+      - "pyproject.toml"
+
+permissions:
+  contents: read
+  # Allow posting review comments on PRs — no commit or push access
+  pull-requests: write
+
+jobs:
+  dependency-review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v5
+        with:
+          # Block PRs that introduce known vulnerabilities
+          fail-on-severity: high
+          # Post findings as PR comments, not commits
+          comment-summary-in-pr: always
+          # Block deps with copyleft licenses incompatible with this project
+          deny-licenses: GPL-2.0, AGPL-3.0

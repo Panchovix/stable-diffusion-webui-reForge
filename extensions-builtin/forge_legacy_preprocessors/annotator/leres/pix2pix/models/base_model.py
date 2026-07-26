@@ -1,5 +1,6 @@
 import os
-import torch, gc
+import torch
+import gc
 from modules import devices
 from collections import OrderedDict
 from abc import ABC, abstractmethod

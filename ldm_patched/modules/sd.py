@@ -88,7 +88,7 @@ def load_clip_weights(model, sd):
 
 def load_lora_for_models(model, clip, lora, strength_model, strength_clip, filename='default'):
     model_flag = type(model.model).__name__ if model is not None else 'default'
-    
+
     # Only build key maps for components we'll actually use
     key_map = {}
     if model is not None and strength_model != 0:
@@ -102,10 +102,10 @@ def load_lora_for_models(model, clip, lora, strength_model, strength_clip, filen
 
     # Convert lora before loading
     lora = ldm_patched.modules.lora_convert.convert_lora(lora)
-    
+
     # Load LoRA weights
     loaded = ldm_patched.modules.lora.load_lora(lora, key_map)
-    
+
     # Handle model patching
     if model is not None:
         new_modelpatcher = model.clone()
@@ -125,7 +125,7 @@ def load_lora_for_models(model, clip, lora, strength_model, strength_clip, filen
     # Convert to sets for comparison
     loaded_keys_unet = set(loaded_keys_unet)
     loaded_keys_clip = set(loaded_keys_clip)
-    
+
     # Log not loaded keys
     for x in loaded:
         if (x not in loaded_keys_unet) and (x not in loaded_keys_clip):
@@ -196,7 +196,7 @@ class CLIP:
 
     def add_patches(self, patches, strength_patch=1.0, strength_model=1.0):
         return self.patcher.add_patches(patches, strength_patch, strength_model)
-    
+
     def set_tokenizer_option(self, option_name, value):
         self.tokenizer_options[option_name] = value
 
@@ -771,7 +771,7 @@ class VAE:
             return out
         else:
             return out.reshape(samples.shape[0], self.latent_channels, extra_channel_size, -1)
-    
+
     def decode_inner(self, samples_in):
         if model_management.VAE_ALWAYS_TILED:
             return self.decode_tiled(
@@ -857,11 +857,11 @@ class VAE:
 
             output = self.decode_tiled_3d(samples, **args)
         return output.movedim(1, -1)
-    
+
     def encode_inner(self, pixel_samples):
         if model_management.VAE_ALWAYS_TILED:
             return self.encode_tiled(
-                                    pixel_samples, 
+                                    pixel_samples,
                                     tile_x = model_management.VAE_ENCODE_TILE_SIZE_X,
                                     tile_y = model_management.VAE_ENCODE_TILE_SIZE_Y
                                     )
@@ -1318,7 +1318,7 @@ def load_state_dict_guess_config(sd, output_vae=True, output_clip=True, output_c
         model.load_model_weights(sd, diffusion_model_prefix)
 
     if output_vae:
-        vae_sd = ldm_patched.modules.utils.state_dict_prefix_replace(sd, {k: "" for k in model_config.vae_key_prefix}, filter_keys=True)
+        vae_sd = ldm_patched.modules.utils.state_dict_prefix_replace(sd, dict.fromkeys(model_config.vae_key_prefix, ""), filter_keys=True)
         vae_sd = model_config.process_vae_state_dict(vae_sd)
         vae = VAE(sd=vae_sd, metadata=metadata)
         if hasattr(model_config, "packed_vae_latent_channels"):

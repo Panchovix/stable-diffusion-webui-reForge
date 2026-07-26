@@ -76,12 +76,12 @@ function setupExtraNetworksForTab(tabname) {
             var sortKey = activeSearchElem ? activeSearchElem.dataset.sortkey : "default";
             var sortKeyDataField = "sort" + sortKey.charAt(0).toUpperCase() + sortKey.slice(1);
             var sortKeyStore = sortKey + "-" + sort_dir.dataset.sortdir + "-" + cards.length;
-    
+
             if (sortKeyStore == currentSort && !force) {
                 return;
             }
             currentSort = sortKeyStore;
-    
+
             var sortedCards = Array.from(cards);
             sortedCards.sort(function(cardA, cardB) {
                 var a = cardA.dataset[sortKeyDataField];
@@ -91,11 +91,11 @@ function setupExtraNetworksForTab(tabname) {
                 }
                 return (a < b ? -1 : (a > b ? 1 : 0));
             });
-    
+
             if (reverse) {
                 sortedCards.reverse();
             }
-    
+
             parent.innerHTML = '';
             var frag = document.createDocumentFragment();
             sortedCards.forEach(function(card) {
@@ -276,6 +276,10 @@ function extraNetworksSearchButton(tabname, extra_networks_tabname, event) {
     updateInput(searchTextarea);
 }
 
+function extraNetworksTreeProcessFileClick(event, btn, tabname, extra_networks_tabname) {
+    // File entries in the tree are handled via card click; no additional action needed here.
+}
+
 function extraNetworksTreeProcessDirectoryClick(event, btn, tabname, extra_networks_tabname) {
     var ul = btn.nextElementSibling;
     var true_targ = event.target;
@@ -363,7 +367,7 @@ function extraNetworksControlSortDirOnClick(event, tabname, extra_networks_tabna
 function extraNetworksControlTreeViewOnClick(event, tabname, extra_networks_tabname) {
     var button = event.currentTarget;
     button.classList.toggle("extra-network-control--enabled");
-    
+
     var pane = gradioApp().getElementById(tabname + "_" + extra_networks_tabname + "_pane");
     pane.classList.toggle("extra-network-dirs-hidden");
 
@@ -382,15 +386,6 @@ function extraNetworksControlTreeViewOnClick(event, tabname, extra_networks_tabn
         cards.style.width = 'auto';
         if (resizeHandle) resizeHandle.style.display = 'block';
     }
-}
-
-function extraNetworksSearchButton(tabname, extra_networks_tabname, event) {
-    var searchTextarea = gradioApp().querySelector("#" + tabname + "_" + extra_networks_tabname + "_extra_search");
-    var button = event.target;
-    var text = button.classList.contains("search-all") ? "" : button.textContent.trim();
-
-    searchTextarea.value = text;
-    updateInput(searchTextarea);
 }
 
 function extraNetworksControlRefreshOnClick(event, tabname, extra_networks_tabname) {
@@ -498,7 +493,7 @@ function extraNetworksShowMetadata(text) {
     } catch (error) {
         console.error(error);
     }
-    
+
     var elem = document.createElement('pre');
     elem.classList.add('popup-metadata');
     elem.textContent = text;
@@ -568,7 +563,7 @@ function extraNetworksEditUserMetadata(event, tabname, extraPage) {
         editor.button = gradioApp().querySelector("#" + id + "_button");
         extraPageUserMetadataEditors[id] = editor;
     }
-    
+
     var cardName = event.target.parentElement.parentElement.getAttribute("data-name");
 
     editor.nameTextarea.value = cardName;

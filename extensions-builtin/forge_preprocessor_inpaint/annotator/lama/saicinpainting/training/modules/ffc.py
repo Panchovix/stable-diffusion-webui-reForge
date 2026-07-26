@@ -10,7 +10,6 @@ import torch.nn.functional as F
 from annotator.lama.saicinpainting.training.modules.base import get_activation, BaseDiscriminator
 from annotator.lama.saicinpainting.training.modules.spatial_transform import LearnableSpatialTransformWrapper
 from annotator.lama.saicinpainting.training.modules.squeeze_excitation import SELayer
-from annotator.lama.saicinpainting.utils import get_shape
 
 
 class FFCSE_block(nn.Module):
@@ -296,10 +295,10 @@ class FFC(nn.Module):
 
     def forward(self, x):
         x_l, x_g = x if type(x) is tuple else (x, 0)
-        
+
         # Determine the device of x_l
         x_device = x_l.device
-        
+
         # Ensure x_g is on the same device as x_l
         if torch.is_tensor(x_g):
             x_g = x_g.to(x_device)
@@ -401,7 +400,7 @@ class FFCResnetBlock(nn.Module):
 
         # Determine the device of x_l
         x_device = x_l.device
-        
+
         # Ensure x_g is on the same device as x_l
         if torch.is_tensor(x_g):
             x_g = x_g.to(x_device)
@@ -496,12 +495,12 @@ class FFCResNetGenerator(nn.Module):
     def to(self, *args, **kwargs):
         # First, call the parent class's to() method
         self = super().to(*args, **kwargs)
-       
+
         # Then, explicitly move all submodules
         for module in self.modules():
             if isinstance(module, (nn.Conv2d, nn.ConvTranspose2d, nn.BatchNorm2d)):
                 module.to(*args, **kwargs)
-       
+
         return self
 
     def forward(self, input):
@@ -586,15 +585,14 @@ class FFCNLayerDiscriminator(BaseDiscriminator):
                     out = out[0]
             feats.append(out)
         return act[-1], feats
-    
+
     def to(self, *args, **kwargs):
         # First, call the parent class's to() method
         self = super().to(*args, **kwargs)
-       
+
         # Then, explicitly move all submodules
         for module in self.modules():
             if isinstance(module, (nn.Conv2d, nn.ConvTranspose2d, nn.BatchNorm2d)):
                 module.to(*args, **kwargs)
-       
+
         return self
-    

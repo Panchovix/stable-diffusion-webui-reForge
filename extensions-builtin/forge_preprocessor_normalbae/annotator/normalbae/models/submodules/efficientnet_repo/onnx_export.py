@@ -108,7 +108,7 @@ def main():
         import caffe2.python.onnx.backend as onnx_caffe2
         # Caffe2 loading only works properly in newer PyTorch/ONNX combos when
         # keep_initializers_as_inputs and aten_fallback are set to True.
-        print("==> Loading model into Caffe2 backend and comparing forward pass.".format(args.output))
+        print("==> Loading model into Caffe2 backend and comparing forward pass.")
         caffe2_backend = onnx_caffe2.prepare(onnx_model)
         B = {onnx_model.graph.input[0].name: x.data.numpy()}
         c2_out = caffe2_backend.run(B)[0]

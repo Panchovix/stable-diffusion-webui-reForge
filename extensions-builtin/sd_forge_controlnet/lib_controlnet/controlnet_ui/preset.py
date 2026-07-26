@@ -7,7 +7,7 @@ from modules import scripts
 from lib_controlnet.infotext import parse_unit, serialize_unit
 from lib_controlnet.controlnet_ui.tool_button import ToolButton
 from lib_controlnet.logging import logger
-from lib_controlnet.external_code import ControlNetUnit, UiControlNetUnit
+from lib_controlnet.external_code import ControlNetUnit
 from lib_controlnet.global_state import get_preprocessor
 from modules_forge.supported_preprocessor import Preprocessor
 
@@ -100,10 +100,7 @@ class ControlNetPresetUI(object):
         *ui_states,
     ):
         def init_with_ui_states(*ui_states) -> ControlNetUnit:
-            return ControlNetUnit(**{
-                field: value
-                for field, value in zip(ControlNetUnit.infotext_fields(), ui_states)
-            })
+            return ControlNetUnit(**dict(zip(ControlNetUnit.infotext_fields(), ui_states, strict=False)))
 
         def apply_preset(name: str, control_type: str, *ui_states):
             if name == NEW_PRESET:

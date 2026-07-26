@@ -28,6 +28,7 @@ logging_config.setup_logging(args.loglevel)
 python = sys.executable
 git = os.environ.get('GIT', "git")
 index_url = os.environ.get('INDEX_URL', "")
+uv = shutil.which("uv") or "uv"
 dir_repos = "repositories"
 
 # Whether to default to printing command output
@@ -88,7 +89,7 @@ def git_tag_a1111():
 def git_tag():
     return 'f' + forge_version.version + '-' + git_tag_a1111()
 
-
+# FIXME: A protentional router need for this werid douvle run
 def run(command, desc=None, errdesc=None, custom_env=None, live: bool = default_command_live) -> str:
     if desc is not None:
         print(desc)
@@ -139,11 +140,17 @@ def repo_dir(name):
     return os.path.join(script_path, dir_repos, name)
 
 
+def _use_uv():
+    return getattr(args, 'use_uv', False) or os.environ.get('USE_UV') == '1'
+
+
 def run_pip(command, desc=None, live=default_command_live):
     if args.skip_install:
         return
 
     index_url_line = f' --index-url {index_url}' if index_url != '' else ''
+    if _use_uv():
+        return run(f'"{uv}" pip {command} --python "{python}"{index_url_line}', desc=f"Installing {desc}", errdesc=f"Couldn't install {desc}", live=live)
     return run(f'"{python}" -m pip {command} --prefer-binary{index_url_line}', desc=f"Installing {desc}", errdesc=f"Couldn't install {desc}", live=live)
 
 
@@ -319,7 +326,7 @@ def run_extensions_installers(settings_file):
 re_requirement = re.compile(r"\s*([-_a-zA-Z0-9]+)\s*(?:==\s*([-+_.a-zA-Z0-9]+))?\s*")
 
 
-def requirements_met(requirements_file):
+def requirements_met(requirements_file:str):
     """
     Does a simple parse of a requirements.txt file to determine if all rerqirements in it
     are already installed. Returns True if so, False if not installed or parsing fails.
@@ -395,7 +402,7 @@ def prepare_environment():
 
     xformers_package = os.environ.get('XFORMERS_PACKAGE', '--index-url https://download.pytorch.org/whl/cu128 xformers')
     clip_package = os.environ.get('CLIP_PACKAGE', "https://github.com/openai/CLIP/archive/d50d76daa670286dd6cacf3bcd80b5e4823fc8e1.zip")
-    openclip_package = os.environ.get('OPENCLIP_PACKAGE', "https://github.com/mlfoundations/open_clip/archive/bb6e834e9c70d9c27d0dc3ecedeebeaeb1ffad6b.zip")
+    openclip_package = os.environ.get('OPENCLIP_PACKAGE', "open_clip_torch>=2.24.0")
 
     assets_repo = os.environ.get('ASSETS_REPO', "https://github.com/AUTOMATIC1111/stable-diffusion-webui-assets.git")
     stable_diffusion_repo = os.environ.get('STABLE_DIFFUSION_REPO', "https://github.com/joypaul162/Stability-AI-stablediffusion.git")
@@ -430,7 +437,11 @@ def prepare_environment():
     print(f"Commit hash: {commit}")
 
     if args.reinstall_torch or not is_installed("torch") or not is_installed("torchvision"):
-        run(f'"{python}" -m {torch_command}', "Installing torch and torchvision", "Couldn't install torch", live=True)
+        if _use_uv():
+            uv_torch_command = torch_command.replace("pip install", f'"{uv}" pip install --python "{python}"', 1)
+            run(uv_torch_command, "Installing torch and torchvision", "Couldn't install torch", live=True)
+        else:
+            run(f'"{python}" -m {torch_command}', "Installing torch and torchvision", "Couldn't install torch", live=True)
         startup_timer.record("install torch")
 
     if args.use_ipex:
@@ -579,7 +590,634 @@ def dump_sysinfo():
     import datetime
 
     text = sysinfo.get()
-    filename = f"sysinfo-{datetime.datetime.utcnow().strftime('%Y-%m-%d-%H-%M')}.json"
+    filename = f"sysinfo-{datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d-%H-%M')}.json"
+
+    with open(filename, "w", encoding="utf8") as file:
+        file.write(text)
+
+    return filename
+# this scripts installs necessary requirements and launches main program in webui.py
+from importlib.machinery import ModuleSpec
+import re
+import os
+import shutil
+import sys
+import importlib.util
+import importlib.metadata
+from functools import lru_cache
+from typing import Any
+from pathlib import Path
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+from modules import cmd_args
+from modules import logging_config
+
+
+args, _ = cmd_args.parser.parse_known_args()
+logging_config.setup_logging(args.loglevel)
+
+python: str = sys.executable
+git: str = os.environ.get('GIT', "git")
+index_url: str = os.environ.get('INDEX_URL', "")
+dir_repos = "repositories"
+
+# Whether to default to printing command output
+default_command_live: bool = (os.environ.get('WEBUI_LAUNCH_LIVE_OUTPUT') == "1")
+
+os.environ.setdefault('GRADIO_ANALYTICS_ENABLED', 'False')
+
+
+def _apply_repository_patches() -> None:
+    """Apply in-place compatibility patches to cloned third-party repositories.
+
+    These repos are gitignored so changes can't be committed; this function
+    re-applies them idempotently on every fresh clone.
+    """
+    patches = [
+        (
+            # MPS/CPU device mismatch when concatenating conditioner outputs on
+            # Apple Silicon. Multiple embedders can produce tensors on different
+            # devices; force emb to match the accumulator before torch.cat.
+            os.path.join(script_path, "repositories", "generative-models",
+                         "sgm", "modules", "encoders", "modules.py"),
+            "(output[out_key], emb), self.KEY2CATDIM[out_key]",
+            "(output[out_key], emb.to(output[out_key].device)), self.KEY2CATDIM[out_key]",
+        ),
+    ]
+    for path, old, new in patches:
+        if not os.path.isfile(path):
+            continue
+        with open(path, encoding="utf-8") as fh:
+            content = fh.read()
+        if old not in content:
+            continue  # already patched or not found — skip
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(content.replace(old, new, 1))
+        print(f"[repo-patch] Applied patch to {os.path.relpath(path, script_path)}")
+
+
+def _select_requirements_file() -> str:
+    """Return the appropriate requirements file for the running Python version.
+
+    Python 3.14+ gets its own pinned file so we can track version differences
+    (e.g. scikit-image 0.26, kornia 0.8.3) without drifting the 3.10-3.13 baseline.
+    Falls back to the main file if the version-specific one is absent.
+    """
+    major, minor = sys.version_info.major, sys.version_info.minor
+    if (major, minor) >= (3, 14):
+        candidate = "requirements_versions_py314.txt"
+        if os.path.isfile(os.path.join(script_path, candidate)):
+            return candidate
+    # 3.11–3.13: main requirements (check_python_version warns below 3.11)
+    return "requirements_versions.txt"
+
+
+def check_python_version() -> None:
+    is_windows: bool = platform.system() == "Windows"
+    major: int = sys.version_info.major
+    minor: int = sys.version_info.minor
+    micro: int = sys.version_info.micro
+
+    # Supported range: 3.11 – 3.14 (3.14 is the current development target)
+    # 3.10 is excluded: PyWavelets>=1.9.0 requires Python >=3.11.
+    if not (major == 3 and 11 <= minor <= 14):
+        errors.print_error_explanation(f"""
+INCOMPATIBLE PYTHON VERSION
+
+This program targets Python 3.11–3.14, but you have {major}.{minor}.{micro}.
+If you encounter an error with "RuntimeError: Couldn't install torch." message,
+or any other error regarding unsuccessful package (library) installation,
+please switch to Python 3.11, 3.12, 3.13 or 3.14.
+
+{"Alternatively, use a binary release of WebUI: https://github.com/AUTOMATIC1111/stable-diffusion-webui/releases/tag/v1.0.0-pre" if is_windows else ""}
+
+Use --skip-python-version-check to suppress this warning.
+""")
+
+
+@lru_cache()
+def commit_hash() -> str:
+    try:
+        return subprocess.check_output([git, "-C", script_path, "rev-parse", "HEAD"], shell=False, encoding='utf8').strip()
+    except Exception:
+        return "<none>"
+
+
+@lru_cache()
+def git_tag_a1111() -> str:
+    try:
+        return subprocess.check_output([git, "-C", script_path, "describe", "--tags"], shell=False, encoding='utf8').strip()
+    except Exception:
+        try:
+
+            changelog_md: str = os.path.join(script_path, "CHANGELOG.md")
+            with open(changelog_md, "r", encoding="utf-8") as file :
+                line: str = next((line.strip() for line in file if line.strip()), "<none>")
+                line: str = line.replace("## ", "")
+                return line
+        except Exception:
+            return "<none>"
+
+
+def git_tag() -> str:
+    return 'f' + forge_version.version + '-' + git_tag_a1111()
+
+# FIXME: run expose command injection possibility, command is directly pass on subprocess.run
+def run(command, desc: Any | None = None, errdesc: Any | None = None, custom_env: Any | None = None, live: bool = default_command_live) -> str:
+    if desc is not None:
+        print(desc)
+
+    run_kwargs = {
+        "args": command,
+        "shell": True,
+        "env": os.environ if custom_env is None else custom_env,
+        "encoding": 'utf8',
+        "errors": 'ignore',
+    }
+
+    if not live:
+        run_kwargs["stdout"] = run_kwargs["stderr"] = subprocess.PIPE
+
+    result = subprocess.run(**run_kwargs)
+
+    if result.returncode != 0:
+        error_bits: list[str] = [
+            f"{errdesc or 'Error running command'}.",
+            f"Command: {command}",
+            f"Error code: {result.returncode}",
+        ]
+        if result.stdout:
+            error_bits.append(f"stdout: {result.stdout}")
+        if result.stderr:
+            error_bits.append(f"stderr: {result.stderr}")
+        raise RuntimeError("\n".join(error_bits))
+
+    return (result.stdout or "")
+
+
+def is_installed(package) -> bool:
+    try:
+        dist: importlib.metadata.Distribution = importlib.metadata.distribution(package)
+    except importlib.metadata.PackageNotFoundError:
+        try:
+            spec: ModuleSpec | None = importlib.util.find_spec(package)
+        except ModuleNotFoundError:
+            return False
+
+        return spec is not None
+
+    return dist is not None
+
+
+def repo_dir(name) -> str:
+    return os.path.join(script_path, dir_repos, name)
+
+
+def run_pip(command, desc: Any | None = None, live=default_command_live) -> None | str:
+    if args.skip_install:
+        return
+
+    index_url_line: str = f' --index-url {index_url}' if index_url != '' else ''
+    if _use_uv():
+        return run(f'"{uv}" pip {command} --python "{python}"{index_url_line}', desc=f"Installing {desc}", errdesc=f"Couldn't install {desc}", live=live)
+    return run(f'"{python}" -m pip {command} --prefer-binary{index_url_line}', desc=f"Installing {desc}", errdesc=f"Couldn't install {desc}", live=live)
+
+
+def check_run_python(code: str) -> bool:
+    result: subprocess.CompletedProcess[bytes] = subprocess.run([python, "-c", code], capture_output=True, shell=False)
+    return result.returncode == 0
+
+
+def git_fix_workspace(dir, name) -> None:
+    run(f'"{git}" -C "{dir}" fetch --refetch --no-auto-gc', f"Fetching all contents for {name}", f"Couldn't fetch {name}", live=True)
+    run(f'"{git}" -C "{dir}" gc --aggressive --prune=now', f"Pruning {name}", f"Couldn't prune {name}", live=True)
+    return
+
+
+def run_git(dir, name, command, desc: Any | None = None, errdesc: Any | None = None, custom_env: Any | None = None, live: bool = default_command_live, autofix: bool = True) -> str:
+    try:
+        return run(f'"{git}" -C "{dir}" {command}', desc=desc, errdesc=errdesc, custom_env=custom_env, live=live)
+    except RuntimeError:
+        if not autofix:
+            raise
+
+    print(f"{errdesc}, attempting autofix...")
+    git_fix_workspace(dir, name)
+
+    return run(f'"{git}" -C "{dir}" {command}', desc=desc, errdesc=errdesc, custom_env=custom_env, live=live)
+
+
+def git_clone(url, dir, name, commithash: Any | None = None) -> None:
+    # TODO clone into temporary dir and move if successful
+
+    if os.path.exists(dir):
+        if commithash is None:
+            return
+
+        current_hash: str = run_git(dir, name, 'rev-parse HEAD', None, f"Couldn't determine {name}'s hash: {commithash}", live=False).strip()
+        if current_hash == commithash:
+            return
+
+        if run_git(dir, name, 'config --get remote.origin.url', None, f"Couldn't determine {name}'s origin URL", live=False).strip() != url:
+            run_git(dir, name, f'remote set-url origin "{url}"', None, f"Failed to set {name}'s origin URL", live=False)
+
+        run_git(dir, name, 'fetch', f"Fetching updates for {name}...", f"Couldn't fetch {name}", autofix=False)
+
+        run_git(dir, name, f'checkout {commithash}', f"Checking out commit for {name} with hash: {commithash}...", f"Couldn't checkout commit {commithash} for {name}", live=True)
+
+        return
+
+    try:
+        run(f'"{git}" clone --config core.filemode=false "{url}" "{dir}"', f"Cloning {name} into {dir}...", f"Couldn't clone {name}", live=True)
+    except RuntimeError:
+        shutil.rmtree(dir, ignore_errors=True)
+        raise
+
+    if commithash is not None:
+        run(f'"{git}" -C "{dir}" checkout {commithash}', None, "Couldn't checkout {name}'s hash: {commithash}")
+
+
+def git_pull_recursive(dir) -> None:
+    for subdir, _, _ in os.walk(dir):
+        if os.path.exists(os.path.join(subdir, '.git')):
+            try:
+                output: bytes = subprocess.check_output([git, '-C', subdir, 'pull', '--autostash'])
+                print(f"Pulled changes for repository in '{subdir}':\n{output.decode('utf-8').strip()}\n")
+            except subprocess.CalledProcessError as e:
+                print(f"Couldn't perform 'git pull' on repository in '{subdir}':\n{e.output.decode('utf-8').strip()}\n")
+
+
+def version_check(commit) -> None:
+    try:
+        import requests
+        commits = requests.get('https://api.github.com/repos/AUTOMATIC1111/stable-diffusion-webui/branches/master').json()
+        if commit != "<none>" and commits['commit']['sha'] != commit:
+            print("--------------------------------------------------------")
+            print("| You are not up to date with the most recent release. |")
+            print("| Consider running `git pull` to update.               |")
+            print("--------------------------------------------------------")
+        elif commits['commit']['sha'] == commit:
+            print("You are up to date with the most recent release.")
+        else:
+            print("Not a git clone, can't perform version check.")
+    except Exception as e:
+        print("version check failed", e)
+
+
+def run_extension_installer(extension_dir) -> None:
+    path_installer: str = os.path.join(extension_dir, "install.py")
+    if not os.path.isfile(path_installer):
+        return
+
+    try:
+        env: dict[str, str] = os.environ.copy()
+        env['PYTHONPATH'] = f"{script_path}{os.pathsep}{env.get('PYTHONPATH', '')}"
+
+        stdout: str = run(f'"{python}" "{path_installer}"', errdesc=f"Error running install.py for extension {extension_dir}", custom_env=env).strip()
+        if stdout:
+            print(stdout)
+    except Exception as e:
+        errors.report(str(e))
+
+
+def list_extensions(settings_file):
+    settings = {}
+
+    try:
+        with open(settings_file, "r", encoding="utf8") as file:
+            settings = json.load(file)
+    except FileNotFoundError:
+        pass
+    except Exception:
+        errors.report(f'\nCould not load settings\nThe config file "{settings_file}" is likely corrupted\nIt has been moved to the "tmp/config.json"\nReverting config to default\n\n''', exc_info=True)
+        os.replace(settings_file, os.path.join(script_path, "tmp", "config.json"))
+
+    disabled_extensions = set(settings.get('disabled_extensions', []) + always_disabled_extensions)
+    disable_all_extensions = settings.get('disable_all_extensions', 'none')
+
+    if disable_all_extensions != 'none' or args.disable_extra_extensions or args.disable_all_extensions or not os.path.isdir(extensions_dir):
+        return []
+
+    return [x for x in os.listdir(extensions_dir) if x not in disabled_extensions]
+
+
+def list_extensions_builtin(settings_file):
+    settings = {}
+
+    try:
+        with open(settings_file, "r", encoding="utf8") as file:
+            settings = json.load(file)
+    except FileNotFoundError:
+        pass
+    except Exception:
+        errors.report(f'\nCould not load settings\nThe config file "{settings_file}" is likely corrupted\nIt has been moved to the "tmp/config.json"\nReverting config to default\n\n''', exc_info=True)
+        os.replace(settings_file, os.path.join(script_path, "tmp", "config.json"))
+
+    disabled_extensions = set(settings.get('disabled_extensions', []))
+    disable_all_extensions = settings.get('disable_all_extensions', 'none')
+
+    if disable_all_extensions != 'none' or args.disable_extra_extensions or args.disable_all_extensions or not os.path.isdir(extensions_builtin_dir):
+        return []
+
+    return [x for x in os.listdir(extensions_builtin_dir) if x not in disabled_extensions]
+
+
+def run_extensions_installers(settings_file) -> None:
+    if not os.path.isdir(extensions_dir):
+        return
+
+    with startup_timer.subcategory("run extensions installers"):
+        for dirname_extension in list_extensions(settings_file):
+            logging.debug(f"Installing {dirname_extension}")
+
+            path: str = os.path.join(extensions_dir, dirname_extension)
+
+            if os.path.isdir(path):
+                run_extension_installer(path)
+                startup_timer.record(dirname_extension)
+
+    if not os.path.isdir(extensions_builtin_dir):
+        return
+
+    with startup_timer.subcategory("run extensions_builtin installers"):
+        for dirname_extension in list_extensions_builtin(settings_file):
+            logging.debug(f"Installing {dirname_extension}")
+
+            path: str = os.path.join(extensions_builtin_dir, dirname_extension)
+
+            if os.path.isdir(path):
+                run_extension_installer(path)
+                startup_timer.record(dirname_extension)
+
+    return
+
+
+re_requirement: re.Pattern[str] = re.compile(r"\s*([-_a-zA-Z0-9]+)\s*(?:==\s*([-+_.a-zA-Z0-9]+))?\s*")
+
+
+def requirements_met(requirements_file) -> bool:
+    """
+    Does a simple parse of a requirements.txt file to determine if all rerqirements in it
+    are already installed. Returns True if so, False if not installed or parsing fails.
+    """
+
+    import importlib.metadata
+    import packaging.version
+
+    with open(requirements_file, "r", encoding="utf8") as file:
+        for line in file:
+            if line.strip() == "":
+                continue
+
+            m: re.Match[str] | None = re.match(re_requirement, line)
+            if m is None:
+                return False
+
+            package: str | cmd_args.data_path = m.group(1).strip()
+            version_required: str | cmd_args.data_path = (m.group(2) or "").strip()
+
+            if version_required == "":
+                continue
+
+            try:
+                version_installed: str = importlib.metadata.version(package)
+            except Exception:
+                return False
+
+            if packaging.version.parse(version_required) != packaging.version.parse(version_installed):
+                return False
+
+    return True
+
+def get_cuda_comp_cap() -> float:
+    """
+    Returns float of CUDA Compute Capability using nvidia-smi
+    Returns 0.0 on error
+    CUDA Compute Capability
+    ref https://developer.nvidia.com/cuda-gpus
+    ref https://en.wikipedia.org/wiki/CUDA
+    Blackwell consumer GPUs should return 12.0 data-center GPUs should return 10.0
+    """
+    try:
+        return max(map(float, subprocess.check_output(['nvidia-smi', '--query-gpu=compute_cap', '--format=noheader,csv'], text=True).splitlines()))
+    except Exception as _:
+        return 0.0
+
+# Ensure build dependencies are installed before any package that might need them
+def ensure_build_dependencies() -> None:
+    """Ensure essential build tools are available"""
+    if not is_installed("wheel"):
+        run_pip("install wheel", "wheel")
+    # Check setuptools version compatibility
+    try:
+        setuptools_version: str = run(f'"{python}" -c "import setuptools; print(setuptools.__version__)"', None, None).strip()
+        if setuptools_version >= "70":
+            run_pip("install setuptools==69.5.1", "setuptools")
+    except Exception:
+        # If setuptools check fails, install compatible version
+        run_pip("install setuptools==69.5.1", "setuptools")
+
+def prepare_environment() -> None:
+    torch_index_url: str = os.environ.get('TORCH_INDEX_URL', "https://download.pytorch.org/whl/cu128")
+    torch_command: str = os.environ.get('TORCH_COMMAND', f"pip install torch==2.9.0 torchvision --extra-index-url {torch_index_url}")
+    if args.use_ipex:
+        if platform.system() == "Windows":
+            # The "Nuullll/intel-extension-for-pytorch" wheels were built from IPEX source for Intel Arc GPU: https://github.com/intel/intel-extension-for-pytorch/tree/xpu-main
+            # This is NOT an Intel official release so please use it at your own risk!!
+            # See https://github.com/Nuullll/intel-extension-for-pytorch/releases/tag/v2.0.110%2Bxpu-master%2Bdll-bundle for details.
+            #
+            # Strengths (over official IPEX 2.0.110 windows release):
+            #   - AOT build (for Arc GPU only) to eliminate JIT compilation overhead: https://github.com/intel/intel-extension-for-pytorch/issues/399
+            #   - Bundles minimal oneAPI 2023.2 dependencies into the python wheels, so users don't need to install oneAPI for the whole system.
+            #   - Provides a compatible torchvision wheel: https://github.com/intel/intel-extension-for-pytorch/issues/465
+            # Limitation:
+            #   - Only works for python 3.10
+            url_prefix = "https://github.com/Nuullll/intel-extension-for-pytorch/releases/download/v2.0.110%2Bxpu-master%2Bdll-bundle"
+            torch_command: str = os.environ.get('TORCH_COMMAND', f"pip install {url_prefix}/torch-2.0.0a0+gite9ebda2-cp310-cp310-win_amd64.whl {url_prefix}/torchvision-0.15.2a0+fa99a53-cp310-cp310-win_amd64.whl {url_prefix}/intel_extension_for_pytorch-2.0.110+gitc6ea20b-cp310-cp310-win_amd64.whl")
+        else:
+            # Using official IPEX release for linux since it's already an AOT build.
+            # However, users still have to install oneAPI toolkit and activate oneAPI environment manually.
+            # See https://intel.github.io/intel-extension-for-pytorch/index.html#installation for details.
+            torch_index_url: str = os.environ.get('TORCH_INDEX_URL', "https://pytorch-extension.intel.com/release-whl/stable/xpu/us/")
+            torch_command: str = os.environ.get('TORCH_COMMAND', f"pip install torch==2.0.0a0 intel-extension-for-pytorch==2.0.110+gitba7f6c1 --extra-index-url {torch_index_url}")
+    requirements_file: str = os.environ.get('REQS_FILE', _select_requirements_file())
+    requirements_file_for_npu: str = os.environ.get('REQS_FILE_FOR_NPU', "requirements_npu.txt")
+
+    xformers_package: str = os.environ.get('XFORMERS_PACKAGE', '--index-url https://download.pytorch.org/whl/cu128 xformers')
+    clip_package: str = os.environ.get('CLIP_PACKAGE', "https://github.com/openai/CLIP/archive/d50d76daa670286dd6cacf3bcd80b5e4823fc8e1.zip")
+    openclip_package: str = os.environ.get('OPENCLIP_PACKAGE', "open_clip_torch>=2.24.0")
+
+    assets_repo: str = os.environ.get('ASSETS_REPO', "https://github.com/AUTOMATIC1111/stable-diffusion-webui-assets.git")
+    stable_diffusion_repo: str = os.environ.get('STABLE_DIFFUSION_REPO', "https://github.com/joypaul162/Stability-AI-stablediffusion.git")
+    stable_diffusion_xl_repo: str = os.environ.get('STABLE_DIFFUSION_XL_REPO', "https://github.com/Stability-AI/generative-models.git")
+    k_diffusion_repo: str = os.environ.get('K_DIFFUSION_REPO', 'https://github.com/crowsonkb/k-diffusion.git')
+    blip_repo: str = os.environ.get('BLIP_REPO', 'https://github.com/salesforce/BLIP.git')
+
+    assets_commit_hash: str = os.environ.get('ASSETS_COMMIT_HASH', "6f7db241d2f8ba7457bac5ca9753331f0c266917")
+    stable_diffusion_commit_hash: str = os.environ.get('STABLE_DIFFUSION_COMMIT_HASH', "f16630a927e00098b524d687640719e4eb469b76")
+    stable_diffusion_xl_commit_hash: str = os.environ.get('STABLE_DIFFUSION_XL_COMMIT_HASH', "45c443b316737a4ab6e40413d7794a7f5657c19f")
+    k_diffusion_commit_hash: str = os.environ.get('K_DIFFUSION_COMMIT_HASH', "ab527a9a6d347f364e3d185ba6d714e22d80cb3c")
+    blip_commit_hash: str = os.environ.get('BLIP_COMMIT_HASH', "48211a1594f1321b00f14c9f7a5b4813144b2fb9")
+
+    try:
+        # the existence of this file is a signal to webui.sh/bat that webui needs to be restarted when it stops execution
+        os.remove(os.path.join(script_path, "tmp", "restart"))
+        os.environ.setdefault('SD_WEBUI_RESTARTING', '1')
+    except OSError:
+        pass
+
+    if not args.skip_python_version_check:
+        check_python_version()
+
+    startup_timer.record("checks")
+
+    commit: str = commit_hash()
+    tag: str = git_tag()
+    startup_timer.record("git version info")
+
+    print(f"Python {sys.version}")
+    print(f"Version: {tag}")
+    print(f"Commit hash: {commit}")
+
+    if args.reinstall_torch or not is_installed("torch") or not is_installed("torchvision"):
+        run(f'"{python}" -m {torch_command}', "Installing torch and torchvision", "Couldn't install torch", live=True)
+        startup_timer.record("install torch")
+
+    if args.use_ipex:
+        args.skip_torch_cuda_test = True
+    if not args.skip_torch_cuda_test and not check_run_python("import torch; assert torch.cuda.is_available()"):
+        raise RuntimeError(
+            'Torch is not able to use GPU; '
+            'add --skip-torch-cuda-test to COMMANDLINE_ARGS variable to disable this check'
+        )
+    startup_timer.record("torch GPU test")
+
+
+    # Install build dependencies early
+    ensure_build_dependencies()
+
+    if not is_installed("clip"):
+        run_pip(f"install --no-build-isolation {clip_package}", "clip")
+        startup_timer.record("install clip")
+
+    if not is_installed("open_clip"):
+        run_pip(f"install {openclip_package}", "open_clip")
+        startup_timer.record("install open_clip")
+
+    if (not is_installed("xformers") or args.reinstall_xformers) and args.xformers:
+        run_pip(f"install -U -I --no-deps {xformers_package}", "xformers")
+        startup_timer.record("install xformers")
+
+    if not is_installed("ngrok") and args.ngrok:
+        run_pip("install ngrok", "ngrok")
+        startup_timer.record("install ngrok")
+
+    os.makedirs(os.path.join(script_path, dir_repos), exist_ok=True)
+
+    git_clone(assets_repo, repo_dir('stable-diffusion-webui-assets'), "assets", assets_commit_hash)
+    git_clone(stable_diffusion_repo, repo_dir('stable-diffusion-stability-ai'), "Stable Diffusion", stable_diffusion_commit_hash)
+    git_clone(stable_diffusion_xl_repo, repo_dir('generative-models'), "Stable Diffusion XL", stable_diffusion_xl_commit_hash)
+    git_clone(k_diffusion_repo, repo_dir('k-diffusion'), "K-diffusion", k_diffusion_commit_hash)
+    git_clone(blip_repo, repo_dir('BLIP'), "BLIP", blip_commit_hash)
+
+    _apply_repository_patches()
+    startup_timer.record("clone repositores")
+
+    if not os.path.isfile(requirements_file):
+        requirements_file: str = os.path.join(script_path, requirements_file)
+
+    if not requirements_met(requirements_file):
+        run_pip(f"install -r \"{requirements_file}\"", "requirements")
+        startup_timer.record("install requirements")
+
+    if not os.path.isfile(requirements_file_for_npu):
+        requirements_file_for_npu: str = os.path.join(script_path, requirements_file_for_npu)
+
+    if "torch_npu" in torch_command and not requirements_met(requirements_file_for_npu):
+        run_pip(f"install -r \"{requirements_file_for_npu}\"", "requirements_for_npu")
+        startup_timer.record("install requirements_for_npu")
+
+    if not args.skip_install:
+        run_extensions_installers(settings_file=args.ui_settings_file)
+
+    if args.update_check:
+        version_check(commit)
+        startup_timer.record("check version")
+
+    if args.update_all_extensions:
+        git_pull_recursive(extensions_dir)
+        startup_timer.record("update extensions")
+
+    if "--exit" in sys.argv:
+        print("Exiting because of --exit argument")
+        exit(0)
+
+
+
+def configure_for_tests() -> None:
+    if "--api" not in sys.argv:
+        sys.argv.append("--api")
+    if "--ckpt" not in sys.argv:
+        sys.argv.append("--ckpt")
+        sys.argv.append(os.path.join(script_path, "test/test_files/empty.pt"))
+    if "--skip-torch-cuda-test" not in sys.argv:
+        sys.argv.append("--skip-torch-cuda-test")
+    if "--disable-nan-check" not in sys.argv:
+        sys.argv.append("--disable-nan-check")
+
+    os.environ['COMMANDLINE_ARGS'] = ""
+
+
+def configure_forge_reference_checkout(a1111_home: Path) -> None:
+    """Set model paths based on an existing A1111 checkout."""
+    class ModelRef(NamedTuple):
+        arg_name: str
+        relative_path: str
+
+    refs: list[ModelRef] = [
+        ModelRef(arg_name="--ckpt-dir", relative_path="models/Stable-diffusion"),
+        ModelRef(arg_name="--vae-dir", relative_path="models/VAE"),
+        ModelRef(arg_name="--hypernetwork-dir", relative_path="models/hypernetworks"),
+        ModelRef(arg_name="--embeddings-dir", relative_path="embeddings"),
+        ModelRef(arg_name="--lora-dir", relative_path="models/Lora"),
+        # Ref A1111 need to have sd-webui-controlnet installed.
+        ModelRef(arg_name="--controlnet-dir", relative_path="models/ControlNet"),
+        ModelRef(arg_name="--controlnet-preprocessor-models-dir", relative_path="extensions/sd-webui-controlnet/annotator/downloads"),
+    ]
+
+    for ref in refs:
+        target_path: Path = a1111_home / ref.relative_path
+        if not target_path.exists():
+            print(f"Path {target_path} does not exist. Skip setting {ref.arg_name}")
+            continue
+
+        if ref.arg_name in sys.argv:
+            # Do not override existing dir setting.
+            continue
+
+        sys.argv.append(ref.arg_name)
+        sys.argv.append(str(target_path))
+
+# This is the starting point
+def start() -> None:
+    print(f"Launching {'API server' if '--nowebui' in sys.argv else 'Web UI'} with arguments: {shlex.join(sys.argv[1:])}")
+    import webui
+    if '--nowebui' in sys.argv:
+        webui.api_only()
+    else:
+        webui.webui()
+
+    from modules_forge import main_thread
+
+    main_thread.loop()
+    return
+
+
+def dump_sysinfo() -> str:
+    from modules import sysinfo
+    import datetime
+
+    text: str = sysinfo.get()
+    filename: str = f"sysinfo-{datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d-%H-%M')}.json"
 
     with open(filename, "w", encoding="utf8") as file:
         file.write(text)

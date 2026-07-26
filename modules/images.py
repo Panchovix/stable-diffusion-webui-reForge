@@ -23,25 +23,24 @@ import hashlib
 
 from modules import sd_samplers, shared, script_callbacks, errors, stealth_infotext
 from modules.paths_internal import roboto_ttf_file
-from modules.shared import opts
 
 LANCZOS = (Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS)
 
 
 def get_font(fontsize: int):
     try:
-        return ImageFont.truetype(opts.font or roboto_ttf_file, fontsize)
+        return ImageFont.truetype(shared.opts.font or roboto_ttf_file, fontsize)
     except Exception:
         return ImageFont.truetype(roboto_ttf_file, fontsize)
 
 
 def image_grid(imgs, batch_size=1, rows=None):
     if rows is None:
-        if opts.n_rows > 0:
-            rows = opts.n_rows
-        elif opts.n_rows == 0:
+        if shared.opts.n_rows > 0:
+            rows = shared.opts.n_rows
+        elif shared.opts.n_rows == 0:
             rows = batch_size
-        elif opts.grid_prevent_empty_spots:
+        elif shared.opts.grid_prevent_empty_spots:
             rows = math.floor(math.sqrt(len(imgs)))
             while len(imgs) % rows != 0:
                 rows -= 1
@@ -57,7 +56,7 @@ def image_grid(imgs, batch_size=1, rows=None):
     script_callbacks.image_grid_callback(params)
 
     w, h = map(max, zip(*(img.size for img in imgs)))
-    grid_background_color = ImageColor.getcolor(opts.grid_background_color, 'RGBA')
+    grid_background_color = ImageColor.getcolor(shared.opts.grid_background_color, 'RGBA')
     grid = Image.new('RGBA', size=(params.cols * w, params.rows * h), color=grid_background_color)
 
     for i, img in enumerate(params.imgs):
@@ -152,9 +151,9 @@ class GridAnnotation:
 
 def draw_grid_annotations(im, width, height, hor_texts, ver_texts, margin=0):
 
-    color_active = ImageColor.getcolor(opts.grid_text_active_color, 'RGB')
-    color_inactive = ImageColor.getcolor(opts.grid_text_inactive_color, 'RGB')
-    color_background = ImageColor.getcolor(opts.grid_background_color, 'RGB')
+    color_active = ImageColor.getcolor(shared.opts.grid_text_active_color, 'RGB')
+    color_inactive = ImageColor.getcolor(shared.opts.grid_text_inactive_color, 'RGB')
+    color_background = ImageColor.getcolor(shared.opts.grid_background_color, 'RGB')
 
     def wrap(drawing, text, font, line_length):
         lines = ['']
@@ -279,7 +278,7 @@ def resize_image(resize_mode, im, width, height, upscaler_name=None, force_RGBA=
     if not force_RGBA and im.mode == 'RGBA':
         im = im.convert('RGB')
 
-    upscaler_name = upscaler_name or opts.upscaler_for_img2img
+    upscaler_name = upscaler_name or shared.opts.upscaler_for_img2img
 
     def resize(im, w, h):
         if upscaler_name is None or upscaler_name == "None" or im.mode == 'L' or force_RGBA:
@@ -423,7 +422,7 @@ class FilenameGenerator:
         'batch_size': lambda self: self.p.batch_size,
         'generation_number': lambda self: NOTHING_AND_SKIP_PREVIOUS_TEXT if (self.p.n_iter == 1 and self.p.batch_size == 1) or self.zip else self.p.iteration * self.p.batch_size + self.p.batch_index + 1,
         'hasprompt': lambda self, *args: self.hasprompt(*args),  # accepts formats:[hasprompt<prompt1|default><prompt2>..]
-        'clip_skip': lambda self: opts.data["CLIP_stop_at_last_layers"],
+        'clip_skip': lambda self: shared.opts.data["CLIP_stop_at_last_layers"],
         'denoising': lambda self: self.p.denoising_strength if self.p and self.p.denoising_strength else NOTHING_AND_SKIP_PREVIOUS_TEXT,
         'user': lambda self: self.p.user,
         'vae_filename': lambda self: self.get_vae_filename(),
@@ -490,7 +489,7 @@ class FilenameGenerator:
         words = [x for x in re_nonletters.split(self.prompt or "") if x]
         if len(words) == 0:
             words = ["empty"]
-        return sanitize_filename_part(" ".join(words[0:opts.directories_max_prompt_words]), replace_spaces=False)
+        return sanitize_filename_part(" ".join(words[0:shared.opts.directories_max_prompt_words]), replace_spaces=False)
 
     def datetime(self, *args):
         time_datetime = datetime.datetime.now()
@@ -591,21 +590,21 @@ def save_image_with_geninfo(image, geninfo, filename, extension=None, existing_p
 
     if extension.lower() == '.png':
         existing_pnginfo = existing_pnginfo or {}
-        if opts.enable_pnginfo:
+        if shared.opts.enable_pnginfo:
             existing_pnginfo[pnginfo_section_name] = geninfo
 
-        if opts.enable_pnginfo:
+        if shared.opts.enable_pnginfo:
             pnginfo_data = PngImagePlugin.PngInfo()
             for k, v in (existing_pnginfo or {}).items():
                 pnginfo_data.add_text(k, str(v))
         else:
             pnginfo_data = None
 
-        image.save(filename, format=image_format, quality=opts.jpeg_quality, pnginfo=pnginfo_data)
+        image.save(filename, format=image_format, quality=shared.opts.jpeg_quality, pnginfo=pnginfo_data)
 
     elif extension.lower() in (".jpg", ".jpeg", ".webp"):
         img_to_save = image
-        save_options = {"quality": opts.jpeg_quality}
+        save_options = {"quality": shared.opts.jpeg_quality}
 
         if img_to_save.mode == 'RGBA':
             convertToRGB = True
@@ -613,7 +612,7 @@ def save_image_with_geninfo(image, geninfo, filename, extension=None, existing_p
                 stealth_pnginfo_opt = shared.opts.data.get('stealth_pnginfo_opt', 'Alpha')
                 if stealth_pnginfo_opt == 'Alpha':
                     convertToRGB = False # Keep RGBA for stealth info in alpha
-                    if opts.webp_lossless:
+                    if shared.opts.webp_lossless:
                         save_options["lossless"] = True
                     else:
                         # For lossy WebP, try to make alpha lossless for LSB steganography
@@ -627,11 +626,11 @@ def save_image_with_geninfo(image, geninfo, filename, extension=None, existing_p
 
         # Ensure lossless is explicitly set for webp if not already by stealth logic
         if extension.lower() == ".webp" and "lossless" not in save_options:
-            save_options["lossless"] = opts.webp_lossless
+            save_options["lossless"] = shared.opts.webp_lossless
 
         img_to_save.save(filename, format=image_format, **save_options)
 
-        if opts.enable_pnginfo and geninfo is not None:
+        if shared.opts.enable_pnginfo and geninfo is not None:
             exif_bytes = piexif.dump({
                 "Exif": {
                     piexif.ExifIFD.UserComment: piexif.helper.UserComment.dump(geninfo or "", encoding="unicode")
@@ -640,7 +639,7 @@ def save_image_with_geninfo(image, geninfo, filename, extension=None, existing_p
 
             piexif.insert(exif_bytes, filename)
     elif extension.lower() == '.avif':
-        if opts.enable_pnginfo and geninfo is not None:
+        if shared.opts.enable_pnginfo and geninfo is not None:
             exif_bytes = piexif.dump({
                 "Exif": {
                     piexif.ExifIFD.UserComment: piexif.helper.UserComment.dump(geninfo or "", encoding="unicode")
@@ -649,11 +648,11 @@ def save_image_with_geninfo(image, geninfo, filename, extension=None, existing_p
         else:
             exif_bytes = None
 
-        image.save(filename,format=image_format, quality=opts.jpeg_quality, exif=exif_bytes)
+        image.save(filename,format=image_format, quality=shared.opts.jpeg_quality, exif=exif_bytes)
     elif extension.lower() == ".gif":
         image.save(filename, format=image_format, comment=geninfo)
     else:
-        image.save(filename, format=image_format, quality=opts.jpeg_quality)
+        image.save(filename, format=image_format, quality=shared.opts.jpeg_quality)
 
 
 def save_image(image, path, basename, seed=None, prompt=None, extension='png', info=None, short_filename=False, no_prompt=False, grid=False, pnginfo_section_name='parameters', p=None, existing_info=None, forced_filename=None, suffix="", save_to_dirs=None):
@@ -697,10 +696,10 @@ def save_image(image, path, basename, seed=None, prompt=None, extension='png', i
         extension = "png"
 
     if save_to_dirs is None:
-        save_to_dirs = (grid and opts.grid_save_to_dirs) or (not grid and opts.save_to_dirs and not no_prompt)
+        save_to_dirs = (grid and shared.opts.grid_save_to_dirs) or (not grid and shared.opts.save_to_dirs and not no_prompt)
 
     if save_to_dirs:
-        dirname = namegen.apply(opts.directories_filename_pattern or "[prompt_words]").lstrip(' ').rstrip('\\ /')
+        dirname = namegen.apply(shared.opts.directories_filename_pattern or "[prompt_words]").lstrip(' ').rstrip('\\ /')
         path = os.path.join(path, dirname)
 
     os.makedirs(path, exist_ok=True)
@@ -708,14 +707,14 @@ def save_image(image, path, basename, seed=None, prompt=None, extension='png', i
     if forced_filename is None:
         if short_filename or seed is None:
             file_decoration = ""
-        elif opts.save_to_dirs:
-            file_decoration = opts.samples_filename_pattern or "[seed]"
+        elif shared.opts.save_to_dirs:
+            file_decoration = shared.opts.samples_filename_pattern or "[seed]"
         else:
-            file_decoration = opts.samples_filename_pattern or "[seed]-[prompt_spaces]"
+            file_decoration = shared.opts.samples_filename_pattern or "[seed]-[prompt_spaces]"
 
         file_decoration = namegen.apply(file_decoration) + suffix
 
-        add_number = opts.save_images_add_number or file_decoration == ''
+        add_number = shared.opts.save_images_add_number or file_decoration == ''
 
         if file_decoration != "" and add_number:
             file_decoration = f"-{file_decoration}"
@@ -738,7 +737,7 @@ def save_image(image, path, basename, seed=None, prompt=None, extension='png', i
         pnginfo[pnginfo_section_name] = info
 
     params = script_callbacks.ImageSaveParams(image, p, fullfn, pnginfo)
-    if opts.enable_pnginfo:
+    if shared.opts.enable_pnginfo:
         stealth_infotext.add_stealth_pnginfo(params)
 
     script_callbacks.before_image_saved_callback(params)
@@ -773,14 +772,14 @@ def save_image(image, path, basename, seed=None, prompt=None, extension='png', i
 
     image.already_saved_as = fullfn
 
-    oversize = image.width > opts.target_side_length or image.height > opts.target_side_length
-    if opts.export_for_4chan and (oversize or os.stat(fullfn).st_size > opts.img_downscale_threshold * 1024 * 1024):
+    oversize = image.width > shared.opts.target_side_length or image.height > shared.opts.target_side_length
+    if shared.opts.export_for_4chan and (oversize or os.stat(fullfn).st_size > shared.opts.img_downscale_threshold * 1024 * 1024):
         ratio = image.width / image.height
         resize_to = None
         if oversize and ratio > 1:
-            resize_to = round(opts.target_side_length), round(image.height * opts.target_side_length / image.width)
+            resize_to = round(shared.opts.target_side_length), round(image.height * shared.opts.target_side_length / image.width)
         elif oversize:
-            resize_to = round(image.width * opts.target_side_length / image.height), round(opts.target_side_length)
+            resize_to = round(image.width * shared.opts.target_side_length / image.height), round(shared.opts.target_side_length)
 
         if resize_to is not None:
             try:
@@ -793,7 +792,7 @@ def save_image(image, path, basename, seed=None, prompt=None, extension='png', i
         except Exception as e:
             errors.display(e, "saving image as downscaled JPG")
 
-    if opts.save_txt and info is not None:
+    if shared.opts.save_txt and info is not None:
         txt_fullfn = f"{fullfn_without_extension}.txt"
         with open(txt_fullfn, "w", encoding="utf8") as file:
             file.write(f"{info}\n")
@@ -856,7 +855,7 @@ def read_info_from_image(image: Image.Image) -> tuple[str | None, dict]:
                 errors.report("Error parsing NovelAI image generation parameters", exc_info=True)
 
         return geninfo, items
-    
+
     geninfo, items = read_standard()
     if geninfo is None:
         geninfo = stealth_infotext.read_info_from_image_stealth(image)

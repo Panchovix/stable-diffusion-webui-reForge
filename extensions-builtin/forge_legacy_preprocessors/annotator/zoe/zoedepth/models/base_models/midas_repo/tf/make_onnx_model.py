@@ -2,19 +2,13 @@
 """
 import os
 import ntpath
-import glob
 import torch
-import utils
-import cv2
 import numpy as np
-from torchvision.transforms import Compose, Normalize
-from torchvision import transforms
 
 from shutil import copyfile
-import fileinput
 import sys
 sys.path.append(os.getcwd() + '/..')
-                 
+
 def modify_file():
     modify_filename = '../midas/blocks.py'
     copyfile(modify_filename, modify_filename+'.bak')
@@ -28,7 +22,7 @@ def modify_file():
 
     with open(modify_filename, 'w') as file:
       file.write(filedata)
-      
+
 def restore_file():
     modify_filename = '../midas/blocks.py'
     copyfile(modify_filename+'.bak', modify_filename)
@@ -36,7 +30,6 @@ def restore_file():
 modify_file()
 
 from midas.midas_net import MidasNet
-from midas.transforms import Resize, NormalizeImage, PrepareForNet
 
 restore_file()
 
@@ -76,11 +69,11 @@ def run(model_path):
     model = MidasNet_preprocessing(model_path, non_negative=True)
 
     model.eval()
-    
+
     print("start processing")
 
     # input
-    img_input = np.zeros((3, 384, 384), np.float32)  
+    img_input = np.zeros((3, 384, 384), np.float32)
 
     # compute
     with torch.no_grad():
@@ -98,8 +91,8 @@ def run(model_path):
             .numpy()
         )
 
-    torch.onnx.export(model, sample, ntpath.basename(model_path).rsplit('.', 1)[0]+'.onnx', opset_version=9)    
-    
+    torch.onnx.export(model, sample, ntpath.basename(model_path).rsplit('.', 1)[0]+'.onnx', opset_version=9)
+
     print("finished")
 
 
@@ -107,6 +100,6 @@ if __name__ == "__main__":
     # set paths
     # MODEL_PATH = "model.pt"
     MODEL_PATH = "../model-f6b98070.pt"
-    
+
     # compute depth maps
     run(MODEL_PATH)

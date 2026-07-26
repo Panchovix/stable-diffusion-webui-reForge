@@ -1,19 +1,16 @@
 #!/usr/bin/env python3
 
 
-import roslib
 #roslib.load_manifest('my_package')
-import sys
 import rospy
 import cv2
-from std_msgs.msg import String
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge, CvBridgeError
 
 
 def talker():
     rospy.init_node('talker', anonymous=True)
-    
+
     use_camera = rospy.get_param('~use_camera', False)
     input_video_file = rospy.get_param('~input_video_file','test.mp4')
     # rospy.loginfo(f"Talker - params: use_camera={use_camera}, input_video_file={input_video_file}")

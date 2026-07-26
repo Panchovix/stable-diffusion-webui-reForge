@@ -623,4 +623,3 @@ def on_before_token_counter(callback, *, name=None):
     The function will be called with one argument of type BeforeTokenCounterParams, and should modify its fields if necessary."""
 
     add_callback(callback_map['callbacks_before_token_counter'], callback, name=name, category='before_token_counter')
-    

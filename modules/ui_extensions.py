@@ -1,5 +1,7 @@
 import json
 import os
+import re
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 import threading
 import time
@@ -29,9 +31,11 @@ def apply_and_restart(disable_list, update_list, disable_all):
 
     disabled = json.loads(disable_list)
     assert type(disabled) == list, f"wrong disable_list data for apply_and_restart: {disable_list}"
+    assert all(isinstance(x, str) for x in disabled), "disable_list elements must be strings"
 
     update = json.loads(update_list)
     assert type(update) == list, f"wrong update_list data for apply_and_restart: {update_list}"
+    assert all(isinstance(x, str) for x in update), "update_list elements must be strings"
 
     if update:
         save_config_state("Backup (pre-update)")
@@ -60,11 +64,19 @@ def apply_and_restart(disable_list, update_list, disable_all):
 def save_config_state(name):
     current_config_state = config_states.get_config()
 
-    name = os.path.basename(name or "Config")
+    # Sanitise the display name — stored only in JSON content, NEVER in the path.
+    # config_states.list_config_states() reads the display name from JSON
+    # (cs.get("name")), so the filename itself needs no user data at all.
+    safe_name = os.path.basename(name or "Config")
+    safe_name = re.sub(r'[^\w\s\-.]', '_', safe_name)[:64].strip() or "Config"
+    current_config_state["name"] = safe_name
 
-    current_config_state["name"] = name
+    # File path is built entirely from server-generated components so no
+    # user-controlled bytes ever reach the filesystem path (fixes CodeQL
+    # "Uncontrolled data used in path expression").
     timestamp = datetime.now().strftime('%Y_%m_%d-%H_%M_%S')
-    filename = os.path.join(config_states_dir, f"{timestamp}_{name}.json")
+    filename = os.path.join(config_states_dir, f"{timestamp}_{uuid.uuid4().hex[:8]}.json")
+
     print(f"Saving backup of webui/extension state to {filename}.")
     with open(filename, "w", encoding="utf-8") as f:
         json.dump(current_config_state, f, indent=4, ensure_ascii=False)
@@ -625,43 +637,43 @@ def create_ui():
                 available_extensions_table = gr.HTML()
 
                 refresh_available_extensions_button.click(
-                    fn=modules.ui.wrap_gradio_call(refresh_available_extensions, extra_outputs=[gr.update(), gr.update(), gr.update(), gr.update()]),
+                    fn=modules.call_queue.wrap_gradio_call(refresh_available_extensions, extra_outputs=[gr.update(), gr.update(), gr.update(), gr.update()]),
                     inputs=[available_extensions_index, selected_tags, showing_type, filtering_type, sort_column],
                     outputs=[available_extensions_index, available_extensions_table, selected_tags, search_extensions_text, install_result],
                 )
 
                 install_extension_button.click(
-                    fn=modules.ui.wrap_gradio_call_no_job(install_extension_from_index, extra_outputs=[gr.update(), gr.update()]),
+                    fn=modules.call_queue.wrap_gradio_call_no_job(install_extension_from_index, extra_outputs=[gr.update(), gr.update()]),
                     inputs=[extension_to_install, selected_tags, showing_type, filtering_type, sort_column, search_extensions_text],
                     outputs=[available_extensions_table, extensions_table, install_result],
                 )
 
                 search_extensions_text.change(
-                    fn=modules.ui.wrap_gradio_call_no_job(search_extensions, extra_outputs=[gr.update()]),
+                    fn=modules.call_queue.wrap_gradio_call_no_job(search_extensions, extra_outputs=[gr.update()]),
                     inputs=[search_extensions_text, selected_tags, showing_type, filtering_type, sort_column],
                     outputs=[available_extensions_table, install_result],
                 )
 
                 selected_tags.change(
-                    fn=modules.ui.wrap_gradio_call_no_job(refresh_available_extensions_for_tags, extra_outputs=[gr.update()]),
+                    fn=modules.call_queue.wrap_gradio_call_no_job(refresh_available_extensions_for_tags, extra_outputs=[gr.update()]),
                     inputs=[selected_tags, showing_type, filtering_type, sort_column, search_extensions_text],
                     outputs=[available_extensions_table, install_result]
                 )
 
                 showing_type.change(
-                    fn=modules.ui.wrap_gradio_call_no_job(refresh_available_extensions_for_tags, extra_outputs=[gr.update()]),
+                    fn=modules.call_queue.wrap_gradio_call_no_job(refresh_available_extensions_for_tags, extra_outputs=[gr.update()]),
                     inputs=[selected_tags, showing_type, filtering_type, sort_column, search_extensions_text],
                     outputs=[available_extensions_table, install_result]
                 )
 
                 filtering_type.change(
-                    fn=modules.ui.wrap_gradio_call_no_job(refresh_available_extensions_for_tags, extra_outputs=[gr.update()]),
+                    fn=modules.call_queue.wrap_gradio_call_no_job(refresh_available_extensions_for_tags, extra_outputs=[gr.update()]),
                     inputs=[selected_tags, showing_type, filtering_type, sort_column, search_extensions_text],
                     outputs=[available_extensions_table, install_result]
                 )
 
                 sort_column.change(
-                    fn=modules.ui.wrap_gradio_call_no_job(refresh_available_extensions_for_tags, extra_outputs=[gr.update()]),
+                    fn=modules.call_queue.wrap_gradio_call_no_job(refresh_available_extensions_for_tags, extra_outputs=[gr.update()]),
                     inputs=[selected_tags, showing_type, filtering_type, sort_column, search_extensions_text],
                     outputs=[available_extensions_table, install_result]
                 )
@@ -674,7 +686,7 @@ def create_ui():
                 install_result = gr.HTML(elem_id="extension_install_result")
 
                 install_button.click(
-                    fn=modules.ui.wrap_gradio_call_no_job(lambda *args: [gr.update(), *install_extension_from_url(*args)], extra_outputs=[gr.update(), gr.update()]),
+                    fn=modules.call_queue.wrap_gradio_call_no_job(lambda *args: [gr.update(), *install_extension_from_url(*args)], extra_outputs=[gr.update(), gr.update()]),
                     inputs=[install_dirname, install_url, install_branch],
                     outputs=[install_url, extensions_table, install_result],
                 )

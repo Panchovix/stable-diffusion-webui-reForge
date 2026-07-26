@@ -6,7 +6,6 @@ import time
 import mimetypes
 import logging
 from typing import Literal
-from collections.abc import Collection
 
 supported_pt_extensions: set[str] = {'.ckpt', '.pt', '.pt2', '.bin', '.pth', '.safetensors', '.pkl', '.sft'}
 

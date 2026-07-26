@@ -101,7 +101,7 @@ class Flux(nn.Module):
         transformer_options={},
         attn_mask: Tensor = None,
     ) -> Tensor:
-        
+
         if y is None:
             y = torch.zeros((img.shape[0], self.params.vec_in_dim), device=img.device, dtype=img.dtype)
 

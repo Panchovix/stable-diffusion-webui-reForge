@@ -16,3 +16,11 @@ else:
 
 cmd_opts.webui_is_non_local = any([cmd_opts.share, cmd_opts.listen, cmd_opts.ngrok, cmd_opts.server_name])
 cmd_opts.disable_extension_access = cmd_opts.webui_is_non_local and not cmd_opts.enable_insecure_extension_access
+
+# Block all huggingface_hub / diffusers / transformers network fetches unless
+# the user explicitly passes --allow-download.  Both env-vars are checked at
+# call time (not import time) by the respective libraries, so setting them here
+# is sufficient even though the libraries may already be imported.
+if not getattr(cmd_opts, 'allow_download', False):
+    os.environ.setdefault('HF_HUB_OFFLINE', '1')
+    os.environ.setdefault('TRANSFORMERS_OFFLINE', '1')

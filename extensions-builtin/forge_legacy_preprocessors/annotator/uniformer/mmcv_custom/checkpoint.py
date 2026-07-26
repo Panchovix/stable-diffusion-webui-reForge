@@ -184,7 +184,7 @@ def get_torchvision_models():
             continue
         _zoo = import_module(f'torchvision.models.{name}')
         if hasattr(_zoo, 'model_urls'):
-            _urls = getattr(_zoo, 'model_urls')
+            _urls = _zoo.model_urls
             model_urls.update(_urls)
     return model_urls
 

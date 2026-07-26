@@ -14,7 +14,6 @@ import gradio as gr
 
 from modules import images, sd_samplers, processing, sd_models, sd_vae, sd_schedulers, errors
 from modules.processing import process_images, Processed, StableDiffusionProcessingTxt2Img
-from modules.shared import opts, state
 import modules.shared as shared
 import modules.sd_samplers
 import modules.sd_models
@@ -247,9 +246,9 @@ axis_options = [
     AxisOptionImg2Img("Image CFG Scale", float, apply_field("image_cfg_scale")),
     AxisOption("Prompt S/R", str, apply_prompt, format_value=format_value),
     AxisOption("Prompt order", str_permutations, apply_order, format_value=format_value_join_list),
-    AxisOptionTxt2Img("Sampler", str, apply_field("sampler_name"), format_value=format_value, confirm=confirm_samplers, choices=lambda: [x.name for x in sd_samplers.samplers if x.name not in opts.hide_samplers]),
-    AxisOptionTxt2Img("Hires sampler", str, apply_field("hr_sampler_name"), confirm=confirm_samplers, choices=lambda: [x.name for x in sd_samplers.samplers_for_img2img if x.name not in opts.hide_samplers]),
-    AxisOptionImg2Img("Sampler", str, apply_field("sampler_name"), format_value=format_value, confirm=confirm_samplers, choices=lambda: [x.name for x in sd_samplers.samplers_for_img2img if x.name not in opts.hide_samplers]),
+    AxisOptionTxt2Img("Sampler", str, apply_field("sampler_name"), format_value=format_value, confirm=confirm_samplers, choices=lambda: [x.name for x in sd_samplers.samplers if x.name not in shared.opts.hide_samplers]),
+    AxisOptionTxt2Img("Hires sampler", str, apply_field("hr_sampler_name"), confirm=confirm_samplers, choices=lambda: [x.name for x in sd_samplers.samplers_for_img2img if x.name not in shared.opts.hide_samplers]),
+    AxisOptionImg2Img("Sampler", str, apply_field("sampler_name"), format_value=format_value, confirm=confirm_samplers, choices=lambda: [x.name for x in sd_samplers.samplers_for_img2img if x.name not in shared.opts.hide_samplers]),
     AxisOption("Checkpoint name", str, apply_checkpoint, format_value=format_remove_path, confirm=confirm_checkpoints, cost=1.0, choices=lambda: sorted(sd_models.checkpoints_list, key=str.casefold)),
     AxisOption("Negative Guidance minimum sigma", float, apply_field("s_min_uncond")),
     AxisOption("Sigma Churn", float, apply_field("s_churn")),
@@ -300,7 +299,7 @@ def draw_xyz_grid(p, xs, ys, zs, x_labels, y_labels, z_labels, cell, draw_legend
 
     processed_result = None
 
-    state.job_count = list_size * p.n_iter
+    shared.state.job_count = list_size * p.n_iter
 
     @staticmethod
     def draw_label_on_image(image, text):
@@ -308,16 +307,16 @@ def draw_xyz_grid(p, xs, ys, zs, x_labels, y_labels, z_labels, cell, draw_legend
         draw = ImageDraw.Draw(image)
         try:
             font = ImageFont.truetype("arial.ttf", 20)
-        except:
+        except Exception:
             font = ImageFont.load_default()
-        
+
         margin = 10
-        
+
         # Split text into lines and calculate maximum width
         lines = text.split('\n')
         max_width = 0
         total_height = 0
-        
+
         # Calculate total size needed for all lines
         for line in lines:
             try:
@@ -327,13 +326,13 @@ def draw_xyz_grid(p, xs, ys, zs, x_labels, y_labels, z_labels, cell, draw_legend
             except AttributeError:
                 width = len(line) * 10
                 height = 20
-                
+
             max_width = max(max_width, width)
             total_height += height
 
         # Draw background rectangle for all lines
         draw.rectangle([(margin, margin), (margin + max_width, margin + total_height)], fill='black')
-        
+
         # Draw each line of text
         current_height = margin
         for line in lines:
@@ -351,7 +350,7 @@ def draw_xyz_grid(p, xs, ys, zs, x_labels, y_labels, z_labels, cell, draw_legend
         def index(ix, iy, iz):
             return ix + iy * len(xs) + iz * len(xs) * len(ys)
 
-        state.job = f"{index(ix, iy, iz) + 1} out of {list_size}"
+        shared.state.job = f"{index(ix, iy, iz) + 1} out of {list_size}"
 
         processed: Processed = cell(x, y, z, ix, iy, iz)
 
@@ -368,7 +367,7 @@ def draw_xyz_grid(p, xs, ys, zs, x_labels, y_labels, z_labels, cell, draw_legend
         if processed.images:
             # Non-empty list indicates some degree of success.
             process_image = processed.images[0]  # Store reference to image
-            
+
             if draw_individual_labels:
                 # Add labels to a copy of the image
                 process_image = process_image.copy()  # Make a copy before drawing
@@ -433,7 +432,7 @@ def draw_xyz_grid(p, xs, ys, zs, x_labels, y_labels, z_labels, cell, draw_legend
         end_index = start_index + len(xs) * len(ys)
         grid = images.image_grid(processed_result.images[start_index:end_index], rows=len(ys))
         if draw_legend:
-            grid_max_w, grid_max_h = map(max, zip(*(img.size for img in processed_result.images[start_index:end_index])))
+            grid_max_w, grid_max_h = map(max, zip(*(img.size for img in processed_result.images[start_index:end_index]), strict=False))
             grid = images.draw_grid_annotations(grid, grid_max_w, grid_max_h, hor_texts, ver_texts, margin_size)
         processed_result.images.insert(i, grid)
         processed_result.all_prompts.insert(i, processed_result.all_prompts[start_index])
@@ -441,7 +440,7 @@ def draw_xyz_grid(p, xs, ys, zs, x_labels, y_labels, z_labels, cell, draw_legend
         processed_result.infotexts.insert(i, processed_result.infotexts[start_index])
 
     z_grid = images.image_grid(processed_result.images[:z_count], rows=1)
-    z_sub_grid_max_w, z_sub_grid_max_h = map(max, zip(*(img.size for img in processed_result.images[:z_count])))
+    z_sub_grid_max_w, z_sub_grid_max_h = map(max, zip(*(img.size for img in processed_result.images[:z_count]), strict=False))
     if draw_legend:
         z_grid = images.draw_grid_annotations(z_grid, z_sub_grid_max_w, z_sub_grid_max_h, title_texts, [[images.GridAnnotation()]])
     processed_result.images.insert(0, z_grid)
@@ -514,7 +513,7 @@ class Script(scripts.Script):
         # Add dependency for skip_grid to force include_lone_images
         def update_include_lone_images(skip_grid):
             return gr.update(value=True if skip_grid else include_lone_images.value, interactive=not skip_grid)
-        
+
         skip_grid.change(
             fn=update_include_lone_images,
             inputs=[skip_grid],
@@ -600,34 +599,34 @@ class Script(scripts.Script):
             (z_values_dropdown, lambda params: get_dropdown_update_from_params("Z", params)),
         )
 
-        return [x_type, x_values, x_values_dropdown, y_type, y_values, y_values_dropdown, z_type, z_values, z_values_dropdown, 
-            draw_legend, draw_individual_labels, skip_grid, items_per_grid, include_lone_images, include_sub_grids, 
+        return [x_type, x_values, x_values_dropdown, y_type, y_values, y_values_dropdown, z_type, z_values, z_values_dropdown,
+            draw_legend, draw_individual_labels, skip_grid, items_per_grid, include_lone_images, include_sub_grids,
             no_fixed_seeds, vary_seeds_x, vary_seeds_y, vary_seeds_z, margin_size, csv_mode]
-    
+
     def draw_label_on_image(image, text):
         from PIL import ImageDraw, ImageFont
         draw = ImageDraw.Draw(image)
         # You might want to adjust font size and position
         try:
             font = ImageFont.truetype("arial.ttf", 20)
-        except:
+        except Exception:
             font = ImageFont.load_default()
-        
+
         # Draw text with background for better visibility
         margin = 10
         text_width, text_height = draw.textsize(text, font=font)
         draw.rectangle([(margin, margin), (margin + text_width, margin + text_height)], fill='black')
         draw.text((margin, margin), text, fill='white', font=font)
 
-    def run(self, p, x_type, x_values, x_values_dropdown, y_type, y_values, y_values_dropdown, z_type, z_values, z_values_dropdown, 
-        draw_legend, draw_individual_labels, skip_grid, items_per_grid, include_lone_images, include_sub_grids, 
+    def run(self, p, x_type, x_values, x_values_dropdown, y_type, y_values, y_values_dropdown, z_type, z_values, z_values_dropdown,
+        draw_legend, draw_individual_labels, skip_grid, items_per_grid, include_lone_images, include_sub_grids,
         no_fixed_seeds, vary_seeds_x, vary_seeds_y, vary_seeds_z, margin_size, csv_mode):
         x_type, y_type, z_type = x_type or 0, y_type or 0, z_type or 0  # if axle type is None set to 0
 
         if not no_fixed_seeds:
             modules.processing.fix_seed(p)
 
-        if not opts.return_grid:
+        if not shared.opts.return_grid:
             p.batch_size = 1
 
         if skip_grid:
@@ -722,7 +721,7 @@ class Script(scripts.Script):
         # this could be moved to common code, but unlikely to be ever triggered anywhere else
         Image.MAX_IMAGE_PIXELS = None  # disable check in Pillow and rely on check below to allow large custom image sizes
         grid_mp = round(len(xs) * len(ys) * len(zs) * p.width * p.height / 1000000)
-        assert grid_mp < opts.img_max_size_mp, f'Error: Resulting grid would be too large ({grid_mp} MPixels) (max configured size is {opts.img_max_size_mp} MPixels)'
+        assert grid_mp < shared.opts.img_max_size_mp, f'Error: Resulting grid would be too large ({grid_mp} MPixels) (max configured size is {shared.opts.img_max_size_mp} MPixels)'
 
         def fix_axis_seeds(axis_opt, axis_list):
             if axis_opt.label in ['Seed', 'Var. seed']:
@@ -764,9 +763,9 @@ class Script(scripts.Script):
         print(f"X/Y/Z plot will create {len(xs) * len(ys) * len(zs) * image_cell_count} images on {len(zs)} {len(xs)}x{len(ys)} grid{plural_s}{cell_console_text}. (Total steps to process: {total_steps})")
         shared.total_tqdm.updateTotal(total_steps)
 
-        state.xyz_plot_x = AxisInfo(x_opt, xs)
-        state.xyz_plot_y = AxisInfo(y_opt, ys)
-        state.xyz_plot_z = AxisInfo(z_opt, zs)
+        shared.state.xyz_plot_x = AxisInfo(x_opt, xs)
+        shared.state.xyz_plot_y = AxisInfo(y_opt, ys)
+        shared.state.xyz_plot_z = AxisInfo(z_opt, zs)
 
         # If one of the axes is very slow to change between (like SD model
         # checkpoint), then make sure it is in the outer iteration of the nested
@@ -795,15 +794,15 @@ class Script(scripts.Script):
         grid_infotext = [None] * (1 + len(zs))
 
         def cell(x, y, z, ix, iy, iz):
-            if shared.state.interrupted or state.stopping_generation:
+            if shared.state.interrupted or shared.state.stopping_generation:
                 return Processed(p, [], p.seed, "")
-            
+
             pc = copy(p)
             pc.styles = pc.styles[:]
             x_opt.apply(pc, x, xs)
             y_opt.apply(pc, y, ys)
             z_opt.apply(pc, z, zs)
-            
+
             xdim = len(xs) if vary_seeds_x else 1
             ydim = len(ys) if vary_seeds_y else 1
             if vary_seeds_x:
@@ -812,29 +811,29 @@ class Script(scripts.Script):
                 pc.seed += iy * xdim
             if vary_seeds_z:
                 pc.seed += iz * xdim * ydim
-                
+
             try:
                 res = process_images(pc)
-                
+
                 # If draw_individual_labels is enabled, save the labeled image immediately
                 if draw_individual_labels and res.images:
                     # Create a copy of the image and add labels
                     labeled_image = res.images[0].copy()
                     label = f"X: {x_opt.format_value(p, x_opt, x)}\nY: {y_opt.format_value(p, y_opt, y)}\nZ: {z_opt.format_value(p, z_opt, z)}"
-                    
+
                     # Draw label directly here instead of using a separate method
                     from PIL import ImageDraw, ImageFont
                     draw = ImageDraw.Draw(labeled_image)
                     try:
                         font = ImageFont.truetype("arial.ttf", 20)
-                    except:
+                    except Exception:
                         font = ImageFont.load_default()
-                    
+
                     margin = 10
                     lines = label.split('\n')
                     max_width = 0
                     total_height = 0
-                    
+
                     # Calculate total size needed for all lines
                     for line in lines:
                         try:
@@ -844,13 +843,13 @@ class Script(scripts.Script):
                         except AttributeError:
                             width = len(line) * 10
                             height = 20
-                            
+
                         max_width = max(max_width, width)
                         total_height += height
 
                     # Draw background rectangle for all lines
                     draw.rectangle([(margin, margin), (margin + max_width, margin + total_height)], fill='black')
-                    
+
                     # Draw each line of text
                     current_height = margin
                     for line in lines:
@@ -861,27 +860,27 @@ class Script(scripts.Script):
                         except AttributeError:
                             height = 20
                         current_height += height
-                    
+
                     # Generate a unique filename based on coordinates
                     filename = f"xyz_grid_x{ix}_y{iy}_z{iz}"
-                    
+
                     # Save the labeled image
-                    if opts.grid_save:
+                    if shared.opts.grid_save:
                         images.save_image(
                             labeled_image,
                             p.outpath_grids,
                             filename,
                             info=res.infotexts[0],
-                            extension=opts.grid_format,
+                            extension=shared.opts.grid_format,
                             prompt=res.all_prompts[0],
                             seed=res.all_seeds[0],
                             grid=False,
                             p=res
                         )
-                    
+
                     # Use the labeled image for the grid
                     res.images[0] = labeled_image
-                    
+
             except Exception as e:
                 errors.display(e, "generating image for xyz plot")
                 res = Processed(p, [], p.seed, "")
@@ -911,31 +910,30 @@ class Script(scripts.Script):
                     if z_opt.label in ["Seed", "Var. seed"] and not no_fixed_seeds:
                         pc.extra_generation_params["Fixed Z Values"] = ", ".join([str(z) for z in zs])
                 grid_infotext[0] = processing.create_infotext(pc, pc.all_prompts, pc.all_seeds, pc.all_subseeds)
-            
+
             return res
 
         with SharedSettingsStackHelper():
             if items_per_grid > 0 and not skip_grid:
                 items_per_grid = max(1, int(items_per_grid))
-                
+
                 # Determine which axis has the most values
                 axis_lengths = {
                     'x': (len(xs), xs, x_opt, 'X'),
                     'y': (len(ys), ys, y_opt, 'Y'),
                     'z': (len(zs), zs, z_opt, 'Z')
                 }
-                
+
                 # Find the axis with the most values
                 main_axis = max(axis_lengths.items(), key=lambda x: x[1][0])[0]
                 length, values, opt, axis_name = axis_lengths[main_axis]
-                
+
                 if length > 1:  # Only process if we have more than one value
                     chunks = [values[i:i + items_per_grid] for i in range(0, length, items_per_grid)]
-                    all_processed = []
-                    
+
                     for chunk_idx, chunk in enumerate(chunks):
                         print(f"Processing grid {chunk_idx + 1}/{len(chunks)}")
-                        
+
                         grid_args = {
                             'p': p,
                             'xs': chunk if main_axis == 'x' else xs,
@@ -953,24 +951,24 @@ class Script(scripts.Script):
                             'second_axes_processed': second_axes_processed,
                             'margin_size': margin_size
                         }
-                        
+
                         chunk_processed = draw_xyz_grid(**grid_args)
-                        
+
                         # Keep only necessary data
                         if include_lone_images:
                             z_count = len(grid_args['zs'])
                             main_grid = chunk_processed.images[0]
                             individual_images = chunk_processed.images[z_count + 1:]
                             chunk_processed.images = [main_grid] + individual_images
-                            
+
                             main_info = chunk_processed.infotexts[0]
                             individual_infos = chunk_processed.infotexts[z_count + 1:]
                             chunk_processed.infotexts = [main_info] + individual_infos
-                            
+
                             main_prompt = chunk_processed.all_prompts[0]
                             individual_prompts = chunk_processed.all_prompts[z_count + 1:]
                             chunk_processed.all_prompts = [main_prompt] + individual_prompts
-                            
+
                             main_seed = chunk_processed.all_seeds[0]
                             individual_seeds = chunk_processed.all_seeds[z_count + 1:]
                             chunk_processed.all_seeds = [main_seed] + individual_seeds
@@ -981,15 +979,15 @@ class Script(scripts.Script):
                             chunk_processed.infotexts = [chunk_processed.infotexts[0]]
 
                         # Save images immediately
-                        if opts.grid_save:
+                        if shared.opts.grid_save:
                             for i, image in enumerate(chunk_processed.images):
                                 suffix = "" if i == 0 else f"_{i}"
                                 images.save_image(
-                                    image, 
-                                    p.outpath_grids, 
-                                    f"xyz_grid_{chunk_idx+1}{suffix}", 
+                                    image,
+                                    p.outpath_grids,
+                                    f"xyz_grid_{chunk_idx+1}{suffix}",
                                     info=chunk_processed.infotexts[i],
-                                    extension=opts.grid_format,
+                                    extension=shared.opts.grid_format,
                                     prompt=chunk_processed.all_prompts[i],
                                     seed=chunk_processed.all_seeds[i],
                                     grid=True if i == 0 else False,
@@ -1004,7 +1002,7 @@ class Script(scripts.Script):
                             final_processed.all_prompts.extend(chunk_processed.all_prompts)
                             final_processed.all_seeds.extend(chunk_processed.all_seeds)
                             final_processed.infotexts.extend(chunk_processed.infotexts)
-                        
+
                         # Clear unnecessary references and force garbage collection
                         chunk_processed.images = []
                         chunk_processed.all_prompts = []
@@ -1023,27 +1021,27 @@ class Script(scripts.Script):
                 processed.infotexts = []
                 processed.all_prompts = []
                 processed.all_seeds = []
-                
+
                 total = len(xs) * len(ys) * len(zs)
                 done = 0
-                
+
                 for iz, z in enumerate(zs):
                     for iy, y in enumerate(ys):
                         for ix, x in enumerate(xs):
-                            if state.interrupted:
+                            if shared.state.interrupted:
                                 break
-                                
+
                             proc = cell(x, y, z, ix, iy, iz)
                             if proc.images:
                                 processed.images.extend(proc.images)
                                 processed.infotexts.extend(proc.infotexts)
                                 processed.all_prompts.extend(proc.all_prompts)
                                 processed.all_seeds.extend(proc.all_seeds)
-                            
+
                             done += 1
                             print(f"Processing image {done}/{total}")
-                            
-                if opts.grid_save:
+
+                if shared.opts.grid_save:
                     # Save individual images
                     for i, image in enumerate(processed.images):
                         images.save_image(
@@ -1051,13 +1049,13 @@ class Script(scripts.Script):
                             p.outpath_grids,
                             f"xyz_image_{i+1}",
                             info=processed.infotexts[i],
-                            extension=opts.grid_format,
+                            extension=shared.opts.grid_format,
                             prompt=processed.all_prompts[i],
                             seed=processed.all_seeds[i],
                             grid=False,
                             p=processed
                         )
-                        
+
                 return processed
             else:
                 # Original grid processing without items_per_grid
@@ -1088,14 +1086,14 @@ class Script(scripts.Script):
                 # Set the grid infotexts to the real ones with extra_generation_params
                 processed.infotexts[:1 + z_count] = grid_infotext[:1 + z_count]
 
-                if opts.grid_save:
+                if shared.opts.grid_save:
                     # Save the main xyz grid
                     images.save_image(
                         processed.images[0],
                         p.outpath_grids,
                         "xyz_grid",
                         info=processed.infotexts[0],
-                        extension=opts.grid_format,
+                        extension=shared.opts.grid_format,
                         prompt=processed.all_prompts[0],
                         seed=processed.all_seeds[0],
                         grid=True,
@@ -1110,7 +1108,7 @@ class Script(scripts.Script):
                                 p.outpath_grids,
                                 f"xyz_grid_z_{idx}",
                                 info=processed.infotexts[idx],
-                                extension=opts.grid_format,
+                                extension=shared.opts.grid_format,
                                 prompt=processed.all_prompts[idx],
                                 seed=processed.all_seeds[idx],
                                 grid=True,
@@ -1125,13 +1123,13 @@ class Script(scripts.Script):
                         individual_seeds = processed.all_seeds[z_count + 1:]
 
                         for idx, (image, info, prompt, seed) in enumerate(zip(
-                            individual_images, individual_infos, individual_prompts, individual_seeds)):
+                            individual_images, individual_infos, individual_prompts, individual_seeds, strict=False)):
                             images.save_image(
                                 image,
                                 p.outpath_grids,
                                 f"xyz_grid_image_{idx + 1}",
                                 info=info,
-                                extension=opts.grid_format,
+                                extension=shared.opts.grid_format,
                                 prompt=prompt,
                                 seed=seed,
                                 grid=False,
