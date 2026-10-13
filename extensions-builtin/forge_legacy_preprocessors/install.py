@@ -5,19 +5,18 @@ import os
 import shutil
 import platform
 from pathlib import Path
-from typing import Tuple, Optional
 
 
 repo_root = Path(__file__).parent
 main_req_file = repo_root / "requirements.txt"
 
 
-def comparable_version(version: str) -> Tuple:
+def comparable_version(version: str) -> tuple:
     # return tuple(version.split("."))
     return tuple(map(int, version.split(".")))
 
 
-def get_installed_version(package: str) -> Optional[str]:
+def get_installed_version(package: str) -> str | None:
     try:
         return pkg_resources.get_distribution(package).version
     except Exception:
@@ -64,7 +63,7 @@ def install_requirements(req_file):
                 )
 
 
-def try_install_from_wheel(pkg_name: str, wheel_url: str, version: Optional[str] = None):
+def try_install_from_wheel(pkg_name: str, wheel_url: str, version: str | None = None):
     current_version = get_installed_version(pkg_name)
     if current_version is not None:
         # No version requirement.

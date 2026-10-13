@@ -3,7 +3,7 @@
 import torch
 import torch.nn as nn
 
-try: 
+try:
     from mmcv.cnn import ConvModule, normal_init
     from mmcv.ops import point_sample
 except ImportError:

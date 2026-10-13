@@ -91,8 +91,8 @@ parser.add_argument("--disable-ipex-hijack", action="store_true")
 
 parser.add_argument("--torch-compile", action='store_true', help="Enable torch.compile for potential speedups")
 parser.add_argument("--torch-compile-backend", type=str, default="inductor", choices=["inductor", "cudagraphs"], help="Backend for torch.compile")
-parser.add_argument("--torch-compile-mode", type=str, default="default", 
-                    choices=["default", "reduce-overhead", "max-autotune", "max-autotune-no-cudagraphs"], 
+parser.add_argument("--torch-compile-mode", type=str, default="default",
+                    choices=["default", "reduce-overhead", "max-autotune", "max-autotune-no-cudagraphs"],
                     help="Compilation mode for torch.compile. Only applies to inductor backend")
 parser.add_argument("--torch-compile-epilogue-fusion", action='store_true', help="Enable epilogue fusion (requires max-autotune)")
 parser.add_argument("--torch-compile-max-autotune", action='store_true', help="Enable max autotune")
@@ -127,7 +127,12 @@ attn_group.add_argument("--attention-pytorch", action="store_true", help="Use th
 attn_group.add_argument("--use-sage-attention", action="store_true", help="Use sage attention.")
 attn_group.add_argument("--use-sage-attention3", action="store_true", help="Use sage attention 3. Supported only on blackwell GPUs.")
 attn_group.add_argument("--use-flash-attention", action="store_true", help="Use FlashAttention.")
+attn_group.add_argument("--use-ck-attention", action="store_true", help="Use Comfy Kitchen (INT8) attention. Requires the optional `comfy-kitchen` package (Nvidia cuda or AMD hip backend). Unlike upstream ComfyUI, reForge WARNS and falls back to the default attention backend instead of exiting when it is unavailable -- see docs/comfy_kitchen_attention.md.")
 parser.add_argument("--disable-xformers", action="store_true", help="Disable xformers.")
+
+triton_group = parser.add_mutually_exclusive_group()
+triton_group.add_argument("--enable-triton-backend", action="store_true", help="Enable the Comfy Kitchen triton backend (falls back to eager/cuda/hip kernels if triton is unavailable).")
+triton_group.add_argument("--disable-triton-backend", action="store_true", help="Disable the Comfy Kitchen triton backend, forcing eager/cuda/hip kernels.")
 
 upcast = parser.add_mutually_exclusive_group()
 upcast.add_argument("--force-upcast-attention", action="store_true", help="Force enable attention upcasting, please report if it fixes black images.")
@@ -207,4 +212,3 @@ logging_level = logging.INFO
 if args.debug_mode:
     logging_level = logging.DEBUG
     logging.basicConfig(format="%(message)s", level=logging_level)
-    

@@ -104,15 +104,15 @@ class ModelSamplingDiscrete:
         try:
             # Get the current model_sampling object
             current_sampling = getattr(m.model, 'model_sampling', None)
-            
+
             # Create new sampling object
             model_sampling = ModelSamplingAdvanced(model.model.model_config)
             if zsnr:
                 model_sampling.set_sigmas(rescale_zero_terminal_snr_sigmas(model_sampling.sigmas))
 
             # Directly set the attribute instead of using add_object_patch
-            setattr(m.model, 'model_sampling', model_sampling)
-            
+            m.model.model_sampling = model_sampling
+
             # Store the original in the backup if needed
             if current_sampling is not None:
                 if not hasattr(m, '_sampling_backup'):
@@ -129,7 +129,7 @@ class ModelSamplingDiscrete:
         """Restore original sampling if needed"""
         if hasattr(model, '_sampling_backup'):
             if 'model_sampling' in model._sampling_backup:
-                setattr(model.model, 'model_sampling', model._sampling_backup['model_sampling'])
+                model.model.model_sampling = model._sampling_backup['model_sampling']
                 del model._sampling_backup['model_sampling']
 
 class ModelSamplingContinuousEDM:
@@ -160,14 +160,14 @@ class ModelSamplingContinuousEDM:
         try:
             # Get the current model_sampling object
             current_sampling = getattr(m.model, 'model_sampling', None)
-            
+
             # Create new sampling object
             model_sampling = ModelSamplingAdvanced(model.model.model_config)
             model_sampling.set_sigma_range(sigma_min, sigma_max)
 
             # Directly set the attribute instead of using add_object_patch
-            setattr(m.model, 'model_sampling', model_sampling)
-            
+            m.model.model_sampling = model_sampling
+
             # Store the original in the backup if needed
             if current_sampling is not None:
                 if not hasattr(m, '_sampling_backup'):
@@ -184,7 +184,7 @@ class ModelSamplingContinuousEDM:
         """Restore original sampling if needed"""
         if hasattr(model, '_sampling_backup'):
             if 'model_sampling' in model._sampling_backup:
-                setattr(model.model, 'model_sampling', model._sampling_backup['model_sampling'])
+                model.model.model_sampling = model._sampling_backup['model_sampling']
                 del model._sampling_backup['model_sampling']
 
 NODE_CLASS_MAPPINGS = {

@@ -1,7 +1,7 @@
 from modules.sd_hijack_clip import FrozenCLIPEmbedderWithCustomWords
 from ldm_patched.modules import model_management
 from modules import sd_models
-from modules.shared import opts
+import modules.shared as shared
 
 
 def move_clip_to_gpu():
@@ -22,12 +22,12 @@ class CLIP_SD_15_L(FrozenCLIPEmbedderWithCustomWords):
         move_clip_to_gpu()
         self.wrapped.transformer.text_model.embeddings.to(tokens.device)
         if hasattr(self.wrapped.transformer, 'text_model'):
-            outputs = self.wrapped.transformer(input_ids=tokens, output_hidden_states=-opts.CLIP_stop_at_last_layers)
+            outputs = self.wrapped.transformer(input_ids=tokens, output_hidden_states=-shared.opts.CLIP_stop_at_last_layers)
         else:
-            outputs = self.wrapped.transformer(tokens, intermediate_output=-opts.CLIP_stop_at_last_layers)
+            outputs = self.wrapped.transformer(tokens, intermediate_output=-shared.opts.CLIP_stop_at_last_layers)
 
-        if opts.CLIP_stop_at_last_layers > self.minimal_clip_skip:
-            z = outputs.hidden_states[-opts.CLIP_stop_at_last_layers] if hasattr(outputs, 'hidden_states') else outputs[1]
+        if shared.opts.CLIP_stop_at_last_layers > self.minimal_clip_skip:
+            z = outputs.hidden_states[-shared.opts.CLIP_stop_at_last_layers] if hasattr(outputs, 'hidden_states') else outputs[1]
             z = self.wrapped.transformer.text_model.final_layer_norm(z)
         else:
             z = outputs.last_hidden_state if hasattr(outputs, 'last_hidden_state') else outputs[0]
@@ -56,8 +56,8 @@ class CLIP_SD_21_H(FrozenCLIPEmbedderWithCustomWords):
         else:
             outputs = self.wrapped.transformer(tokens, intermediate_output=self.wrapped.layer_idx if self.wrapped.layer == "hidden" else None)
 
-        if opts.CLIP_stop_at_last_layers > self.minimal_clip_skip:
-            z = outputs.hidden_states[-opts.CLIP_stop_at_last_layers] if hasattr(outputs, 'hidden_states') else outputs[1]
+        if shared.opts.CLIP_stop_at_last_layers > self.minimal_clip_skip:
+            z = outputs.hidden_states[-shared.opts.CLIP_stop_at_last_layers] if hasattr(outputs, 'hidden_states') else outputs[1]
             z = self.wrapped.transformer.text_model.final_layer_norm(z)
         elif self.wrapped.layer == "last":
             z = outputs.last_hidden_state if hasattr(outputs, 'last_hidden_state') else outputs[0]
@@ -80,8 +80,8 @@ class CLIP_SD_XL_L(FrozenCLIPEmbedderWithCustomWords):
         else:
             outputs = self.wrapped.transformer(tokens, intermediate_output=self.wrapped.layer_idx if self.wrapped.layer == "hidden" else None)
 
-        if opts.CLIP_stop_at_last_layers > self.minimal_clip_skip:
-            z = outputs.hidden_states[-opts.CLIP_stop_at_last_layers] if hasattr(outputs, 'hidden_states') else outputs[1]
+        if shared.opts.CLIP_stop_at_last_layers > self.minimal_clip_skip:
+            z = outputs.hidden_states[-shared.opts.CLIP_stop_at_last_layers] if hasattr(outputs, 'hidden_states') else outputs[1]
         elif self.wrapped.layer == "last":
             z = outputs.last_hidden_state if hasattr(outputs, 'last_hidden_state') else outputs[0]
         else:
@@ -110,8 +110,8 @@ class CLIP_SD_XL_G(FrozenCLIPEmbedderWithCustomWords):
         else:
             outputs = self.wrapped.transformer(tokens, intermediate_output=self.wrapped.layer_idx if self.wrapped.layer == "hidden" else None)
 
-        if opts.CLIP_stop_at_last_layers > self.minimal_clip_skip:
-            z = outputs.hidden_states[-opts.CLIP_stop_at_last_layers] if hasattr(outputs, 'hidden_states') else outputs[1]
+        if shared.opts.CLIP_stop_at_last_layers > self.minimal_clip_skip:
+            z = outputs.hidden_states[-shared.opts.CLIP_stop_at_last_layers] if hasattr(outputs, 'hidden_states') else outputs[1]
         elif self.wrapped.layer == "last":
             z = outputs.last_hidden_state if hasattr(outputs, 'last_hidden_state') else outputs[0]
         else:
@@ -122,4 +122,3 @@ class CLIP_SD_XL_G(FrozenCLIPEmbedderWithCustomWords):
         pooled_output = pooled_output.float().to(text_projection.device) @ text_projection.float()
         z.pooled = pooled_output
         return z
-    

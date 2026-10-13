@@ -1,5 +1,4 @@
 import gradio as gr
-from typing import Optional
 
 
 class MultiInputsGallery:
@@ -34,7 +33,7 @@ class MultiInputsGallery:
                     )
                     self.clear_button = gr.Button("Clear Images")
 
-    def register_callbacks(self, change_trigger: Optional[dict] = None):
+    def register_callbacks(self, change_trigger: dict | None = None):
         """Register callbacks on multiple images upload.
         Argument:
             - change_trigger: An optional gradio callback param dict to be called

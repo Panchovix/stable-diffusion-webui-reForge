@@ -301,17 +301,17 @@ class ConfigGlobalGenerator(nn.Module):
                         model += [MultidilatedResnetBlock(feats_num_bottleneck, padding_type=padding_type,
                                                         conv_layer=resnet_conv_layer, activation=activation,
                                                         norm_layer=norm_layer)]
-                    if resnet_block_kind == "resnetblock":                                            
+                    if resnet_block_kind == "resnetblock":
                         model += [ResnetBlock(ngf * mult, padding_type=padding_type, activation=activation, norm_layer=norm_layer,
                                             conv_kind=resnet_conv_kind)]
-                    if resnet_block_kind == "resnetblock5x5":                                            
+                    if resnet_block_kind == "resnetblock5x5":
                         model += [ResnetBlock5x5(ngf * mult, padding_type=padding_type, activation=activation, norm_layer=norm_layer,
                                             conv_kind=resnet_conv_kind)]
                     if resnet_block_kind == "resnetblockdwdil":
                         model += [ResnetBlock(ngf * mult, padding_type=padding_type, activation=activation, norm_layer=norm_layer,
                                             conv_kind=resnet_conv_kind, dilation=resnet_dilation, second_dilation=resnet_dilation)]
             make_and_add_blocks(model, block_spec)
-        
+
         ### upsample
         for i in range(n_downsampling):
             mult = 2 ** (n_downsampling - i)
@@ -398,7 +398,7 @@ class GlobalGenerator(nn.Module):
             # dilated blocks at the middle of the bottleneck sausage
             if i == n_blocks // 2 and dilated_blocks_n_middle is not None and dilated_blocks_n_middle > 0:
                 model += make_dil_blocks(dilated_blocks_n_middle, dilation_block_kind, dilated_block_kwargs)
-            
+
             if ffc_positions is not None and i in ffc_positions:
                 for _ in range(ffc_positions[i]):  # same position can occur more than once
                     model += [FFCResnetBlock(feats_num_bottleneck, padding_type, norm_layer, activation_layer=nn.ReLU,
@@ -412,7 +412,7 @@ class GlobalGenerator(nn.Module):
             model += [ResnetBlock(feats_num_bottleneck, padding_type=padding_type, activation=activation,
                                     norm_layer=norm_layer, conv_kind=conv_kind, groups=resblock_groups,
                                     dilation=dilation, second_dilation=second_dilation)]
-            
+
 
         # dilated blocks at the end of the bottleneck sausage
         if dilated_blocks_n is not None and dilated_blocks_n > 0:

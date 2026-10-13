@@ -1,4 +1,3 @@
-import matplotlib.pyplot as plt
 import annotator.mmpkg.mmcv as mmcv
 import torch
 from annotator.mmpkg.mmcv.parallel import collate, scatter

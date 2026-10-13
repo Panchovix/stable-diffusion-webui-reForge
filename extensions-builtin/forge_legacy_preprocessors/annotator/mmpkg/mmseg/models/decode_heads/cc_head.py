@@ -4,7 +4,7 @@ from ..builder import HEADS
 from .fcn_head import FCNHead
 
 try:
-    try: 
+    try:
         from mmcv.ops import CrissCrossAttention
     except ImportError:
         from annotator.mmpkg.mmcv.ops import CrissCrossAttention

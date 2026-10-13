@@ -69,15 +69,15 @@ def transfer(model, model_weights):
 
 def is_normalized(keypoints: List[Optional[Keypoint]]) -> bool:
     point_normalized = [
-        0 <= abs(k.x) <= 1 and 0 <= abs(k.y) <= 1 
-        for k in keypoints 
+        0 <= abs(k.x) <= 1 and 0 <= abs(k.y) <= 1
+        for k in keypoints
         if k is not None
     ]
     if not point_normalized:
         return False
     return all(point_normalized)
 
-    
+
 def draw_bodypose(canvas: np.ndarray, keypoints: List[Keypoint]) -> np.ndarray:
     """
     Draw keypoints and limbs representing body pose on a given canvas.
@@ -100,10 +100,10 @@ def draw_bodypose(canvas: np.ndarray, keypoints: List[Keypoint]) -> np.ndarray:
     stickwidth = 4
 
     limbSeq = [
-        [2, 3], [2, 6], [3, 4], [4, 5], 
-        [6, 7], [7, 8], [2, 9], [9, 10], 
-        [10, 11], [2, 12], [12, 13], [13, 14], 
-        [2, 1], [1, 15], [15, 17], [1, 16], 
+        [2, 3], [2, 6], [3, 4], [4, 5],
+        [6, 7], [7, 8], [2, 9], [9, 10],
+        [10, 11], [2, 12], [12, 13], [13, 14],
+        [2, 1], [1, 15], [15, 17], [1, 16],
         [16, 18],
     ]
 
@@ -156,7 +156,7 @@ def draw_handpose(canvas: np.ndarray, keypoints: Union[List[Keypoint], None]) ->
     """
     if not keypoints:
         return canvas
-    
+
     if not is_normalized(keypoints):
         H, W = 1.0, 1.0
     else:
@@ -170,7 +170,7 @@ def draw_handpose(canvas: np.ndarray, keypoints: Union[List[Keypoint], None]) ->
         k2 = keypoints[e2]
         if k1 is None or k2 is None:
             continue
-        
+
         x1 = int(k1.x * W)
         y1 = int(k1.y * H)
         x2 = int(k2.x * W)
@@ -204,10 +204,10 @@ def draw_facepose(canvas: np.ndarray, keypoints: Union[List[Keypoint], None]) ->
 
     Note:
         The function expects the x and y coordinates of the keypoints to be normalized between 0 and 1.
-    """    
+    """
     if not keypoints:
         return canvas
-    
+
     if not is_normalized(keypoints):
         H, W = 1.0, 1.0
     else:
@@ -216,7 +216,7 @@ def draw_facepose(canvas: np.ndarray, keypoints: Union[List[Keypoint], None]) ->
     for keypoint in keypoints:
         if keypoint is None:
             continue
-        
+
         x, y = keypoint.x, keypoint.y
         x = int(x * W)
         y = int(y * H)
@@ -248,7 +248,7 @@ def handDetect(body: BodyResult, oriImg) -> List[Tuple[int, int, int, bool]]:
     ratioWristElbow = 0.33
     detect_result = []
     image_height, image_width = oriImg.shape[0:2]
-    
+
     keypoints = body.keypoints
     # right hand: wrist 4, elbow 3, shoulder 2
     # left hand: wrist 7, elbow 6, shoulder 5
@@ -264,7 +264,7 @@ def handDetect(body: BodyResult, oriImg) -> List[Tuple[int, int, int, bool]]:
     has_right = all(keypoint is not None for keypoint in (right_shoulder, right_elbow, right_wrist))
     if not (has_left or has_right):
         return []
-    
+
     hands = []
     #left hand
     if has_left:
@@ -340,14 +340,14 @@ def faceDetect(body: BodyResult, oriImg) -> Union[Tuple[int, int, int], None]:
     """
     # left right eye ear 14 15 16 17
     image_height, image_width = oriImg.shape[0:2]
-    
+
     keypoints = body.keypoints
     head = keypoints[0]
     left_eye = keypoints[14]
     right_eye = keypoints[15]
     left_ear = keypoints[16]
     right_ear = keypoints[17]
-    
+
     if head is None or all(keypoint is None for keypoint in (left_eye, right_eye, left_ear, right_ear)):
         return None
 

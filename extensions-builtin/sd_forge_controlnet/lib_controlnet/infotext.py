@@ -1,4 +1,3 @@
-from typing import List, Tuple, Union
 
 import gradio as gr
 
@@ -16,7 +15,7 @@ def displaytext_to_field(text: str) -> str:
     return "_".join([word.lower() for word in text.split(" ")])
 
 
-def parse_value(value: str) -> Union[str, float, int, bool]:
+def parse_value(value: str) -> str | float | int | bool:
     if value in ("True", "False"):
         return value == "True"
     try:
@@ -53,10 +52,10 @@ def parse_unit(text: str) -> external_code.ControlNetUnit:
     )
 
 
-class Infotext(object):
+class Infotext:
     def __init__(self) -> None:
-        self.infotext_fields: List[Tuple[gr.components.IOComponent, str]] = []
-        self.paste_field_names: List[str] = []
+        self.infotext_fields: list[tuple[gr.components.IOComponent, str]] = []
+        self.paste_field_names: list[str] = []
 
     @staticmethod
     def unit_prefix(unit_index: int) -> str:
@@ -82,7 +81,7 @@ class Infotext(object):
 
     @staticmethod
     def write_infotext(
-        units: List[external_code.ControlNetUnit], p: StableDiffusionProcessing
+        units: list[external_code.ControlNetUnit], p: StableDiffusionProcessing
     ):
         """Write infotext to `p`."""
         p.extra_generation_params.update(

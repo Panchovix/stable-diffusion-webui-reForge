@@ -4,7 +4,7 @@ from collections import namedtuple
 import torch
 
 from modules import prompt_parser, devices, sd_hijack, sd_emphasis
-from modules.shared import opts
+import modules.shared as shared
 
 
 class PromptChunk:
@@ -85,7 +85,7 @@ class TextConditionalModel(torch.nn.Module):
         Returns the list and the total number of tokens in the prompt.
         """
 
-        if opts.emphasis != "None":
+        if shared.opts.emphasis != "None":
             parsed = prompt_parser.parse_prompt_attention(line)
         else:
             parsed = [[line, 1.0]]
@@ -133,9 +133,9 @@ class TextConditionalModel(torch.nn.Module):
                 if token == self.comma_token:
                     last_comma = len(chunk.tokens)
 
-                # this is when we are at the end of allotted 75 tokens for the current chunk, and the current token is not a comma. opts.comma_padding_backtrack
+                # this is when we are at the end of allotted 75 tokens for the current chunk, and the current token is not a comma. shared.opts.comma_padding_backtrack
                 # is a setting that specifies that if there is a comma nearby, the text after the comma should be moved out of this chunk and into the next.
-                elif opts.comma_padding_backtrack != 0 and len(chunk.tokens) == self.chunk_length and last_comma != -1 and len(chunk.tokens) - last_comma <= opts.comma_padding_backtrack:
+                elif shared.opts.comma_padding_backtrack != 0 and len(chunk.tokens) == self.chunk_length and last_comma != -1 and len(chunk.tokens) - last_comma <= shared.opts.comma_padding_backtrack:
                     break_location = last_comma + 1
 
                     reloc_tokens = chunk.tokens[break_location:]
@@ -227,7 +227,7 @@ class TextConditionalModel(torch.nn.Module):
             z = self.process_tokens(tokens, multipliers)
             zs.append(z)
 
-        if opts.textual_inversion_add_hashes_to_infotext and used_embeddings:
+        if shared.opts.textual_inversion_add_hashes_to_infotext and used_embeddings:
             hashes = []
             for name, embedding in used_embeddings.items():
                 shorthash = embedding.shorthash
@@ -242,8 +242,8 @@ class TextConditionalModel(torch.nn.Module):
                     hashes.append(self.hijack.extra_generation_params.get("TI hashes"))
                 self.hijack.extra_generation_params["TI hashes"] = ", ".join(hashes)
 
-        if any(x for x in texts if "(" in x or "[" in x) and opts.emphasis != "Original":
-            self.hijack.extra_generation_params["Emphasis"] = opts.emphasis
+        if any(x for x in texts if "(" in x or "[" in x) and shared.opts.emphasis != "Original":
+            self.hijack.extra_generation_params["Emphasis"] = shared.opts.emphasis
 
         if self.return_pooled:
             return torch.hstack(zs), zs[0].pooled
@@ -270,7 +270,7 @@ class TextConditionalModel(torch.nn.Module):
 
         pooled = getattr(z, 'pooled', None)
 
-        emphasis = sd_emphasis.get_current_option(opts.emphasis)()
+        emphasis = sd_emphasis.get_current_option(shared.opts.emphasis)()
         emphasis.tokens = remade_batch_tokens
         emphasis.multipliers = torch.asarray(batch_multipliers).to(devices.device)
         emphasis.z = z
@@ -306,7 +306,7 @@ class FrozenCLIPEmbedderWithCustomWordsBase(TextConditionalModel):
         self.legacy_ucg_val = None  # for sgm codebase
 
     def forward(self, texts):
-        if opts.use_old_emphasis_implementation:
+        if shared.opts.use_old_emphasis_implementation:
             import modules.sd_hijack_clip_old
             return modules.sd_hijack_clip_old.forward_old(self, texts)
 
@@ -349,10 +349,10 @@ class FrozenCLIPEmbedderWithCustomWords(FrozenCLIPEmbedderWithCustomWordsBase):
         return tokenized
 
     def encode_with_transformers(self, tokens):
-        outputs = self.wrapped.transformer(input_ids=tokens, output_hidden_states=-opts.CLIP_stop_at_last_layers)
+        outputs = self.wrapped.transformer(input_ids=tokens, output_hidden_states=-shared.opts.CLIP_stop_at_last_layers)
 
-        if opts.CLIP_stop_at_last_layers > 1:
-            z = outputs.hidden_states[-opts.CLIP_stop_at_last_layers]
+        if shared.opts.CLIP_stop_at_last_layers > 1:
+            z = outputs.hidden_states[-shared.opts.CLIP_stop_at_last_layers]
             z = self.wrapped.transformer.text_model.final_layer_norm(z)
         else:
             z = outputs.last_hidden_state
@@ -374,8 +374,8 @@ class FrozenCLIPEmbedderForSDXLWithCustomWords(FrozenCLIPEmbedderWithCustomWords
     def encode_with_transformers(self, tokens):
         outputs = self.wrapped.transformer(input_ids=tokens, output_hidden_states=self.wrapped.layer == "hidden")
 
-        if opts.sdxl_clip_l_skip is True:
-            z = outputs.hidden_states[-opts.CLIP_stop_at_last_layers]
+        if shared.opts.sdxl_clip_l_skip is True:
+            z = outputs.hidden_states[-shared.opts.CLIP_stop_at_last_layers]
         elif self.wrapped.layer == "last":
             z = outputs.last_hidden_state
         else:

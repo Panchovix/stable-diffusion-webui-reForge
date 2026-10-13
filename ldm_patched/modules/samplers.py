@@ -298,7 +298,7 @@ def _calc_cond_batch(model: 'BaseModel', conds: list[list[dict]], x_in: torch.Te
             c = cond_cat(c)
             timestep_ = torch.cat([timestep] * batch_chunks)
 
-            transformer_options = {} 
+            transformer_options = {}
             if hasattr(model, 'current_patcher') and model.current_patcher is not None:
                 transformer_options = model.current_patcher.apply_hooks(hooks=hooks)
             if 'transformer_options' in model_options:
@@ -358,7 +358,6 @@ def calc_cond_uncond_batch(model, cond, uncond, x_in, timestep, model_options): 
     # logging.warning("WARNING: The ldm_patched.modules.samplers.calc_cond_uncond_batch function is deprecated please use the calc_cond_batch one instead.")
     return tuple(calc_cond_batch(model, [cond, uncond], x_in, timestep, model_options))
 
-import math
 
 def _epsilon_scaling_post_cfg(args, scaling_factor: float):
     """Scale the denoised prediction by adjusting the predicted noise."""
@@ -475,7 +474,7 @@ def ddim_scheduler(model_sampling, steps):
 
 def normal_scheduler(model_sampling, steps, sgm=False, floor=False):
     s = model_sampling
-    logging.info(f"[Normal Scheduler Debug] normal_scheduler called:")
+    logging.info("[Normal Scheduler Debug] normal_scheduler called:")
     logging.info(f"[Normal Scheduler Debug]   model_sampling type: {type(s).__name__}")
     logging.info(f"[Normal Scheduler Debug]   sigma_min: {s.sigma_min}, sigma_max: {s.sigma_max}")
     logging.info(f"[Normal Scheduler Debug]   shift: {getattr(s, 'shift', 'N/A')}")
@@ -563,7 +562,7 @@ def get_sigmas_karras(model_sampling, steps, device='cpu'):
     rho = shared.opts.reforge_karras_rho
     sigma_min = float(model_sampling.sigma_min)
     sigma_max = float(model_sampling.sigma_max)
-    logging.info(f"[Karras Debug] get_sigmas_karras called:")
+    logging.info("[Karras Debug] get_sigmas_karras called:")
     logging.info(f"[Karras Debug]   model_sampling type: {type(model_sampling).__name__}")
     logging.info(f"[Karras Debug]   sigma_min: {sigma_min}, sigma_max: {sigma_max}")
     logging.info(f"[Karras Debug]   shift: {getattr(model_sampling, 'shift', 'N/A')}")
@@ -590,7 +589,7 @@ def get_sigmas_ays_custom(model_sampling, steps, device='cpu'):
         sigmas_str = shared.opts.reforge_ays_custom_sigmas
         sigmas_values = sigmas_str.strip('[]').split(',')
         sigmas = np.array([float(x.strip()) for x in sigmas_values])
-        
+
         if steps != len(sigmas):
             sigmas = np.interp(np.linspace(0, 1, steps), np.linspace(0, 1, len(sigmas)), sigmas)
         sigmas = np.append(sigmas, [0.0])
@@ -666,7 +665,7 @@ def get_sigmas_karras_dynamic(model_sampling, steps, device='cpu'):
     max_inv_rho = sigma_max ** (1 / rho)
     sigmas = torch.zeros_like(ramp)
     for i in range(steps):
-        sigmas[i] = (max_inv_rho + ramp[i] * (min_inv_rho - max_inv_rho)) ** (math.cos(i*math.tau/steps)*2+rho) 
+        sigmas[i] = (max_inv_rho + ramp[i] * (min_inv_rho - max_inv_rho)) ** (math.cos(i*math.tau/steps)*2+rho)
     return torch.cat([sigmas, sigmas.new_zeros([1])])
 
 def get_sigmas_sinusoidal_sf(model_sampling, steps, device='cpu'):
@@ -924,7 +923,8 @@ KSAMPLER_NAMES = ["euler", "euler_cfg_pp", "euler_ancestral", "euler_ancestral_c
                   "lms", "dpm_fast", "dpm_adaptive", "dpmpp_2s_ancestral", "dpmpp_2s_ancestral_cfg_pp", "dpmpp_sde", "dpmpp_sde_gpu",
                   "dpmpp_2m", "dpmpp_2m_cfg_pp", "dpmpp_2m_sde", "dpmpp_2m_sde_gpu", "dpmpp_3m_sde", "dpmpp_3m_sde_gpu", "ddpm", "lcm",
                   "ipndm", "ipndm_v", "deis", "res_multistep", "res_multistep_cfg_pp", "res_multistep_ancestral", "res_multistep_ancestral_cfg_pp",
-                  "gradient_estimation", "gradient_estimation_cfg_pp", "er_sde", "seeds_2", "seeds_3", "sa_solver", "sa_solver_pece"]
+                  "gradient_estimation", "gradient_estimation_cfg_pp", "er_sde", "seeds_2", "seeds_3", "sa_solver", "sa_solver_pece",
+                  "clpc_ode", "clpc_sde"]
 
 class KSAMPLER(Sampler):
     def __init__(self, sampler_function, extra_options={}, inpaint_options={}):
@@ -1273,7 +1273,7 @@ SAMPLER_NAMES = KSAMPLER_NAMES + ["ddim", "uni_pc", "uni_pc_bh2"]
 
 def calculate_sigmas(model_sampling: object, scheduler_name: str, steps: int, is_sdxl: bool = False) -> torch.Tensor:
     # Debug: Check what model_sampling object we're getting
-    logging.info(f"[Scheduler Debug] calculate_sigmas called with:")
+    logging.info("[Scheduler Debug] calculate_sigmas called with:")
     logging.info(f"[Scheduler Debug]   model_sampling type: {type(model_sampling).__name__}")
     logging.info(f"[Scheduler Debug]   sigma_min: {model_sampling.sigma_min}")
     logging.info(f"[Scheduler Debug]   sigma_max: {model_sampling.sigma_max}")

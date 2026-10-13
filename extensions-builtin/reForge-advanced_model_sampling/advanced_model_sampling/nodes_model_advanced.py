@@ -18,7 +18,7 @@ class LCM(model_sampling.EPS):
 class X0(model_sampling.EPS):
     def calculate_denoised(self, sigma, model_output, model_input):
         return model_output
-    
+
 class Lotus(X0):
     def calculate_input(self, sigma, noise):
         return noise
@@ -114,7 +114,7 @@ class ModelSamplingStableCascade:
 class ModelSamplingSD3:
     def patch(self, model, shift, multiplier=1000):
         import logging
-        
+
         logging.info(f"[ModelSamplingSD3 Debug] Starting patch with shift={shift}, multiplier={multiplier}")
         m = model.clone()
 

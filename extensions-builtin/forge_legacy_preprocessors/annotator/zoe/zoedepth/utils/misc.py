@@ -24,11 +24,7 @@
 
 """Miscellaneous utility functions."""
 
-from scipy import ndimage
 
-import base64
-import math
-import re
 from io import BytesIO
 
 import matplotlib
@@ -358,7 +354,7 @@ def pil_to_batched_tensor(img):
 def save_raw_16bit(depth, fpath="raw.png"):
     if isinstance(depth, torch.Tensor):
         depth = depth.squeeze().cpu().numpy()
-    
+
     assert isinstance(depth, np.ndarray), "Depth must be a torch tensor or numpy array"
     assert depth.ndim == 2, "Depth must be 2D"
     depth = depth * 256  # scale for 16-bit png

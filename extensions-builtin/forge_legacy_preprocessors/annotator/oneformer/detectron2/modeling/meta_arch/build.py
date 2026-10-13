@@ -1,5 +1,4 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
-import torch
 
 from annotator.oneformer.detectron2.utils.logger import _log_api_usage
 from annotator.oneformer.detectron2.utils.registry import Registry

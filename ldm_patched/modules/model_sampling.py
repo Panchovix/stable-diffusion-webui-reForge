@@ -68,7 +68,7 @@ class CONST:
     def inverse_noise_scaling(self, sigma, latent):
         sigma = sigma.view(sigma.shape[:1] + (1,) * (latent.ndim - 1))
         return latent / (1.0 - sigma)
-    
+
 class X0(EPS):
     def calculate_denoised(self, sigma, model_output, model_input):
         return model_output
@@ -76,7 +76,7 @@ class X0(EPS):
 class IMG_TO_IMG(X0):
     def calculate_input(self, sigma, noise):
         return noise
-    
+
 class COSMOS_RFLOW:
     def calculate_input(self, sigma, noise):
         sigma = (sigma / (sigma + 1))
@@ -140,6 +140,11 @@ class ModelSamplingDiscrete(torch.nn.Module):
         if self.zsnr or zsnr:
             sigmas = rescale_zero_terminal_snr_sigmas(sigmas)
 
+        print(
+            f"[ModelSampling] schedule={beta_schedule}  zsnr={bool(self.zsnr or zsnr)}"
+            f"  sigma_min={float(sigmas[0]):.5f}  sigma_max={float(sigmas[-1]):.4f}"
+            f"  (overwritten by checkpoint alphas_cumprod if present)"
+        )
         self.set_sigmas(sigmas)
 
     def set_sigmas(self, sigmas):

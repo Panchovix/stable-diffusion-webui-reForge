@@ -3,14 +3,10 @@ from collections import namedtuple
 import numpy as np
 import torch
 from PIL import Image
-from modules import devices, images, sd_vae_approx, sd_samplers, sd_vae_taesd, shared, sd_models
-from modules.shared import opts, state
+from modules import devices, images, sd_vae_approx, sd_samplers, sd_vae_taesd, shared
 from modules_forge.forge_sampler import sampling_prepare, sampling_cleanup
 from modules import extra_networks
-if opts.sd_sampling == "A1111":
-    from k_diff.k_diffusion import sampling
-elif opts.sd_sampling == "ldm patched (Comfy)":
-    from ldm_patched.k_diffusion import sampling as sampling
+from modules.sd_sampling_backend import get_sampling
 
 SamplerDataTuple = namedtuple('SamplerData', ['name', 'constructor', 'aliases', 'options'])
 
@@ -24,7 +20,7 @@ class SamplerData(SamplerDataTuple):
 
 
 def setup_img2img_steps(p, steps=None):
-    if opts.img2img_fix_steps or steps is not None:
+    if shared.opts.img2img_fix_steps or steps is not None:
         requested_steps = (steps or p.steps)
         steps = int(requested_steps / min(p.denoising_strength, 0.999)) if p.denoising_strength > 0 else 0
         t_enc = requested_steps - 1
@@ -64,8 +60,8 @@ def _pca_project_latent(sample):
 def samples_to_images_tensor(sample, approximation=None, model=None):
     """Transforms 4-channel latent space images into 3-channel RGB image tensors, with values in range [-1, 1]."""
 
-    if approximation is None or (shared.state.interrupted and opts.live_preview_fast_interrupt):
-        approximation = approximation_indexes.get(opts.show_progress_type, 0)
+    if approximation is None or (shared.state.interrupted and shared.opts.live_preview_fast_interrupt):
+        approximation = approximation_indexes.get(shared.opts.show_progress_type, 0)
         if approximation == 0:
             approximation = 1
 
@@ -101,7 +97,7 @@ def single_sample_to_image(sample, approximation=None):
 
 
 def decode_first_stage(model, x):
-    approx_index = approximation_indexes.get(opts.sd_vae_decode_method, 0)
+    approx_index = approximation_indexes.get(shared.opts.sd_vae_decode_method, 0)
     return samples_to_images_tensor(x, approx_index, model)
 
 
@@ -116,7 +112,7 @@ def samples_to_image_grid(samples, approximation=None):
 def images_tensor_to_samples(image, approximation=None, model=None):
     '''image[0, 1] -> latent'''
     if approximation is None:
-        approximation = approximation_indexes.get(opts.sd_vae_encode_method, 0)
+        approximation = approximation_indexes.get(shared.opts.sd_vae_encode_method, 0)
 
     if approximation == 3:
         image = image.to(devices.device, devices.dtype)
@@ -141,9 +137,12 @@ def images_tensor_to_samples(image, approximation=None, model=None):
 
 
 def store_latent(decoded):
-    state.current_latent = decoded
+    from modules import gpu_temperature
+    gpu_temperature.check()
 
-    if opts.live_previews_enable and opts.show_progress_every_n_steps > 0 and shared.state.sampling_step % opts.show_progress_every_n_steps == 0:
+    shared.state.current_latent = decoded
+
+    if shared.opts.live_previews_enable and shared.opts.show_progress_every_n_steps > 0 and shared.state.sampling_step % shared.opts.show_progress_every_n_steps == 0:
         if not shared.parallel_processing_allowed:
             shared.state.assign_current_image(sample_to_image(decoded))
 
@@ -184,13 +183,14 @@ replace_torchsde_browinan()
 
 
 def apply_refiner(cfg_denoiser, x, sigma=None):
-    if opts.refiner_switch_by_sample_steps or sigma is None:
+    from modules import sd_models  # local import to avoid circular dependency
+    if shared.opts.refiner_switch_by_sample_steps or sigma is None:
         completed_ratio = cfg_denoiser.step / cfg_denoiser.total_steps
     else:
         # Ensure sigma is on the same device as cfg_denoiser.inner_model.sigmas
         device = cfg_denoiser.inner_model.sigmas.device
         sigma = sigma.to(device)
-        
+
         try:
             timestep = torch.argmin(torch.abs(cfg_denoiser.inner_model.sigmas - torch.max(sigma)))
         except AttributeError:  # for samplers that don't use sigmas (DDIM) sigma is actually the timestep
@@ -208,14 +208,14 @@ def apply_refiner(cfg_denoiser, x, sigma=None):
     if getattr(cfg_denoiser.p, "enable_hr", False):
         is_second_pass = cfg_denoiser.p.is_hr_pass
 
-        if opts.hires_fix_refiner_pass == "first pass" and is_second_pass:
+        if shared.opts.hires_fix_refiner_pass == "first pass" and is_second_pass:
             return False
 
-        if opts.hires_fix_refiner_pass == "second pass" and not is_second_pass:
+        if shared.opts.hires_fix_refiner_pass == "second pass" and not is_second_pass:
             return False
 
-        if opts.hires_fix_refiner_pass != "second pass":
-            cfg_denoiser.p.extra_generation_params['Hires refiner'] = opts.hires_fix_refiner_pass
+        if shared.opts.hires_fix_refiner_pass != "second pass":
+            cfg_denoiser.p.extra_generation_params['Hires refiner'] = shared.opts.hires_fix_refiner_pass
 
     cfg_denoiser.p.extra_generation_params['Refiner'] = refiner_checkpoint_info.short_title
     cfg_denoiser.p.extra_generation_params['Refiner switch at'] = refiner_switch_at
@@ -298,14 +298,14 @@ class Sampler:
         if self.stop_at is not None and step > self.stop_at:
             raise InterruptedException
 
-        state.sampling_step = step
+        shared.state.sampling_step = step
         shared.total_tqdm.update()
 
     def launch_sampling(self, steps, func):
         self.model_wrap_cfg.steps = steps
         self.model_wrap_cfg.total_steps = self.config.total_steps(steps)
-        state.sampling_steps = steps
-        state.sampling_step = 0
+        shared.state.sampling_steps = steps
+        shared.state.sampling_step = 0
 
         try:
             return func()
@@ -329,9 +329,10 @@ class Sampler:
         self.model_wrap_cfg.nmask = p.nmask if hasattr(p, 'nmask') else None
         self.model_wrap_cfg.step = 0
         self.model_wrap_cfg.image_cfg_scale = getattr(p, 'image_cfg_scale', None)
-        self.eta = p.eta if p.eta is not None else getattr(opts, self.eta_option_field, 0.0)
+        self.eta = p.eta if p.eta is not None else getattr(shared.opts, self.eta_option_field, 0.0)
         self.s_min_uncond = getattr(p, 's_min_uncond', 0.0)
 
+        sampling = get_sampling()
         sampling.torch = TorchHijack(p)
 
         # AlterSamplers (modules_forge/forge_alter_samplers.py) unconditionally
@@ -363,23 +364,136 @@ class Sampler:
 
         # Handle special parameters for DPM++ samplers
         if self.funcname == 'sample_dpmpp_sde':
-            r = getattr(opts, 'dpmpp_sde_r', self.dpmpp_sde_r)
+            r = getattr(shared.opts,'dpmpp_sde_r', self.dpmpp_sde_r)
             if r != self.dpmpp_sde_r:
                 extra_params_kwargs['r'] = r
                 p.extra_generation_params['DPM++ SDE r'] = r
 
         if self.funcname == 'sample_dpmpp_2m_sde':
-            solver_type = getattr(opts, 'dpmpp_2m_sde_solver', self.dpmpp_2m_sde_solver)
+            solver_type = getattr(shared.opts,'dpmpp_2m_sde_solver', self.dpmpp_2m_sde_solver)
             if solver_type != self.dpmpp_2m_sde_solver:
                 extra_params_kwargs['solver_type'] = solver_type
                 p.extra_generation_params['DPM++ 2M solver'] = solver_type
 
+        _SURE_SAMPLERS = {
+            'sample_sure', 'sample_sure_wavelet', 'sample_sure_wavelet_auto',
+            'sample_sure_wavelet_converge', 'sample_sure_wavelet_auto_converge',
+            'sample_sure_adaptive',
+            'sample_dpmpp_2m_sure', 'sample_dpmpp_2m_sde_sure',
+            'sample_dpmpp_3m_sde_sure', 'sample_dpmpp_2m_sde_sure_adaptive',
+            'sample_dpmpp_2s_a_sure', 'sample_dpmpp_2s_a_sure_adaptive',
+        }
+        if self.funcname in _SURE_SAMPLERS:
+            import inspect as _inspect
+            _sure_sig = _inspect.signature(self.func).parameters
+            sure_alpha = getattr(shared.opts, 'sure_alpha', 0.05)
+            sure_n_mc  = getattr(shared.opts, 'sure_n_mc', 1)
+            sure_eps   = getattr(shared.opts, 'sure_eps', 1e-3)
+            sure_jac_interval   = getattr(shared.opts, 'sure_jac_interval', 2)
+            sure_preheat_steps  = getattr(shared.opts, 'sure_preheat_steps', -1)
+            sure_grad_mode  = getattr(shared.opts, 'sure_grad_mode', 'vjp')
+            sure_adam_mode  = getattr(shared.opts, 'sure_adam_mode', 'none')
+            sure_adam_beta1 = getattr(shared.opts, 'sure_adam_beta1', 0.9)
+            sure_adam_beta2 = getattr(shared.opts, 'sure_adam_beta2', 0.999)
+            sure_adam_wd    = getattr(shared.opts, 'sure_adam_wd', 0.01)
+            if 'sure_alpha'         in _sure_sig: extra_params_kwargs['sure_alpha']         = sure_alpha
+            if 'sure_n_mc'          in _sure_sig: extra_params_kwargs['sure_n_mc']          = sure_n_mc
+            if 'sure_eps'           in _sure_sig: extra_params_kwargs['sure_eps']           = sure_eps
+            if 'sure_jac_interval'  in _sure_sig: extra_params_kwargs['sure_jac_interval']  = sure_jac_interval
+            if 'sure_preheat_steps' in _sure_sig: extra_params_kwargs['sure_preheat_steps'] = sure_preheat_steps
+            if 'sure_preheat_frac'  in _sure_sig:
+                # adaptive variants use a fraction instead of a fixed count
+                frac = max(0.0, min(1.0, sure_preheat_steps / 20.0)) if sure_preheat_steps >= 0 else 0.3
+                extra_params_kwargs['sure_preheat_frac'] = frac
+            if 'sure_grad_mode'  in _sure_sig: extra_params_kwargs['sure_grad_mode']  = sure_grad_mode
+            if 'sure_adam_mode'  in _sure_sig: extra_params_kwargs['sure_adam_mode']  = sure_adam_mode
+            if 'sure_adam_beta1' in _sure_sig: extra_params_kwargs['sure_adam_beta1'] = sure_adam_beta1
+            if 'sure_adam_beta2' in _sure_sig: extra_params_kwargs['sure_adam_beta2'] = sure_adam_beta2
+            if 'sure_adam_wd'    in _sure_sig: extra_params_kwargs['sure_adam_wd']    = sure_adam_wd
+            sure_approx_coeff = getattr(shared.opts, 'sure_approx_coeff', 2.0)
+            sure_csv_path     = getattr(shared.opts, 'sure_csv_path', '').strip() or None
+            sure_sigma_ema    = getattr(shared.opts, 'sure_sigma_ema', 0.0)
+            if 'sure_approx_coeff' in _sure_sig: extra_params_kwargs['sure_approx_coeff'] = sure_approx_coeff
+            if 'sure_csv_path'     in _sure_sig: extra_params_kwargs['sure_csv_path']     = sure_csv_path
+            if 'sure_sigma_ema'    in _sure_sig: extra_params_kwargs['sure_sigma_ema']    = sure_sigma_ema
+            # SURE-Wavelet specific params — only forwarded when the sampler accepts them
+            if 'sure_wavelet'       in _sure_sig:
+                sure_wavelet       = getattr(shared.opts, 'sure_wavelet',       'db4')
+                extra_params_kwargs['sure_wavelet'] = sure_wavelet
+            if 'sure_wavelet_level' in _sure_sig:
+                sure_wavelet_level = getattr(shared.opts, 'sure_wavelet_level', 3)
+                extra_params_kwargs['sure_wavelet_level'] = sure_wavelet_level
+            if 'sure_wavelet_warmup_steps' in _sure_sig:
+                sure_wavelet_warmup_steps = getattr(shared.opts, 'sure_wavelet_warmup_steps', 0)
+                extra_params_kwargs['sure_wavelet_warmup_steps'] = sure_wavelet_warmup_steps
+            if 'sure_wavelet_lp_frac' in _sure_sig:
+                sure_wavelet_lp_frac = getattr(shared.opts, 'sure_wavelet_lp_frac', 1.0)
+                extra_params_kwargs['sure_wavelet_lp_frac'] = sure_wavelet_lp_frac
+            # Calibration params for SURE Wavelet Auto
+            if 'sure_wavelet_cal_steps' in _sure_sig:
+                extra_params_kwargs['sure_wavelet_cal_steps'] = int(getattr(shared.opts, 'sure_wavelet_cal_steps', 5))
+            if 'sure_wavelet_cal_wavelets' in _sure_sig:
+                _raw = getattr(shared.opts, 'sure_wavelet_cal_wavelets', 'haar,db2,db4,db6,sym4')
+                extra_params_kwargs['sure_wavelet_cal_wavelets'] = tuple(s.strip() for s in _raw.split(',') if s.strip())
+            if 'sure_wavelet_cal_levels' in _sure_sig:
+                # Accepts "min,max" or a single value; passes as int tuple to the sampler
+                _raw = getattr(shared.opts, 'sure_wavelet_cal_levels', '1,6')
+                extra_params_kwargs['sure_wavelet_cal_levels'] = tuple(int(s.strip()) for s in _raw.split(',') if s.strip())
+            if 'sure_wavelet_bo_trials' in _sure_sig:
+                extra_params_kwargs['sure_wavelet_bo_trials'] = int(getattr(shared.opts, 'sure_wavelet_bo_trials', 40))
+            if 'sure_wavelet_bo_patience' in _sure_sig:
+                extra_params_kwargs['sure_wavelet_bo_patience'] = int(getattr(shared.opts, 'sure_wavelet_bo_patience', 8))
+            if 'sure_wavelet_bo_cv_warn' in _sure_sig:
+                extra_params_kwargs['sure_wavelet_bo_cv_warn'] = float(getattr(shared.opts, 'sure_wavelet_bo_cv_warn', 0.4))
+            if 'sure_inner_steps' in _sure_sig:
+                extra_params_kwargs['sure_inner_steps'] = int(getattr(shared.opts, 'sure_inner_steps', 4))
+            if 'sure_inner_tol' in _sure_sig:
+                extra_params_kwargs['sure_inner_tol'] = float(getattr(shared.opts, 'sure_inner_tol', 1e-4))
+            if 'sure_alpha_bo_trials' in _sure_sig:
+                extra_params_kwargs['sure_alpha_bo_trials'] = int(getattr(shared.opts, 'sure_alpha_bo_trials', 0))
+            if 'sure_alpha_bo_patience' in _sure_sig:
+                extra_params_kwargs['sure_alpha_bo_patience'] = int(getattr(shared.opts, 'sure_alpha_bo_patience', 4))
+            p.extra_generation_params['SURE alpha']         = sure_alpha
+            p.extra_generation_params['SURE n_mc']          = sure_n_mc
+            p.extra_generation_params['SURE eps']           = sure_eps
+            p.extra_generation_params['SURE jac_interval']  = sure_jac_interval
+            p.extra_generation_params['SURE preheat_steps'] = sure_preheat_steps
+            if sure_grad_mode != 'vjp':
+                p.extra_generation_params['SURE grad_mode'] = sure_grad_mode
+            if sure_adam_mode != 'none':
+                p.extra_generation_params['SURE adam_mode']  = sure_adam_mode
+                p.extra_generation_params['SURE adam_beta1'] = sure_adam_beta1
+                p.extra_generation_params['SURE adam_beta2'] = sure_adam_beta2
+                if sure_adam_mode == 'adamw':
+                    p.extra_generation_params['SURE adam_wd'] = sure_adam_wd
+            _alpha_bo_trials_val = int(getattr(shared.opts, 'sure_alpha_bo_trials', 0))
+            if _alpha_bo_trials_val > 0:
+                p.extra_generation_params['SURE alpha_bo_trials']   = _alpha_bo_trials_val
+                p.extra_generation_params['SURE alpha_bo_patience'] = int(getattr(shared.opts, 'sure_alpha_bo_patience', 4))
+
+        if self.funcname == 'sample_dc_solver':
+            import inspect as _inspect
+            _dc_sig = _inspect.signature(self.func).parameters
+            dc_order = getattr(shared.opts, 'dc_solver_order', 2)
+            dc_ratio  = getattr(shared.opts, 'dc_solver_ratio', 0.5)
+            if 'order' in _dc_sig:
+                extra_params_kwargs['order'] = dc_order
+            if 'dc_ratios' in _dc_sig:
+                extra_params_kwargs['dc_ratios'] = None  # will be filled per-step by the sampler
+                # we pass ratio via a list built here so every step uses the configured value;
+                # length is unknown at this point so we use None and let the sampler default to 1.0,
+                # then override with a uniform list once sigmas are known
+                # — instead, store on p so KDiffusionSampler.sample() can inject it
+                p._dc_solver_ratio = dc_ratio
+            p.extra_generation_params['DC-Solver order'] = dc_order
+            p.extra_generation_params['DC-Solver ratio'] = dc_ratio
+
         # Handle standard sigma parameters
         if len(self.extra_params) > 0:
-            s_churn = getattr(opts, 's_churn', p.s_churn)
-            s_tmin = getattr(opts, 's_tmin', p.s_tmin)
-            s_tmax = getattr(opts, 's_tmax', p.s_tmax) or self.s_tmax  # 0 = inf
-            s_noise = getattr(opts, 's_noise', p.s_noise)
+            s_churn = getattr(shared.opts,'s_churn', p.s_churn)
+            s_tmin = getattr(shared.opts,'s_tmin', p.s_tmin)
+            s_tmax = getattr(shared.opts,'s_tmax', p.s_tmax) or self.s_tmax  # 0 = inf
+            s_noise = getattr(shared.opts,'s_noise', p.s_noise)
 
             if 's_churn' in extra_params_kwargs and s_churn != self.s_churn:
                 extra_params_kwargs['s_churn'] = s_churn
@@ -405,10 +519,7 @@ class Sampler:
         if shared.opts.no_dpmpp_sde_batch_determinism:
             return None
 
-        if opts.sd_sampling == "A1111":
-            from k_diff.k_diffusion.sampling import BrownianTreeNoiseSampler
-        elif opts.sd_sampling == "ldm patched (Comfy)":
-            from ldm_patched.k_diffusion.sampling import BrownianTreeNoiseSampler
+        BrownianTreeNoiseSampler = get_sampling().BrownianTreeNoiseSampler
         sigma_min, sigma_max = sigmas[sigmas > 0].min(), sigmas.max()
         current_iter_seeds = p.all_seeds[p.iteration * p.batch_size:(p.iteration + 1) * p.batch_size]
         return BrownianTreeNoiseSampler(x, sigma_min, sigma_max, seed=current_iter_seeds)

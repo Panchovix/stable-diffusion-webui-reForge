@@ -1,4 +1,3 @@
-from typing import List
 
 import numpy as np
 from fastapi import FastAPI, Body
@@ -82,7 +81,7 @@ def controlnet_api(_: gr.Blocks, app: FastAPI):
     @app.post("/controlnet/detect")
     async def detect(
         controlnet_module: str = Body("none", title="Controlnet Module"),
-        controlnet_input_images: List[str] = Body([], title="Controlnet Input Images"),
+        controlnet_input_images: list[str] = Body([], title="Controlnet Input Images"),
         controlnet_processor_res: int = Body(
             512, title="Controlnet Processor Resolution"
         ),

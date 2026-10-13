@@ -3,14 +3,11 @@
 import atexit
 import bisect
 import multiprocessing as mp
-from collections import deque
 
-import cv2
 import torch
 
 from annotator.oneformer.detectron2.data import MetadataCatalog
 from defaults import DefaultPredictor
-from annotator.oneformer.detectron2.utils.video_visualizer import VideoVisualizer
 from visualizer import ColorMode, Visualizer
 
 
@@ -53,7 +50,7 @@ class VisualizationDemo(object):
         # Convert image from OpenCV BGR format to Matplotlib RGB format.
         image = image[:, :, ::-1]
         vis_output = {}
-        
+
         if task == 'panoptic':
             visualizer = Visualizer(image, metadata=self.metadata, instance_mode=0)
             predictions = self.predictor(image, "panoptic")
@@ -73,7 +70,7 @@ class VisualizationDemo(object):
             vis_output['semantic'] = visualizer.draw_sem_seg(
                 predictions["sem_seg"].argmax(dim=0).to(self.cpu_device), alpha=1
             )
-            
+
             # visualizer = Visualizer(image, metadata=self.metadata, instance_mode=1)
             # vis_output['gt_sem'] = visualizer.draw_sem_seg(
             #     sem_gt.to(self.cpu_device), alpha=1
@@ -90,8 +87,8 @@ class VisualizationDemo(object):
                 visualizer = Visualizer(image, False, metadata=self.metadata, instance_mode=0)
                 vis_output['boxes'] = visualizer.draw_box_predictions(
                         boxes.to(self.cpu_device), labels.to(self.cpu_device), scores.to(self.cpu_device))
-            
-            
+
+
             # visualizer = Visualizer(image, metadata=self.metadata, instance_mode=2)
             # vis_output['ins_gt'] = visualizer.draw_instance_predictions(predictions=ins_gt.to(self.cpu_device), alpha=1)
         # vis_output['input'] = visualizer.get_image(image)

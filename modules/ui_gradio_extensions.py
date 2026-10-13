@@ -54,7 +54,15 @@ def reload_javascript():
     css = css_html()
 
     def template_response(*args, **kwargs):
-        res = shared.GradioTemplateResponseOriginal(*args, **kwargs)
+        # Gradio 3.x uses old starlette API: TemplateResponse(name, context)
+        # Starlette 0.36.0+ requires: TemplateResponse(request, name, context)
+        if args and isinstance(args[0], str):
+            name = args[0]
+            context = args[1] if len(args) > 1 else {}
+            request = context.get('request')
+            res = shared.GradioTemplateResponseOriginal(request, name, context, *args[2:], **kwargs)
+        else:
+            res = shared.GradioTemplateResponseOriginal(*args, **kwargs)
         res.body = res.body.replace(b'</head>', f'{js}<meta name="referrer" content="no-referrer"/></head>'.encode("utf8"))
         res.body = res.body.replace(b'</body>', f'{css}</body>'.encode("utf8"))
         res.init_headers()

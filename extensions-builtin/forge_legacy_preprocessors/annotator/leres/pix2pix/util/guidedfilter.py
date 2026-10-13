@@ -2,8 +2,8 @@ import numpy as np
 
 class GuidedFilter():
     def __init__(self, source, reference, r=64, eps= 0.05**2):
-        self.source = source;
-        self.reference = reference;
+        self.source = source
+        self.reference = reference
         self.r = r
         self.eps = eps
 

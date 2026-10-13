@@ -1,7 +1,6 @@
 # Original from: https://github.com/ace-step/ACE-Step/blob/main/music_dcae/music_dcae_pipeline.py
 import torch
 from .autoencoder_dc import AutoencoderDC
-import logging
 try:
     import torchaudio
 except:

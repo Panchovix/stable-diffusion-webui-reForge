@@ -1,0 +1,18 @@
+# Illustrious XL preset — like pony.yaml, this is an OVERLAY meant to be
+# loaded together with danbooru.yaml. Illustrious is a Danbooru-tag-native
+# anime finetune (unlike Pony, it does not introduce its own score/source/
+# rating tag ladder) — this file only adds the handful of conventions
+# specific to how Illustrious-trained checkpoints are typically prompted.
+#
+# See configs/prompt_rules/danbooru.yaml for the pattern syntax and the
+# TAG_CLASSES this engine recognizes.
+
+# --- META: Illustrious community convention for boosting overall fidelity,
+#     used the same way as "masterpiece"/"best_quality" in danbooru.yaml ---
+"very_awa": [META]
+"newest": [META]
+"year_20(2[0-9]|1[0-9])": [META]
+
+# --- GLOBAL: Illustrious-common whole-scene tags ---
+"cinematic_lighting": [GLOBAL]
+"dynamic_angle": [GLOBAL]

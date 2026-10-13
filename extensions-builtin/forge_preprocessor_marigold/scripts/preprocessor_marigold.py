@@ -1,14 +1,12 @@
 from modules_forge.supported_preprocessor import Preprocessor, PreprocessorParameter
-from modules_forge.shared import preprocessor_dir, add_supported_preprocessor
+from modules_forge.shared import add_supported_preprocessor
 from modules_forge.forge_util import resize_image_with_pad
 
 
-import os
 import torch
 import numpy as np
 
 from marigold.model.marigold_pipeline import MarigoldPipeline
-from huggingface_hub import snapshot_download
 from modules_forge.diffusers_patcher import DiffusersModelPatcher
 from modules_forge.forge_util import numpy_to_pytorch, HWC3
 

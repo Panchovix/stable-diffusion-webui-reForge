@@ -3,7 +3,6 @@ import os
 from PIL import Image
 
 from modules import shared, images, devices, scripts, scripts_postprocessing, ui_common, infotext_utils
-from modules.shared import opts
 
 
 def run_postprocessing(extras_mode, image, image_folder, input_dir, output_dir, show_extras_results, *args, save_output: bool = True):
@@ -37,7 +36,7 @@ def run_postprocessing(extras_mode, image, image_folder, input_dir, output_dir, 
     if extras_mode == 2 and output_dir != '':
         outpath = output_dir
     else:
-        outpath = opts.outdir_samples or opts.outdir_extras_samples
+        outpath = shared.opts.outdir_samples or shared.opts.outdir_extras_samples
 
     infotext = ''
 
@@ -79,7 +78,7 @@ def run_postprocessing(extras_mode, image, image_folder, input_dir, output_dir, 
         for pp in [initial_pp, *initial_pp.extra_images]:
             suffix = pp.get_suffix(used_suffixes)
 
-            if opts.use_original_name_batch and name is not None:
+            if shared.opts.use_original_name_batch and name is not None:
                 basename = os.path.splitext(os.path.basename(name))[0]
                 forced_filename = basename + suffix
             else:
@@ -88,14 +87,14 @@ def run_postprocessing(extras_mode, image, image_folder, input_dir, output_dir, 
 
             infotext = ", ".join([k if k == v else f'{k}: {infotext_utils.quote(v)}' for k, v in pp.info.items() if v is not None])
 
-            if opts.enable_pnginfo:
+            if shared.opts.enable_pnginfo:
                 pp.image.info = existing_pnginfo
                 pp.image.info["postprocessing"] = infotext
 
             shared.state.assign_current_image(pp.image)
 
             if save_output:
-                fullfn, _ = images.save_image(pp.image, path=outpath, basename=basename, extension=opts.samples_format, info=infotext, short_filename=True, no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=existing_pnginfo, forced_filename=forced_filename, suffix=suffix)
+                fullfn, _ = images.save_image(pp.image, path=outpath, basename=basename, extension=shared.opts.samples_format, info=infotext, short_filename=True, no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=existing_pnginfo, forced_filename=forced_filename, suffix=suffix)
 
                 if pp.caption:
                     caption_filename = os.path.splitext(fullfn)[0] + ".txt"

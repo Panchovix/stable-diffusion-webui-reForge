@@ -393,7 +393,7 @@ class Visualizer:
     def get_image(self, img):
         img = np.asarray(img).clip(0, 255).astype(np.uint8)
         return VisImage(img, scale=1.0)
-    
+
     def draw_box_predictions(
         self,
         boxes=None,
@@ -479,8 +479,8 @@ class Visualizer:
                 )
 
         return self.output
-    
-    
+
+
     def draw_instance_predictions(self, predictions, alpha=0.8, is_text=True):
         """
         Draw instance-level prediction results on an image.

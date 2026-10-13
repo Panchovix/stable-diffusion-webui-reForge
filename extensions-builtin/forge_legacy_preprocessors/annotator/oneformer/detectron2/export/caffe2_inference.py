@@ -88,7 +88,7 @@ class ProtobufModel(torch.nn.Module):
             try:
                 ws.RunNet(self.net.Proto().name)
             except RuntimeError as e:
-                if not str(e) in self._error_msgs:
+                if str(e) not in self._error_msgs:
                     self._error_msgs.add(str(e))
                     logger.warning("Encountered new RuntimeError: \n{}".format(str(e)))
                 logger.warning("Catch the error and use partial results.")

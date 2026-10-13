@@ -1,23 +1,18 @@
 import launch
 import pkg_resources
-import sys
-import os
-import shutil
-import platform
 from pathlib import Path
-from typing import Tuple, Optional
 
 
 repo_root = Path(__file__).parent
 main_req_file = repo_root / "requirements.txt"
 
 
-def comparable_version(version: str) -> Tuple:
+def comparable_version(version: str) -> tuple:
     # return tuple(version.split("."))
     return tuple(map(int, version.split(".")))
 
 
-def get_installed_version(package: str) -> Optional[str]:
+def get_installed_version(package: str) -> str | None:
     try:
         return pkg_resources.get_distribution(package).version
     except Exception:

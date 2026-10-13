@@ -6,7 +6,7 @@ from PIL import Image, ImageDraw
 
 from modules import images, devices
 from modules.processing import Processed, process_images
-from modules.shared import opts, state
+import modules.shared as shared
 
 
 class Script(scripts.Script):
@@ -92,8 +92,8 @@ class Script(scripts.Script):
         work_latent_mask = []
         work_results = []
 
-        for (y, h, row), (_, _, row_mask), (_, _, row_latent_mask) in zip(grid.tiles, grid_mask.tiles, grid_latent_mask.tiles):
-            for tiledata, tiledata_mask, tiledata_latent_mask in zip(row, row_mask, row_latent_mask):
+        for (y, h, row), (_, _, row_mask), (_, _, row_latent_mask) in zip(grid.tiles, grid_mask.tiles, grid_latent_mask.tiles, strict=False):
+            for tiledata, tiledata_mask, tiledata_latent_mask in zip(row, row_mask, row_latent_mask, strict=False):
                 x, w = tiledata[0:2]
 
                 if x >= left and x+w <= img.width - right and y >= up and y+h <= img.height - down:
@@ -106,14 +106,14 @@ class Script(scripts.Script):
         batch_count = len(work)
         print(f"Poor man's outpainting will process a total of {len(work)} images tiled as {len(grid.tiles[0][2])}x{len(grid.tiles)}.")
 
-        state.job_count = batch_count
+        shared.state.job_count = batch_count
 
         for i in range(batch_count):
             p.init_images = [work[i]]
             p.image_mask = work_mask[i]
             p.latent_mask = work_latent_mask[i]
 
-            state.job = f"Batch {i + 1} out of {batch_count}"
+            shared.state.job = f"Batch {i + 1} out of {batch_count}"
             processed = process_images(p)
 
             if initial_seed is None:
@@ -137,8 +137,8 @@ class Script(scripts.Script):
 
         combined_image = images.combine_grid(grid)
 
-        if opts.samples_save:
-            images.save_image(combined_image, p.outpath_samples, "", initial_seed, p.prompt, opts.samples_format, info=initial_info, p=p)
+        if shared.opts.samples_save:
+            images.save_image(combined_image, p.outpath_samples, "", initial_seed, p.prompt, shared.opts.samples_format, info=initial_info, p=p)
 
         processed = Processed(p, [combined_image], initial_seed, initial_info)
 

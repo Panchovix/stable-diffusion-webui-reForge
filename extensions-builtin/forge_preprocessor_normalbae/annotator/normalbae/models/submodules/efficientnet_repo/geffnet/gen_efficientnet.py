@@ -29,7 +29,7 @@ Hacked together by / Copyright 2020 Ross Wightman
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .config import layer_config_kwargs, is_scriptable
+from .config import layer_config_kwargs
 from .conv2d_layers import select_conv2d
 from .helpers import load_pretrained
 from .efficientnet_builder import *

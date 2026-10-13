@@ -145,7 +145,7 @@ class PreprocessorClipVision(Preprocessor):
             offload_device = torch.device('cpu')
         if not model_management.should_use_fp16(load_device):
             dtype = torch.float32
-        
+
         # The ClipVisionModel doesn't need eval() as it's handled internally
         model = model.to(device=offload_device, dtype=dtype)
         self.model_patcher = self.clipvision.patcher
@@ -154,12 +154,12 @@ class PreprocessorClipVision(Preprocessor):
     @torch.no_grad()
     def __call__(self, input_image, resolution, slider_1=None, slider_2=None, slider_3=None, **kwargs):
         clipvision = self.load_clipvision()
-        
+
         # Move the model to the appropriate device
         self.move_all_model_patchers_to_gpu()
-        
+
         # Convert input image to PyTorch tensor and move to the correct device
         input_tensor = self.send_tensor_to_model_device(numpy_to_pytorch(input_image))
-        
+
         # Encode the image
         return clipvision.encode_image(input_tensor)

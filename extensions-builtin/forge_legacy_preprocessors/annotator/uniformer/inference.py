@@ -13,7 +13,7 @@ except ImportError:
     from annotator.mmpkg.mmcv.runner import load_checkpoint
     from annotator.mmpkg.mmseg.datasets.pipelines import Compose
     from annotator.mmpkg.mmseg.models import build_segmentor
-    
+
 def init_segmentor(config, checkpoint=None, device='cuda:0'):
     """Initialize a segmentor from config file.
 

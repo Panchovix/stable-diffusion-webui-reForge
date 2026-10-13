@@ -154,7 +154,7 @@ class InputAccordion(gr.Checkbox):
 
     def get_block_name(self):
         return "checkbox"
-    
+
     @classmethod
     def reset(cls):
         cls.global_index = 0

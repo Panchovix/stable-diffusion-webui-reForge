@@ -149,7 +149,7 @@ class LatentBatchSeedBehavior:
             samples_out["batch_index"] = [batch_number] * latent.shape[0]
 
         return (samples_out,)
-    
+
 class LatentApplyOperation:
     @classmethod
     def INPUT_TYPES(s):
@@ -208,7 +208,7 @@ class LatentOperationTonemapReinhard:
             new_magnitude *= top
             return normalized_latent * new_magnitude
         return (tonemap_reinhard,)
-    
+
 class LatentOperationSharpen:
     @classmethod
     def INPUT_TYPES(s):

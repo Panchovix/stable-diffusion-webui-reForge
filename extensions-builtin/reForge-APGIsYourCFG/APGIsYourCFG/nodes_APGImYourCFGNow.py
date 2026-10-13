@@ -122,9 +122,11 @@ class APG_ImYourCFGNow:
         guidance_sigma_start: float = 5.42,
         guidance_sigma_end: float = 0.28,
         print_data=False,
-        extras=[],
+        extras=None,
     ):
         momentum_buffer = MomentumBuffer(momentum)
+        if extras is None:
+            extras = []
         extras = [momentum_buffer, momentum, adaptive_momentum]
 
         def apg_function(args):

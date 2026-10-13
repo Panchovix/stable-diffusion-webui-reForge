@@ -1,10 +1,6 @@
 import torch
 import tqdm
-from modules.shared import opts
-if opts.sd_sampling == "A1111":
-    from k_diff.k_diffusion import sampling
-elif opts.sd_sampling == "ldm patched (Comfy)":
-    from ldm_patched.k_diffusion import sampling as sampling
+from modules.sd_sampling_backend import get_sampling
 
 
 @torch.no_grad()
@@ -16,10 +12,9 @@ def restart_sampler(model, x, sigmas, extra_args=None, callback=None, disable=No
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
     step_id = 0
-    if opts.sd_sampling == "A1111":
-        from k_diff.k_diffusion.sampling import to_d, get_sigmas_karras
-    elif opts.sd_sampling == "ldm patched (Comfy)":
-        from ldm_patched.k_diffusion.sampling import to_d, get_sigmas_karras
+    sampling = get_sampling()
+    to_d = sampling.to_d
+    get_sigmas_karras = sampling.get_sigmas_karras
 
     def heun_step(x, old_sigma, new_sigma, second_order=True):
         nonlocal step_id
@@ -110,5 +105,5 @@ def sample_dpmpp_2m_cfgpp(model, x, sigmas, extra_args=None, callback=None, disa
             denoised_d = (1 + 1 / (2 * r)) * denoised - (1 / (2 * r)) * old_noise_uncond
             x = (sigma_fn(t_next) / sigma_fn(t)) * x - (-h).expm1() * denoised_d
         old_denoised = denoised
-        old_noise_uncond = noise_uncond 
+        old_noise_uncond = noise_uncond
     return x

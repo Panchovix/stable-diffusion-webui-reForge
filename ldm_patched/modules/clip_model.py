@@ -67,17 +67,17 @@ class CLIPEncoder(torch.nn.Module):
 
         intermediate = None
         hidden_states = []
-        
+
         for i, l in enumerate(self.layers):
             if output_hidden_states:
                 hidden_states.append(x)
             x = l(x, mask, optimized_attention)
             if i == intermediate_output:
                 intermediate = x.clone()
-                
+
         if output_hidden_states:
             hidden_states.append(x)
-            
+
         return x, intermediate, hidden_states if output_hidden_states else None
 
 class CLIPEmbeddings(torch.nn.Module):
@@ -135,7 +135,7 @@ class CLIPTextModel_(torch.nn.Module):
             pooled_output = x[list(range(x.shape[0])), list(map(lambda a: a - 1, num_tokens))]
         else:
             pooled_output = x[torch.arange(x.shape[0], device=x.device), (torch.round(input_tokens).to(dtype=torch.int, device=x.device) == self.eos_token_id).int().argmax(dim=-1),]
-        
+
         return x, i, pooled_output, hidden_states if output_hidden_states else None
 
 class CLIPTextModel(torch.nn.Module):
@@ -220,7 +220,7 @@ class CLIPVision(torch.nn.Module):
         x = self.pre_layrnorm(x)
         #TODO: attention_mask?
         x, i, hidden_states = self.encoder(x, mask=None, intermediate_output=intermediate_output, output_hidden_states=output_hidden_states)
-        
+
         if self.output_layernorm:
             x = self.post_layernorm(x)
             if hidden_states is not None:
@@ -228,7 +228,7 @@ class CLIPVision(torch.nn.Module):
             pooled_output = x
         else:
             pooled_output = self.post_layernorm(x[:, 0, :])
-            
+
         return x, i, pooled_output, hidden_states if output_hidden_states else None
 
 class LlavaProjector(torch.nn.Module):

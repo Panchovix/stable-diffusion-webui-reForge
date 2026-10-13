@@ -9,7 +9,8 @@ import safetensors.torch
 import cv2
 import logging
 
-from typing import Any, Callable, Dict, List
+from typing import Any
+from collections.abc import Callable
 from modules.safe import unsafe_torch_load
 from modules.modelloader import load_file_from_url  # noqa: F401
 from scripts.logging import logger
@@ -128,7 +129,7 @@ except ImportError:
     pass
 
 
-def svg_preprocess(inputs: Dict, preprocess: Callable):
+def svg_preprocess(inputs: dict, preprocess: Callable):
     if not inputs:
         return None
 
@@ -165,7 +166,7 @@ def read_image(img_path: str) -> str:
 
 def read_image_dir(
     img_dir: str, suffixes=(".png", ".jpg", ".jpeg", ".webp")
-) -> List[str]:
+) -> list[str]:
     """Try read all images in given img_dir."""
     images = []
     for filename in os.listdir(img_dir):
@@ -173,7 +174,7 @@ def read_image_dir(
             img_path = os.path.join(img_dir, filename)
             try:
                 images.append(read_image(img_path))
-            except IOError:
+            except OSError:
                 logger.error(f"Error opening {img_path}")
     return images
 

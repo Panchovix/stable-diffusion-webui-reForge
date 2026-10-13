@@ -12,7 +12,7 @@
 
 import torch
 import torch.nn.functional as F
-from einops import rearrange, repeat
+from einops import rearrange
 from einops.layers.torch import Rearrange, Reduce
 from torch import einsum, nn
 

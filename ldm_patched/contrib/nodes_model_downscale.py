@@ -2,7 +2,6 @@
 
 
 
-import torch
 import ldm_patched.modules.utils
 
 class PatchModelAddDownscale:

@@ -1,4 +1,3 @@
-from .config import set_layer_config
 from .helpers import load_checkpoint
 
 from .gen_efficientnet import *

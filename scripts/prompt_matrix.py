@@ -5,7 +5,7 @@ import gradio as gr
 
 from modules import images
 from modules.processing import process_images
-from modules.shared import opts, state
+import modules.shared as shared
 import modules.sd_samplers
 
 
@@ -17,11 +17,11 @@ def draw_xy_grid(xs, ys, x_label, y_label, cell):
 
     first_processed = None
 
-    state.job_count = len(xs) * len(ys)
+    shared.state.job_count = len(xs) * len(ys)
 
     for iy, y in enumerate(ys):
         for ix, x in enumerate(xs):
-            state.job = f"{ix + iy * len(xs) + 1} out of {len(xs) * len(ys)}"
+            shared.state.job = f"{ix + iy * len(xs) + 1} out of {len(xs) * len(ys)}"
 
             processed = cell(x, y)
             if first_processed is None:
@@ -102,7 +102,7 @@ class Script(scripts.Script):
         processed.index_of_first_image = 1
         processed.infotexts.insert(0, processed.infotexts[0])
 
-        if opts.grid_save:
-            images.save_image(processed.images[0], p.outpath_grids, "prompt_matrix", extension=opts.grid_format, prompt=original_prompt, seed=processed.seed, grid=True, p=p)
+        if shared.opts.grid_save:
+            images.save_image(processed.images[0], p.outpath_grids, "prompt_matrix", extension=shared.opts.grid_format, prompt=original_prompt, seed=processed.seed, grid=True, p=p)
 
         return processed

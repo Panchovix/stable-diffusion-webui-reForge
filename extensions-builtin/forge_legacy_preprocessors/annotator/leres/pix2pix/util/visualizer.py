@@ -1,11 +1,9 @@
-import numpy as np
 import os
 import sys
 import ntpath
 import time
 from . import util, html
 from subprocess import Popen, PIPE
-import torch
 
 
 if sys.version_info[0] == 2:

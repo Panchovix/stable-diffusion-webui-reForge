@@ -93,10 +93,10 @@ class MarigoldPipeline(nn.Module):
         if self.trainable_unet:
             self.unet.requires_grad_(True)
             self.trainable_module_dic["unet"] = self.unet
-            logging.debug(f"UNet is set to trainable")
+            logging.debug("UNet is set to trainable")
         else:
             self.unet.requires_grad_(False)
-            logging.debug(f"UNet is set to frozen")
+            logging.debug("UNet is set to frozen")
 
         # Gradient checkpointing
         if enable_gradient_checkpointing:
@@ -202,7 +202,7 @@ class MarigoldPipeline(nn.Module):
         return_depth_latent=False,
     ):
         device = rgb_in.device
-        precision = self.unet.dtype    
+        precision = self.unet.dtype
         # Set timesteps
         self.noise_scheduler.set_timesteps(num_inference_steps, device=device)
         timesteps = self.noise_scheduler.timesteps  # [T]
@@ -261,7 +261,7 @@ class MarigoldPipeline(nn.Module):
             depth_latent = self.noise_scheduler.step(
                 noise_pred, t, depth_latent
             ).prev_sample.to(dtype=precision)
-            
+
 
             if num_output_inter_results > 0 and t in steps_to_output:
                 depth_latent_ls.append(depth_latent.detach().clone())
@@ -286,7 +286,7 @@ class MarigoldPipeline(nn.Module):
     def encode_rgb(self, rgb_in):
         rgb_latent = self.rgb_encoder(rgb_in)  # [B, 4, h, w]
         rgb_latent = rgb_latent * self.rgb_latent_scale_factor
-        return rgb_latent 
+        return rgb_latent
 
     def encode_depth(self, depth_in):
         depth_latent = self.depth_ae.encode(depth_in)
@@ -297,7 +297,7 @@ class MarigoldPipeline(nn.Module):
         #depth_latent = depth_latent.to(dtype=torch.float16)
         depth_latent = depth_latent / self.depth_latent_scale_factor
         depth = self.depth_ae.decode(depth_latent)  # [B, 1, H, W]
-        return depth 
+        return depth
 
     @staticmethod
     def _encode_text(prompt, tokenizer, text_encoder):

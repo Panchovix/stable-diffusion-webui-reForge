@@ -104,7 +104,7 @@ def load_model(model_type):
         elif not os.path.exists(model_path):
             from modules.modelloader import load_file_from_url
             load_file_from_url(remote_model_path, model_dir=base_model_path)
-        
+
         model = DPTDepthModel(
             path=model_path,
             backbone="vitb_rn50_384",

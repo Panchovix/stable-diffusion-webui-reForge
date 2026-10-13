@@ -1,6 +1,7 @@
 GitPython
 Pillow
 accelerate
+diffusers
 
 blendmodes
 clean-fid
@@ -18,7 +19,7 @@ omegaconf
 open-clip-torch
 
 piexif
-protobuf==3.20.0
+protobuf==7.35.0
 psutil
 pytorch_lightning
 requests
@@ -32,3 +33,14 @@ torchdiffeq
 torchsde
 transformers==4.44.0
 pillow-avif-plugin==1.4.3
+
+# Optional: Comfy Kitchen (comfy-kitchen) enables INT8 attention and quantized
+# GEMM kernels ported from ComfyUI (PR #15479 / #16154). NOT installed by
+# default here because PyPI only ships manylinux (x86_64/aarch64) and Windows
+# (amd64/arm64) wheels for cp310/cp311/cp312-abi3 (covers 3.11-3.14 on those
+# platforms) -- there is no macOS/darwin wheel, so a hard pin would break
+# `pip install -r requirements.txt` on Mac and any unsupported platform/arch.
+# Install manually on a supported Linux/Windows + Nvidia(cuda)/AMD(hip) box:
+#   pip install comfy-kitchen
+# See docs/comfy_kitchen_attention.md for details and the --use-ck-attention flag.
+# comfy-kitchen

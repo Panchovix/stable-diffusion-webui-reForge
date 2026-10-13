@@ -157,7 +157,7 @@ class DumbAreaMaskGenerator:
             upper_limit = math.sqrt(self.max_ratio)
             mask_side = round((random.random() * (upper_limit - lower_limit) + lower_limit) * dimension)
             u = random.randint(0, dimension-mask_side-1)
-            v = u+mask_side 
+            v = u+mask_side
         else:
             margin = (math.sqrt(self.default_ratio) / 2) * dimension
             u = round(dimension/2 - margin)
@@ -174,7 +174,7 @@ class DumbAreaMaskGenerator:
 
 
 class OutpaintingMaskGenerator:
-    def __init__(self, min_padding_percent:float=0.04, max_padding_percent:int=0.25, left_padding_prob:float=0.5, top_padding_prob:float=0.5, 
+    def __init__(self, min_padding_percent:float=0.04, max_padding_percent:int=0.25, left_padding_prob:float=0.5, top_padding_prob:float=0.5,
                  right_padding_prob:float=0.5, bottom_padding_prob:float=0.5, is_fixed_randomness:bool=False):
         """
         is_fixed_randomness - get identical paddings for the same image if args are the same
@@ -186,14 +186,14 @@ class OutpaintingMaskGenerator:
 
         assert self.min_padding_percent <= self.max_padding_percent
         assert self.max_padding_percent > 0
-        assert len([x for x in [self.min_padding_percent, self.max_padding_percent] if (x>=0 and x<=1)]) == 2, f"Padding percentage should be in [0,1]"
+        assert len([x for x in [self.min_padding_percent, self.max_padding_percent] if (x>=0 and x<=1)]) == 2, "Padding percentage should be in [0,1]"
         assert sum(self.probs) > 0, f"At least one of the padding probs should be greater than 0 - {self.probs}"
         assert len([x for x in self.probs if (x >= 0) and (x <= 1)]) == 4, f"At least one of padding probs is not in [0,1] - {self.probs}"
         if len([x for x in self.probs if x > 0]) == 1:
             LOGGER.warning(f"Only one padding prob is greater than zero - {self.probs}. That means that the outpainting masks will be always on the same side")
 
     def apply_padding(self, mask, coord):
-        mask[int(coord[0][0]*self.img_h):int(coord[1][0]*self.img_h),   
+        mask[int(coord[0][0]*self.img_h):int(coord[1][0]*self.img_h),
              int(coord[0][1]*self.img_w):int(coord[1][1]*self.img_w)] = 1
         return mask
 
@@ -215,14 +215,14 @@ class OutpaintingMaskGenerator:
         at_least_one_mask_applied = False
 
         if self.is_fixed_randomness:
-            assert raw_image is not None, f"Cant calculate hash on raw_image=None"
+            assert raw_image is not None, "Cant calculate hash on raw_image=None"
             rs = self._img2rs(raw_image)
             self.rnd = np.random.RandomState(rs)
         else:
             self.rnd = np.random
 
         coords = [[
-                   (0,0), 
+                   (0,0),
                    (1,self.get_padding(size=self.img_h))
                   ],
                   [
@@ -232,7 +232,7 @@ class OutpaintingMaskGenerator:
                   [
                     (0,1-self.get_padding(size=self.img_h)),
                     (1,1)
-                  ],    
+                  ],
                   [
                     (1-self.get_padding(size=self.img_w),0),
                     (1,1)

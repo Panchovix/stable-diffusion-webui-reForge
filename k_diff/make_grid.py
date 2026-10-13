@@ -22,7 +22,7 @@ def main():
     images = [Image.open(image) for image in args.images]
     mode = images[0].mode
     size = images[0].size
-    for image, name in zip(images, args.images):
+    for image, name in zip(images, args.images, strict=False):
         if image.mode != mode:
             print(f'Error: Image {name} had mode {image.mode}, expected {mode}', file=sys.stderr)
             sys.exit(1)

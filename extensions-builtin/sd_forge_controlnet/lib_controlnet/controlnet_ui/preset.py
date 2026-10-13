@@ -1,13 +1,12 @@
 import os
 import gradio as gr
 
-from typing import Dict, List
 
 from modules import scripts
 from lib_controlnet.infotext import parse_unit, serialize_unit
 from lib_controlnet.controlnet_ui.tool_button import ToolButton
 from lib_controlnet.logging import logger
-from lib_controlnet.external_code import ControlNetUnit, UiControlNetUnit
+from lib_controlnet.external_code import ControlNetUnit
 from lib_controlnet.global_state import get_preprocessor
 from modules_forge.supported_preprocessor import Preprocessor
 
@@ -19,7 +18,7 @@ reset_symbol = "\U000021A9"  # ↩
 NEW_PRESET = "New Preset"
 
 
-def load_presets(preset_dir: str) -> Dict[str, str]:
+def load_presets(preset_dir: str) -> dict[str, str]:
     if not os.path.exists(preset_dir):
         os.makedirs(preset_dir)
         return {}
@@ -27,7 +26,7 @@ def load_presets(preset_dir: str) -> Dict[str, str]:
     presets = {}
     for filename in os.listdir(preset_dir):
         if filename.endswith(".txt"):
-            with open(os.path.join(preset_dir, filename), "r") as f:
+            with open(os.path.join(preset_dir, filename)) as f:
                 name = filename.replace(".txt", "")
                 if name == NEW_PRESET:
                     continue
@@ -41,7 +40,7 @@ def infer_control_type(module: str) -> str:
     return preprocessor.tags[0] if preprocessor.tags else "All"
 
 
-class ControlNetPresetUI(object):
+class ControlNetPresetUI:
     preset_directory = os.path.join(scripts.basedir(), "presets")
     presets = load_presets(preset_directory)
 
@@ -100,10 +99,7 @@ class ControlNetPresetUI(object):
         *ui_states,
     ):
         def init_with_ui_states(*ui_states) -> ControlNetUnit:
-            return ControlNetUnit(**{
-                field: value
-                for field, value in zip(ControlNetUnit.infotext_fields(), ui_states)
-            })
+            return ControlNetUnit(**dict(zip(ControlNetUnit.infotext_fields(), ui_states, strict=False)))
 
         def apply_preset(name: str, control_type: str, *ui_states):
             if name == NEW_PRESET:
@@ -283,7 +279,7 @@ class ControlNetPresetUI(object):
                     )
 
     @staticmethod
-    def dropdown_choices() -> List[str]:
+    def dropdown_choices() -> list[str]:
         return list(ControlNetPresetUI.presets.keys()) + [NEW_PRESET]
 
     @staticmethod

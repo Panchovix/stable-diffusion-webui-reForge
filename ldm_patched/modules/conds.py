@@ -27,7 +27,7 @@ class CONDRegular:
         for x in others:
             conds.append(x.cond)
         return torch.cat(conds)
-    
+
     def size(self):
         return list(self.cond.size())
 
@@ -88,7 +88,7 @@ class CONDConstant(CONDRegular):
 
     def size(self):
             return [1]
-    
+
 class CONDList(CONDRegular):
     def __init__(self, cond):
         self.cond = cond

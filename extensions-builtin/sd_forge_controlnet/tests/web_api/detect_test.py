@@ -1,6 +1,5 @@
 import pytest
 import requests
-from typing import List
 
 from .template import (
     APITestTemplate,
@@ -11,7 +10,7 @@ from .template import (
 )
 
 
-def get_modules() -> List[str]:
+def get_modules() -> list[str]:
     return requests.get(APITestTemplate.BASE_URL + "controlnet/module_list").json()[
         "module_list"
     ]

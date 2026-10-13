@@ -30,10 +30,10 @@ class UNet(nn.Module):
     def __init__(self):
         super(UNet, self).__init__()
         self.NUM_SEG_CLASSES = 7 # Background, hair, face, eye, mouth, skin, clothes
-        
+
         mobilenet_v2 = torchvision.models.mobilenet_v2(weights=MobileNet_V2_Weights.IMAGENET1K_V1)
         mob_blocks = mobilenet_v2.features
-        
+
         # Encoder
         self.en_block0 = nn.Sequential(    # in_ch=3 out_ch=16
             mob_blocks[0],
@@ -62,7 +62,7 @@ class UNet(nn.Module):
             mob_blocks[15],
             mob_blocks[16],
         )
-        
+
         # Decoder
         self.de_block4 = nn.Sequential(     # in_ch=160 out_ch=96
             nn.UpsamplingNearest2d(scale_factor=2),
@@ -92,20 +92,20 @@ class UNet(nn.Module):
             nn.LeakyReLU(0.1),
             nn.Dropout(p=0.2)
         )
-        
+
         self.de_block0 = nn.Sequential(     # in_ch=16x2 out_ch=7
             nn.UpsamplingNearest2d(scale_factor=2),
             nn.Conv2d(16*2, self.NUM_SEG_CLASSES, kernel_size=3, padding=1),
             nn.Softmax2d()
         )
-        
+
     def forward(self, x):
         e0 = self.en_block0(x)
         e1 = self.en_block1(e0)
         e2 = self.en_block2(e1)
         e3 = self.en_block3(e2)
         e4 = self.en_block4(e3)
-        
+
         d4 = self.de_block4(e4)
         d4 = F.interpolate(d4, size=e3.size()[2:], mode='bilinear', align_corners=True)
         c4 = torch.cat((d4,e3),1)
@@ -122,7 +122,7 @@ class UNet(nn.Module):
         d1 = F.interpolate(d1, size=e0.size()[2:], mode='bilinear', align_corners=True)
         c1 = torch.cat((d1,e0),1)
         y = self.de_block0(c1)
-        
+
         return y
 
 
@@ -159,8 +159,8 @@ class AnimeFaceSegment:
         if self.model is None:
             self.load_model()
         self.model.to(self.device)
-        transform = transforms.Compose([  
-            transforms.Resize(512,interpolation=transforms.InterpolationMode.BICUBIC),  
+        transform = transforms.Compose([
+            transforms.Resize(512,interpolation=transforms.InterpolationMode.BICUBIC),
             transforms.ToTensor(),])
         img = Image.fromarray(input_image)
         with torch.no_grad():

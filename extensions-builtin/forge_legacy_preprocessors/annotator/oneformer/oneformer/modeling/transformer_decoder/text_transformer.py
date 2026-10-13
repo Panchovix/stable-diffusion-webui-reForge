@@ -120,7 +120,7 @@ class ContextDecoder(nn.Module):
         self.decoder = nn.ModuleList([
                     TransformerDecoderLayer(transformer_width, transformer_heads, dropout) for _ in range(transformer_layers)
                 ])
-        
+
         self.out_proj = nn.Sequential(
             nn.LayerNorm(transformer_width),
             nn.Linear(transformer_width, visual_dim)
@@ -137,7 +137,7 @@ class ContextDecoder(nn.Module):
             nn.init.constant_(m.bias, 0)
             nn.init.constant_(m.weight, 1.0)
 
-    
+
     def forward(self, text, visual):
         B, N, C = visual.shape
         visual = self.memory_proj(visual)
@@ -145,7 +145,7 @@ class ContextDecoder(nn.Module):
 
         for layer in self.decoder:
             x = layer(x, visual)
-        
+
         return self.out_proj(x)
 
 

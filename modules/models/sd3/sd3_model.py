@@ -1,24 +1,31 @@
 import contextlib
-from modules.shared import opts
 import torch
-
-if opts.sd_sampling == "A1111":
-    import k_diff.k_diffusion
-elif opts.sd_sampling == "ldm patched (Comfy)":
-    import ldm_patched.k_diffusion as k_diffusion
 from modules.models.sd3.sd3_impls import BaseModel, SDVAE, SD3LatentFormat
 from modules.models.sd3.sd3_cond import SD3Cond
 
 from modules import shared, devices
+from modules.sd_sampling_backend import get_external
 
 
-class SD3Denoiser(k_diffusion.external.DiscreteSchedule):
-    def __init__(self, inner_model, sigmas):
-        super().__init__(sigmas, quantize=shared.opts.enable_quantization)
-        self.inner_model = inner_model
+_sd3_denoiser_class = None
 
-    def forward(self, input, sigma, **kwargs):
-        return self.inner_model.apply_model(input, sigma, **kwargs)
+def _get_sd3_denoiser_class():
+    global _sd3_denoiser_class
+    if _sd3_denoiser_class is not None:
+        return _sd3_denoiser_class
+
+    DiscreteSchedule = get_external().DiscreteSchedule
+
+    class SD3Denoiser(DiscreteSchedule):
+        def __init__(self, inner_model, sigmas):
+            super().__init__(sigmas, quantize=shared.opts.enable_quantization)
+            self.inner_model = inner_model
+
+        def forward(self, input, sigma, **kwargs):
+            return self.inner_model.apply_model(input, sigma, **kwargs)
+
+    _sd3_denoiser_class = SD3Denoiser
+    return _sd3_denoiser_class
 
 
 class SD3Inferencer(torch.nn.Module):
@@ -71,7 +78,7 @@ class SD3Inferencer(torch.nn.Module):
         return x
 
     def create_denoiser(self):
-        return SD3Denoiser(self, self.model.model_sampling.sigmas)
+        return _get_sd3_denoiser_class()(self, self.model.model_sampling.sigmas)
 
     def medvram_fields(self):
         return [

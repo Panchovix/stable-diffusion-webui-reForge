@@ -1,6 +1,6 @@
 import logging
 import gradio as gr
-from modules import scripts, shared_options as opts
+from modules import scripts
 
 class AdvancedModelSamplingScript(scripts.Script):
     def __init__(self):
@@ -79,7 +79,7 @@ class AdvancedModelSamplingScript(scripts.Script):
     def process_before_every_sampling(self, p, *args, **kwargs):
         if len(args) >= 7:
             (self.enabled, self.sampling_mode, self.discrete_sampling, self.discrete_zsnr,
-             self.continuous_edm_sampling, self.continuous_edm_sigma_max, 
+             self.continuous_edm_sampling, self.continuous_edm_sigma_max,
              self.continuous_edm_sigma_min) = args[:7]
         else:
             logging.warning("Not enough arguments provided to process_before_every_sampling")
@@ -101,8 +101,8 @@ class AdvancedModelSamplingScript(scripts.Script):
             unet = sampler.patch(unet, self.discrete_sampling, self.discrete_zsnr)[0]
         elif self.sampling_mode == "Continuous EDM":
             sampler = ModelSamplingContinuousEDM()
-            unet = sampler.patch(unet, self.continuous_edm_sampling, 
-                               self.continuous_edm_sigma_max, 
+            unet = sampler.patch(unet, self.continuous_edm_sampling,
+                               self.continuous_edm_sigma_max,
                                self.continuous_edm_sigma_min)[0]
 
         p.sd_model.forge_objects.unet = unet
@@ -127,4 +127,3 @@ class AdvancedModelSamplingScript(scripts.Script):
         logging.debug(f"Advanced Model Sampling: Enabled: {self.enabled}, Mode: {self.sampling_mode}")
 
         return
-		

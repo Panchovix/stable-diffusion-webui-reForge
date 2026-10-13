@@ -69,7 +69,7 @@ def inference(sess, img):
             outputs = [all_outputs[i][batch_idx:batch_idx+1,...] for i in range(len(all_outputs))]
             all_out.append(outputs)
         return all_out
-    
+
     for i in range(len(img)):
 
         input = img[i].transpose(2, 0, 1)

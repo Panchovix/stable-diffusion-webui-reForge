@@ -5,7 +5,7 @@ import torch.nn as nn
 try:
     from urllib import urlretrieve
 except ImportError:
-    from urllib.request import urlretrieve
+    pass
 
 __all__ = ['resnext101_32x8d']
 

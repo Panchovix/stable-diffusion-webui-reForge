@@ -3,8 +3,9 @@ import contextlib
 import os
 from ldm_patched.modules import model_management
 from ldm_patched.modules import model_detection
+from ldm_patched.modules import supported_models
 
-from ldm_patched.modules.sd import VAE, CLIP, load_model_weights
+from ldm_patched.modules.sd import VAE, CLIP
 import ldm_patched.modules.model_patcher
 import ldm_patched.modules.utils
 import ldm_patched.modules.clip_vision
@@ -17,9 +18,18 @@ from modules.sd_models_xl import extend_sdxl
 from ldm.util import instantiate_from_config
 from modules_forge import forge_clip
 from modules_forge.unet_patcher import UnetPatcher
-from ldm_patched.modules.model_base import model_sampling, ModelType, SD3
+from diff_pipeline import load_model as diffusers_hijack
+from ldm_patched.modules.model_base import model_sampling, ModelType
+
+# Auto-register the built-in SDXL path hijack when --forge-diffusers-pipeline is active.
+# This causes sd_models.load_model() to load SDXL checkpoints directly via
+# StableDiffusionXLPipeline.from_single_file() instead of going through ldm.
+if getattr(cmd_opts, 'forge_diffusers_pipeline', False):
+    diffusers_hijack.register_path_hijack(
+        diffusers_hijack.is_sdxl_checkpoint,
+        diffusers_hijack.dummy_sdxl_hijack,
+    )
 import logging
-import types
 
 import open_clip
 from transformers import CLIPTextModel, CLIPTokenizer
@@ -33,11 +43,11 @@ def maybe_override_text_encoder(forge_objects, checkpoint_info):
         import torch
 
         text_encoder_option = getattr(shared.opts, 'sd_text_encoder', 'Automatic')
-        
+
         # Check if we should use a separate text encoder
         should_use_separate_te = False
         selected_option = None
-        
+
         # If CLIP is None (was skipped during loading), we must load a separate TE
         if forge_objects.clip is None:
             should_use_separate_te = True
@@ -59,7 +69,7 @@ def maybe_override_text_encoder(forge_objects, checkpoint_info):
                     # Check if the selected TE is the same as the checkpoint
                     if checkpoint_info and matching_te.te_info.model_name == checkpoint_info.model_name:
                         # Same model - use checkpoint's built-in TE
-                        print(f"Selected text encoder matches checkpoint model - using checkpoint's built-in text encoder")
+                        print("Selected text encoder matches checkpoint model - using checkpoint's built-in text encoder")
                         return forge_objects
                     else:
                         # Different model - use separate TE
@@ -68,11 +78,11 @@ def maybe_override_text_encoder(forge_objects, checkpoint_info):
                 else:
                     print(f"Warning: Text encoder '{text_encoder_option}' not found, using checkpoint's built-in text encoder")
                     return forge_objects
-        
+
         # If we reach here and should_use_separate_te is False, return original
         if not should_use_separate_te:
             return forge_objects
-            
+
         # Find the text encoder to use if not already selected
         if selected_option is None:
             if text_encoder_option == 'Automatic' and checkpoint_info:
@@ -91,33 +101,33 @@ def maybe_override_text_encoder(forge_objects, checkpoint_info):
                 selected_option = next((x for x in sd_text_encoder.text_encoder_options if x.label == text_encoder_option), None)
                 if selected_option is None:
                     raise RuntimeError(f"Text encoder '{text_encoder_option}' not found and checkpoint CLIP was not loaded")
-        
+
         # Store reference to original CLIP for cleanup
         original_clip = forge_objects.clip
-        
+
         # Load the separate text encoder
         print(f"Loading separate text encoder: {selected_option.label}")
         separate_te = selected_option.create_text_encoder()
         separate_te.option = selected_option  # Add option reference
         separate_te._load_clip_from_checkpoint()  # Force load
-        
+
         # Replace the CLIP in forge_objects
         if separate_te.clip_model is not None:
             print(f"Replacing text encoder with: {selected_option.label}")
             forge_objects.clip = separate_te.clip_model
             # Mark that we've loaded a separate TE to avoid double-loading later
             forge_objects._separate_te_loaded = True
-            
+
             # Update the global text encoder state to match what we loaded
             from modules import sd_text_encoder
             sd_text_encoder.current_text_encoder_option = selected_option
             sd_text_encoder.current_text_encoder = separate_te
             print(f"Updated global TE state to: {selected_option.label}")
-            
+
             # Properly unload the original CLIP model to free VRAM (only if it exists)
             if original_clip is not None and original_clip != separate_te.clip_model:
                 print("Unloading original text encoder to free VRAM")
-                
+
                 # Unload model from VRAM if it has a patcher
                 if hasattr(original_clip, 'patcher'):
                     try:
@@ -129,7 +139,7 @@ def maybe_override_text_encoder(forge_objects, checkpoint_info):
                             original_clip.patcher.to('cpu')
                     except Exception as e:
                         print(f"Warning: Error during original CLIP patcher cleanup: {e}")
-                
+
                 # Clear the conditional stage model
                 if hasattr(original_clip, 'cond_stage_model'):
                     try:
@@ -142,17 +152,17 @@ def maybe_override_text_encoder(forge_objects, checkpoint_info):
                                 del param.data
                     except Exception as e:
                         print(f"Warning: Error during original CLIP model cleanup: {e}")
-                
+
                 # Clear references
                 del original_clip
-                
+
                 # Force garbage collection and CUDA cache cleanup
                 gc.collect()
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
-            
+
         return forge_objects
-        
+
     except Exception as e:
         print(f"Error loading separate text encoder: {e}")
         return forge_objects  # Fall back to original
@@ -270,11 +280,27 @@ def load_state_dict_guess_config(sd, output_vae=True, output_clip=True, output_c
 
     if output_model:
         inital_load_device = model_management.unet_inital_load_device(parameters, unet_dtype)
+        if getattr(cmd_opts, 'forge_jax_pipeline', False) and isinstance(model_config, supported_models.SDXL):
+            # jax_pipeline (see modules_forge/forge_loader.py's own
+            # maybe_activate() call below) builds its own independent
+            # JAX-side copy of this UNet by reading its state_dict() once
+            # activation happens — state_dict() returns identical tensors
+            # regardless of which device they currently live on, so there
+            # is no need to eagerly materialize the torch copy on GPU only
+            # to have jax_pipeline read it and then evict it moments
+            # later (see host_offload.evict_torch_unet_from_gpu). Loading
+            # it to CPU here means the `inital_load_device != cpu` check
+            # below naturally skips the eager full GPU load entirely;
+            # forge's own sampling_prepare() still loads it on demand for
+            # the first real generation, same as it would for any other
+            # backend — this only removes the redundant, otherwise-wasted
+            # load-then-evict round trip at checkpoint-load time.
+            inital_load_device = torch.device("cpu")
         model = model_config.get_model(sd, diffusion_model_prefix, device=inital_load_device)
         model.load_model_weights(sd, diffusion_model_prefix)
 
     if output_vae:
-        vae_sd = ldm_patched.modules.utils.state_dict_prefix_replace(sd, {k: "" for k in model_config.vae_key_prefix}, filter_keys=True)
+        vae_sd = ldm_patched.modules.utils.state_dict_prefix_replace(sd, dict.fromkeys(model_config.vae_key_prefix, ""), filter_keys=True)
         vae_sd = model_config.process_vae_state_dict(vae_sd)
         vae = VAE(sd=vae_sd, metadata=metadata)
 
@@ -370,7 +396,7 @@ def load_diffusion_model_state_dict(sd, model_options={}):
     left_over = sd.keys()
     if len(left_over) > 0:
         logging.info("left over keys in diffusion model: {}".format(left_over))
-    
+
     # Return ForgeSD with just the UNet
     model_patcher = UnetPatcher(model, load_device=load_device, offload_device=offload_device)
     return ForgeSD(model_patcher, None, None, None)
@@ -390,7 +416,7 @@ def load_model_for_a1111(timer, checkpoint_info=None, state_dict=None):
     is_sd3 = 'model.diffusion_model.x_embedder.proj.weight' in state_dict
     ztsnr = 'ztsnr' in state_dict
     timer.record("forge solving config")
-    
+
     if not is_sd3:
         a1111_config_filename = find_checkpoint_config(state_dict, checkpoint_info)
         a1111_config = OmegaConf.load(a1111_config_filename)
@@ -403,16 +429,16 @@ def load_model_for_a1111(timer, checkpoint_info=None, state_dict=None):
         with no_clip():
             sd_model = instantiate_from_config(a1111_config.model)
     else:
-        sd_model = torch.nn.Module() 
-    
+        sd_model = torch.nn.Module()
+
     timer.record("forge instantiate config")
-    
+
     # Check if we should skip loading the checkpoint's CLIP to save memory
     should_skip_clip = False
     try:
         from modules import sd_text_encoder, shared
         text_encoder_option = getattr(shared.opts, 'sd_text_encoder', 'Automatic')
-        
+
         # If we're in Automatic mode and there's a matching separate TE, skip loading checkpoint CLIP
         if text_encoder_option == 'Automatic' and checkpoint_info:
             model_name = checkpoint_info.model_name
@@ -429,7 +455,7 @@ def load_model_for_a1111(timer, checkpoint_info=None, state_dict=None):
     except Exception as e:
         print(f"Warning: Error checking text encoder options: {e}")
         should_skip_clip = False
-    
+
     forge_objects = load_checkpoint_guess_config(
         state_dict,
         output_vae=True,
@@ -438,14 +464,14 @@ def load_model_for_a1111(timer, checkpoint_info=None, state_dict=None):
         embedding_directory=cmd_opts.embeddings_dir,
         output_model=True
     )
-    
+
     forge_objects = maybe_override_text_encoder(forge_objects, checkpoint_info)
     sd_model.first_stage_model = forge_objects.vae.first_stage_model
     sd_model.model.diffusion_model = forge_objects.unet.model.diffusion_model
     sd_model.forge_objects = forge_objects
     sd_model.forge_objects_original = forge_objects.shallow_copy()
     sd_model.forge_objects_after_applying_lora = forge_objects.shallow_copy()
-    
+
     # Transfer the separate TE flag to the sd_model
     if hasattr(forge_objects, '_separate_te_loaded'):
         sd_model._separate_te_loaded = True
@@ -455,10 +481,15 @@ def load_model_for_a1111(timer, checkpoint_info=None, state_dict=None):
             forge_objects.unet.compile_model(backend=args.torch_compile_backend)
         timer.record("model compilation complete")
     timer.record("forge load real models")
-    
+
     conditioner = getattr(sd_model, 'conditioner', None)
 
     if conditioner:
+        if forge_objects.clip is None:
+            raise RuntimeError(
+                "No CLIP model available for conditioner setup. "
+                "The checkpoint's CLIP was skipped but no separate text encoder was loaded successfully."
+            )
         text_cond_models = []
         for i in range(len(conditioner.embedders)):
             embedder = conditioner.embedders[i]
@@ -487,6 +518,8 @@ def load_model_for_a1111(timer, checkpoint_info=None, state_dict=None):
         else:
             sd_model.cond_stage_model = conditioner
     elif type(sd_model.cond_stage_model).__name__ == 'FrozenCLIPEmbedder':  # SD15 Clip
+        if forge_objects.clip is None:
+            raise RuntimeError("No CLIP model available for SD15 conditioner setup.")
         sd_model.cond_stage_model.tokenizer = forge_objects.clip.tokenizer.clip_l.tokenizer
         sd_model.cond_stage_model.transformer = forge_objects.clip.cond_stage_model.clip_l.transformer
         model_embeddings = sd_model.cond_stage_model.transformer.text_model.embeddings
@@ -494,6 +527,8 @@ def load_model_for_a1111(timer, checkpoint_info=None, state_dict=None):
             model_embeddings.token_embedding, sd_hijack.model_hijack)
         sd_model.cond_stage_model = forge_clip.CLIP_SD_15_L(sd_model.cond_stage_model, sd_hijack.model_hijack)
     elif type(sd_model.cond_stage_model).__name__ == 'FrozenOpenCLIPEmbedder':  # SD21 Clip
+        if forge_objects.clip is None:
+            raise RuntimeError("No CLIP model available for SD21 conditioner setup.")
         sd_model.cond_stage_model.tokenizer = forge_objects.clip.tokenizer.clip_h.tokenizer
         sd_model.cond_stage_model.transformer = forge_objects.clip.cond_stage_model.clip_h.transformer
         model_embeddings = sd_model.cond_stage_model.transformer.text_model.embeddings
@@ -509,7 +544,7 @@ def load_model_for_a1111(timer, checkpoint_info=None, state_dict=None):
 
     if getattr(sd_model, 'parameterization', None) == 'v':
         sd_model.forge_objects.unet.model.model_sampling = model_sampling(sd_model.forge_objects.unet.model.model_config, ModelType.V_PREDICTION)
-    
+
     sd_model.ztsnr = ztsnr
 
     sd_model.is_sd3 = is_sd3
@@ -523,17 +558,94 @@ def load_model_for_a1111(timer, checkpoint_info=None, state_dict=None):
     sd_model.is_sd2 = not sd_model.is_sdxl and not is_sd3 and hasattr(sd_model.cond_stage_model, 'model')
     sd_model.is_sd1 = not sd_model.is_sdxl and not sd_model.is_sd2 and not is_sd3
     sd_model.is_ssd = sd_model.is_sdxl and 'model.diffusion_model.middle_block.1.transformer_blocks.0.attn1.to_q.weight' not in sd_model.state_dict().keys()
-    
+
     if sd_model.is_sdxl:
         extend_sdxl(sd_model)
-    
+
+    diffusers_hijack.maybe_apply_diffusers_hijack(sd_model, forge_objects)
+
+    # ── Apple MLX pipeline (auto-activates on Apple Silicon when mlx installed) ──
+    # Runs after diffusers_hijack so it can register on top with higher priority.
+    # On non-Apple-Silicon hardware this is a fast no-op (platform check only).
+    _mlx_reason = None
+    try:
+        import mlx_pipeline as _mlxp
+        _mlx_activated = _mlxp.maybe_activate(sd_model, forge_objects)
+        if not _mlx_activated and _mlxp.is_apple_silicon():
+            # maybe_activate returned False on Apple Silicon — mlx not installed
+            # or Metal unavailable.  Surface this so the user knows they are on
+            # the slower MPS fallback path.
+            _mlx_reason = "mlx not installed or Metal unavailable"
+    except Exception as _mlx_err:
+        import logging as _logging
+        _logging.getLogger(__name__).debug(
+            "[MLX Pipeline] Skipped: %s", _mlx_err
+        )
+        _mlx_reason = str(_mlx_err)
+
+    if _mlx_reason is not None:
+        try:
+            from modules.devices import has_mps
+            if has_mps():
+                _reason_line = _mlx_reason[:54]
+                print(
+                    "\n"
+                    "╔══════════════════════════════════════════════════════════════╗\n"
+                    "║  WARNING: MLX pipeline unavailable — falling back to MPS     ║\n"
+                    "║                                                              ║\n"
+                    f"║  Reason: {_reason_line:<54}║\n"
+                    "║                                                              ║\n"
+                    "║  MLX is much faster on Apple Silicon.  To enable it run:     ║\n"
+                    "║    source venv/bin/activate && pip install mlx               ║\n"
+                    "║  then restart the WebUI.                                     ║\n"
+                    "╚══════════════════════════════════════════════════════════════╝\n"
+                )
+        except Exception:
+            pass  # never let the warning itself crash startup
+
+    # ── JAX pipeline (opt-in via --forge-jax-pipeline) ──────────────────────────
+    # Off by default — unlike MLX (which targets otherwise-unsupported Apple
+    # Silicon hardware), JAX would compete with an already-working CUDA/ROCm
+    # PyTorch path, so it only activates when explicitly requested.
+    if getattr(cmd_opts, 'forge_jax_pipeline', False):
+        try:
+            import jax_pipeline as _jaxp
+            _jax_activated = _jaxp.maybe_activate(sd_model, forge_objects)
+            if not _jax_activated:
+                print(
+                    "\n"
+                    "[JAX Pipeline] --forge-jax-pipeline was set but activation did not "
+                    "succeed (see log above). Falling back to the standard PyTorch pipeline. "
+                    "Install jax with: pip install -r requirements_jax.txt\n"
+                )
+        except Exception as _jax_err:
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                "[JAX Pipeline] Skipped: %s", _jax_err
+            )
+            print(
+                f"\n[JAX Pipeline] --forge-jax-pipeline was set but activation raised "
+                f"({_jax_err}). Falling back to the standard PyTorch pipeline.\n"
+            )
+
     sd_model.sd_model_hash = sd_model_hash
     sd_model.sd_model_checkpoint = checkpoint_info.filename
     sd_model.sd_checkpoint_info = checkpoint_info
 
     @torch.inference_mode()
     def patched_decode_first_stage(x):
-        sample = sd_model.forge_objects.unet.model.model_config.latent_format.process_out(x)
+        lf = sd_model.forge_objects.unet.model.model_config.latent_format
+        print(
+            f"[forge_loader.decode] latent_format={type(lf).__name__}"
+            f"  scale_factor={getattr(lf, 'scale_factor', 'n/a')}"
+            f"  x.shape={tuple(x.shape)}  x.dtype={x.dtype}"
+            f"  x_min={float(x.min()):.4f}  x_max={float(x.max()):.4f}"
+        )
+        sample = lf.process_out(x)
+        print(
+            f"[forge_loader.decode] after process_out:"
+            f"  sample_min={float(sample.min()):.4f}  sample_max={float(sample.max()):.4f}"
+        )
         sample = sd_model.forge_objects.vae.decode(sample).movedim(-1, 1) * 2.0 - 1.0
         return sample.to(x)
 

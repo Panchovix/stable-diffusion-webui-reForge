@@ -7,7 +7,6 @@ import json
 import os
 
 from annotator.oneformer.detectron2.data import DatasetCatalog, MetadataCatalog
-from annotator.oneformer.detectron2.data.datasets import load_sem_seg
 from annotator.oneformer.detectron2.data.datasets.builtin_meta import COCO_CATEGORIES
 from annotator.oneformer.detectron2.utils.file_io import PathManager
 import contextlib
@@ -276,9 +275,9 @@ def load_coco_panoptic_json(json_file, instances_json, instances_name, image_dir
 
     with PathManager.open(json_file) as f:
         json_info = json.load(f)
-    
+
     instance_data_dicts = load_coco_instance_json(instances_json, image_dir.replace("panoptic_", ""), instances_name)
-    
+
     ret = []
     for ann in json_info["annotations"]:
         image_id = int(ann["image_id"])

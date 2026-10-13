@@ -88,32 +88,32 @@ def Image_custom_preprocess(self, x):
     """Custom preprocessing for images with masks"""
     if x is None:
         return x
-        
+
     mask = ""
     if self.tool == "sketch" and self.source in ["upload", "webcam"]:
         if isinstance(x, dict):
             x, mask = x["image"], x["mask"]
-            
+
     if not isinstance(x, str):
         return x
-        
+
     im = processing_utils.decode_base64_to_image(x)
-    
+
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         im = im.convert(self.image_mode)
-        
+
     if self.shape is not None:
         im = processing_utils.resize_and_crop(im, self.shape)
-        
+
     if self.invert_colors:
         im = PIL.ImageOps.invert(im)
-        
-    if (self.source == "webcam" 
-        and self.mirror_webcam is True 
+
+    if (self.source == "webcam"
+        and self.mirror_webcam is True
         and self.tool != "color-sketch"):
         im = PIL.ImageOps.mirror(im)
-        
+
     if self.tool == "sketch" and self.source in ["upload", "webcam"]:
         mask_im = None
         if mask is not None:
@@ -122,13 +122,13 @@ def Image_custom_preprocess(self, x):
             "image": self._format_image(im),
             "mask": self._format_image(mask_im)
         }
-        
+
     return self._format_image(im)
 
 def Image_init_extension(self, *args, **kwargs):
     """Extended initialization for Image components"""
     res = original_Image_init(self, *args, **kwargs)
-    
+
     # Only apply to inpaint with mask component for now
     if getattr(self, 'elem_id', None) == 'img2maskimg':
         self.upload(
@@ -137,7 +137,7 @@ def Image_init_extension(self, *args, **kwargs):
             outputs=self
         )
         self.preprocess = Image_custom_preprocess.__get__(self, gr.Image)
-    
+
     return res
 
 

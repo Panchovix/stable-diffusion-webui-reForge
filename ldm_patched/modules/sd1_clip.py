@@ -10,7 +10,6 @@ import ldm_patched.modules.clip_model
 import json
 import logging
 import numbers
-import re
 
 def gen_empty_tokens(special_tokens, length):
     start_token = special_tokens.get("start", None)
@@ -133,14 +132,14 @@ class SDClipModel(torch.nn.Module, ClipTokenWeightEncoder):
         with ldm_patched.modules.ops.use_patched_ops(self.operations):
             with modeling_utils.no_init_weights():
                 self.transformer = CLIPTextModel(config)
-        
+
         if scaled_fp8 is not None:
             self.transformer.scaled_fp8 = torch.nn.Parameter(torch.tensor([], dtype=scaled_fp8))
-            
+
         if dtype is not None:
             self.transformer.to(dtype)
         self.transformer.text_model.embeddings.to(torch.float32)
-        
+
         self.max_length = max_length
         if freeze:
             self.freeze()
@@ -318,10 +317,10 @@ class SDClipModel(torch.nn.Module, ClipTokenWeightEncoder):
             intermediate_output = "all"
         else:
             intermediate_output = self.layer_idx
-        
+
         # Support both transformer interfaces
         if hasattr(self.transformer, 'text_model'):
-            outputs = self.transformer(input_ids=tokens, attention_mask=attention_mask, 
+            outputs = self.transformer(input_ids=tokens, attention_mask=attention_mask,
                                     output_hidden_states=self.layer == "hidden" or self.layer_idx is not None)
         else:
             # For compatibility with forge_clip expectations
@@ -499,7 +498,7 @@ def load_embed(embedding_name, embedding_directory, embedding_size, embed_key=No
                     embed_out = safe_load_embed_zip(embed_path)
             else:
                 embed = torch.load(embed_path, map_location="cpu")
-    except Exception as e:
+    except Exception:
         logging.warning("{}\n\nerror loading embedding, skipping loading: {}".format(traceback.format_exc(), embedding_name))
         return None
 
@@ -687,7 +686,7 @@ class SDTokenizer:
 
     def untokenize(self, token_weight_pair):
         return list(map(lambda a: (a, self.inv_vocab[a[0]]), token_weight_pair))
-    
+
     def state_dict(self):
         return {}
 
@@ -710,7 +709,7 @@ class SD1Tokenizer:
 
     def untokenize(self, token_weight_pair):
         return getattr(self, self.clip).untokenize(token_weight_pair)
-    
+
     def state_dict(self):
         return getattr(self, self.clip).state_dict()
 
@@ -749,4 +748,3 @@ class SD1ClipModel(torch.nn.Module):
 
     def load_sd(self, sd):
         return getattr(self, self.clip).load_sd(sd)
-    

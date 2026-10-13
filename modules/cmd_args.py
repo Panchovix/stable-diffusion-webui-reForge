@@ -20,6 +20,7 @@ parser.add_argument("--skip-prepare-environment", action='store_true', help="lau
 parser.add_argument("--skip-install", action='store_true', help="launch.py argument: skip installation of packages")
 parser.add_argument("--dump-sysinfo", action='store_true', help="launch.py argument: dump limited sysinfo file (without information about extensions, options) to disk and quit")
 parser.add_argument("--loglevel", type=str, help="log level; one of: CRITICAL, ERROR, WARNING, INFO, DEBUG", default=None)
+parser.add_argument("--use-uv", action='store_true', help="launch.py argument: use UV package manager instead of pip for faster package installation")
 parser.add_argument("--do-not-download-clip", action='store_true', help="do not download CLIP model even if it's not included in the checkpoint")
 parser.add_argument("--data-dir", type=normalized_filepath, default=os.path.dirname(os.path.dirname(os.path.realpath(__file__))), help="base path where all user data is stored")
 parser.add_argument("--models-dir", type=normalized_filepath, default=None, help="base path where models are stored; overrides --data-dir")
@@ -147,4 +148,91 @@ parser.add_argument(
     type=Path,
     help="Path to directory with annotator model directories",
     default=None,
+)
+parser.add_argument(
+    "--forge-diffusers-pipeline",
+    action="store_true",
+    help="Enable experimental Diffusers-based pipeline for SDXL models (WIP; see diff_pipeline/)",
+    default=False,
+)
+parser.add_argument(
+    "--forge-diffusers-offload",
+    action="store_true",
+    help="When using --forge-diffusers-pipeline, move the whole HF UNet back to CPU after "
+         "each sampling step to save VRAM. Adds one full transfer per step.",
+    default=False,
+)
+parser.add_argument(
+    "--forge-diffusers-sequential-offload",
+    action="store_true",
+    help="When using --forge-diffusers-pipeline, use accelerate per-block CPU offload: "
+         "each UNet block moves to GPU just before its forward pass and returns to CPU "
+         "immediately after (peak VRAM ≈ largest single block). Slower than "
+         "--forge-diffusers-offload but uses significantly less VRAM. "
+         "Takes precedence over --forge-diffusers-offload if both are set.",
+    default=False,
+)
+parser.add_argument(
+    "--forge-diffusers-auto-offload",
+    action="store_true",
+    help="When using --forge-diffusers-pipeline, use infer_auto_device_map to split the UNet "
+         "across VRAM and RAM. Blocks that fit in VRAM (Group A) stay on device permanently; "
+         "overflow blocks (Group B) load to device on-demand via forward hooks and return to CPU "
+         "immediately after. "
+         "Takes precedence over --forge-diffusers-offload and --forge-diffusers-sequential-offload.",
+    default=False,
+)
+parser.add_argument(
+    "--forge-diffusers-compile",
+    action="store_true",
+    help="When using --forge-diffusers-pipeline, compile the HF UNet with torch.compile before "
+         "the first sampling step. On the single-device (no-offload) path this compiles the whole "
+         "UNet; on the --forge-diffusers-auto-offload path it compiles each block individually. "
+         "Compilation adds 1–3 min on the first run but subsequent steps are faster. "
+         "Skipped automatically when UNet dtype is fp16 (narrow exponent range risks NaN).",
+    default=False,
+)
+parser.add_argument(
+    "--forge-diffusers-lru-headroom",
+    type=int,
+    default=0,
+    metavar="MB",
+    help="When using --forge-diffusers-pipeline with LRU block loading, override the base "
+         "activation headroom reserved in VRAM (in MB).  A resolution-scaled estimate for "
+         "skip-connection tensors is always added on top.  Lower values allow more UNet blocks "
+         "to stay resident between steps but risk OOM on high-resolution generations.  "
+         "Default: 0 (auto — uses reForge minimum_inference_memory, typically ~1024 MB).",
+)
+parser.add_argument(
+    "--forge-diffusers-clip-attn-norm",
+    action="store_true",
+    help="When using --forge-diffusers-pipeline, apply a functional LayerNorm to CLIP encoder "
+         "hidden states inside each cross-attention block before the K/V projections. "
+         "Prevents abnormal attention patterns from high-weight prompt tokens (e.g. (word:2.0)). "
+         "Equivalent to Diffusers cross_attention_norm='layer_norm' but without learned parameters.",
+    default=False,
+)
+parser.add_argument(
+    "--forge-jax-pipeline",
+    action="store_true",
+    help="Enable experimental JAX-JIT UNet backend for SDXL models (opt-in; see jax_pipeline/). "
+         "The UNet forward pass is JIT-compiled via JAX, with weights optionally offloaded to "
+         "pinned host memory (JAX Memories API) to relieve VRAM pressure. CLIP, VAE, and the "
+         "sampler loop remain on PyTorch. Requires the `jax` package (see requirements_jax.txt).",
+    default=False,
+)
+parser.add_argument(
+    "--allow-download",
+    action="store_true",
+    help="Allow huggingface_hub / diffusers / transformers to download files from the internet. "
+         "By default all network fetches are blocked; only locally cached files are used.",
+    default=False,
+)
+parser.add_argument(
+    "--inference-mode",
+    action="store_true",
+    help="Use torch.inference_mode() instead of torch.no_grad() during sampling. "
+         "Slightly faster and uses less memory, but disables autograd — samplers that "
+         "require gradients (e.g. SURE) will fall back to an analytical approximation.",
+    default=False,
 )

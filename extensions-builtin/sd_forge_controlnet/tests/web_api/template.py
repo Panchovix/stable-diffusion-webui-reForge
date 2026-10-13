@@ -3,7 +3,7 @@ import os
 import cv2
 import base64
 import functools
-from typing import Dict, Any, List, Union, Literal, Optional
+from typing import Any, Literal
 from pathlib import Path
 import datetime
 from enum import Enum
@@ -24,7 +24,7 @@ def disable_in_cq(func):
     return wrapped_func
 
 
-PayloadOverrideType = Dict[str, Any]
+PayloadOverrideType = dict[str, Any]
 
 timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 test_result_dir = Path(__file__).parent / "results" / f"test_result_{timestamp}"
@@ -51,7 +51,7 @@ def read_image(img_path: Path) -> str:
     return encoded_image
 
 
-def read_image_dir(img_dir: Path, suffixes=('.png', '.jpg', '.jpeg', '.webp')) -> List[str]:
+def read_image_dir(img_dir: Path, suffixes=('.png', '.jpg', '.jpeg', '.webp')) -> list[str]:
     """Try read all images in given img_dir."""
     img_dir = str(img_dir)
     images = []
@@ -60,7 +60,7 @@ def read_image_dir(img_dir: Path, suffixes=('.png', '.jpg', '.jpeg', '.webp')) -
             img_path = os.path.join(img_dir, filename)
             try:
                 images.append(read_image(img_path))
-            except IOError:
+            except OSError:
                 print(f"Error opening {img_path}")
     return images
 
@@ -105,10 +105,10 @@ class APITestTemplate:
     def __init__(
         self,
         name: str,
-        gen_type: Union[Literal["img2img"], Literal["txt2img"]],
+        gen_type: Literal["img2img"] | Literal["txt2img"],
         payload_overrides: PayloadOverrideType,
-        unit_overrides: Union[PayloadOverrideType, List[PayloadOverrideType]],
-        input_image: Optional[str] = None,
+        unit_overrides: PayloadOverrideType | list[PayloadOverrideType],
+        input_image: str | None = None,
     ):
         self.name = name
         self.url = APITestTemplate.BASE_URL + "sdapi/v1/" + gen_type
@@ -144,7 +144,7 @@ class APITestTemplate:
         else:
             return self.exec_local(*args, **kwargs)
 
-    def exec_cq(self, expected_output_num: Optional[int] = None, *args, **kwargs) -> bool:
+    def exec_cq(self, expected_output_num: int | None = None, *args, **kwargs) -> bool:
         """Execute test in CQ environment."""
         res = requests.post(url=self.url, json=self.payload)
         if res.status_code != 200:

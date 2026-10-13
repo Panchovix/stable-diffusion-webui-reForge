@@ -229,7 +229,7 @@ def detect_unet_config(state_dict, key_prefix, metadata=None):
         if metadata is not None and "config" in metadata:
             dit_config.update(json.loads(metadata["config"]).get("transformer", {}))
         return dit_config
-    
+
     if '{}genre_embedder.weight'.format(key_prefix) in state_dict_keys: #ACE-Step model
         dit_config = {}
         dit_config["audio_model"] = "ace"
@@ -372,7 +372,7 @@ def detect_unet_config(state_dict, key_prefix, metadata=None):
         if flf_weight is not None:
             dit_config["flf_pos_embed_token_number"] = flf_weight.shape[1]
         return dit_config
-    
+
     if '{}latent_in.weight'.format(key_prefix) in state_dict_keys:  # Hunyuan 3D
         in_shape = state_dict['{}latent_in.weight'.format(key_prefix)].shape
         dit_config = {}
@@ -387,7 +387,7 @@ def detect_unet_config(state_dict, key_prefix, metadata=None):
         dit_config["qkv_bias"] = True
         dit_config["guidance_embed"] = "{}guidance_in.in_layer.weight".format(key_prefix) in state_dict_keys
         return dit_config
-    
+
     if '{}caption_projection.0.linear.weight'.format(key_prefix) in state_dict_keys:  # HiDream
         dit_config = {}
         dit_config["image_model"] = "hidream"
@@ -406,7 +406,7 @@ def detect_unet_config(state_dict, key_prefix, metadata=None):
         dit_config["patch_size"] = 2
         dit_config["text_emb_dim"] = 2048
         return dit_config
-    
+
     if '{}blocks.0.mlp.layer1.weight'.format(key_prefix) in state_dict_keys:  # Cosmos predict2
         dit_config = {}
         dit_config["image_model"] = "cosmos_predict2"
@@ -458,7 +458,7 @@ def detect_unet_config(state_dict, key_prefix, metadata=None):
         dit_config["rope_enable_fps_modulation"] = False
 
         return dit_config
-    
+
     if '{}time_caption_embed.timestep_embedder.linear_1.bias'.format(key_prefix) in state_dict_keys:  # Omnigen2
         dit_config = {}
         dit_config["image_model"] = "omnigen2"
@@ -639,7 +639,7 @@ def unet_prefix_from_state_dict(state_dict):
                   "model.model.", #audio models
                   "net.", #cosmos
                   ]
-    counts = {k: 0 for k in candidates}
+    counts = dict.fromkeys(candidates, 0)
     for k in state_dict:
         for c in candidates:
             if k.startswith(c):
@@ -694,7 +694,7 @@ def convert_config(unet_config):
 def unet_config_from_diffusers_unet(state_dict, dtype=None):
     if "conv_in.weight" not in state_dict:
         return None
-    
+
     match = {}
     transformer_depth = []
 

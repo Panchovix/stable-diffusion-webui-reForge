@@ -2,7 +2,6 @@
 
 
 
-import torch
 from ldm_patched.contrib.nodes import MAX_RESOLUTION
 
 class CLIPTextEncodeSDXLRefiner:

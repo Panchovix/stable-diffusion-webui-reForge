@@ -26,7 +26,7 @@ class TimerSubcategory:
 
 
 class Timer:
-    def __init__(self, print_log=False):
+    def __init__(self, print_log: bool = False):
         self.start = time.time()
         self.records = {}
         self.total = 0
@@ -46,7 +46,7 @@ class Timer:
 
         self.records[category] += amount
 
-    def record(self, category, extra_time=0, disable_log=False):
+    def record(self, category, extra_time: int = 0, disable_log: bool = False):
         e = self.elapsed()
 
         self.add_time_to_record(self.base_category + category, e + extra_time)

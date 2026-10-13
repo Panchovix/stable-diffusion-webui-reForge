@@ -185,7 +185,10 @@ def model_lora_keys_unet(model, key_map={}):
             else:
                 key_map["{}".format(k)] = k #generic lora format for not .weight without any weird key names
 
-    diffusers_keys = ldm_patched.modules.utils.unet_to_diffusers(model.model_config.unet_config)
+    unet_config = getattr(getattr(model, "model_config", None), "unet_config", None)
+    if unet_config is None:
+        return key_map
+    diffusers_keys = ldm_patched.modules.utils.unet_to_diffusers(unet_config)
     for k in diffusers_keys:
         if k.endswith(".weight"):
             unet_key = "diffusion_model.{}".format(diffusers_keys[k])

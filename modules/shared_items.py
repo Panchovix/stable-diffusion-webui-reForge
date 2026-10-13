@@ -43,6 +43,23 @@ def refresh_vae_list():
 #     return ["Automatic"] + [x.title() for x in modules.sd_hijack.optimizers] + ["None"]
 
 
+def dit_attention_backend_choices():
+    """Attention backends selectable for DiT models (Flux/SD3/etc).
+
+    "Comfy Kitchen (INT8)" is ported from upstream ComfyUI's
+    ModelAttentionBackend node (PR #15479 / #16154) and is only listed when
+    comfy_kitchen.int8_attention_is_available() returns True, following the
+    same "only listed when available" convention upstream uses for its node
+    dropdown. See docs/comfy_kitchen_attention.md.
+    """
+    import ldm_patched.ldm.modules.attention as ldm_attention
+
+    choices = ["Automatic", "PyTorch"]
+    if getattr(ldm_attention, "COMFY_KITCHEN_INT8_ATTENTION_IS_AVAILABLE", False):
+        choices.append("Comfy Kitchen (INT8)")
+    return choices
+
+
 def sd_unet_items():
     import modules.sd_unet
 

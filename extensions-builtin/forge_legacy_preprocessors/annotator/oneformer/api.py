@@ -1,7 +1,6 @@
 import os
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
-import torch
 
 from annotator.oneformer.detectron2.config import get_cfg
 from annotator.oneformer.detectron2.projects.deeplab import add_deeplab_config

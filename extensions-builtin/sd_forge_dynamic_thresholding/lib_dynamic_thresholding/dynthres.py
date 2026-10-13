@@ -32,7 +32,7 @@ class DynamicThresholdingComfyNode:
     def patch(self, model, mimic_scale, threshold_percentile, mimic_mode, mimic_scale_min, cfg_mode, cfg_scale_min, sched_val, separate_feature_channels, scaling_startpoint, variability_measure, interpolate_phi):
 
         dynamic_thresh = DynThresh(mimic_scale, threshold_percentile, mimic_mode, mimic_scale_min, cfg_mode, cfg_scale_min, sched_val, 0, 999, separate_feature_channels == "enable", scaling_startpoint, variability_measure, interpolate_phi)
-        
+
         def sampler_dyn_thresh(args):
             input = args["input"]
             cond = input - args["cond"]
@@ -70,7 +70,7 @@ class DynamicThresholdingSimpleComfyNode:
     def patch(self, model, mimic_scale, threshold_percentile):
 
         dynamic_thresh = DynThresh(mimic_scale, threshold_percentile, "CONSTANT", 0, "CONSTANT", 0, 0, 0, 999, False, "MEAN", "AD", 1)
-        
+
         def sampler_dyn_thresh(args):
             input = args["input"]
             cond = input - args["cond"]

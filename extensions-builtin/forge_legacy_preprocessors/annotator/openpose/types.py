@@ -1,4 +1,4 @@
-from typing import NamedTuple, List, Optional, Union
+from typing import NamedTuple, List, Optional
 
 
 class Keypoint(NamedTuple):

@@ -1,12 +1,14 @@
-import os, re
+import os
+import re
 from functools import lru_cache
 from modules import modelloader, devices, errors
-from modules.shared import opts, cmd_opts
+from modules.shared import cmd_opts
+import modules.shared as shared
 from modules.upscaler import Upscaler, UpscalerData
 from modules.upscaler_utils import upscale_with_model
 from modules_forge.forge_util import prepare_free_memory
 
-PREFER_HALF = opts.prefer_fp16_upscalers
+PREFER_HALF = shared.opts.prefer_fp16_upscalers
 if PREFER_HALF:
     print("[Upscalers] Prefer Half-Precision:", PREFER_HALF)
 
@@ -52,8 +54,8 @@ class UpscalerESRGAN(Upscaler):
         return upscale_with_model(
             model=model,
             img=img,
-            tile_size=opts.ESRGAN_tile,
-            tile_overlap=opts.ESRGAN_tile_overlap,
+            tile_size=shared.opts.ESRGAN_tile,
+            tile_overlap=shared.opts.ESRGAN_tile_overlap,
         )
 
     def load_model(self, path: str):

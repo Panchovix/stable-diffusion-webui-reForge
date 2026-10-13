@@ -1,4 +1,3 @@
-import torch
 import torch.nn as nn
 
 class DepthWiseSeperableConv(nn.Module):
@@ -7,10 +6,10 @@ class DepthWiseSeperableConv(nn.Module):
         if 'groups' in kwargs:
             # ignoring groups for Depthwise Sep Conv
             del kwargs['groups']
-        
+
         self.depthwise = nn.Conv2d(in_dim, in_dim, *args, groups=in_dim, **kwargs)
         self.pointwise = nn.Conv2d(in_dim, out_dim, kernel_size=1)
-        
+
     def forward(self, x):
         out = self.depthwise(x)
         out = self.pointwise(out)

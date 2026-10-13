@@ -177,7 +177,7 @@ def configure_sigint_handler():
 
 def print_event_handler(event_name):
     print(f"Event handler triggered: {event_name}")
-    
+
 def reload_model_for_text_encoder_change():
     """Special function to handle text encoder changes that forces model reload"""
     from modules import sd_models
@@ -186,7 +186,7 @@ def reload_model_for_text_encoder_change():
     return sd_models.reload_model_weights(forced_reload=True)
 
 def configure_opts_onchange():
-    from modules import shared, sd_models, sd_vae, ui_tempdir, sd_hijack
+    from modules import shared, sd_models, sd_vae, ui_tempdir
     from modules.call_queue import wrap_queued_call
     from modules_forge import main_thread
 

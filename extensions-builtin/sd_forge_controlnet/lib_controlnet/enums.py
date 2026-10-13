@@ -1,7 +1,6 @@
 from __future__ import annotations
 from enum import Enum
-from typing import List, NamedTuple
-from functools import lru_cache
+from typing import NamedTuple
 
 
 class HiResFixOption(Enum):
@@ -10,7 +9,7 @@ class HiResFixOption(Enum):
     HIGH_RES_ONLY = "High res only"
 
     @staticmethod
-    def from_value(value) -> "HiResFixOption":
+    def from_value(value) -> HiResFixOption:
         if isinstance(value, str):
             if value.startswith("HiResFixOption."):
                 _, field = value.split(".")
@@ -41,7 +40,7 @@ class StableDiffusionVersion(Enum):
     SDXL = 3
 
     @staticmethod
-    def detect_from_model_name(model_name: str) -> "StableDiffusionVersion":
+    def detect_from_model_name(model_name: str) -> StableDiffusionVersion:
         """Based on the model name provided, guess what stable diffusion version it is.
         This might not be accurate without actually inspect the file content.
         """
@@ -65,7 +64,7 @@ class StableDiffusionVersion(Enum):
     def controlnet_layer_num(self) -> int:
         return self.encoder_block_num() + 1
 
-    def is_compatible_with(self, other: "StableDiffusionVersion") -> bool:
+    def is_compatible_with(self, other: StableDiffusionVersion) -> bool:
         """ Incompatible only when one of version is SDXL and other is not. """
         return (
             any(v == StableDiffusionVersion.UNKNOWN for v in [self, other]) or
@@ -138,7 +137,7 @@ class ControlModelType(Enum):
             }
             or self.is_controlnet
         )
-    
+
 class AutoMachine(Enum):
     """
     Lvmin's algorithm for Attention/AdaIn AutoMachine States.
@@ -165,14 +164,14 @@ class TransformerID(NamedTuple):
 
 
 class TransformerIDResult(NamedTuple):
-    input_ids: List[TransformerID]
-    output_ids: List[TransformerID]
-    middle_ids: List[TransformerID]
+    input_ids: list[TransformerID]
+    output_ids: list[TransformerID]
+    middle_ids: list[TransformerID]
 
     def get(self, idx: int) -> TransformerID:
         return self.to_list()[idx]
 
-    def to_list(self) -> List[TransformerID]:
+    def to_list(self) -> list[TransformerID]:
         return sorted(
             self.input_ids + self.output_ids + self.middle_ids,
             key=lambda i: i.transformer_index,
@@ -202,7 +201,7 @@ class ControlNetUnionControlType(Enum):
     UNKNOWN = "Unknown"
 
     @staticmethod
-    def all_tags() -> List[str]:
+    def all_tags() -> list[str]:
         """ Tags can be handled by union ControlNet """
         return [
             "openpose",

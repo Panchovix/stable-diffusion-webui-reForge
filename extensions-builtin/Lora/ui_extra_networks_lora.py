@@ -88,4 +88,3 @@ class ExtraNetworksPageLora(ui_extra_networks.ExtraNetworksPage):
 
     def create_user_metadata_editor(self, ui, tabname):
         return LoraUserMetadataEditor(ui, tabname, self)
-    

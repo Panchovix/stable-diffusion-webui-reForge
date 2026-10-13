@@ -1,13 +1,11 @@
-import os        
+import os
 import json
 import gradio as gr
 import functools
-from copy import copy
-from typing import List, Optional, Union, Callable, Dict, Tuple, Literal
 from dataclasses import dataclass
 import numpy as np
 
-from lib_controlnet.utils import svg_preprocess, read_image, judge_image_type
+from lib_controlnet.utils import svg_preprocess, judge_image_type
 from lib_controlnet import (
     global_state,
     external_code,
@@ -20,13 +18,10 @@ from lib_controlnet.controlnet_ui.tool_button import ToolButton
 from lib_controlnet.controlnet_ui.photopea import Photopea
 from lib_controlnet.controlnet_ui.multi_inputs_gallery import MultiInputsGallery
 from lib_controlnet.enums import InputMode, HiResFixOption
-from modules import shared, script_callbacks
+from modules import shared
 from modules.ui_components import FormRow
 from modules_forge.forge_util import HWC3
 from lib_controlnet.enums import (
-    InputMode,
-    HiResFixOption,
-    PuLIDMode,
     ControlNetUnionControlType,
 )
 
@@ -35,29 +30,29 @@ from lib_controlnet.enums import (
 class A1111Context:
     """Contains all components from A1111."""
 
-    img2img_batch_input_dir: Optional[gr.components.IOComponent] = None
-    img2img_batch_output_dir: Optional[gr.components.IOComponent] = None
-    txt2img_submit_button: Optional[gr.components.IOComponent] = None
-    img2img_submit_button: Optional[gr.components.IOComponent] = None
+    img2img_batch_input_dir: gr.components.IOComponent | None = None
+    img2img_batch_output_dir: gr.components.IOComponent | None = None
+    txt2img_submit_button: gr.components.IOComponent | None = None
+    img2img_submit_button: gr.components.IOComponent | None = None
 
     # Slider controls from A1111 WebUI.
-    txt2img_w_slider: Optional[gr.components.IOComponent] = None
-    txt2img_h_slider: Optional[gr.components.IOComponent] = None
-    img2img_w_slider: Optional[gr.components.IOComponent] = None
-    img2img_h_slider: Optional[gr.components.IOComponent] = None
+    txt2img_w_slider: gr.components.IOComponent | None = None
+    txt2img_h_slider: gr.components.IOComponent | None = None
+    img2img_w_slider: gr.components.IOComponent | None = None
+    img2img_h_slider: gr.components.IOComponent | None = None
 
-    img2img_img2img_tab: Optional[gr.components.IOComponent] = None
-    img2img_img2img_sketch_tab: Optional[gr.components.IOComponent] = None
-    img2img_batch_tab: Optional[gr.components.IOComponent] = None
-    img2img_inpaint_tab: Optional[gr.components.IOComponent] = None
-    img2img_inpaint_sketch_tab: Optional[gr.components.IOComponent] = None
-    img2img_inpaint_upload_tab: Optional[gr.components.IOComponent] = None
+    img2img_img2img_tab: gr.components.IOComponent | None = None
+    img2img_img2img_sketch_tab: gr.components.IOComponent | None = None
+    img2img_batch_tab: gr.components.IOComponent | None = None
+    img2img_inpaint_tab: gr.components.IOComponent | None = None
+    img2img_inpaint_sketch_tab: gr.components.IOComponent | None = None
+    img2img_inpaint_upload_tab: gr.components.IOComponent | None = None
 
-    img2img_inpaint_area: Optional[gr.components.IOComponent] = None
-    txt2img_enable_hr: Optional[gr.components.IOComponent] = None
+    img2img_inpaint_area: gr.components.IOComponent | None = None
+    txt2img_enable_hr: gr.components.IOComponent | None = None
 
     @property
-    def img2img_inpaint_tabs(self) -> Tuple[gr.components.IOComponent]:
+    def img2img_inpaint_tabs(self) -> tuple[gr.components.IOComponent]:
         return (
             self.img2img_inpaint_tab,
             self.img2img_inpaint_sketch_tab,
@@ -65,7 +60,7 @@ class A1111Context:
         )
 
     @property
-    def img2img_non_inpaint_tabs(self) -> Tuple[gr.components.IOComponent]:
+    def img2img_non_inpaint_tabs(self) -> tuple[gr.components.IOComponent]:
         return (
             self.img2img_img2img_tab,
             self.img2img_img2img_sketch_tab,
@@ -119,7 +114,7 @@ class A1111Context:
             )
 
 
-class ControlNetUiGroup(object):
+class ControlNetUiGroup:
     refresh_symbol = "\U0001f504"  # 🔄
     switch_values_symbol = "\U000021C5"  # ⇅
     camera_symbol = "\U0001F4F7"  # 📷
@@ -145,7 +140,7 @@ class ControlNetUiGroup(object):
     )
     a1111_context = A1111Context()
     # All ControlNetUiGroup instances created.
-    all_ui_groups: List["ControlNetUiGroup"] = []
+    all_ui_groups: list["ControlNetUiGroup"] = []
 
     @property
     def width_slider(self):
@@ -165,7 +160,7 @@ class ControlNetUiGroup(object):
         self,
         is_img2img: bool,
         default_unit: external_code.ControlNetUnit,
-        photopea: Optional[Photopea] = None,
+        photopea: Photopea | None = None,
     ):
         # Whether callbacks have been registered.
         self.callbacks_registered: bool = False
@@ -234,7 +229,7 @@ class ControlNetUiGroup(object):
         self.hr_option = None
         self.ipa_block_weight = None
         self.ipa_block_weight_selector = None
-        self.ipa_block_weight_save_button = None                                                  
+        self.ipa_block_weight_save_button = None
         self.batch_image_dir_state = None
         self.output_dir_state = None
         self.advanced_weighting = gr.State(None)
@@ -470,7 +465,7 @@ class ControlNetUiGroup(object):
         with gr.Row(elem_classes=["controlnet_control_type", "controlnet_row"]):
             self.type_filter = gr.Radio(
                 global_state.get_all_preprocessor_tags(),
-                label=f"Control Type",
+                label="Control Type",
                 value="All",
                 elem_id=f"{elem_id_tabname}_{tabname}_controlnet_type_filter_radio",
                 elem_classes="controlnet_control_type_filter_group",
@@ -479,7 +474,7 @@ class ControlNetUiGroup(object):
         with gr.Row(elem_classes=["controlnet_preprocessor_model", "controlnet_row"]):
             self.module = gr.Dropdown(
                 global_state.get_all_preprocessor_names(),
-                label=f"Preprocessor",
+                label="Preprocessor",
                 value=self.default_unit.module,
                 elem_id=f"{elem_id_tabname}_{tabname}_controlnet_preprocessor_dropdown",
             )
@@ -492,7 +487,7 @@ class ControlNetUiGroup(object):
             )
             self.model = gr.Dropdown(
                 global_state.get_all_controlnet_names(),
-                label=f"Model",
+                label="Model",
                 value=self.default_unit.model,
                 elem_id=f"{elem_id_tabname}_{tabname}_controlnet_model_dropdown",
             )
@@ -504,7 +499,7 @@ class ControlNetUiGroup(object):
 
         with gr.Row(elem_classes=["controlnet_weight_steps", "controlnet_row"]):
             self.weight = gr.Slider(
-                label=f"Control Weight",
+                label="Control Weight",
                 value=self.default_unit.weight,
                 minimum=0.0,
                 maximum=2.0,
@@ -588,33 +583,33 @@ class ControlNetUiGroup(object):
                 elem_classes=["cnet-ipa-preset-save"],
                 tooltip="Save Custom Preset",
                 visible=False,
-            )                                               
-            
+            )
+
         IPA_CW_PATH = os.path.join("tmp", "ipa_custom_block_weight.txt")
         def toggle_ipa_controlls(choice):
             if choice == "IP-Adapter":
                 return gr.update(visible=True)
             else:
                 return gr.update(visible=False)
-                
+
         def handle_dropdown_selection(alias):
             if "Custom" not in alias:
                 return external_code.ipa_block_weight_presets.get(alias, "")
             else:
                 if os.path.exists(IPA_CW_PATH):
-                    with open(IPA_CW_PATH, "r") as file:
+                    with open(IPA_CW_PATH) as file:
                         return file.readline().strip()
                 else:
                     return ""
-                    
+
         def fn_save_ipa_custom(value):
             with open(IPA_CW_PATH, "w") as file:
                 file.write(value)
             return gr.Dropdown.update(value=list(external_code.ipa_block_weight_presets.keys())[-1])
-                
+
         self.type_filter.change(toggle_ipa_controlls, inputs=self.type_filter, outputs=self.ipa_block_weight)
         self.type_filter.change(toggle_ipa_controlls, inputs=self.type_filter, outputs=self.ipa_block_weight_selector)
-        self.type_filter.change(toggle_ipa_controlls, inputs=self.type_filter, outputs=self.ipa_block_weight_save_button)                                                                                                                    
+        self.type_filter.change(toggle_ipa_controlls, inputs=self.type_filter, outputs=self.ipa_block_weight_save_button)
         self.ipa_block_weight_selector.change(handle_dropdown_selection,inputs=self.ipa_block_weight_selector,outputs=self.ipa_block_weight)
         self.ipa_block_weight_save_button.click(
             fn=fn_save_ipa_custom,
@@ -622,7 +617,7 @@ class ControlNetUiGroup(object):
             outputs=self.ipa_block_weight_selector,
             show_progress=False,
         )
-            
+
         self.resize_mode = gr.Radio(
             choices=[e.value for e in external_code.ResizeMode],
             value=self.default_unit.resize_mode.value,
@@ -640,7 +635,7 @@ class ControlNetUiGroup(object):
             elem_classes="controlnet_hr_option_radio",
             visible=False,
         )
-        
+
         # self.loopback = gr.Checkbox(
         #     label="[Batch Loopback] Automatically send generated images to this ControlNet unit in batch generation",
         #     value=self.default_unit.loopback,
@@ -685,10 +680,9 @@ class ControlNetUiGroup(object):
 
         unit = gr.State(self.default_unit)
         def create_unit(*args):
-            return ControlNetUnit.from_dict({
-                k: v
-                for k, v in zip(vars(ControlNetUnit()).keys(), args)
-            })
+            return ControlNetUnit.from_dict(
+                dict(zip(vars(ControlNetUnit()).keys(), args, strict=False))
+            )
 
         for comp in unit_args + (self.dummy_gradio_update_trigger,):
             event_subscribers = []
@@ -1236,7 +1230,7 @@ class ControlNetUiGroup(object):
             self.register_shift_hr_options()
 
     @staticmethod
-    def register_input_mode_sync(ui_groups: List["ControlNetUiGroup"]):
+    def register_input_mode_sync(ui_groups: list["ControlNetUiGroup"]):
         """
         - ui_group.input_mode should be updated when user switch tabs.
         - Loopback checkbox should only be visible if at least one ControlNet unit

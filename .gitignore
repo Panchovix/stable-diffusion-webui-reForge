@@ -1,4 +1,5 @@
 __pycache__
+/jax_pipeline/.cache
 *.ckpt
 *.safetensors
 *.pth
@@ -64,4 +65,13 @@ webui-user-8160-gpu3-nopass_fp8.sh
 !webui.sh
 !webui-macos-env.sh
 !webui-user.bat
-!webui-user.sh
+webui-user.sh
+CLAUDE.md
+.claude/settings.local.json
+embeddings
+.obsidian/
+
+# local dev: task worktrees, ComfyUI reference checkout, stubs gradio>=4 writes next to custom components
+/.worktrees/
+/ComfyUI/
+*.pyi

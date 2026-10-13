@@ -30,9 +30,9 @@ def initialize_forge():
     for bad in bad_list:
         if bad in sys.argv:
             print(f'Arg {bad} is not the same on reForge')
-            print (f'You can use "--always-no-vram" or "--always-low-vram" for similar usability')
-            print(f'In extreme cases, if you want to force previous lowvram/medvram behaviors, '
-                  f'please use --always-offload-from-vram')
+            print ('You can use "--always-no-vram" or "--always-low-vram" for similar usability')
+            print('In extreme cases, if you want to force previous lowvram/medvram behaviors, '
+                  'please use --always-offload-from-vram')
 
     from ldm_patched.modules import args_parser
 

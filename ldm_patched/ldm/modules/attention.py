@@ -47,6 +47,37 @@ if model_management.flash_attention_enabled():
         logging.error(f"\n\nTo use the `--use-flash-attention` feature, the `flash-attn` package must be installed first.\ncommand:\n\t{sys.executable} -m pip install flash-attn")
         exit(-1)
 
+# --- Comfy Kitchen (INT8 attention) -----------------------------------------
+# Ported from upstream ComfyUI PR #15479 "Implement comfy kitchen attention"
+# and PR #16154 "chore: Harmonize model attention nodes".
+#
+# `comfy-kitchen` is an OPTIONAL dependency (see requirements.txt): it is not
+# available on every platform (no macOS/darwin wheels on PyPI as of writing),
+# so importing it must never hard-crash reForge. Availability is probed with
+# a plain try/except instead of an unconditional `import comfy_kitchen` at
+# module scope.
+try:
+    import comfy_kitchen
+    COMFY_KITCHEN_INT8_ATTENTION_IS_AVAILABLE = comfy_kitchen.int8_attention_is_available()
+except Exception as e:
+    comfy_kitchen = None
+    COMFY_KITCHEN_INT8_ATTENTION_IS_AVAILABLE = False
+    if model_management.comfy_kitchen_attention_enabled():
+        logging.debug(f"Comfy Kitchen is unavailable: {e}")
+
+REGISTERED_ATTENTION_FUNCTIONS = {}
+
+
+def register_attention_function(name, func):
+    # avoid replacing existing functions
+    if name not in REGISTERED_ATTENTION_FUNCTIONS:
+        REGISTERED_ATTENTION_FUNCTIONS[name] = func
+
+
+def get_attention_function(name, default=None):
+    return REGISTERED_ATTENTION_FUNCTIONS.get(name, default)
+
+
 from ldm_patched.modules.args_parser import args
 import ldm_patched.modules.ops
 ops = ldm_patched.modules.ops.disable_weight_init
@@ -89,7 +120,7 @@ def exists(val):
 
 
 def uniq(arr):
-    return{el: True for el in arr}.keys()
+    return dict.fromkeys(arr, True).keys()
 
 
 def default(val, d):
@@ -597,15 +628,15 @@ def attention_sage3(q, k, v, heads, mask=None, attn_precision=None, skip_reshape
                     (q, k, v),
                 )
             return attention_pytorch(q, k, v, heads, mask=mask, skip_reshape=True, skip_output_reshape=skip_output_reshape)
-        
+
         # SageAttention3 expects tensor layout as (batch, heads, seq_len, head_dim)
         if tensor_layout == "NHD":
             q_sa3, k_sa3, v_sa3 = map(lambda t: t.transpose(1, 2), (q, k, v))
         else:
             q_sa3, k_sa3, v_sa3 = q, k, v
-        
+
         out = sageattn_blackwell(q_sa3, k_sa3, v_sa3, attn_mask=mask, is_causal=False, per_block_mean=False)
-        
+
         # Convert back to expected layout
         if tensor_layout == "HND":
             if not skip_output_reshape:
@@ -623,6 +654,50 @@ def attention_sage3(q, k, v, heads, mask=None, attn_precision=None, skip_reshape
                 (q, k, v),
             )
         return attention_pytorch(q, k, v, heads, mask=mask, skip_reshape=True, skip_output_reshape=skip_output_reshape)
+    return out
+
+
+def _comfy_kitchen_int8_reshape(q, k, v, heads, mask, skip_reshape):
+    dim_head = q.shape[-1] if skip_reshape else q.shape[-1] // heads
+    b = q.shape[0]
+    if not skip_reshape:
+        q, k, v = map(
+            lambda t: t.view(b, -1, heads, dim_head).transpose(1, 2),
+            (q, k, v),
+        )
+
+    if mask is not None:
+        if mask.ndim == 2:
+            mask = mask.unsqueeze(0)
+        if mask.ndim == 3:
+            mask = mask.unsqueeze(1)
+
+    return q, k, v, mask, b, dim_head
+
+
+def attention_comfy_kitchen_int8(q, k, v, heads, mask=None, attn_precision=None, skip_reshape=False, skip_output_reshape=False, **kwargs):
+    """INT8 attention backed by the optional `comfy_kitchen` package.
+
+    Ported from upstream ComfyUI's `attention_comfy_kitchen_int8`
+    (comfy/ldm/modules/attention.py, PR #15479). Only reachable when
+    COMFY_KITCHEN_INT8_ATTENTION_IS_AVAILABLE is True, and even then any
+    runtime failure falls back to attention_pytorch (see reasoning in
+    docs/comfy_kitchen_attention.md) rather than propagating the error.
+    """
+    q, k, v, mask, b, dim_head = _comfy_kitchen_int8_reshape(q, k, v, heads, mask, skip_reshape)
+    try:
+        out = comfy_kitchen.int8_attention(
+            q,
+            k,
+            v,
+            scale=kwargs.get("scale", None),
+            attn_mask=mask,
+        )
+    except Exception as e:
+        logging.error("Error running Comfy Kitchen INT8 attention: {}, using pytorch attention instead.".format(e))
+        return attention_pytorch(q, k, v, heads, mask=mask, skip_reshape=True, skip_output_reshape=skip_output_reshape)
+    if not skip_output_reshape:
+        out = out.transpose(1, 2).reshape(b, -1, heads * dim_head)
     return out
 
 try:
@@ -696,6 +771,30 @@ elif model_management.xformers_enabled():
 elif model_management.flash_attention_enabled():
     print("Using Flash Attention")
     optimized_attention = attention_flash
+elif model_management.comfy_kitchen_attention_enabled():
+    # DECISION: unlike upstream ComfyUI (which calls exit(-1) here when
+    # comfy_kitchen/INT8 attention is unavailable), reForge logs a warning
+    # and falls back to reForge's normal attention auto-selection instead of
+    # killing the whole process. Rationale: reForge is a general-purpose,
+    # end-user-facing webui (not a batch/server pipeline like ComfyUI) where
+    # an unrelated flag left over from a previous session, or launching on a
+    # machine/platform without a comfy-kitchen wheel (e.g. macOS), should
+    # never prevent the UI from starting at all. This matches how reForge
+    # already treats sage/flash attention failures elsewhere in this file
+    # (log + fall back to attention_pytorch) rather than upstream's hard
+    # exit convention. See docs/comfy_kitchen_attention.md.
+    if COMFY_KITCHEN_INT8_ATTENTION_IS_AVAILABLE:
+        print("Using Comfy Kitchen attention")
+        optimized_attention = attention_comfy_kitchen_int8
+    else:
+        logging.warning("Comfy Kitchen attention was requested via --use-ck-attention but is unavailable "
+                         "(the optional `comfy-kitchen` package is not installed, has no wheel for this "
+                         "platform, or its hardware/backend check failed). Falling back to the default "
+                         "attention backend instead of exiting. Install it with `pip install comfy-kitchen` "
+                         "on a supported Nvidia/AMD Linux or Windows machine -- see "
+                         "docs/comfy_kitchen_attention.md.")
+        if model_management.pytorch_attention_enabled():
+            optimized_attention = attention_pytorch
 elif model_management.pytorch_attention_enabled():
     print("Using pytorch attention")
     optimized_attention = attention_pytorch
@@ -708,6 +807,14 @@ else:
         optimized_attention = attention_sub_quad
 
 optimized_attention_masked = optimized_attention
+
+# register core-supported attention functions so they can be selected by
+# name (e.g. from a future Gradio "attention backend" dropdown), mirroring
+# upstream ComfyUI's REGISTERED_ATTENTION_FUNCTIONS/get_attention_function.
+register_attention_function("pytorch", attention_pytorch)
+if COMFY_KITCHEN_INT8_ATTENTION_IS_AVAILABLE:
+    register_attention_function("comfy_kitchen_int8", attention_comfy_kitchen_int8)
+
 
 def optimized_attention_for_device(device, mask=False, small_input=False):
     if small_input:

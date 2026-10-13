@@ -2,7 +2,6 @@
 
 
 
-import numpy as np
 import torch
 import ldm_patched.modules.utils
 from enum import Enum

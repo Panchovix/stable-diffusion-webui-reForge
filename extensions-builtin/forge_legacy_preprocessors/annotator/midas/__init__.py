@@ -19,7 +19,7 @@ def apply_midas(input_image, a=np.pi * 2.0, bg_th=0.1):
         model = MiDaSInference(model_type="dpt_hybrid")
     if devices.get_device_for("controlnet").type != 'mps':
         model = model.to(devices.get_device_for("controlnet"))
-    
+
     assert input_image.ndim == 3
     image_depth = input_image
     with torch.no_grad():

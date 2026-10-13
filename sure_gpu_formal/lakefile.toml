@@ -1,0 +1,17 @@
+name = "SureGPU"
+version = "0.1.0"
+keywords = ["gpu", "cuda", "sure", "lifespan", "parallelism"]
+description = "Lean 4 formalization of SURE optimization on GPU: buffer lifespans, CUDA stream parallelism, and transfer minimization"
+defaultTargets = ["SureGPU"]
+
+[leanOptions]
+pp.unicode.fun = true
+relaxedAutoImplicit = false
+
+[[require]]
+name = "mathlib"
+scope = "leanprover-community"
+rev = "v4.29.1"
+
+[[lean_lib]]
+name = "SureGPU"

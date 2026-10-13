@@ -28,6 +28,14 @@ if [[ $venv_dir == "-" ]]; then
   use_venv=0
 fi
 
+# Use UV for venv creation and package management if use_uv=1 (set in webui-user.sh)
+if [[ -z "${use_uv}" ]]; then
+    use_uv=0
+fi
+if [[ $use_uv -eq 1 ]]; then
+    export USE_UV=1
+fi
+
 # Set defaults
 # Install directory without trailing slash
 if [[ -z "${install_dir}" ]]
@@ -193,6 +201,33 @@ then
     exit 1
 fi
 
+if [[ $use_uv -eq 1 ]] && ! hash uv &>/dev/null
+then
+    printf "\n%s\n" "${delimiter}"
+    printf "\e[1m\e[33mUV requested but not found. Installing UV now...\e[0m"
+    printf "\n%s\n" "${delimiter}"
+    if hash curl &>/dev/null; then
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+    elif hash wget &>/dev/null; then
+        wget -qO- https://astral.sh/uv/install.sh | sh
+    else
+        printf "\e[1m\e[31mERROR: Neither curl nor wget found. Cannot install UV, aborting...\e[0m\n"
+        exit 1
+    fi
+    # Add UV to PATH for this session
+    export PATH="$HOME/.local/bin:$PATH"
+    if ! hash uv &>/dev/null
+    then
+        printf "\n%s\n" "${delimiter}"
+        printf "\e[1m\e[31mERROR: UV installation failed, aborting...\e[0m"
+        printf "\n%s\n" "${delimiter}"
+        exit 1
+    fi
+    printf "\n%s\n" "${delimiter}"
+    printf "\e[1m\e[32mUV installed successfully.\e[0m"
+    printf "\n%s\n" "${delimiter}"
+fi
+
 cd "${install_dir}"/ || { printf "\e[1m\e[31mERROR: Can't cd to %s/, aborting...\e[0m" "${install_dir}"; exit 1; }
 if [[ -d "${clone_dir}" ]]
 then
@@ -213,8 +248,13 @@ then
     cd "${install_dir}"/"${clone_dir}"/ || { printf "\e[1m\e[31mERROR: Can't cd to %s/%s/, aborting...\e[0m" "${install_dir}" "${clone_dir}"; exit 1; }
     if [[ ! -d "${venv_dir}" ]]
     then
-        "${python_cmd}" -m venv "${venv_dir}"
-        "${venv_dir}"/bin/python -m pip install --upgrade pip
+        if [[ $use_uv -eq 1 ]]; then
+            printf "Using UV to create venv...\n"
+            uv venv --python "${python_cmd}" "${venv_dir}"
+        else
+            "${python_cmd}" -m venv "${venv_dir}"
+            "${venv_dir}"/bin/python -m pip install --upgrade pip
+        fi
         first_launch=1
     fi
     # shellcheck source=/dev/null

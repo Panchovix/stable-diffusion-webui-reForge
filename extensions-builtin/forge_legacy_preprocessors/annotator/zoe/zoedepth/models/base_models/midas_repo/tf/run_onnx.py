@@ -4,14 +4,12 @@ import os
 import glob
 import utils
 import cv2
-import sys
 import numpy as np
 import argparse
 
-import onnx
 import onnxruntime as rt
 
-from transforms import Resize, NormalizeImage, PrepareForNet
+from transforms import Resize, PrepareForNet
 
 
 def run(input_path, output_path, model_path, model_type="large"):
@@ -53,7 +51,7 @@ def run(input_path, output_path, model_path, model_type="large"):
                 resize_method="upper_bound",
                 image_interpolation_method=cv2.INTER_CUBIC,
             )
-    
+
     def compose2(f1, f2):
         return lambda x: f2(f1(x))
 
@@ -80,7 +78,7 @@ def run(input_path, output_path, model_path, model_type="large"):
         output = model.run([output_name], {input_name: img_input.reshape(1, 3, net_h, net_w).astype(np.float32)})[0]
         prediction = np.array(output).reshape(net_h, net_w)
         prediction = cv2.resize(prediction, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_CUBIC)
-       
+
         # output
         filename = os.path.join(
             output_path, os.path.splitext(os.path.basename(img_name))[0]
@@ -93,22 +91,22 @@ def run(input_path, output_path, model_path, model_type="large"):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('-i', '--input_path', 
+    parser.add_argument('-i', '--input_path',
         default='input',
         help='folder with input images'
     )
 
-    parser.add_argument('-o', '--output_path', 
+    parser.add_argument('-o', '--output_path',
         default='output',
         help='folder for output images'
     )
 
-    parser.add_argument('-m', '--model_weights', 
+    parser.add_argument('-m', '--model_weights',
         default='model-f6b98070.onnx',
         help='path to the trained weights of model'
     )
 
-    parser.add_argument('-t', '--model_type', 
+    parser.add_argument('-t', '--model_type',
         default='large',
         help='model type: large or small'
     )

@@ -52,12 +52,12 @@ class NormalDsineDetector:
             image_normal = image_normal / 255.0
             image_normal = rearrange(image_normal, 'h w c -> 1 c h w')
             image_normal = self.norm(image_normal)
-            
+
             intrins = utils.get_intrins_from_fov(new_fov=new_fov, H=orig_H, W=orig_W, device=self.device).unsqueeze(0)
-            
+
             intrins[:, 0, 2] += l
             intrins[:, 1, 2] += t
-            
+
             normal = self.model(image_normal, intrins=intrins)[-1]
             normal = normal[:, :, t:t+orig_H, l:l+orig_W]
 

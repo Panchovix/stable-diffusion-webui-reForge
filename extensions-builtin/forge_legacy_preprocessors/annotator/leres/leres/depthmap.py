@@ -2,11 +2,12 @@
 # https://github.com/thygate/stable-diffusion-webui-depthmap-script
 
 from modules import devices
-from modules.shared import opts
+import modules.shared as shared
 from torchvision.transforms import transforms
 from operator import getitem
 
-import torch, gc
+import torch
+import gc
 import cv2
 import numpy as np
 import skimage.measure
@@ -30,13 +31,13 @@ def scale_torch(img):
         img = img.astype(np.float32)
         img = torch.from_numpy(img)
     return img
-    
+
 def estimateleres(img, model, w, h):
     # leres transform input
     rgb_c = img[:, :, ::-1].copy()
     A_resize = cv2.resize(rgb_c, (w, h))
-    img_torch = scale_torch(A_resize)[None, :, :, :] 
-    
+    img_torch = scale_torch(A_resize)[None, :, :, :]
+
     # compute
     with torch.no_grad():
         img_torch = img_torch.to(devices.get_device_for("controlnet"))
@@ -174,7 +175,7 @@ def applyGridpatch(blsize, stride, img, box):
 
 # Generating local patches to perform the local refinement described in section 6 of the main paper.
 def generatepatchs(img, base_size):
-    
+
     # Compute the gradients as a proxy of the contextual cues.
     img_gray = rgb2gray(img)
     whole_grad = np.abs(cv2.Sobel(img_gray, cv2.CV_64F, 0, 1, ksize=3)) +\
@@ -261,7 +262,7 @@ def adaptiveselection(integral_grad, patch_bound_list, gf):
             patchlist[str(count)]['rect'] = bbox
             patchlist[str(count)]['size'] = bbox[2]
             count = count + 1
-    
+
     # Return selected patches
     return patchlist
 
@@ -377,11 +378,11 @@ class ImageandPatchs:
 
 def estimateboost(img, model, model_type, pix2pixmodel, max_res=512):
     global whole_size_threshold
-    
+
     # get settings
     if hasattr(opts, 'depthmap_script_boost_rmax'):
-        whole_size_threshold = opts.depthmap_script_boost_rmax
-        
+        whole_size_threshold = shared.opts.depthmap_script_boost_rmax
+
     if model_type == 0: #leres
         net_receptive_field_size = 448
         patch_netsize = 2 * net_receptive_field_size
@@ -422,7 +423,7 @@ def estimateboost(img, model, model_type, pix2pixmodel, max_res=512):
     global factor
     factor = max(min(1, 4 * patch_scale * whole_image_optimal_size / whole_size_threshold), 0.2)
     # print('Adjust factor is:', 1/factor)
-        
+
     # Check if Local boosting is beneficial.
     if max_res < whole_image_optimal_size:
         # print("No Local boosting. Specified Max Res is smaller than R20, Returning doubleestimate result")
@@ -485,7 +486,7 @@ def estimateboost(img, model, model_type, pix2pixmodel, max_res=512):
 
     # Enumerate through all patches, generate their estimations and refining the base estimate.
     for patch_ind in range(len(imageandpatchs)):
-        
+
         # Get patch information
         patch = imageandpatchs[patch_ind] # patch object
         patch_rgb = patch['patch_rgb'] # rgb patch

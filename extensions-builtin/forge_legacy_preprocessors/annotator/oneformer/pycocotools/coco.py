@@ -336,7 +336,7 @@ class COCO:
             for id, ann in enumerate(anns):
                 bb = ann['bbox']
                 x1, x2, y1, y2 = [bb[0], bb[0]+bb[2], bb[1], bb[1]+bb[3]]
-                if not 'segmentation' in ann:
+                if 'segmentation' not in ann:
                     ann['segmentation'] = [[x1, y1, x1, y2, x2, y2, x2, y1]]
                 ann['area'] = bb[2]*bb[3]
                 ann['id'] = id+1
@@ -346,7 +346,7 @@ class COCO:
             for id, ann in enumerate(anns):
                 # now only support compressed RLE format as segmentation results
                 ann['area'] = maskUtils.area(ann['segmentation'])
-                if not 'bbox' in ann:
+                if 'bbox' not in ann:
                     ann['bbox'] = maskUtils.toBbox(ann['segmentation'])
                 ann['id'] = id+1
                 ann['iscrowd'] = 0

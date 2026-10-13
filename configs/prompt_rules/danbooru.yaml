@@ -1,0 +1,87 @@
+# Danbooru-style tag rules for the prompt rule engine (modules/rule_engine).
+#
+# Key   = pattern, using this engine's regex/glob subset (regex_dfa.py):
+#         literals, '.', character classes [abc]/[^abc]/[a-z], shorthand
+#         classes \d \w \s, alternation '|', grouping '(...)', and postfix
+#         quantifiers * + ?. A leading bare '*'/'?' with no atom is glob
+#         shorthand for '.*'/'.' (e.g. "*boy" == ".*boy").
+# Value = one or more of: META, OBJECT, ADJ, VERB, GLOBAL, CONCEPT, LORAACT.
+#
+# Patterns match the WHOLE (lowercased, trimmed) comma-segment text, never a
+# substring — "boy" matches only the literal tag "boy", use "*boy" for
+# "1boy"/"2boy"/etc.
+#
+# Danbooru's actual tag taxonomy is 5 categories (artist/character/copyright/
+# general/meta) — there is no official "count tag" category. The OBJECT
+# patterns below are this project's own convention for entity-anchor
+# detection within Danbooru's `general` category, not a cited Danbooru
+# category (see lean_proofs_rfv/THEOREM_MATRIX_TREE_BUFFER.md §0).
+
+# --- OBJECT + PRIMARY_OBJ: entity/subject count+gender tags. These are the
+#     main characters an image is OF -- always independently top-level, never
+#     subordinate to another entity (see schema.py's PRIMARY_OBJ docstring).
+"\\d*(girl|boy|other|futanari)s?": [OBJECT, PRIMARY_OBJ]
+"solo": [OBJECT]
+"solo_focus": [OBJECT]
+"multiple_(girls|boys|others)": [OBJECT, PRIMARY_OBJ]
+
+# --- META: Danbooru's actual meta-tag category (confirmed via WebSearch) ---
+"translated": [META]
+"commentary": [META]
+"commentary_request": [META]
+"copyright_request": [META]
+"duplicate": [META]
+"image_sample": [META]
+"bad_id": [META]
+"bad_pixiv_id": [META]
+"md5_mismatch": [META]
+
+# --- META: quality/resolution conventions universal to SD prompting (not an
+#     official Danbooru category, but treated identically — global,
+#     non-region-specific) ---
+"highres": [META]
+"absurdres": [META]
+"lowres": [META]
+"masterpiece": [META]
+"best_quality": [META]
+"worst_quality": [META]
+"normal_quality": [META]
+
+# --- ADJ: attribute tags describing a specific OBJECT's condition ---
+"(blonde|brown|black|white|red|blue|green|purple|pink|silver|grey|gray|multicolored)_hair": [ADJ]
+"(blue|red|green|brown|black|yellow|purple|pink|grey|gray|heterochromia)_eyes": [ADJ]
+"(long|short|medium|very_long)_hair": [ADJ]
+"twintails": [ADJ]
+"ponytail": [ADJ]
+"smiling": [ADJ]
+"open_mouth": [ADJ]
+"closed_mouth": [ADJ]
+"blush": [ADJ]
+
+# --- VERB: action tags; may tie one or more OBJECTs to a specific region ---
+"standing": [VERB]
+"sitting": [VERB]
+"lying": [VERB]
+"kneeling": [VERB]
+"looking_at_viewer": [VERB]
+"looking_(away|back|to_the_side)": [VERB]
+"holding_hands": [VERB]
+"hug(ging)?": [VERB]
+"kiss(ing)?": [VERB]
+
+# --- GLOBAL: whole-image environment/composition (not a specific object) ---
+"indoors": [GLOBAL]
+"outdoors": [GLOBAL]
+"night": [GLOBAL]
+"day": [GLOBAL]
+"simple_background": [GLOBAL]
+"white_background": [GLOBAL]
+"depth_of_field": [GLOBAL]
+
+# --- CONCEPT: whole-image style/medium (may overlay with GLOBAL) ---
+"comic": [GLOBAL, CONCEPT]
+"monochrome": [GLOBAL, CONCEPT]
+"greyscale": [GLOBAL, CONCEPT]
+"watercolor_\\(medium\\)": [CONCEPT]
+"traditional_media": [CONCEPT]
+"sketch": [CONCEPT]

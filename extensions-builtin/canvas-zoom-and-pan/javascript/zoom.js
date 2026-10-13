@@ -489,7 +489,7 @@ onUiLoaded(async() => {
         // Update the zoom level and pan position of the target element based on the values of the zoomLevel, panX and panY variables
         function updateZoom(newZoomLevel, mouseX, mouseY) {
             newZoomLevel = Math.max(0.1, Math.min(newZoomLevel, 15));
-        
+
             // Check if we're close to the original zoom level (1)
             if (Math.abs(newZoomLevel - 1) < 0.05) {
                 newZoomLevel = 1;
@@ -501,15 +501,15 @@ onUiLoaded(async() => {
                 elemData[elemId].panY +=
                     mouseY - (mouseY * newZoomLevel) / elemData[elemId].zoomLevel;
             }
-        
+
             targetElement.style.transformOrigin = "0 0";
             targetElement.style.transform = `translate(${elemData[elemId].panX}px, ${elemData[elemId].panY}px) scale(${newZoomLevel})`;
-        
+
             toggleOverlap("on");
             if (isExtension) {
                 targetElement.style.overflow = "visible";
             }
-        
+
             return newZoomLevel;
         }
 
@@ -517,10 +517,10 @@ onUiLoaded(async() => {
         function changeZoomLevel(operation, e) {
             if (isModifierKey(e, hotkeysConfig.canvas_hotkey_zoom)) {
                 e.preventDefault();
-                if(hotkeysConfig.canvas_hotkey_zoom === "Alt") {
+                if (hotkeysConfig.canvas_hotkey_zoom === "Alt") {
                     interactedWithAltKey = true;
                 }
-        
+
                 let zoomPosX, zoomPosY;
                 let delta = 0.2;
                 if (elemData[elemId].zoomLevel > 7) {
@@ -528,10 +528,10 @@ onUiLoaded(async() => {
                 } else if (elemData[elemId].zoomLevel > 2) {
                     delta = 0.6;
                 }
-        
+
                 zoomPosX = e.clientX;
                 zoomPosY = e.clientY;
-        
+
                 fullScreenMode = false;
                 elemData[elemId].zoomLevel = updateZoom(
                     elemData[elemId].zoomLevel +
@@ -539,7 +539,7 @@ onUiLoaded(async() => {
                     zoomPosX - targetElement.getBoundingClientRect().left,
                     zoomPosY - targetElement.getBoundingClientRect().top
                 );
-        
+
                 targetElement.isZoomed = elemData[elemId].zoomLevel !== 1;
             }
         }
@@ -815,7 +815,7 @@ onUiLoaded(async() => {
             if (isModifierKey(e, hotkeysConfig.canvas_hotkey_adjust)) {
                 e.preventDefault();
 
-                if(hotkeysConfig.canvas_hotkey_adjust === "Alt") {
+                if (hotkeysConfig.canvas_hotkey_adjust === "Alt") {
                     interactedWithAltKey = true;
                 }
 

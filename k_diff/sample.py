@@ -3,11 +3,10 @@
 """Samples from k-diffusion models."""
 
 import argparse
-import math
 
 import accelerate
 import torch
-from tqdm import trange, tqdm
+from tqdm import tqdm
 
 import k_diffusion as K
 

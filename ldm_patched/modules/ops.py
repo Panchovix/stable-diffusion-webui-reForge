@@ -23,7 +23,6 @@ import contextlib
 from ldm_patched.modules.args_parser  import args, PerformanceFeature
 import ldm_patched.float
 import ldm_patched.modules.rmsnorm
-import contextlib
 
 from modules_forge import stream
 
@@ -211,7 +210,7 @@ class disable_weight_init:
                 return self.forward_ldm_patched_cast_weights(*args, **kwargs)
             else:
                 return super().forward(*args, **kwargs)
-            
+
     class RMSNorm(ldm_patched.modules.rmsnorm.RMSNorm, CastWeightBiasOp):
         def reset_parameters(self):
             self.bias = None
@@ -478,7 +477,7 @@ def pick_operations(weight_dtype, compute_dtype, load_device=None, disable_fast_
         not disable_fast_fp8
     ):
         return fp8_ops
-    
+
     if (
         args.fast is not None and PerformanceFeature.CublasOps in args.fast and
         CUBLAS_IS_AVAILABLE and

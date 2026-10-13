@@ -1,3 +1,5 @@
+import functools  # used by functools.partial calls below; was previously re-exported via star import
+
 from legacy_preprocessors.preprocessor import *
 
 

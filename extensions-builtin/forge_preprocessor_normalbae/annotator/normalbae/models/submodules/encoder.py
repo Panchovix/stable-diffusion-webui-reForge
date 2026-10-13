@@ -1,7 +1,6 @@
 import os
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 
 class Encoder(nn.Module):
@@ -9,7 +8,7 @@ class Encoder(nn.Module):
         super(Encoder, self).__init__()
 
         basemodel_name = 'tf_efficientnet_b5_ap'
-        print('Loading base model ()...'.format(basemodel_name), end='')
+        print('Loading base model ()...', end='')
         repo_path = os.path.join(os.path.dirname(__file__), 'efficientnet_repo')
         basemodel = torch.hub.load(repo_path, basemodel_name, pretrained=False, source='local')
         print('Done.')

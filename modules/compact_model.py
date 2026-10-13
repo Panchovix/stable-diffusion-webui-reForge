@@ -1,13 +1,12 @@
-import os
 import re
 from functools import lru_cache
 from modules import modelloader, devices, errors
-from modules.shared import opts, cmd_opts
+import modules.shared as shared
 from modules.upscaler import Upscaler, UpscalerData
 from modules.upscaler_utils import upscale_with_model
 from modules_forge.forge_util import prepare_free_memory
 
-PREFER_HALF = opts.prefer_fp16_upscalers
+PREFER_HALF = shared.opts.prefer_fp16_upscalers
 if PREFER_HALF:
     print("[Upscalers] Prefer Half-Precision:", PREFER_HALF)
 
@@ -44,8 +43,8 @@ class UpscalerCOMPACT(Upscaler):
         return upscale_with_model(
             model=model,
             img=img,
-            tile_size=opts.COMPACT_tile,
-            tile_overlap=opts.COMPACT_tile_overlap,
+            tile_size=shared.opts.COMPACT_tile,
+            tile_overlap=shared.opts.COMPACT_tile_overlap,
         )
 
     @lru_cache(maxsize=4)
@@ -62,4 +61,3 @@ class UpscalerCOMPACT(Upscaler):
         model = modelloader.load_spandrel_model(filename, device=devices.cpu, prefer_half=PREFER_HALF)
         model.to(devices.device_compact)
         return model
-    

@@ -126,7 +126,7 @@ class OneFormer(nn.Module):
                                     width=cfg.MODEL.TEXT_ENCODER.WIDTH,
                                     layers=cfg.MODEL.TEXT_ENCODER.NUM_LAYERS,
                                     vocab_size=cfg.MODEL.TEXT_ENCODER.VOCAB_SIZE)
-            text_projector = MLP(text_encoder.width, cfg.MODEL.ONE_FORMER.HIDDEN_DIM, 
+            text_projector = MLP(text_encoder.width, cfg.MODEL.ONE_FORMER.HIDDEN_DIM,
                                 cfg.MODEL.ONE_FORMER.HIDDEN_DIM, cfg.MODEL.TEXT_ENCODER.PROJ_NUM_LAYERS)
             if cfg.MODEL.TEXT_ENCODER.N_CTX > 0:
                 prompt_ctx = nn.Embedding(cfg.MODEL.TEXT_ENCODER.N_CTX, cfg.MODEL.TEXT_ENCODER.WIDTH)
@@ -149,7 +149,7 @@ class OneFormer(nn.Module):
         dice_weight = cfg.MODEL.ONE_FORMER.DICE_WEIGHT
         mask_weight = cfg.MODEL.ONE_FORMER.MASK_WEIGHT
         contrastive_weight = cfg.MODEL.ONE_FORMER.CONTRASTIVE_WEIGHT
-        
+
         # building criterion
         matcher = HungarianMatcher(
             cost_class=class_weight,
@@ -158,10 +158,10 @@ class OneFormer(nn.Module):
             num_points=cfg.MODEL.ONE_FORMER.TRAIN_NUM_POINTS,
         )
 
-        weight_dict = {"loss_ce": class_weight, "loss_mask": mask_weight, 
+        weight_dict = {"loss_ce": class_weight, "loss_mask": mask_weight,
                         "loss_dice": dice_weight, "loss_contrastive": contrastive_weight}
 
-        
+
         if deep_supervision:
             dec_layers = cfg.MODEL.ONE_FORMER.DEC_LAYERS
             aux_weight_dict = {}
@@ -225,9 +225,9 @@ class OneFormer(nn.Module):
             if self.prompt_ctx is not None:
                 text_ctx = self.prompt_ctx.weight.unsqueeze(0).repeat(text_x.shape[0], 1, 1)
                 text_x = torch.cat([text_x, text_ctx], dim=1)
-        
+
         return {"texts": text_x}
-    
+
     def forward(self, batched_inputs):
         """
         Args:
@@ -325,7 +325,7 @@ class OneFormer(nn.Module):
                 if self.panoptic_on:
                     panoptic_r = retry_if_cuda_oom(self.panoptic_inference)(mask_cls_result, mask_pred_result)
                     processed_results[-1]["panoptic_seg"] = panoptic_r
-                
+
                 # instance segmentation inference
                 if self.instance_on:
                     instance_r = retry_if_cuda_oom(self.instance_inference)(mask_cls_result, mask_pred_result)
@@ -424,7 +424,7 @@ class OneFormer(nn.Module):
         # [Q, K]
         scores = F.softmax(mask_cls, dim=-1)[:, :-1]
         labels = torch.arange(self.sem_seg_head.num_classes, device=self.device).unsqueeze(0).repeat(self.num_queries, 1).flatten(0, 1)
-        
+
         # scores_per_image, topk_indices = scores.flatten(0, 1).topk(self.num_queries, sorted=False)
         scores_per_image, topk_indices = scores.flatten(0, 1).topk(self.test_topk_per_image, sorted=False)
         labels_per_image = labels[topk_indices]
@@ -449,7 +449,7 @@ class OneFormer(nn.Module):
             scores_per_image = scores_per_image[keep]
             labels_per_image = labels_per_image[keep]
             mask_pred = mask_pred[keep]
-        
+
         if 'ade20k' in self.metadata.name:
             for i in range(labels_per_image.shape[0]):
                 labels_per_image[i] = self.thing_indices.index(labels_per_image[i].item())

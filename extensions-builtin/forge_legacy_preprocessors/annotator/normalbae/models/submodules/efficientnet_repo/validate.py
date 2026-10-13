@@ -15,7 +15,7 @@ from utils import accuracy, AverageMeter
 
 has_native_amp = False
 try:
-    if getattr(torch.cuda.amp, 'autocast') is not None:
+    if torch.cuda.amp.autocast is not None:
         has_native_amp = True
 except AttributeError:
     pass

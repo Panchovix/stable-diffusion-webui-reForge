@@ -64,14 +64,14 @@ class UnetPatcher(ModelPatcher):
 
         self.add_extra_model_patcher_during_sampling(patcher)
         return patcher
-    
+
     # LoRAs don't work (again)
     def compile_model(self, backend="inductor"):
         """Compile the self model using torch.compile"""
         if not hasattr(torch, 'compile'):
             print("torch.compile not available - requires PyTorch 2.0 or newer")
             return
-        
+
         try:
             torch_version = torch.__version__.split('.')
             if int(torch_version[0]) < 2:
@@ -141,7 +141,7 @@ class UnetPatcher(ModelPatcher):
 
             # Store settings for later recompilation if needed
             real_model.compile_settings = compile_settings
-            
+
             try:
                 compiled_model = torch.compile(real_model, **compile_settings)
                 if hasattr(self.model, 'diffusion_model'):

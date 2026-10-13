@@ -1,18 +1,12 @@
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Optional, Union, Dict, TypedDict, Any
+from typing import TypedDict, Any
 import numpy as np
 from modules import shared
 from lib_controlnet.logging import logger
 from lib_controlnet.enums import InputMode, HiResFixOption
 from modules.api import api
 
-from lib_controlnet.enums import (
-    InputMode,
-    HiResFixOption,
-    PuLIDMode,
-    ControlNetUnionControlType,
-)
 
 
 def get_api_version() -> int:
@@ -50,7 +44,7 @@ class ResizeMode(Enum):
             return 1
         elif self == ResizeMode.OUTER_FIT:
             return 2
-        assert False, "NOTREACHED"
+        raise AssertionError("NOTREACHED")
 
 
 resize_mode_aliases = {
@@ -64,14 +58,14 @@ ipa_block_weight_presets = {
     "Default"               : "1, 1, 1, 1, 1.0, 1, 1, 1, 1, 1, 1",
     "Style"                 : "0, 0, 1, 0, 0.0, 0, 1, 0, 0, 0, 0",
     "Style (Strong)"        : "1, 1, 1, 0, 0.0, 0, 1, 1, 1, 1, 1",
-    "Composition"           : "0, 0, 0, 0, 0.0, 1, 0, 0, 0, 0, 0", 
-    "Composition (Strong)"  : "0, 0, 0, 1, 0.0, 1, 0, 0, 0, 0, 0", 
-    "Style+Composition"     : "0, 0, 1, 1, 0.0, 1, 1, 0, 0, 0, 0", 
+    "Composition"           : "0, 0, 0, 0, 0.0, 1, 0, 0, 0, 0, 0",
+    "Composition (Strong)"  : "0, 0, 0, 1, 0.0, 1, 0, 0, 0, 0, 0",
+    "Style+Composition"     : "0, 0, 1, 1, 0.0, 1, 1, 0, 0, 0, 0",
     "Custom"                : "",
 }
 
 
-def resize_mode_from_value(value: Union[str, int, ResizeMode]) -> ResizeMode:
+def resize_mode_from_value(value: str | int | ResizeMode) -> ResizeMode:
     if isinstance(value, str):
         if value.startswith("ResizeMode."):
             _, field = value.split(".")
@@ -92,7 +86,7 @@ def resize_mode_from_value(value: Union[str, int, ResizeMode]) -> ResizeMode:
         raise TypeError(f"ResizeMode value must be str, int, or ResizeMode, not {type(value)}")
 
 
-def control_mode_from_value(value: Union[str, int, ControlMode]) -> ControlMode:
+def control_mode_from_value(value: str | int | ControlMode) -> ControlMode:
     if isinstance(value, str):
         try:
             return ControlMode(value)
@@ -101,7 +95,7 @@ def control_mode_from_value(value: Union[str, int, ControlMode]) -> ControlMode:
             return ControlMode.BALANCED
     elif isinstance(value, int):
         try:
-            return [e for e in ControlMode][value]
+            return list(ControlMode)[value]
         except IndexError:
             print(f'Unrecognized ControlMode int value {value}. Fall back to BALANCED.')
             return ControlMode.BALANCED
@@ -161,7 +155,7 @@ def pixel_perfect_resolution(
     else:
         estimation = max(k0, k1) * float(min(raw_H, raw_W))
 
-    logger.debug(f"Pixel Perfect Computation:")
+    logger.debug("Pixel Perfect Computation:")
     logger.debug(f"resize_mode = {resize_mode}")
     logger.debug(f"raw_H = {raw_H}")
     logger.debug(f"raw_W = {raw_W}")
@@ -211,18 +205,18 @@ class ControlNetUnit:
     # Directory path for batch processing of masks.
     batch_mask_dir: str = ''
     # Optional list of gallery images for batch input; defaults to None.
-    batch_input_gallery: Optional[List[str]] = None
+    batch_input_gallery: list[str] | None = None
     # Optional list of gallery masks for batch processing; defaults to None.
-    batch_mask_gallery: Optional[List[str]] = None
+    batch_mask_gallery: list[str] | None = None
     # Optional list of gallery images for multi-inputs; defaults to None.
-    multi_inputs_gallery: Optional[List[str]] = None
+    multi_inputs_gallery: list[str] | None = None
     # Holds the preview image as a NumPy array; defaults to None.
-    generated_image: Optional[np.ndarray] = None
+    generated_image: np.ndarray | None = None
     # ====== End of UI only fields ======
 
     # Following fields are used in both the API and the UI.
     # Holds the mask image; defaults to None.
-    mask_image: Optional[GradioImageMaskPair] = None
+    mask_image: GradioImageMaskPair | None = None
     # Specifies how this unit should be applied in each pass of high-resolution fix.
     # Ignored if high-resolution fix is not enabled.
     hr_option: HiResFixOption = HiResFixOption.BOTH
@@ -235,7 +229,7 @@ class ControlNetUnit:
     # Weight of the unit in the overall processing; defaults to 1.0.
     weight: float = 1.0
     # Optional image for input; defaults to None.
-    image: Optional[GradioImageMaskPair] = None
+    image: GradioImageMaskPair | None = None
     # Specifies the mode of image resizing; defaults to inner fit.
     resize_mode: ResizeMode = ResizeMode.INNER_FIT
     # Resolution for processing by the unit; defaults to -1 (unspecified).
@@ -266,8 +260,8 @@ class ControlNetUnit:
     # It is recommended to set ControlMode = BALANCED when using `advanced_weighting`.
     # Note2: The field `weight` is still used in some places, e.g. reference_only,
     # even advanced_weighting is set.
-    advanced_weighting: Optional[List[float]] = None
-    ipa_block_weight: Optional[str] = None
+    advanced_weighting: list[float] | None = None
+    ipa_block_weight: str | None = None
 
     # Following fields should only be used in the API.
     # ====== Start of API only fields ======
@@ -298,7 +292,7 @@ class ControlNetUnit:
         )
 
     @staticmethod
-    def from_dict(d: Dict) -> "ControlNetUnit":
+    def from_dict(d: dict) -> "ControlNetUnit":
         """Create ControlNetUnit from dict. This is primarily used to convert
         API json dict to ControlNetUnit."""
         unit = ControlNetUnit(
@@ -352,7 +346,7 @@ def get_max_models_num():
     max_models_num = shared.opts.data.get("control_net_unit_count", 3)
     return max_models_num
 
-def to_processing_unit(unit: Union[Dict[str, Any], ControlNetUnit]) -> ControlNetUnit:
+def to_processing_unit(unit: dict[str, Any] | ControlNetUnit) -> ControlNetUnit:
     """
     Convert different types to processing unit.
     Backward Compatible

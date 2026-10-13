@@ -1,4 +1,3 @@
-import ldm_patched.modules.model_base
 import torch
 
 class RescaleCFG:

@@ -33,7 +33,7 @@ def apply_mlsd(input_image, thr_v, thr_d):
         mlsdmodel = MobileV2_MLSD_Large()
         mlsdmodel.load_state_dict(torch.load(modelpath), strict=True)
     mlsdmodel = mlsdmodel.to(devices.get_device_for("controlnet")).eval()
-        
+
     model = mlsdmodel
     assert input_image.ndim == 3
     img = input_image
@@ -44,6 +44,6 @@ def apply_mlsd(input_image, thr_v, thr_d):
             for line in lines:
                 x_start, y_start, x_end, y_end = [int(val) for val in line]
                 cv2.line(img_output, (x_start, y_start), (x_end, y_end), [255, 255, 255], 1)
-    except Exception as e:
+    except Exception:
         pass
     return img_output[:, :, 0]

@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 from __future__ import print_function
 
-import roslib
 #roslib.load_manifest('my_package')
 import sys
 import rospy
 import cv2
-import numpy as np
-from std_msgs.msg import String
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge, CvBridgeError
 
@@ -43,7 +40,7 @@ class video_show:
             if self.video_writer_init==False:
                 fourcc = cv2.VideoWriter_fourcc(*'XVID')
                 self.out = cv2.VideoWriter(self.output_video_file, fourcc, 25, (cv_image.shape[1], cv_image.shape[0]))
-            
+
             self.out.write(cv_image)
 
 

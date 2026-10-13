@@ -5,25 +5,18 @@ from scipy import stats
 import math
 
 from modules import shared
+from modules.sd_sampling_backend import get_sampling
 
-if shared.opts.sd_sampling == "A1111":
-    import k_diff.k_diffusion
-    from k_diff.k_diffusion.sampling import append_zero
-    from k_diff.k_diffusion import sampling
-elif shared.opts.sd_sampling == "ldm patched (Comfy)":
-    import ldm_patched.k_diffusion
-    from ldm_patched.k_diffusion.sampling import append_zero
-    from ldm_patched.k_diffusion import sampling
 
 def to_d(x, sigma, denoised):
     """Converts a denoiser output to a Karras ODE derivative."""
     return (x - denoised) / sigma
 
 
-if shared.opts.sd_sampling == "A1111":
-    k_diff.k_diffusion.sampling.to_d = to_d
-elif shared.opts.sd_sampling == "ldm patched (Comfy)":
-    ldm_patched.k_diffusion.sampling.to_d = to_d
+def _get_sampling():
+    _s = get_sampling()
+    _s.to_d = to_d
+    return _s
 
 
 @dataclasses.dataclass
@@ -53,18 +46,18 @@ def sgm_uniform(n, sigma_min, sigma_max, inner_model, device):
 
 def get_sigmas_karras(n, sigma_min, sigma_max, rho=7., device='cpu'):
     rho = shared.opts.karras_rho
-    return ldm_patched.k_diffusion.sampling.get_sigmas_karras(n, sigma_min, sigma_max, rho, device)
+    return _get_sampling().get_sigmas_karras(n, sigma_min, sigma_max, rho, device)
 
 def get_sigmas_exponential(n, sigma_min, sigma_max, device='cpu'):
     shrink_factor = shared.opts.exponential_shrink_factor
     sigmas = torch.linspace(math.log(sigma_max), math.log(sigma_min), n, device=device).exp()
     sigmas = sigmas * torch.exp(shrink_factor * torch.linspace(0, 1, n, device=device))
-    return append_zero(sigmas)
+    return _get_sampling().append_zero(sigmas)
 
 
 def get_sigmas_polyexponential(n, sigma_min, sigma_max, device='cpu'):
     rho = shared.opts.polyexponential_rho
-    return ldm_patched.k_diffusion.sampling.get_sigmas_polyexponential(n, sigma_min, sigma_max, rho, device)
+    return _get_sampling().get_sigmas_polyexponential(n, sigma_min, sigma_max, rho, device)
 
 
 def get_sigmas_sinusoidal_sf(n, sigma_min, sigma_max, device='cpu'):
@@ -126,7 +119,7 @@ def get_sigmas_ays_custom(n, sigma_min, sigma_max, device='cpu'):
         sigmas_str = shared.opts.ays_custom_sigmas
         sigmas_values = sigmas_str.strip('[]').split(',')
         sigmas = np.array([float(x.strip()) for x in sigmas_values])
-        
+
         if n != len(sigmas):
             sigmas = np.interp(np.linspace(0, 1, n), np.linspace(0, 1, len(sigmas)), sigmas)
         sigmas = np.append(sigmas, [0.0])
@@ -184,7 +177,7 @@ def beta_scheduler(n, sigma_min, sigma_max, inner_model, device):
     """
     alpha = shared.opts.beta_dist_alpha
     beta = shared.opts.beta_dist_beta
-    
+
     total_timesteps = (len(inner_model.sigmas) - 1)
     ts = 1 - np.linspace(0, 1, n, endpoint=False)
     ts = np.rint(stats.beta.ppf(ts, alpha, beta) * total_timesteps)
@@ -274,7 +267,7 @@ def ays_32_sigmas(n, sigma_min, sigma_max, device='cpu'):
         sigmas = [sigma_max, sigma_max/1.310860875657935, sigma_max/1.718356235075352, sigma_max/2.252525958180810, sigma_max/2.688026675053433, sigma_max/3.174423075322040, sigma_max/3.748832539417044, sigma_max/4.463856789920335, sigma_max/5.326233593328242, sigma_max/6.355213820679800, sigma_max/7.477672611007930, sigma_max/8.745803592589411, sigma_max/10.228995682978878, sigma_max/11.864653584709637, sigma_max/13.685783347784952, sigma_max/15.786441921021279, sigma_max/18.202564111697559, sigma_max/20.980440157432400, sigma_max/24.182245076323649, sigma_max/27.652401723193991, sigma_max/31.246429590323925, sigma_max/35.307579021272943, sigma_max/40.308138967569972, sigma_max/47.132212095147923, sigma_max/55.111585405517003, sigma_max/65.460441760115945, sigma_max/82.786347724072168, sigma_max/104.698036963744033, sigma_max/138.041693219503482, sigma_max/264.794761864988552, sigma_max/507.935470821253285, 0.015000000000000000]
     else:
         sigmas = [sigma_max, sigma_max/1.300323183382763, sigma_max/1.690840379611262, sigma_max/2.198638945761486, sigma_max/2.622696705671493, sigma_max/3.098705619671305, sigma_max/3.661108232617473, sigma_max/4.152506637972936, sigma_max/4.662023756728857, sigma_max/5.234059175875519, sigma_max/5.874818853387466, sigma_max/6.593316416277412, sigma_max/7.399687115002039, sigma_max/8.213824943635682, sigma_max/9.050917900247738, sigma_max/9.973321246245751, sigma_max/11.115344803852001, sigma_max/12.529738625194212, sigma_max/14.124109921351757, sigma_max/15.959814856974724, sigma_max/18.099481611774999, sigma_max/20.526004748634670, sigma_max/23.506648288108032, sigma_max/27.541589307433523, sigma_max/32.269132736422456, sigma_max/38.982216080970984, sigma_max/53.219344283057142, sigma_max/72.656173487928834, sigma_max/103.609326413189740, sigma_max/218.693105563304210, sigma_max/461.605857767280530, 0.015000000000000000]
-           
+
     if n != len(sigmas):
         sigmas = np.append(loglinear_interp(sigmas, n), [0.0])
     else:
@@ -337,14 +330,14 @@ def get_sigmas_karras_dynamic(n, sigma_min, sigma_max, device='cpu'):
     max_inv_rho = sigma_max ** (1 / rho)
     sigmas = torch.zeros_like(ramp)
     for i in range(n):
-        sigmas[i] = (max_inv_rho + ramp[i] * (min_inv_rho - max_inv_rho)) ** (math.cos(i*math.tau/n)*2+rho) 
+        sigmas[i] = (max_inv_rho + ramp[i] * (min_inv_rho - max_inv_rho)) ** (math.cos(i*math.tau/n)*2+rho)
     return torch.cat([sigmas, sigmas.new_zeros([1])])
 
 schedulers = [
     Scheduler('automatic', 'Automatic', None),
-    Scheduler('karras', 'Karras', sampling.get_sigmas_karras, default_rho=7.0),
-    Scheduler('exponential', 'Exponential', sampling.get_sigmas_exponential),
-    Scheduler('polyexponential', 'Polyexponential', sampling.get_sigmas_polyexponential, default_rho=1.0),
+    Scheduler('karras', 'Karras', get_sigmas_karras, default_rho=7.0),
+    Scheduler('exponential', 'Exponential', get_sigmas_exponential),
+    Scheduler('polyexponential', 'Polyexponential', get_sigmas_polyexponential, default_rho=1.0),
     Scheduler('sinusoidal_sf', 'Sinusoidal SF', get_sigmas_sinusoidal_sf),
     Scheduler('invcosinusoidal_sf', 'Invcosinusoidal SF', get_sigmas_invcosinusoidal_sf),
     Scheduler('react_cosinusoidal_dynsf', 'React Cosinusoidal DynSF', get_sigmas_react_cosinusoidal_dynsf),
@@ -366,6 +359,14 @@ schedulers = [
     Scheduler('align_your_steps_GITS', 'Align Your Steps GITS', get_align_your_steps_sigmas_GITS),
     Scheduler('align_your_steps_11', 'Align Your Steps 11', ays_11_sigmas),
     Scheduler('align_your_steps_32', 'Align Your Steps 32', ays_32_sigmas),
+    # Diffusers-native schedulers — full sigma generation requires the
+    # Diffusers pipeline (--forge-diffusers-pipeline).  Without it they fall
+    # back to model-default sigmas (same as Automatic).
+    Scheduler('dpm++_2m', 'DPM++ 2M (Diffusers)', None),
+    Scheduler('dpm++_2m_karras', 'DPM++ 2M Karras (Diffusers)', None),
+    Scheduler('dpm++_singlestep', 'DPM++ Singlestep (Diffusers)', None),
+    Scheduler('unipc', 'UniPC (Diffusers)', None),
+    Scheduler('lms', 'LMS (Diffusers)', None),
 ]
 
 schedulers_map = {**{x.name: x for x in schedulers}, **{x.label: x for x in schedulers}}

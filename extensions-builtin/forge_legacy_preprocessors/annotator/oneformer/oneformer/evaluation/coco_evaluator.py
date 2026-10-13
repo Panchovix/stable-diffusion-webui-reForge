@@ -11,7 +11,6 @@ import json
 import logging
 import numpy as np
 import os
-import pickle
 from collections import OrderedDict
 import annotator.oneformer.pycocotools.mask as mask_util
 import torch
@@ -23,7 +22,6 @@ import annotator.oneformer.detectron2.utils.comm as comm
 from annotator.oneformer.detectron2.config import CfgNode
 from annotator.oneformer.detectron2.data import MetadataCatalog
 from annotator.oneformer.detectron2.data.datasets.coco import convert_to_coco_json
-from annotator.oneformer.detectron2.structures import Boxes, BoxMode, pairwise_iou
 from annotator.oneformer.detectron2.utils.file_io import PathManager
 from annotator.oneformer.detectron2.utils.logger import create_small_table
 
