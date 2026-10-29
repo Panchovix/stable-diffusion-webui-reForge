@@ -7,6 +7,7 @@ import uvicorn
 import ipaddress
 import requests
 import gradio as gr
+import numpy as np
 from threading import Lock
 from io import BytesIO
 from fastapi import APIRouter, Depends, FastAPI, Request, Response
@@ -23,7 +24,7 @@ from modules.shared import opts
 from modules.processing import StableDiffusionProcessingTxt2Img, StableDiffusionProcessingImg2Img, process_images
 from modules.textual_inversion.textual_inversion import create_embedding, train_embedding
 from modules.hypernetworks.hypernetwork import create_hypernetwork, train_hypernetwork
-from PIL import PngImagePlugin
+from PIL import Image, PngImagePlugin
 from modules.sd_models_config import find_checkpoint_config_near_filename
 from modules.realesrgan_model import get_realesrgan_models
 from modules import devices
@@ -97,6 +98,16 @@ def decode_base64_to_image(encoding):
         return image
     except Exception as e:
         raise HTTPException(status_code=500, detail="Invalid encoded image") from e
+
+
+def api_extra_images(processed):
+    """Images that scripts add through p.extra_result_images, which the UI already returns."""
+    images = []
+    for image in getattr(processed, "extra_images", None) or []:
+        if isinstance(image, np.ndarray):
+            image = Image.fromarray(image)
+        images.append(image)
+    return images
 
 
 def encode_pil_to_base64(image):
@@ -485,7 +496,7 @@ class Api:
                     shared.state.end()
                     shared.total_tqdm.clear()
 
-        b64images = list(map(encode_pil_to_base64, processed.images)) if send_images else []
+        b64images = list(map(encode_pil_to_base64, processed.images + api_extra_images(processed))) if send_images else []
 
         return models.TextToImageResponse(images=b64images, parameters=vars(txt2imgreq), info=processed.js())
 
@@ -556,7 +567,7 @@ class Api:
                     shared.state.end()
                     shared.total_tqdm.clear()
 
-        b64images = list(map(encode_pil_to_base64, processed.images)) if send_images else []
+        b64images = list(map(encode_pil_to_base64, processed.images + api_extra_images(processed))) if send_images else []
 
         if not img2imgreq.include_init_images:
             img2imgreq.init_images = None

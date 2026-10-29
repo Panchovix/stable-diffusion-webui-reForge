@@ -201,6 +201,16 @@ class MemoryCounter:
     def decrement(self, used: int):
         self.value -= used
 
+def set_model_device(model, device):
+    """Record the model's device. Models built on diffusers' ModelMixin (used by
+    Forge extensions such as LayerDiffuse) expose `device` as a read-only property
+    derived from their parameters, so there is nothing to record for them."""
+    try:
+        model.device = device
+    except AttributeError:
+        pass
+
+
 class ModelPatcher:
     def __init__(self, model, load_device, offload_device, size=0, weight_inplace_update=False):
         self.size = size
@@ -698,7 +708,7 @@ class ModelPatcher:
                     mem_counter = self.model_size()
 
             self.model.lowvram_patch_counter += patch_counter
-            self.model.device = device_to
+            set_model_device(self.model, device_to)
             self.model.model_loaded_weight_memory = mem_counter
             self.model.current_weight_patches_uuid = self.patches_uuid
 
@@ -750,7 +760,7 @@ class ModelPatcher:
 
             if device_to is not None:
                 self.model.to(device_to)
-                self.model.device = device_to
+                set_model_device(self.model, device_to)
             self.model.model_loaded_weight_memory = 0
 
             for m in self.model.modules():

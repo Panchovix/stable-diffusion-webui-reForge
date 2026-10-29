@@ -2,6 +2,7 @@ import copy
 import torch
 
 from ldm_patched.modules.model_patcher import ModelPatcher
+from ldm_patched.modules.weight_adapter.lora import LoRAAdapter
 from ldm_patched.modules.sampler_helpers import convert_cond
 from ldm_patched.modules.samplers import encode_model_conds
 from ldm_patched.modules.args_parser import args
@@ -288,7 +289,12 @@ class UnetPatcher(ModelPatcher):
         patch_flat = {}
         for model_key, v in patch_dict.items():
             for patch_type, weight_list in v.items():
-                patch_flat[model_key] = (patch_type, weight_list)
+                if patch_type == 'lora':
+                    # calculate_weight only reads LoRA patches as weight adapters now;
+                    # slots are (up, down, alpha, mid, dora_scale, reshape).
+                    patch_flat[model_key] = LoRAAdapter(set(), tuple(weight_list[:6]))
+                else:
+                    patch_flat[model_key] = (patch_type, weight_list)
 
         self.add_patches(patches=patch_flat, strength_patch=float(strength), strength_model=1.0)
         return
