@@ -600,6 +600,8 @@ class VAE:
         n.latent_bn_running_mean = self.latent_bn_running_mean
         n.latent_bn_running_var = self.latent_bn_running_var
         n.latent_bn_eps = self.latent_bn_eps
+        n.extra_1d_channel = self.extra_1d_channel
+        n.disable_offload = self.disable_offload
         return n
 
     def set_packed_latents(self, packed_channels, spatial_factor=2):
@@ -799,6 +801,14 @@ class VAE:
         return pixel_samples
 
     def decode(self, samples_in, vae_options={}):
+        # Forge extensions (e.g. LayerDiffuse) hook decoding through
+        # ModelPatcher.set_model_vae_decode_wrapper(); honour it here.
+        wrapper = self.patcher.model_options.get("model_vae_decode_wrapper", None)
+        if wrapper is not None:
+            return wrapper(lambda s: self.decode_unwrapped(s, vae_options), samples_in)
+        return self.decode_unwrapped(samples_in, vae_options)
+
+    def decode_unwrapped(self, samples_in, vae_options={}):
         self.throw_exception_if_invalid()
         pixel_samples = None
         try:
@@ -887,6 +897,13 @@ class VAE:
         return samples
 
     def encode(self, pixel_samples):
+        # Counterpart of set_model_vae_encode_wrapper(), see decode().
+        wrapper = self.patcher.model_options.get("model_vae_encode_wrapper", None)
+        if wrapper is not None:
+            return wrapper(self.encode_unwrapped, pixel_samples)
+        return self.encode_unwrapped(pixel_samples)
+
+    def encode_unwrapped(self, pixel_samples):
         self.throw_exception_if_invalid()
         pixel_samples = self.vae_encode_crop_pixels(pixel_samples)
         pixel_samples = pixel_samples.movedim(-1, 1)
