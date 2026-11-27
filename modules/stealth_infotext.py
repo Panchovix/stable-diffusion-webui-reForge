@@ -111,6 +111,10 @@ def read_info_from_image_stealth(image):
                             compressed = True
                         buffer_rgb = ''
                         index_rgb = 0
+                    elif not has_alpha:
+                        # No RGB signature and no alpha channel to try: stop instead of scanning every pixel.
+                        read_end = True
+                        break
             elif reading_param_len:
                 if mode == 'alpha':
                     if index_a == 32:
