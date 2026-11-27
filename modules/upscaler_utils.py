@@ -27,12 +27,10 @@ def torch_bgr_to_pil_image(tensor: torch.Tensor) -> Image.Image:
             raise ValueError(f"{tensor.shape} does not describe a BCHW tensor")
         tensor = tensor.squeeze(0)
     assert tensor.ndim == 3, f"{tensor.shape} does not describe a CHW tensor"
-    # TODO: is `tensor.float().cpu()...numpy()` the most efficient idiom?
-    arr = tensor.float().cpu().clamp_(0, 1).numpy()  # clamp
-    arr = 255.0 * np.moveaxis(arr, 0, 2)  # CHW to HWC, rescale
-    arr = arr.round().astype(np.uint8)
-    arr = arr[:, :, ::-1]  # flip BGR to RGB
-    return Image.fromarray(arr, "RGB")
+    # Clamp, rescale and round on the tensor's device, then copy uint8 (4x less data than float32) to the CPU.
+    arr = (tensor.float().clamp(0, 1) * 255.0).round().to(torch.uint8)
+    arr = arr.flip(0).permute(1, 2, 0).contiguous()  # BGR to RGB, CHW to HWC
+    return Image.fromarray(arr.cpu().numpy(), "RGB")
 
 
 def upscale_pil_patch(model, img: Image.Image) -> Image.Image:
